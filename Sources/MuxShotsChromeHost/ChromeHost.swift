@@ -29,9 +29,8 @@ enum ChromeHost {
                 await relayAppMessages(from: connection)
             }
             await group.next()
-            group.cancelAll()
+            Foundation.exit(0)
         }
-        Foundation.exit(0)
     }
 
     private static func relayExtensionMessages(to connection: ControlConnection) async {

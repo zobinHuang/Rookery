@@ -123,7 +123,6 @@ struct StageView: View {
                         MixerView(mixer: mixer, isCollapsed: model.isSidebarCollapsed)
                             .padding(.vertical, 2)
                     }
-                    .scrollIndicators(.never)
                     .transition(.asymmetric(
                         insertion: .move(edge: .trailing).combined(with: .opacity),
                         removal: .move(edge: .trailing).combined(with: .opacity)

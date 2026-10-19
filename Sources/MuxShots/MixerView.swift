@@ -23,6 +23,12 @@ struct MixerView: View {
             VStack(spacing: 6) {
                 ForEach(mixer.listTracks, id: \.bundleId) { track in
                     collapsedStrip(track)
+                    if track.bundleId == Self.chromeBundleId {
+                        collapsedTabs
+                    }
+                }
+                if !isChromeListed {
+                    collapsedTabs
                 }
             }
             .padding(.horizontal, 8)
@@ -30,23 +36,62 @@ struct MixerView: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(mixer.listTracks, id: \.bundleId) { track in
                     applicationStrip(track)
-                }
-                if !mixer.browserTabs.listTabs.isEmpty {
-                    sectionHeader("Browser Tabs")
-                    ForEach(mixer.browserTabs.listTabs) { browserTab in
-                        tabStrip(browserTab)
+                    if track.bundleId == Self.chromeBundleId {
+                        tabsSection
                     }
-                } else if mixer.browserTabs.sessionCount == 0 && mixer.listTracks.contains(where: { $0.bundleId == Self.chromeBundleId }) {
-                    Text("Add the MuxShots extension to Chrome to mix its tabs one by one.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.top, 2)
+                }
+                if !isChromeListed {
+                    tabsSection
                 }
             }
             .padding(.horizontal, 8)
             .animation(Self.expandAnimation, value: mixer.listTracks.map(\.bundleId))
             .animation(Self.expandAnimation, value: mixer.browserTabs.listTabs.map(\.id))
+        }
+    }
+
+    private var isChromeListed: Bool {
+        mixer.listTracks.contains { $0.bundleId == Self.chromeBundleId }
+    }
+
+    /// Chrome's tabs, right under Chrome's own strip, or a hint to add the extension.
+    @ViewBuilder
+    private var tabsSection: some View {
+        if !mixer.browserTabs.listTabs.isEmpty {
+            sectionHeader("Chrome Tabs")
+            ForEach(mixer.browserTabs.listTabs) { browserTab in
+                tabStrip(browserTab)
+                    .padding(.leading, 10)
+            }
+        } else if mixer.browserTabs.sessionCount == 0 && isChromeListed {
+            Text("Add the MuxShots extension to Chrome to mix its tabs one by one.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 2)
+        }
+    }
+
+    /// Chrome's tabs in the collapsed sidebar: each one's icon, ringed while taken over.
+    private var collapsedTabs: some View {
+        ForEach(mixer.browserTabs.listTabs) { browserTab in
+            let browserTabs = mixer.browserTabs
+            let settings = browserTabs.settings(of: browserTab.key)
+            Button {
+                browserTabs.update(browserTab.key) { $0.isTakenOver.toggle() }
+            } label: {
+                MixerStripIconView(icon: .website(url: browserTab.tab.favIconUrl.flatMap(URL.init(string:))))
+                    .opacity(browserTab.tab.isMuted ? 0.45 : 1)
+                    .padding(2)
+                    .background {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color.accentColor, lineWidth: settings.isTakenOver ? 2 : 0)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(browserTab.tab.title)
         }
     }
 
@@ -211,6 +256,34 @@ enum MixerStripIcon {
     case website(url: URL?)
 }
 
+/// A strip's picture: an application's icon, or a website's on a small tile.
+struct MixerStripIconView: View {
+    let icon: MixerStripIcon
+
+    var body: some View {
+        switch icon {
+        case .application(let bundleId):
+            ApplicationIconView(bundleId: bundleId, size: 24)
+        case .website(let url):
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .interpolation(.high)
+            } placeholder: {
+                Image(systemName: "globe")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 16, height: 16)
+            .frame(width: 24, height: 24)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(StageColors.tile)
+            }
+        }
+    }
+}
+
 /// One track's strip in the mixer: an application's or a browser tab's.
 private struct MixerStrip: View {
     private static let reverbRooms = ReverbRoom.allCases
@@ -293,28 +366,8 @@ private struct MixerStrip: View {
         }
     }
 
-    @ViewBuilder
     private var iconView: some View {
-        switch icon {
-        case .application(let bundleId):
-            ApplicationIconView(bundleId: bundleId, size: 24)
-        case .website(let url):
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .interpolation(.high)
-            } placeholder: {
-                Image(systemName: "globe")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 16, height: 16)
-            .frame(width: 24, height: 24)
-            .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(StageColors.tile)
-            }
-        }
+        MixerStripIconView(icon: icon)
     }
 
     private var volumeSymbol: String {

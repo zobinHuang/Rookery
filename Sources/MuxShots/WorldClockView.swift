@@ -9,7 +9,7 @@ struct WorldClockView: View {
     private static let dateSpacing: CGFloat = 4
     private static let dateWeekdaySpacing: CGFloat = 6
     /// The weekdays as the display spells them, Sunday first as the calendar counts them.
-    private static let listWeekdayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+    private static let listWeekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
     let listCities: [WorldClockCity]
 
@@ -90,7 +90,7 @@ struct WorldClockView: View {
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
-    /// The weekday in a time zone, as "TUE".
+    /// The weekday in a time zone, as "Tue".
     private static func weekdayText(for timeZone: TimeZone, at date: Date) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone

@@ -13,6 +13,12 @@ struct SevenSegmentDisplay: View {
     let color: Color
     var isBlinking = false
 
+    /// The width some text takes on a display of some height, for lining displays up in columns.
+    static func width(of text: String, digitHeight: CGFloat) -> CGFloat {
+        let geometry = SegmentGeometry(text: text, digitHeight: digitHeight)
+        return geometry.size.width - geometry.glowPadding * 2
+    }
+
     var body: some View {
         let geometry = SegmentGeometry(text: text, digitHeight: digitHeight)
         ZStack {
@@ -20,6 +26,9 @@ struct SevenSegmentDisplay: View {
                 .equatable()
             if isBlinking {
                 BlinkingColons(content: SegmentLayer(geometry: geometry, color: color, layer: .litColons))
+            } else {
+                SegmentLayer(geometry: geometry, color: color, layer: .litColons)
+                    .equatable()
             }
         }
         .frame(width: geometry.size.width, height: geometry.size.height)
@@ -139,6 +148,16 @@ private struct SegmentGeometry: Equatable {
         "7": [.top, .topRight, .bottomRight],
         "8": digitSegments,
         "9": [.top, .topRight, .bottomRight, .bottom, .topLeft, .middle],
+        "a": [.top, .topRight, .middle, .bottomLeft, .bottom, .bottomRight],
+        "d": [.topRight, .bottomRight, .bottom, .bottomLeft, .middle],
+        "e": [.top, .topRight, .topLeft, .middle, .bottomLeft, .bottom],
+        "h": [.topLeft, .bottomLeft, .middle, .bottomRight],
+        "i": [.centerBottom],
+        "n": [.middle, .bottomLeft, .bottomRight],
+        "o": [.middle, .bottomLeft, .bottom, .bottomRight],
+        "r": [.middle, .bottomLeft],
+        "t": [.topLeft, .middle, .bottomLeft, .bottom],
+        "u": [.bottomLeft, .bottom, .bottomRight],
         "A": [.top, .topRight, .bottomRight, .topLeft, .bottomLeft, .middleLeft, .middleRight],
         "D": [.top, .topRight, .bottomRight, .bottom, .centerTop, .centerBottom],
         "E": [.top, .topLeft, .bottomLeft, .bottom, .middleLeft],
@@ -205,7 +224,7 @@ private struct SegmentGeometry: Equatable {
                 continue
             }
             let setLit = Self.mapGlyphSegments[character] ?? []
-            let setCell = character.isLetter ? Self.letterSegments : Self.digitSegments
+            let setCell = setLit.isSubset(of: Self.digitSegments) ? Self.digitSegments : Self.letterSegments
             for segment in Segment.allCases where setCell.contains(segment) {
                 let path = segmentPath(segment, originX: x).applying(lean)
                 if setLit.contains(segment) {

@@ -109,26 +109,25 @@ struct StageView: View {
         } label: {
             HStack(spacing: 10) {
                 IconStack(listBundleIds: row.listBundleIds, iconSize: 22, overlap: -9)
-                    .frame(width: 52, alignment: .leading)
                 Text(row.name)
                     .font(.system(size: 13, weight: row.isActive ? .semibold : .medium))
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text("\(row.listBundleIds.count)")
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(row.isActive || isHovered ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(row.isActive ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
             }
-            .foregroundStyle(row.isActive || isHovered ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .foregroundStyle(row.isActive ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(row.isActive || isHovered ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(.clear))
+                    .fill(rowFill(isActive: row.isActive, isHovered: isHovered))
             }
             .overlay {
-                if isHovered && !row.isActive {
+                if isHovered {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(.white.opacity(0.6), lineWidth: 1.5)
+                        .strokeBorder(row.isActive ? Color.white.opacity(0.7) : Color.accentColor, lineWidth: 2)
                 }
             }
             .scaleEffect(isLanded ? 1.06 : (isHovered ? 1.03 : 1))
@@ -136,6 +135,13 @@ struct StageView: View {
         }
         .buttonStyle(.plain)
         .modifier(ZoneFrameReporter(zone: .group(row.groupId), model: model))
+    }
+
+    private func rowFill(isActive: Bool, isHovered: Bool) -> AnyShapeStyle {
+        if isActive {
+            return AnyShapeStyle(Color.accentColor.gradient)
+        }
+        return isHovered ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(.clear)
     }
 
     private func dropZone(_ zone: StageZone, title: String, symbol: String, tint: Color) -> some View {
@@ -194,14 +200,19 @@ struct StageView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            .frame(maxWidth: 220)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 12)
-            .frame(maxWidth: 260, minHeight: 32)
+            .frame(minHeight: 32)
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(.regularMaterial)
                         .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
                         .matchedGeometryEffect(id: "selectedTab", in: tabNamespace)
+                } else {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.primary.opacity(0.05))
                 }
             }
             .contentShape(Rectangle())

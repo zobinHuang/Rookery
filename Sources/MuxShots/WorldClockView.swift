@@ -1,15 +1,20 @@
 import SwiftUI
 
-/// The time in each chosen city, city on the left and a 24-hour seven-segment clock on the right, read
-/// from the system clock every second so the colons blink with the seconds.
+/// The time in each chosen city, city on the left and a 24-hour seven-segment clock on the right with the
+/// date and weekday under it, read from the system clock on the minute; the colons blink with the seconds.
 struct WorldClockView: View {
     private static let digitHeight: CGFloat = 19
-    private static let colonFadeSeconds = 0.3
+    /// The date and weekday under each time, smaller than it.
+    private static let dateDigitHeight: CGFloat = 9
+    private static let dateSpacing: CGFloat = 4
+    private static let dateWeekdaySpacing: CGFloat = 6
+    /// The weekdays as the display spells them, Sunday first as the calendar counts them.
+    private static let listWeekdayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
 
     let listCities: [WorldClockCity]
 
     var body: some View {
-        TimelineView(.periodic(from: .distantPast, by: 1)) { context in
+        TimelineView(.everyMinute) { context in
             VStack(spacing: 8) {
                 ForEach(listCities) { city in
                     if let timeZone = TimeZone(identifier: city.timeZoneId) {
@@ -34,13 +39,26 @@ struct WorldClockView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            SevenSegmentDisplay(
-                text: Self.clockText(for: timeZone, at: date),
-                digitHeight: Self.digitHeight,
-                color: StageColors.clockSegment,
-                colonOpacity: Self.isColonLit(at: date) ? 1 : 0
-            )
-            .animation(.easeInOut(duration: Self.colonFadeSeconds), value: Self.isColonLit(at: date))
+            VStack(alignment: .trailing, spacing: Self.dateSpacing) {
+                SevenSegmentDisplay(
+                    text: Self.clockText(for: timeZone, at: date),
+                    digitHeight: Self.digitHeight,
+                    color: StageColors.clockSegment,
+                    isBlinking: true
+                )
+                HStack(spacing: Self.dateWeekdaySpacing) {
+                    SevenSegmentDisplay(
+                        text: Self.dateText(for: timeZone, at: date),
+                        digitHeight: Self.dateDigitHeight,
+                        color: StageColors.clockSegment
+                    )
+                    SevenSegmentDisplay(
+                        text: Self.weekdayText(for: timeZone, at: date),
+                        digitHeight: Self.dateDigitHeight,
+                        color: StageColors.clockSegment
+                    )
+                }
+            }
         }
     }
 
@@ -64,9 +82,20 @@ struct WorldClockView: View {
         return "\(abbreviation) · \(dayOffset > 0 ? "+" : "−")\(abs(dayOffset))d"
     }
 
-    /// Whether the colons are lit: on even seconds, dark on odd ones.
-    private static func isColonLit(at date: Date) -> Bool {
-        Int(date.timeIntervalSince1970.rounded(.down)) % 2 == 0
+    /// The date in a time zone, as "2026-10-20".
+    private static func dateText(for timeZone: TimeZone, at date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    }
+
+    /// The weekday in a time zone, as "TUE".
+    private static func weekdayText(for timeZone: TimeZone, at date: Date) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let weekday = calendar.component(.weekday, from: date)
+        return listWeekdayNames.indices.contains(weekday - 1) ? listWeekdayNames[weekday - 1] : ""
     }
 
     private static func clockText(for timeZone: TimeZone, at date: Date) -> String {

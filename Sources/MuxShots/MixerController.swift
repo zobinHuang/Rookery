@@ -91,11 +91,6 @@ final class MixerController {
         reloadTracks()
     }
 
-    /// How loud each channel of an application's track has been since this was last asked, 0 to 1.
-    func takeLevels(of bundleId: String) -> (left: Float, right: Float) {
-        mixer.takeLevels(ofApplication: bundleId)
-    }
-
     /// Read the captured tracks' levels for their meters while any track is captured.
     private func updateMeterTimer() {
         let isAnyCapturing = listTracks.contains(where: \.isCapturing)

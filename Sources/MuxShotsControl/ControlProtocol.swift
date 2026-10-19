@@ -103,7 +103,7 @@ public struct MixerTrackStatus: Codable, Equatable, Sendable {
 public enum ControlMessage: Codable, Sendable {
     case workspace(listGroups: [WindowGroup], setActiveGroupIds: Set<GroupId>, listWindows: [WindowRecord])
     case change(WindowChange)
-    /// The mixer's tracks, with how loud each captured one has been since last asked, 0 to 1, by bundle id,
+    /// The mixer's tracks, with how loud each captured one is now, 0 to 1, by bundle id,
     /// and the browser tabs it can mix.
     case mixer(listTracks: [MixerTrackStatus], mapLevels: [String: Float], listTabs: [MixerTabStatus])
     case done

@@ -216,7 +216,7 @@ final class ControlServer: Sendable {
     private static func mixerMessage(_ mixerController: MixerController) -> ControlMessage {
         let listTracks = mixerController.listTracks
         let mapLevels = Dictionary(uniqueKeysWithValues: listTracks.filter(\.isCapturing).map { track in
-            let levels = mixerController.takeLevels(of: track.bundleId)
+            let levels = mixerController.mapLevels[track.bundleId] ?? MixerLevels()
             return (track.bundleId, max(levels.left, levels.right))
         })
         let browserTabs = mixerController.browserTabs

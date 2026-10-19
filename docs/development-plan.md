@@ -22,7 +22,8 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 |---|---|---|
 | 窗口读写 | 公开 API 只有 Accessibility（`AXUIElement`）能读写窗口的位置、大小、最小化、全屏、raise | 核心依赖 AX，需要"辅助功能"权限 |
 | 窗口身份 | AX 元素没有稳定 ID；`CGWindowID` 需通过私有 `_AXUIElementGetWindow` 从 AX 元素取得 | 以 `CGWindowID` 作为窗口主键，接受这一个只读私有 API |
-| 枚举范围 | `kAXWindowsAttribute` 对很多 App 只返回**当前 Space** 的窗口；`CGWindowListCopyWindowInfo` 能看到 WindowServer 里的窗口但拿不到 AX 句柄 | 两路数据源合并；其他 Space 的窗口需要 alt-tab-macos 式的 remote token 暴力枚举（私有）或在 Space 切换时增量补全 |
+| 枚举范围 | 实测（macOS 26）：`kAXWindowsAttribute` 只返回**当前 Space** 的窗口；`CGWindowListCopyWindowInfo` 能看到所有 Space 的窗口，但拿不到 AX 句柄 | 两路合并：其他 Space 的窗口用 remote token 暴力枚举取 AX 元素，元素拿到后跨 Space 一直有效 |
+| 窗口是否"存在" | 实测：Electron 等 App 关窗后窗口仍留在 WindowServer 里（不可见）；私有只读 `CGSWindowIsOrderedIn` 可区分 | 只对"ordered in、不在当前 Space、AX 未列出"的窗口做暴力枚举；透明窗口直接过滤 |
 | Space | 没有公开 API 切换或移动 Space；SkyLight 的写操作在新系统上需关闭 SIP（yabai 的做法） | **不碰 SIP**。只读 Space 信息，不主动移动 Space |
 | 原生全屏 | 激活另一个全屏 Space 里的窗口一定伴随系统 Space 切换动画 | 这是当前痛点的根源，见 §3 的核心决策 |
 | 单窗口隐藏 | 没有公开的"隐藏单个窗口"API；`hide` 是整个 App 级，最小化有动画且慢 | 采用 AeroSpace 的做法：把窗口移到屏幕可视区外实现隐藏 |
@@ -103,13 +104,14 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 - 权限检测与引导（辅助功能必需，屏幕录制可选）。
 - **退出标准**：`make run` 启动菜单栏 App，授权一次后重编译仍保有权限。
 
-### M1 观察：看见所有窗口（1–1.5 周）
+### M1 观察：看见所有窗口（已完成）
 
-- AXClient：每 App 串行队列、消息超时；`_AXUIElementGetWindow` 取 `CGWindowID`。
-- 订阅 App 启动/退出/激活与窗口创建/销毁/移动/缩放/聚焦/标题变化/最小化。
-- `CGWindowList` 周期对账；其他 Space 与原生全屏窗口的发现策略（探针：remote token 枚举 vs. 增量补全，选一种）。
-- `muxctl list` / `muxctl watch` 输出窗口表与事件。
-- **退出标准**：开 3 个 Chrome 窗口 + 3 个 VSCode 窗口（含原生全屏），`muxctl list` 全部列出且 ID 稳定；关、开、改标题后 2 秒内表正确。
+- 每个 App 一个 run-loop 线程（`ApplicationWindowTracker`），AX 全局消息超时 1 秒；`_AXUIElementGetWindow` 取 `CGWindowID`。
+- 订阅窗口创建/销毁/移动/缩放/标题/最小化与 App 聚焦/隐藏，50 ms 去抖后重读该 App 的完整快照；`WindowRegistry` 按 App 做差分。
+- 每 2 秒、以及每次 Space 切换时，与 `CGWindowList` 对账；其他 Space 的窗口用 remote token 暴力枚举（找齐即停，每个窗口 ID 只探测一次）。
+- `muxctl list [--json]` / `muxctl watch`，走 `~/Library/Application Support/MuxShots/control.sock`。
+- **实测结果**：5 个原生全屏 VSCode 窗口、2 个全屏 Chrome 窗口、其他 Space 上的 iTerm2 窗口全部列出，ID 稳定；改标题 0.3 秒、关窗 0.3 秒、新建窗口约 0.6 秒内反映；空闲 CPU 约 1%。
+- **遗留问题**：单个窗口找不到时，暴力枚举要扫满 50 万个 ID（单核约 13 秒），只在启动或切 Space 后出现新的不可识别窗口时发生；以后可以改成分片、低优先级扫描。
 
 ### M2 动作：可靠地控制单个窗口（1 周）
 

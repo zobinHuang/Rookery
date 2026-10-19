@@ -189,6 +189,12 @@ public struct Workspace: Codable, Equatable, Sendable {
         recordStack(of: group.groupId, frontToBack: listOrder)
     }
 
+    /// Give a managed window a name of its own; a blank name goes back to showing its title.
+    public mutating func rename(window windowId: WindowId, to name: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        modifyMember(windowId) { $0.customName = trimmedName.isEmpty ? nil : trimmedName }
+    }
+
     /// Rename a group; a blank name leaves the group unchanged.
     public mutating func rename(_ groupId: GroupId, to name: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)

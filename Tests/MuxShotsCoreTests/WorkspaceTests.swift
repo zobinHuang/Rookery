@@ -204,12 +204,35 @@ struct WorkspaceTests {
         #expect(workspace.listGroups[0].listMembers.map(\.windowId.rawValue) == [1, 2, 3])
     }
 
+    @Test func windowNamesOverrideTitlesUntilCleared() {
+        var workspace = Workspace()
+        workspace.adopt(Self.window(1, title: "main.tex — paper"), into: nil)
+
+        workspace.rename(window: WindowId(rawValue: 1), to: "  Draft  ")
+        let renamed = workspace.listManagedWindows[0].displayName
+        workspace.updateTitle(of: WindowId(rawValue: 1), to: "intro.tex — paper")
+        let afterTitleChange = workspace.listManagedWindows[0].displayName
+        workspace.rename(window: WindowId(rawValue: 1), to: " ")
+
+        #expect(renamed == "Draft")
+        #expect(afterTitleChange == "Draft")
+        #expect(workspace.listManagedWindows[0].displayName == "intro.tex — paper")
+    }
+
+    @Test func untitledWindowsShowTheirApplication() {
+        var workspace = Workspace()
+        workspace.adopt(Self.window(1), into: nil)
+
+        #expect(workspace.listManagedWindows[0].displayName == "Code")
+    }
+
     @Test func workspaceSurvivesAJsonRoundTrip() throws {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1, title: "a"), into: nil)
         workspace.adopt(Self.window(2, title: "b"), into: groupId)
         workspace.activate(groupId, displacing: [])
         workspace.recordStack(of: groupId, frontToBack: [WindowId(rawValue: 2), WindowId(rawValue: 1)])
+        workspace.rename(window: WindowId(rawValue: 2), to: "Notes")
 
         let decoded = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(workspace))
 

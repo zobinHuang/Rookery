@@ -8,6 +8,8 @@ public struct ManagedWindow: Codable, Equatable, Sendable {
     public let application: RunningApplication
     /// The last title seen.
     public var title: String
+    /// A name the user gave the window, shown in place of its title; nil to show the title.
+    public var customName: String?
     /// Where the window was before MuxShots hid it, in global screen coordinates with the origin at the
     /// top-left of the main display; nil while the window is not hidden.
     public var restoreFrame: CGRect?
@@ -19,14 +21,24 @@ public struct ManagedWindow: Codable, Equatable, Sendable {
         windowId: WindowId,
         application: RunningApplication,
         title: String,
+        customName: String? = nil,
         restoreFrame: CGRect? = nil,
         homeFrame: CGRect? = nil
     ) {
         self.windowId = windowId
         self.application = application
         self.title = title
+        self.customName = customName
         self.restoreFrame = restoreFrame
         self.homeFrame = homeFrame
+    }
+
+    /// The name to show: the user's name for the window, else its title, else its application's name.
+    public var displayName: String {
+        if let customName {
+            return customName
+        }
+        return title.isEmpty ? application.name : title
     }
 
     /// Whether MuxShots has moved the window off screen.

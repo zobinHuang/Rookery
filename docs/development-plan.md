@@ -98,8 +98,8 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 
 ### M0 工程骨架（0.5 周）
 
-- SwiftPM 工程：`MuxShotsCore`（Model/Policy，纯逻辑）、`MuxShotsPlatform`、`MuxShots`（App）、`muxctl`。
-- 打包签名脚本：产出 `.app`，固定证书签名，保证重编译后权限不丢。
+- SwiftPM 工程：`MuxShotsPlatform`、`MuxShots`（菜单栏 App）；`MuxShotsCore` 与 `muxctl` 随 M1 加入。
+- 打包签名脚本：产出 `.app`；本地自签名证书脚本，使 designated requirement 绑定证书，重编译后权限不丢。
 - 权限检测与引导（辅助功能必需，屏幕录制可选）。
 - **退出标准**：`make run` 启动菜单栏 App，授权一次后重编译仍保有权限。
 

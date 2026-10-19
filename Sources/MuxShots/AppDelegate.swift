@@ -94,7 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(withTitle: "About MuxShots", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        applicationMenu.addItem(withTitle: "Open or Close Stage on This Display", action: #selector(toggleStage), keyEquivalent: "").target = self
+        applicationMenu.addItem(withTitle: "New MuxShots Window", action: #selector(newStage), keyEquivalent: "n").target = self
+        applicationMenu.addItem(withTitle: "Open or Close Stage Here", action: #selector(toggleStage), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Close All Stages", action: #selector(closeAllStages), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Move Stage to Next Display", action: #selector(moveStageToNextDisplay), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Show Managed Windows…", action: #selector(showPanel), keyEquivalent: "").target = self
@@ -127,6 +128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSettings() {
         settingsWindowController?.show()
+    }
+
+    @objc private func newStage() {
+        stageCoordinator?.openStage()
     }
 
     @objc private func toggleStage() {

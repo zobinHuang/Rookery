@@ -25,6 +25,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var mapStageContentFrames: [StageId: CGRect] = [:]
     /// The group each open stage shows; a stage with no group shows nothing.
     private var mapStageGroupIds: [StageId: GroupId] = [:]
+    /// The stage each group belongs to; a group in no stage is left where it is.
+    private var mapGroupStageIds: [GroupId: StageId] = [:]
+    /// Stages whose front window is being moved to follow them, and where it should end up next.
+    private var mapPendingStageFrames: [StageId: CGRect] = [:]
+    private var setFollowingStageIds: Set<StageId> = []
     private let tracker: WindowTracker
     private let dragMonitor = WindowDragMonitor()
     private let ghostAnimator = DropGhostAnimator()
@@ -170,12 +175,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             if let frame = await tracker.frame(of: windowId) {
                 self.workspace.markStaged(windowId, homeFrame: frame)
             }
-            let showingStageId = self.stage(showing: joinedGroupId)
-            let dropStageId = stageId ?? self.focusedStageId()
-            if isNewGroup || showingStageId != nil || self.mapStageGroupIds.isEmpty {
-                await self.switchTo(joinedGroupId, bringingToFront: windowId, onStage: showingStageId ?? dropStageId)
-            } else if let dropStageId, let shownGroupId = self.mapStageGroupIds[dropStageId] {
-                await self.switchTo(shownGroupId, onStage: dropStageId)
+            if self.mapGroupStageIds[joinedGroupId] == nil, let ownerId = stageId ?? self.focusedStageId() {
+                self.mapGroupStageIds[joinedGroupId] = ownerId
+            }
+            guard let ownerId = self.mapGroupStageIds[joinedGroupId] else {
+                return
+            }
+            if isNewGroup || self.mapStageGroupIds[ownerId] == joinedGroupId || self.mapStageGroupIds[ownerId] == nil {
+                await self.switchTo(joinedGroupId, bringingToFront: windowId)
+            } else if let shownGroupId = self.mapStageGroupIds[ownerId] {
+                await self.switchTo(shownGroupId)
             }
         }
         return joinedGroupId
@@ -199,6 +208,49 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// The stage showing a group.
     func stage(showing groupId: GroupId) -> StageId? {
         mapStageGroupIds.first { $0.value == groupId }?.key
+    }
+
+    /// The stage a group belongs to.
+    func stage(owning groupId: GroupId) -> StageId? {
+        mapGroupStageIds[groupId]
+    }
+
+    /// The groups that belong to a stage, in the workspace's order.
+    func groups(ofStage stageId: StageId) -> [WindowGroup] {
+        workspace.listGroups.filter { mapGroupStageIds[$0.groupId] == stageId }
+    }
+
+    /// Hand a group to another stage, placing it before one of that stage's groups or last with nil.
+    func assignGroup(_ groupId: GroupId, toStage stageId: StageId, before targetGroupId: GroupId?) {
+        let previousStageId = mapGroupStageIds[groupId]
+        mapGroupStageIds[groupId] = stageId
+        workspace.moveGroup(groupId, before: targetGroupId ?? groupAfterLast(ofStage: stageId, excluding: groupId))
+        didChange()
+        guard previousStageId != stageId else {
+            return
+        }
+        Task {
+            if let previousStageId, self.mapStageGroupIds[previousStageId] == groupId {
+                self.mapStageGroupIds[previousStageId] = nil
+                if let nextGroup = self.groups(ofStage: previousStageId).first {
+                    await self.switchTo(nextGroup.groupId)
+                }
+            }
+            await self.switchTo(groupId)
+        }
+    }
+
+    /// The group just after a stage's last group in the workspace's order, so a group moved before it
+    /// becomes that stage's last.
+    private func groupAfterLast(ofStage stageId: StageId, excluding excludedGroupId: GroupId) -> GroupId? {
+        guard
+            let lastIndex = workspace.listGroups.lastIndex(where: { mapGroupStageIds[$0.groupId] == stageId && $0.groupId != excludedGroupId }),
+            workspace.listGroups.indices.contains(lastIndex + 1)
+        else {
+            return nil
+        }
+        let nextGroupId = workspace.listGroups[lastIndex + 1].groupId
+        return nextGroupId == excludedGroupId ? nil : nextGroupId
     }
 
     /// The stage the user is working on: the one on the display under the cursor, else any open stage.
@@ -234,9 +286,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                     }
                 }
             }
-            let setShownIds = Set(self.mapStageGroupIds.values)
-            let listCandidates = [self.frontmostActiveGroup()].compactMap { $0 } + self.workspace.listGroups
-            guard let startGroup = listCandidates.first(where: { !setShownIds.contains($0.groupId) }) else {
+            if isFirstStage {
+                for group in self.workspace.listGroups where self.mapGroupStageIds[group.groupId] == nil {
+                    self.mapGroupStageIds[group.groupId] = stageId
+                }
+            }
+            let listOwnGroups = self.groups(ofStage: stageId)
+            let frontmostGroup = self.frontmostActiveGroup().flatMap { group in
+                listOwnGroups.contains { $0.groupId == group.groupId } ? group : nil
+            }
+            guard let startGroup = frontmostGroup ?? listOwnGroups.first else {
                 self.didChange()
                 return
             }
@@ -244,39 +303,51 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Move a stage's content area, as when its sidebar collapses or it moves to another display, and refit
-    /// its front window.
+    /// Move a stage's content area as the stage moves or resizes, and make its front window follow. Moves are
+    /// coalesced: while one is under way only the latest frame is kept, so the window follows as fast as its
+    /// application allows without falling behind.
     ///
     /// - Parameters:
     ///   - stageId: the stage
     ///   - contentFrame: the new content area, in window-server coordinates
-    func relayoutStage(_ stageId: StageId, contentFrame: CGRect) async {
-        await enqueue {
-            guard self.mapStageContentFrames[stageId] != nil else {
-                return
+    func relayoutStage(_ stageId: StageId, contentFrame: CGRect) {
+        guard mapStageContentFrames[stageId] != nil else {
+            return
+        }
+        mapStageContentFrames[stageId] = contentFrame
+        mapPendingStageFrames[stageId] = contentFrame
+        guard !setFollowingStageIds.contains(stageId) else {
+            return
+        }
+        setFollowingStageIds.insert(stageId)
+        Task {
+            while let frame = self.mapPendingStageFrames.removeValue(forKey: stageId) {
+                guard let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
+                    break
+                }
+                await self.tracker.applyFrame(frame, to: windowId)
             }
-            self.mapStageContentFrames[stageId] = contentFrame
-            guard let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
-                return
-            }
-            await self.tracker.applyFrame(contentFrame, to: windowId)
+            self.setFollowingStageIds.remove(stageId)
         }
     }
 
-    /// Close one stage, hiding the windows it showed; closing the last stage puts every window back where it
-    /// was before the stages took it over.
+    /// Close one stage: the windows of its groups go back where they were before the stage took them over,
+    /// and its groups are kept for the next stage to open.
     func exitStage(_ stageId: StageId) async {
         await enqueue {
             guard self.mapStageContentFrames.removeValue(forKey: stageId) != nil else {
                 return
             }
-            let shownGroup = self.group(onStage: stageId)
             self.mapStageGroupIds[stageId] = nil
+            let listOwnGroups = self.groups(ofStage: stageId)
+            for group in listOwnGroups {
+                self.mapGroupStageIds[group.groupId] = nil
+            }
             guard !self.mapStageContentFrames.isEmpty else {
                 await self.restoreAllWindows()
                 return
             }
-            await self.run(showing: [], hiding: shownGroup?.listMembers.filter { !$0.isHidden } ?? [])
+            await self.restore(listOwnGroups.flatMap(\.listMembers))
             self.activateShownGroups()
             self.didChange()
         }
@@ -371,9 +442,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func restoreAllWindows() async {
         mapStageContentFrames.removeAll()
         mapStageGroupIds.removeAll()
-        let listWindows = workspace.listManagedWindows.filter { $0.homeFrame != nil || $0.isHidden }
+        mapGroupStageIds.removeAll()
+        await restore(workspace.listManagedWindows)
+        workspace.deactivateAll()
+        didChange()
+    }
+
+    /// Put windows back where they belong off the stage and on screen.
+    private func restore(_ listWindows: [ManagedWindow]) async {
         await withTaskGroup(of: Void.self) { taskGroup in
-            for window in listWindows {
+            for window in listWindows where window.homeFrame != nil || window.isHidden {
                 let homeFrame = workspace.markUnstaged(window.windowId)
                 let restoreFrame = workspace.markShown(window.windowId)
                 guard let frame = homeFrame ?? restoreFrame else {
@@ -384,8 +462,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
             }
         }
-        workspace.deactivateAll()
-        didChange()
     }
 
     func rename(_ groupId: GroupId, to name: String) {
@@ -423,14 +499,19 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Give keyboard focus back to the stage's front window, as after editing a name on the stage.
     func focusStageFront() {
-        guard
-            let stageId = focusedStageId(),
-            let windowId = group(onStage: stageId)?.listMembersFrontToBack.first?.windowId
-        else {
+        if let stageId = focusedStageId() {
+            focusFront(ofStage: stageId)
+        }
+    }
+
+    /// Bring a stage's front window forward with keyboard focus, keeping the stage just beneath it.
+    func focusFront(ofStage stageId: StageId) {
+        guard let windowId = group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
             return
         }
         Task {
             try? await focus(windowId)
+            stageCoordinator?.keepStage(stageId, beneath: windowId)
         }
     }
 
@@ -449,6 +530,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     func windowDragBegan(_ drag: WindowDrag, at cursorLocation: CGPoint) {
+        if let stageId = stageShowing(windowId: drag.windowId) {
+            stageCoordinator?.beginFollowing(stageId, windowDrag: drag, at: cursorLocation)
+        }
         guard preferences.isDropTrayEnabled else {
             return
         }
@@ -469,19 +553,22 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     func windowDragMoved(_ drag: WindowDrag, to cursorLocation: CGPoint) {
+        stageCoordinator?.follow(to: cursorLocation)
         activeSurface?.updateWindowDrag(at: cursorLocation)
     }
 
     func windowDragEnded(_ drag: WindowDrag, at cursorLocation: CGPoint) {
         guard let surface = activeSurface else {
+            stageCoordinator?.endFollowing(isReturning: false)
             return
         }
         activeSurface = nil
         guard let target = surface.target(at: cursorLocation) else {
             surface.cancelWindowDrag()
-            snapBackToStage(drag)
+            stageCoordinator?.endFollowing(isReturning: false)
             return
         }
+        stageCoordinator?.endFollowing(isReturning: true)
         let isStageDrop = isStageOpen && surface === stageCoordinator
         let dropStageId = isStageDrop ? stageCoordinator?.stageId(at: cursorLocation) : nil
         let droppedFrame = WindowServer.window(withId: drag.windowId).map { ScreenGeometry.appKitFrame(fromWindowServer: $0.frame) }
@@ -514,21 +601,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Put the stage's front window back in the content area after the user dragged it off without
-    /// dropping it anywhere.
-    private func snapBackToStage(_ drag: WindowDrag) {
-        guard
-            workspace.listStagedWindows.contains(where: { $0.windowId == drag.windowId && !$0.isHidden }),
-            let groupId = workspace.group(containing: drag.windowId)?.groupId,
-            let stageId = stage(showing: groupId),
-            let contentFrame = mapStageContentFrames[stageId]
-        else {
-            return
-        }
-        Task { [tracker] in
-            try? await Task.sleep(for: Self.settleDelay)
-            await tracker.applyFrame(contentFrame, to: drag.windowId)
-        }
+    /// The stage whose front window a window is, if it is one.
+    func stageShowing(windowId: WindowId) -> StageId? {
+        mapStageGroupIds.first { stageId, _ in
+            group(onStage: stageId)?.listMembersFrontToBack.first?.windowId == windowId
+        }?.key
     }
 
     /// Whether the user is working on the stage: it is open and in front is either MuxShots or the
@@ -556,12 +633,22 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// The group switcher's offer: every group, then every window shown at once.
+    /// The groups the group shortcuts and switcher offer: with stages open, those of the stage the user is
+    /// working on; otherwise every group.
+    var listSwitchableGroups: [WindowGroup] {
+        guard isStageOpen, let stageId = focusedStageId() else {
+            return workspace.listGroups
+        }
+        return groups(ofStage: stageId)
+    }
+
     func groupSwitcherRequest() -> SwitcherRequest? {
-        guard !workspace.listGroups.isEmpty else {
+        let listGroups = listSwitchableGroups
+        guard !listGroups.isEmpty else {
             return nil
         }
         let currentGroupId = frontmostActiveGroup()?.groupId
-        let listEntries = workspace.listGroups.map { group in
+        let listEntries = listGroups.map { group in
             SwitcherEntry(
                 id: group.groupId.rawValue,
                 title: group.name,
@@ -658,6 +745,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private func handleFocus(of windowId: WindowId) {
         if workspace.isManaged(windowId) && !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
             noteRecentlyUsed(windowId)
+            if let stageId = stageShowing(windowId: windowId) {
+                stageCoordinator?.keepStage(stageId, beneath: windowId)
+            }
         }
         guard
             !isSwitching,
@@ -678,7 +768,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 await restoreAllWindows()
                 return
             }
-            guard let targetStageId = stageId ?? stage(showing: groupId) ?? focusedStageId() else {
+            if mapGroupStageIds[groupId] == nil, let assignedStageId = stageId ?? focusedStageId() {
+                mapGroupStageIds[groupId] = assignedStageId
+            }
+            guard let targetStageId = mapGroupStageIds[groupId] else {
                 return
             }
             await performStageSwitch(to: groupId, on: targetStageId, bringingToFront: frontWindowId)
@@ -751,10 +844,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         else {
             return
         }
-        let previousGroupId = mapStageGroupIds[stageId]
-        if let otherStageId = stage(showing: groupId), otherStageId != stageId {
-            mapStageGroupIds[otherStageId] = previousGroupId
-        }
         mapStageGroupIds[stageId] = groupId
         if let frontWindowId, targetGroup.listMembers.contains(where: { $0.windowId == frontWindowId }) {
             workspace.bringToFront(frontWindowId)
@@ -772,11 +861,15 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             mapShownFrames[front.windowId] = contentFrame
         }
-        let listToHide = workspace.listManagedWindows.filter { window in
-            mapShownFrames[window.windowId] == nil
-                && !window.isHidden
-                && mapRecords[window.windowId]?.isMinimized != true
-        }
+        let setStagedGroupIds = Set(mapGroupStageIds.keys)
+        let listToHide = workspace.listGroups
+            .filter { setStagedGroupIds.contains($0.groupId) }
+            .flatMap(\.listMembers)
+            .filter { window in
+                mapShownFrames[window.windowId] == nil
+                    && !window.isHidden
+                    && mapRecords[window.windowId]?.isMinimized != true
+            }
         await run(showing: [], hiding: listToHide)
         for (windowId, contentFrame) in mapShownFrames {
             workspace.markShown(windowId)
@@ -789,6 +882,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             if let processId = await tracker.processId(of: selected.windowId) {
                 NSRunningApplication(processIdentifier: processId)?.activate()
             }
+            stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
         activateShownGroups()
         didChange()

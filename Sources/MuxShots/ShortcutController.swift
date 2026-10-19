@@ -135,7 +135,7 @@ final class ShortcutController {
     }
 
     private func switchToGroup(atPosition position: Int) {
-        let listGroups = workspaceController.workspace.listGroups
+        let listGroups = workspaceController.listSwitchableGroups
         guard listGroups.indices.contains(position) else {
             return
         }

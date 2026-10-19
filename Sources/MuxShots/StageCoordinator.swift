@@ -2,23 +2,41 @@ import AppKit
 import MuxShotsCore
 import MuxShotsPlatform
 
-/// The open stages, at most one per display: opens and closes them, moves them between displays, and
-/// passes a window drag to whichever stage is under the cursor.
+/// The open stages, each a window of its own that hosts its groups: opens and closes them, keeps each
+/// one just beneath its front window, moves a stage along when its front window is dragged, and passes a
+/// window drag to whichever stage is under the cursor.
 @MainActor
 final class StageCoordinator: DropSurface {
+    /// How much of the display a new stage takes when another stage is already open.
+    private static let newStageShare: CGFloat = 0.72
+    /// How far each further new stage is offset from the last, so they do not cover each other exactly.
+    private static let cascadeOffset: CGFloat = 28
+
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
     private let ghostAnimator: DropGhostAnimator
     private var listStages: [StageController] = []
+    private var mouseDownMonitor: Any?
     /// The stage a window drag is over, which shows the drop feedback.
     private var dropStage: StageController?
     private var currentDragGroup: WindowGroup?
     private var draggedWindowId: WindowId?
+    /// The stage moving along with its dragged front window.
+    private var followingStage: StageController?
+    private var followStartCursor: CGPoint?
+    private var followStartOrigin: CGPoint?
 
     init(workspaceController: WorkspaceController, preferences: Preferences, ghostAnimator: DropGhostAnimator) {
         self.workspaceController = workspaceController
         self.preferences = preferences
         self.ghostAnimator = ghostAnimator
+        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            let window = event.window
+            MainActor.assumeIsolated {
+                self?.listStages.first { $0.owns(window) }?.bringContentToFront()
+            }
+            return event
+        }
     }
 
     /// Whether any stage is open.
@@ -26,24 +44,53 @@ final class StageCoordinator: DropSurface {
         listStages.contains { $0.isShowing }
     }
 
-    /// Open a stage on the display under the cursor, or close the one there.
+    /// Close the stage under the cursor, or open one filling the display there if none is.
     func toggleOnCursorDisplay() {
-        guard let screen = Self.screenUnderCursor() else {
-            return
-        }
-        if let stage = stage(on: screen) {
+        if let stage = stage(at: NSEvent.mouseLocation) {
             stage.close()
         } else {
-            open(on: screen)
+            openStage()
         }
     }
 
-    /// Open a stage on the display under the cursor, unless one is there already.
+    /// Open a stage unless one is open already, filling the display under the cursor.
     func openOnCursorDisplay() {
-        guard let screen = Self.screenUnderCursor(), stage(on: screen) == nil else {
+        guard !isAnyOpen else {
             return
         }
-        open(on: screen)
+        openStage()
+    }
+
+    /// Open another stage: the first fills the display under the cursor, later ones are smaller and
+    /// cascaded so they can be dragged apart.
+    func openStage() {
+        guard let screen = Self.screenUnderCursor() else {
+            return
+        }
+        let visibleFrame = screen.visibleFrame
+        let openCount = listStages.filter(\.isShowing).count
+        let frame: CGRect
+        if openCount == 0 {
+            frame = visibleFrame
+        } else {
+            let size = CGSize(width: visibleFrame.width * Self.newStageShare, height: visibleFrame.height * Self.newStageShare)
+            let offset = Self.cascadeOffset * CGFloat(openCount)
+            frame = CGRect(
+                x: min(visibleFrame.minX + (visibleFrame.width - size.width) / 2 + offset, visibleFrame.maxX - size.width),
+                y: max(visibleFrame.minY + (visibleFrame.height - size.height) / 2 - offset, visibleFrame.minY),
+                width: size.width,
+                height: size.height
+            )
+        }
+        let stage = StageController(
+            stageId: .make(),
+            workspaceController: workspaceController,
+            preferences: preferences,
+            ghostAnimator: ghostAnimator,
+            coordinator: self
+        )
+        listStages.append(stage)
+        stage.open(frame: frame)
     }
 
     /// Close every stage.
@@ -56,31 +103,23 @@ final class StageCoordinator: DropSurface {
         }
     }
 
-    /// Move the stage under the cursor to the next display, trading places with a stage already there.
+    /// Move the stage under the cursor to the next display, keeping its share of the display.
     func moveStageUnderCursorToNextDisplay() {
         let listScreens = NSScreen.screens
         guard
             listScreens.count > 1,
-            let screen = Self.screenUnderCursor(),
-            let stage = stage(on: screen),
+            let stage = stage(at: NSEvent.mouseLocation),
+            let screen = stage.screen,
             let index = listScreens.firstIndex(of: screen)
         else {
             return
         }
-        move(stage, from: screen, to: listScreens[(index + 1) % listScreens.count])
+        stage.place(on: listScreens[(index + 1) % listScreens.count])
     }
 
-    /// Settle a stage the user dragged: it fills the display under the cursor, trading places with a stage
-    /// already there.
-    ///
-    /// - Parameters:
-    ///   - stage: the dragged stage
-    ///   - originalScreen: the display it was dragged from
-    func stageDragEnded(_ stage: StageController, from originalScreen: NSScreen?) {
-        guard let targetScreen = Self.screenUnderCursor() else {
-            return
-        }
-        move(stage, from: originalScreen, to: targetScreen)
+    /// Keep a stage just beneath its front window, as after that window comes forward.
+    func keepStage(_ stageId: StageId, beneath windowId: WindowId) {
+        listStages.first { $0.stageId == stageId }?.keep(beneath: windowId)
     }
 
     /// Redisplay every stage, and forget the ones that have closed.
@@ -93,7 +132,47 @@ final class StageCoordinator: DropSurface {
 
     /// The stage under a point, in AppKit screen coordinates.
     func stageId(at location: CGPoint) -> StageId? {
-        listStages.first { $0.isShowing && $0.frame.contains(location) }?.stageId
+        stage(at: location)?.stageId
+    }
+
+    // MARK: - Following a dragged front window
+
+    /// Start moving a stage along with its front window, which the user is dragging by its title bar.
+    func beginFollowing(_ stageId: StageId, windowDrag: WindowDrag, at cursorLocation: CGPoint) {
+        guard let stage = listStages.first(where: { $0.stageId == stageId }) else {
+            return
+        }
+        followingStage = stage
+        followStartCursor = cursorLocation
+        followStartOrigin = stage.frame.origin
+        stage.isFollowingWindow = true
+    }
+
+    /// Move the following stage by as much as the cursor has moved.
+    func follow(to cursorLocation: CGPoint) {
+        guard let followingStage, let followStartCursor, let followStartOrigin else {
+            return
+        }
+        followingStage.move(to: CGPoint(
+            x: followStartOrigin.x + cursorLocation.x - followStartCursor.x,
+            y: followStartOrigin.y + cursorLocation.y - followStartCursor.y
+        ))
+    }
+
+    /// Stop following. A stage whose window was dropped on another stage goes back where it was; otherwise
+    /// it stays and its window is refitted to it.
+    func endFollowing(isReturning: Bool) {
+        guard let followingStage else {
+            return
+        }
+        if isReturning, let followStartOrigin {
+            followingStage.move(to: followStartOrigin)
+        }
+        followingStage.isFollowingWindow = false
+        followingStage.relayout()
+        self.followingStage = nil
+        followStartCursor = nil
+        followStartOrigin = nil
     }
 
     // MARK: - Dropping windows
@@ -110,7 +189,7 @@ final class StageCoordinator: DropSurface {
     }
 
     func updateWindowDrag(at cursorLocation: CGPoint) {
-        let stage = listStages.first { $0.isShowing && $0.frame.contains(cursorLocation) }
+        let stage = stage(at: cursorLocation)
         if stage !== dropStage {
             dropStage?.cancelWindowDrag()
             dropStage = stage
@@ -146,30 +225,18 @@ final class StageCoordinator: DropSurface {
         endDrag()
     }
 
-    // MARK: - Displays
+    // MARK: - Helpers
 
-    private func open(on screen: NSScreen) {
-        let stage = StageController(
-            stageId: .make(),
-            workspaceController: workspaceController,
-            preferences: preferences,
-            ghostAnimator: ghostAnimator,
-            coordinator: self
-        )
-        listStages.append(stage)
-        stage.open(on: screen)
-    }
-
-    private func move(_ stage: StageController, from originalScreen: NSScreen?, to targetScreen: NSScreen) {
-        if let occupant = self.stage(on: targetScreen), occupant !== stage, let originalScreen {
-            occupant.place(on: originalScreen)
-        }
-        stage.place(on: targetScreen)
-    }
-
-    /// The open stage on a display.
-    private func stage(on screen: NSScreen) -> StageController? {
-        listStages.first { $0.isShowing && $0.frame.intersects(screen.visibleFrame) && $0.screen == screen }
+    /// The frontmost open stage under a point, in AppKit screen coordinates, other than one following a
+    /// dragged window.
+    private func stage(at location: CGPoint) -> StageController? {
+        let listOrderedWindows = NSApplication.shared.orderedWindows
+        return listStages
+            .filter { $0.isShowing && $0 !== followingStage && $0.frame.contains(location) }
+            .min { lhs, rhs in
+                (listOrderedWindows.firstIndex { lhs.owns($0) } ?? .max)
+                    < (listOrderedWindows.firstIndex { rhs.owns($0) } ?? .max)
+            }
     }
 
     private func endDrag() {

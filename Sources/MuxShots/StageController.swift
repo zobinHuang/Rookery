@@ -2,21 +2,21 @@ import AppKit
 import MuxShotsCore
 import MuxShotsPlatform
 
-/// The panel behind the stage. It takes keyboard input only while a name is edited, and never activates
-/// MuxShots, so clicking the stage leaves the front window's application in front.
+/// The stage's window. It takes keyboard input only while a name is edited, and never activates MuxShots,
+/// so clicking the stage leaves its front window's application in front.
 final class StagePanel: NSPanel {
     override var canBecomeKey: Bool {
         true
     }
 }
 
-/// One stage: a backdrop that fills a display beneath every window, with the groups, the tabs of the group
-/// it shows and the content area that group's front window is laid over. While it is open it is also where
-/// windows dragged over it are dropped.
+/// One stage: a window of its own, moved and resized like any other, with its groups, the tabs of the group
+/// it shows and the content area that group's front window is laid over and follows. It stays just beneath
+/// that window. While it is open it is also where windows dragged over it are dropped.
 @MainActor
-final class StageController: DropSurface, StageActions {
-    /// Just beneath normal windows, and so above the desktop and its widgets.
-    private static let backdropLevel = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
+final class StageController: NSObject, DropSurface, StageActions, NSWindowDelegate {
+    private static let cornerRadius: CGFloat = 14
+    private static let minimumSize = CGSize(width: 640, height: 420)
     private static let landedHold = Duration.milliseconds(260)
     private static let fadeOutDelay = Duration.milliseconds(240)
     private static let mouseReleasePollInterval = Duration.milliseconds(100)
@@ -32,13 +32,15 @@ final class StageController: DropSurface, StageActions {
     private var hideTask: Task<Void, Never>?
     /// Whether the stage window is up while the workspace is still moving windows onto it.
     private(set) var isEntering = false
-    /// The display the user started dragging the stage from.
-    private var moveStartScreen: NSScreen?
     /// Where the cursor was when the user started dragging the stage.
     private var moveStartCursor: CGPoint?
     /// Where the stage was when the user started dragging it.
     private var moveStartOrigin: CGPoint?
     private var tabDragTask: Task<Void, Never>?
+    /// The frame to go back to when a maximized stage is double-clicked again.
+    private var unmaximizedFrame: CGRect?
+    /// Whether the stage is moving along with its dragged front window, which then moves itself.
+    var isFollowingWindow = false
 
     init(
         stageId: StageId,
@@ -54,22 +56,29 @@ final class StageController: DropSurface, StageActions {
         self.ghostAnimator = ghostAnimator
         panel = StagePanel(
             contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: true
         )
-        panel.level = Self.backdropLevel
+        panel.level = .normal
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = false
+        panel.hasShadow = true
         panel.becomesKeyOnlyIfNeeded = true
-        panel.collectionBehavior = [.ignoresCycle, .fullScreenNone]
+        panel.minSize = Self.minimumSize
+        panel.collectionBehavior = [.fullScreenNone]
         model.isSidebarCollapsed = preferences.isStageSidebarCollapsed
 
         let background = NSVisualEffectView()
         background.material = .underWindowBackground
         background.blendingMode = .behindWindow
         background.state = .active
+        background.wantsLayer = true
+        background.layer?.cornerRadius = Self.cornerRadius
+        background.layer?.cornerCurve = .continuous
+        background.layer?.masksToBounds = true
+        panel.contentView = background
+        super.init()
         let stageView = StageView.makeHostingView(model: model, actions: self)
         stageView.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(stageView)
@@ -79,7 +88,7 @@ final class StageController: DropSurface, StageActions {
             stageView.topAnchor.constraint(equalTo: background.topAnchor),
             stageView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
         ])
-        panel.contentView = background
+        panel.delegate = self
     }
 
     /// Whether the stage's window is up.
@@ -102,11 +111,18 @@ final class StageController: DropSurface, StageActions {
         panel.screen
     }
 
-    /// Open the stage filling a display.
-    func open(on screen: NSScreen) {
+    /// Whether a window is this stage's.
+    func owns(_ window: NSWindow?) -> Bool {
+        window === panel
+    }
+
+    /// Open the stage with a frame.
+    ///
+    /// - Parameter frame: the frame, in AppKit screen coordinates
+    func open(frame: CGRect) {
         hideTask?.cancel()
         hideTask = nil
-        panel.setFrame(screen.visibleFrame, display: true)
+        panel.setFrame(frame, display: true)
         panel.orderFrontRegardless()
         model.isVisible = true
         isEntering = true
@@ -119,6 +135,21 @@ final class StageController: DropSurface, StageActions {
         }
     }
 
+    /// Keep the stage just beneath a window, as its front window comes forward.
+    func keep(beneath windowId: WindowId) {
+        panel.order(.below, relativeTo: Int(windowId.rawValue))
+    }
+
+    /// Bring the stage's front window forward and give it keyboard focus, as when the stage is clicked.
+    func bringContentToFront() {
+        workspaceController.focusFront(ofStage: stageId)
+    }
+
+    /// Move the stage without animation; its front window follows unless it is the one moving the stage.
+    func move(to origin: CGPoint) {
+        panel.setFrameOrigin(origin)
+    }
+
     /// Close the stage, hiding the windows it showed, or putting every window back if it is the last.
     func close() {
         Task { [workspaceController, stageId] in
@@ -127,17 +158,45 @@ final class StageController: DropSurface, StageActions {
         dismiss()
     }
 
-    /// Fill a display with the stage, animating there, and refit its front window.
+    /// Move the stage to another display, keeping its place and size relative to the display.
     func place(on screen: NSScreen) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.snapDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(screen.visibleFrame, display: true)
-        } completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                self?.relayout()
-            }
+        guard let currentScreen = panel.screen else {
+            animate(to: screen.visibleFrame)
+            return
         }
+        let source = currentScreen.visibleFrame
+        let target = screen.visibleFrame
+        let frame = panel.frame
+        animate(to: CGRect(
+            x: target.minX + (frame.minX - source.minX) / source.width * target.width,
+            y: target.minY + (frame.minY - source.minY) / source.height * target.height,
+            width: frame.width / source.width * target.width,
+            height: frame.height / source.height * target.height
+        ))
+    }
+
+    /// Fill the display, or go back to the frame before filling it.
+    func toggleMaximize() {
+        guard let visibleFrame = panel.screen?.visibleFrame else {
+            return
+        }
+        if panel.frame == visibleFrame, let unmaximizedFrame {
+            animate(to: unmaximizedFrame)
+            self.unmaximizedFrame = nil
+        } else {
+            unmaximizedFrame = panel.frame
+            animate(to: visibleFrame)
+        }
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        if !isFollowingWindow {
+            relayout()
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        relayout()
     }
 
     /// Redisplay the groups and tabs; take the window down if the stage closed some other way, as when
@@ -150,9 +209,8 @@ final class StageController: DropSurface, StageActions {
             dismiss()
             return
         }
-        let workspace = workspaceController.workspace
         let activeGroup = workspaceController.group(onStage: stageId)
-        model.listGroups = workspace.listGroups.map { group in
+        model.listGroups = workspaceController.groups(ofStage: stageId).map { group in
             StageGroupRow(
                 groupId: group.groupId,
                 name: group.name,
@@ -225,10 +283,20 @@ final class StageController: DropSurface, StageActions {
     }
 
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {
-        workspaceController.moveGroup(groupId, before: targetGroupId)
+        if workspaceController.stage(owning: groupId) == stageId {
+            workspaceController.moveGroup(groupId, before: targetGroupId)
+        } else {
+            workspaceController.assignGroup(groupId, toStage: stageId, before: targetGroupId)
+        }
     }
 
     func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?) {
+        guard let shownGroupId = workspaceController.group(onStage: stageId)?.groupId else {
+            return
+        }
+        if workspaceController.workspace.group(containing: windowId)?.groupId != shownGroupId {
+            workspaceController.moveWindow(windowId, to: shownGroupId, onStage: stageId)
+        }
         workspaceController.moveTab(windowId, before: targetWindowId)
     }
 
@@ -258,7 +326,6 @@ final class StageController: DropSurface, StageActions {
         guard let moveStartCursor, let moveStartOrigin else {
             moveStartCursor = cursor
             moveStartOrigin = panel.frame.origin
-            moveStartScreen = panel.screen
             return
         }
         panel.setFrameOrigin(CGPoint(
@@ -270,9 +337,6 @@ final class StageController: DropSurface, StageActions {
     func moveStageEnded() {
         moveStartCursor = nil
         moveStartOrigin = nil
-        let originalScreen = moveStartScreen
-        moveStartScreen = nil
-        coordinator?.stageDragEnded(self, from: originalScreen)
     }
 
     // MARK: - Dropping windows
@@ -372,10 +436,20 @@ final class StageController: DropSurface, StageActions {
         ))
     }
 
-    private func relayout() {
-        let contentFrame = contentFrame()
-        Task { [workspaceController, stageId] in
-            await workspaceController.relayoutStage(stageId, contentFrame: contentFrame)
+    /// Refit the front window to the content area as the stage is laid out now.
+    func relayout() {
+        workspaceController.relayoutStage(stageId, contentFrame: contentFrame())
+    }
+
+    private func animate(to frame: CGRect) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.snapDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(frame, display: true)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.relayout()
+            }
         }
     }
 

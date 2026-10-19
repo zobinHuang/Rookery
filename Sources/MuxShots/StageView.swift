@@ -23,6 +23,8 @@ protocol StageActions: AnyObject {
     /// Move a tab to just before another tab, or to the end with nil.
     func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?)
     func toggleSidebar()
+    /// Fill the display with the stage, or go back to its earlier frame.
+    func toggleMaximize()
     func exitStage()
     /// The user is dragging the stage by its sidebar header, towards another display.
     func moveStageChanged()
@@ -154,6 +156,9 @@ struct StageView: View {
         .padding(.top, 14)
         .padding(.bottom, 8)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            actions.toggleMaximize()
+        }
         .gesture(
             DragGesture(minimumDistance: 4, coordinateSpace: .global)
                 .onChanged { _ in
@@ -163,7 +168,7 @@ struct StageView: View {
                     actions.moveStageEnded()
                 }
         )
-        .help("Drag to move the stage to another display")
+        .help("Drag to move the stage; double-click to fill the display")
     }
 
     private func headerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {

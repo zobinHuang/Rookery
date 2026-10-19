@@ -571,6 +571,30 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         stageCoordinator?.endFollowing(isReturning: true)
         let isStageDrop = isStageOpen && surface === stageCoordinator
         let dropStageId = isStageDrop ? stageCoordinator?.stageId(at: cursorLocation) : nil
+        guard !workspace.isManaged(drag.windowId) else {
+            completeDrop(drag, on: target, of: surface, isStageDrop: isStageDrop, stageId: dropStageId)
+            return
+        }
+        Task {
+            try? await Task.sleep(for: Self.settleDelay)
+            guard WindowServer.window(withId: drag.windowId) != nil else {
+                surface.cancelWindowDrag()
+                return
+            }
+            completeDrop(drag, on: target, of: surface, isStageDrop: isStageDrop, stageId: dropStageId)
+        }
+    }
+
+    /// Hand a dropped window to MuxShots, or release it, and animate it into its target. A window not yet
+    /// managed is only taken once it has outlived its drop, since an application may merge it away, as
+    /// Chrome does with a tab dragged into another of its windows.
+    private func completeDrop(
+        _ drag: WindowDrag,
+        on target: DropTarget,
+        of surface: DropSurface,
+        isStageDrop: Bool,
+        stageId dropStageId: StageId?
+    ) {
         let droppedFrame = WindowServer.window(withId: drag.windowId).map { ScreenGeometry.appKitFrame(fromWindowServer: $0.frame) }
         let icon = NSRunningApplication(processIdentifier: drag.processId)?.icon
         let homeFrame = isStageDrop ? drag.startFrame : nil

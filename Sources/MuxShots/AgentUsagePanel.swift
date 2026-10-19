@@ -7,6 +7,10 @@ import SwiftUI
 struct AgentUsagePanel: View {
     private static let digitHeight: CGFloat = 9
     private static let rowHeight: CGFloat = 14
+    /// How strongly a running-out limit's row is washed red.
+    private static let criticalWashOpacity = 0.16
+    /// How far the red wash reaches past the row, so it frames the row without moving it.
+    private static let criticalWashInset: CGFloat = 6
     /// Room for "100%", so the gauges line up.
     private static let percentWidth: CGFloat = 32
     /// The widest countdown, which sets the countdown column's width.
@@ -120,6 +124,7 @@ struct AgentUsagePanel: View {
     private func limitRow(_ limit: AgentLimit, at date: Date) -> some View {
         let isReset = limit.resetsAt.map { $0 <= date } ?? false
         let remainingFraction = isReset ? 1 : limit.remainingFraction
+        let isCritical = !isReset && PropellantGauge.isCritical(remainingFraction: remainingFraction, severity: limit.severity)
         return HStack(spacing: 6) {
             Text(limit.title)
                 .font(.system(size: 10, weight: .medium))
@@ -139,6 +144,13 @@ struct AgentUsagePanel: View {
             .frame(width: SevenSegmentDisplay.width(of: Self.widestCountdown, digitHeight: Self.digitHeight), alignment: .trailing)
         }
         .frame(height: Self.rowHeight)
+        .background {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .fill(Color.red.opacity(isCritical ? Self.criticalWashOpacity : 0))
+                .padding(.horizontal, -Self.criticalWashInset)
+                .padding(.vertical, -2)
+        }
+        .animation(.easeInOut(duration: 0.3), value: isCritical)
         .help("\(limit.title): \(Int(limit.remainingFraction * 100))% left" + (limit.resetsAt.map { ", resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? ""))
     }
 
@@ -195,8 +207,13 @@ private struct PropellantGauge: View {
         .animation(.easeInOut(duration: 0.6), value: remainingFraction)
     }
 
+    /// Whether a limit is running out: its last tenth left, or the harness says so.
+    static func isCritical(remainingFraction: Double, severity: AgentLimitSeverity) -> Bool {
+        remainingFraction <= criticalFraction || severity == .critical
+    }
+
     private var fillColor: Color {
-        if remainingFraction <= Self.criticalFraction || severity == .critical {
+        if Self.isCritical(remainingFraction: remainingFraction, severity: severity) {
             return .red
         }
         if remainingFraction <= Self.lowFraction || severity == .warning {

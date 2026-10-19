@@ -23,6 +23,8 @@ protocol StageActions: AnyObject {
     /// Move a tab to just before another tab, or to the end with nil.
     func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?)
     func toggleSidebar()
+    /// Switch between the light and the dark theme.
+    func toggleTheme()
     /// Fill the display with the stage, or go back to its earlier frame.
     func toggleMaximize()
     func exitStage()
@@ -111,6 +113,7 @@ struct StageView: View {
                     .foregroundStyle(.secondary)
                     .padding(14)
             }
+            sidebarToolbar
         }
         .frame(maxHeight: .infinity)
         .background(.thinMaterial)
@@ -169,6 +172,28 @@ struct StageView: View {
                 }
         )
         .help("Drag to move the stage; double-click to fill the display")
+    }
+
+    /// The tools along the bottom of the sidebar.
+    private var sidebarToolbar: some View {
+        HStack(spacing: 4) {
+            headerButton(
+                model.isDarkTheme ? "sun.max" : "moon",
+                help: model.isDarkTheme ? "Switch to the light theme" : "Switch to the dark theme",
+                action: actions.toggleTheme
+            )
+            if !model.isSidebarCollapsed {
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: model.isSidebarCollapsed ? .center : .leading)
+        .padding(.horizontal, 10)
+        .frame(height: 38)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 1)
+        }
     }
 
     private func headerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {

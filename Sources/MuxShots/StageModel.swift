@@ -93,6 +93,8 @@ final class StageModel {
     /// A zone that just received a window, which pulses once.
     var landedZone: StageZone?
     var isSidebarCollapsed = false
+    /// Whether MuxShots draws dark now, which picks the theme button's symbol.
+    var isDarkTheme = false
     /// The group whose name is being edited.
     var editingGroupId: GroupId?
     /// The tab whose name is being edited.

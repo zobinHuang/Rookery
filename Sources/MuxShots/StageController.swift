@@ -215,6 +215,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             dismiss()
             return
         }
+        model.isDarkTheme = NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let activeGroup = workspaceController.group(onStage: stageId)
         model.listGroups = workspaceController.groups(ofStage: stageId).map { group in
             StageGroupRow(
@@ -325,6 +326,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     func exitStage() {
         close()
+    }
+
+    func toggleTheme() {
+        preferences.theme = model.isDarkTheme ? .light : .dark
     }
 
     func moveStageChanged() {

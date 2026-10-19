@@ -4,6 +4,12 @@ import MuxShotsPlatform
 import Observation
 import os
 
+/// The appearance MuxShots draws in.
+enum Theme: String {
+    case light
+    case dark
+}
+
 /// The user's settings, kept in `UserDefaults`; every change is saved at once and announced to observers.
 @MainActor
 @Observable
@@ -17,6 +23,7 @@ final class Preferences {
     private static let cycleHotkeyKey = "cycleHotkey"
     private static let stageHotkeyKey = "stageHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
+    private static let themeKey = "theme"
 
     static let defaultGroupModifiers: NSEvent.ModifierFlags = [.control, .option]
     static let defaultShowAllHotkey = Hotkey(keyCode: kVK_ANSI_0, modifiers: [.control, .option])
@@ -27,6 +34,16 @@ final class Preferences {
     @ObservationIgnored private let defaults: UserDefaults
     /// Called after any shortcut changes, so they can be registered again.
     @ObservationIgnored var onShortcutsChange: (() -> Void)?
+    /// Called after the theme changes, so it can be applied.
+    @ObservationIgnored var onThemeChange: (() -> Void)?
+
+    /// The appearance the user chose, or nil to follow the system's.
+    var theme: Theme? {
+        didSet {
+            defaults.set(theme?.rawValue, forKey: Self.themeKey)
+            onThemeChange?()
+        }
+    }
 
     /// Whether dragging a window offers the drop tray or panel.
     var isDropTrayEnabled: Bool {
@@ -88,6 +105,7 @@ final class Preferences {
         isDropTrayEnabled = defaults.object(forKey: Self.dropTrayKey) as? Bool ?? true
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
+        theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)
             .map(NSEvent.ModifierFlags.init(rawValue:)) ?? Self.defaultGroupModifiers
         showAllHotkey = Self.load(forKey: Self.showAllHotkeyKey, from: defaults) ?? Self.defaultShowAllHotkey

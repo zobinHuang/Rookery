@@ -19,6 +19,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var stageCoordinator: StageCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyTheme()
+        preferences.onThemeChange = { [weak self] in
+            self?.applyTheme()
+        }
         let controller = StatusMenuController(
             onAccessGranted: { [weak self] in
                 self?.startManaging()
@@ -86,6 +90,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceController?.stop()
         shortcutController?.stop()
         controlServer?.stop()
+    }
+
+    /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen.
+    private func applyTheme() {
+        NSApplication.shared.appearance = switch preferences.theme {
+        case .light:
+            NSAppearance(named: .aqua)
+        case .dark:
+            NSAppearance(named: .darkAqua)
+        case nil:
+            nil
+        }
+        stageCoordinator?.refresh()
     }
 
     /// The menu bar MuxShots shows while it is the active application.

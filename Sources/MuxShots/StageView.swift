@@ -28,6 +28,8 @@ protocol StageActions: AnyObject {
     /// Fill the display with the stage, or go back to its earlier frame.
     func toggleMaximize()
     func exitStage()
+    /// Open another MuxShots window.
+    func newStage()
     /// The user is dragging the stage by its sidebar header, towards another display.
     func moveStageChanged()
     func moveStageEnded()
@@ -146,18 +148,18 @@ struct StageView: View {
     private var sidebarHeader: some View {
         Group {
             if model.isSidebarCollapsed {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
+                    CloseButton(action: actions.exitStage)
                     headerButton("sidebar.left", help: "Show the sidebar", action: actions.toggleSidebar)
-                    headerButton("arrow.down.right.and.arrow.up.left", help: "Leave the stage", action: actions.exitStage)
                 }
                 .frame(maxWidth: .infinity)
             } else {
                 HStack(spacing: 10) {
+                    CloseButton(action: actions.exitStage)
                     Text("MuxShots")
                         .font(.system(size: 15, weight: .bold))
                     Spacer()
                     headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
-                    headerButton("arrow.down.right.and.arrow.up.left", help: "Leave the stage", action: actions.exitStage)
                 }
                 .padding(.horizontal, 14)
             }
@@ -182,7 +184,9 @@ struct StageView: View {
 
     /// The tools along the bottom of the sidebar.
     private var sidebarToolbar: some View {
-        HStack(spacing: 4) {
+        let layout = model.isSidebarCollapsed ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 4))
+        return layout {
+            headerButton("plus", help: "New MuxShots window", action: actions.newStage)
             headerButton(
                 model.isDarkTheme ? "sun.max" : "moon",
                 help: model.isDarkTheme ? "Switch to the light theme" : "Switch to the dark theme",
@@ -193,8 +197,9 @@ struct StageView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: model.isSidebarCollapsed ? .center : .leading)
+        .padding(.vertical, model.isSidebarCollapsed ? 8 : 0)
         .padding(.horizontal, 10)
-        .frame(height: 38)
+        .frame(minHeight: 38)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(StageColors.separator)
@@ -609,6 +614,36 @@ struct StageView: View {
 
     private static func payload(from listTexts: [String]) -> StagePayload? {
         listTexts.first.flatMap(StagePayload.init)
+    }
+}
+
+/// The red close button of a MuxShots window, showing its cross while the pointer is over it, as the
+/// close button of any macOS window does.
+struct CloseButton: View {
+    private static let diameter: CGFloat = 13
+
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(Color(nsColor: .systemRed))
+                .overlay {
+                    Circle().strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+                }
+                .overlay {
+                    if isHovered {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 7, weight: .black))
+                            .foregroundStyle(.black.opacity(0.55))
+                    }
+                }
+                .frame(width: Self.diameter, height: Self.diameter)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help("Close this MuxShots window")
     }
 }
 

@@ -25,7 +25,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "MuxShots",
-            dependencies: ["MuxShotsPlatform"],
+            dependencies: ["MuxShotsCore", "MuxShotsPlatform"],
             swiftSettings: strictSettings
         ),
         .testTarget(

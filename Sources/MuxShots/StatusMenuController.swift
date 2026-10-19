@@ -10,7 +10,13 @@ final class StatusMenuController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let permissionItem = NSMenuItem()
     private let grantItem = NSMenuItem()
+    private let onAccessGranted: @MainActor () -> Void
     private var permissionPollTask: Task<Void, Never>?
+
+    /// - Parameter onAccessGranted: called whenever the permission is found granted
+    init(onAccessGranted: @escaping @MainActor () -> Void) {
+        self.onAccessGranted = onAccessGranted
+    }
 
     /// Install the menu and start tracking the Accessibility permission.
     func start() {
@@ -59,6 +65,9 @@ final class StatusMenuController: NSObject {
             ? "Accessibility access granted"
             : "Accessibility access required"
         grantItem.isHidden = isPermissionGranted
+        if isPermissionGranted {
+            onAccessGranted()
+        }
     }
 
     @objc private func grantAccess() {

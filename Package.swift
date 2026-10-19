@@ -15,12 +15,22 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "MuxShotsCore",
+            swiftSettings: strictSettings
+        ),
+        .target(
             name: "MuxShotsPlatform",
+            dependencies: ["MuxShotsCore"],
             swiftSettings: strictSettings
         ),
         .executableTarget(
             name: "MuxShots",
             dependencies: ["MuxShotsPlatform"],
+            swiftSettings: strictSettings
+        ),
+        .testTarget(
+            name: "MuxShotsCoreTests",
+            dependencies: ["MuxShotsCore"],
             swiftSettings: strictSettings
         ),
     ]

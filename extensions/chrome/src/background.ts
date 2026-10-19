@@ -34,6 +34,8 @@ class MixerBridge {
     static readonly LIST_MODE_PRECEDENCE: readonly PageMode[] = ["page", "blocked", "waiting", "idle"];
     static readonly ERROR_NO_RECEIVER = "Receiving end does not exist";
     static readonly STORAGE_KEY_TAB_SETTINGS = "tab_settings";
+    /** The frame id of a tab's page itself, as opposed to the frames inside it. */
+    static readonly FRAME_ID_TOP = 0;
     static readonly CONTENT_SCRIPT_PATH = "content.js";
     /** The pages a content script can run in. */
     static readonly LIST_SCRIPTABLE_SCHEMES: readonly string[] = ["http:", "https:", "file:"];
@@ -43,6 +45,10 @@ class MixerBridge {
     private readonly _map_frame_modes = new Map<number, Map<number, PageMode>>();
     private readonly _set_captured = new Set<number>();
     private readonly _map_levels = new Map<number, ChannelLevels>();
+    /** How large a video each frame of each tab plays. */
+    private readonly _map_frame_videos = new Map<number, Map<number, number>>();
+    /** The frame showing each tab's video in the sidebar. */
+    private readonly _map_picture_frames = new Map<number, number>();
     private _report_timer: ReturnType<typeof setTimeout> | undefined;
     private _levels_timer: ReturnType<typeof setInterval> | undefined;
 
@@ -153,6 +159,11 @@ class MixerBridge {
         this._levels_timer = undefined;
         const list_tab_ids = [...new Set([...this._map_settings.keys(), ...this._set_captured])];
         this._map_levels.clear();
+        for (const [tab_id, frame_id] of [...this._map_picture_frames]) {
+            const stop: PageMessage = { type: "page_picture_stop" };
+            void this._send_to_frame({ tab_id, frame_id, message: stop });
+        }
+        this._map_picture_frames.clear();
         for (const tab_id of list_tab_ids) {
             if (this._set_captured.has(tab_id)) {
                 void this._stop_capture(tab_id);
@@ -174,11 +185,45 @@ class MixerBridge {
     }
 
     private _receive_command(message: unknown): void {
-        if (MessageSchema.type_of(message) === "hello") {
-            void this._restore_tabs();
-            return;
-        }
         const tab_id = MessageSchema.field(message, "tab_id");
+        switch (MessageSchema.type_of(message)) {
+            case "hello":
+                void this._restore_tabs();
+                return;
+            case "picture_start":
+                if (typeof tab_id === "number") {
+                    void this._start_picture(tab_id);
+                }
+                return;
+            case "picture_stop":
+                if (typeof tab_id === "number") {
+                    void this._stop_picture(tab_id);
+                }
+                return;
+            case "picture_answer": {
+                const sdp = MessageSchema.field(message, "sdp");
+                const frame_id = typeof tab_id === "number" ? this._map_picture_frames.get(tab_id) : undefined;
+                if (typeof tab_id === "number" && frame_id !== undefined && typeof sdp === "string") {
+                    const answer: PageMessage = { type: "page_picture_answer", sdp };
+                    void this._send_to_frame({ tab_id, frame_id, message: answer });
+                }
+                return;
+            }
+            case "picture_control": {
+                const is_playing = MessageSchema.field(message, "is_playing");
+                const frame_id = typeof tab_id === "number" ? this._map_picture_frames.get(tab_id) : undefined;
+                if (typeof tab_id === "number" && frame_id !== undefined && typeof is_playing === "boolean") {
+                    const control: PageMessage = { type: "page_picture_control", is_playing };
+                    void this._send_to_frame({ tab_id, frame_id, message: control });
+                }
+                return;
+            }
+            case "focus_tab":
+                if (typeof tab_id === "number") {
+                    void this._focus_tab(tab_id);
+                }
+                return;
+        }
         const settings = TrackSettingsSchema.parse(MessageSchema.field(message, "settings"));
         if (
             MessageSchema.type_of(message) !== "apply"
@@ -239,6 +284,8 @@ class MixerBridge {
                 && !(tab.mutedInfo?.muted ?? false)
                 && mode === "idle"
                 && !this._map_settings.has(tab.id)
+                && !this._map_picture_frames.has(tab.id)
+                && this._largest_video_frame(tab.id) === undefined
             ) {
                 continue;
             }
@@ -252,6 +299,7 @@ class MixerBridge {
                 is_muted: tab.mutedInfo?.muted ?? false,
                 mode,
                 settings: this._map_settings.get(tab.id) ?? null,
+                has_video: this._map_picture_frames.has(tab.id) || this._largest_video_frame(tab.id) !== undefined,
             });
         }
         const event: BrowserEvent = { type: "tabs", list_tabs };
@@ -307,6 +355,29 @@ class MixerBridge {
                 }
                 break;
             }
+            case "page_video": {
+                const area = MessageSchema.field(message, "area");
+                if (tab_id !== undefined && sender.frameId !== undefined && typeof area === "number") {
+                    const map_areas = this._map_frame_videos.get(tab_id) ?? new Map<number, number>();
+                    map_areas.set(sender.frameId, area);
+                    this._map_frame_videos.set(tab_id, map_areas);
+                    this._schedule_report();
+                }
+                break;
+            }
+            case "page_picture_state": {
+                const is_paused = MessageSchema.field(message, "is_paused");
+                if (tab_id !== undefined && this._map_picture_frames.has(tab_id) && typeof is_paused === "boolean") {
+                    const event: BrowserEvent = { type: "picture_state", tab_id, is_paused };
+                    this._port?.postMessage(event);
+                }
+                break;
+            }
+            case "page_picture_ended":
+                if (tab_id !== undefined && this._map_picture_frames.get(tab_id) === sender.frameId) {
+                    this._end_picture(tab_id);
+                }
+                break;
             case "capture_ended": {
                 const ended_tab_id = MessageSchema.field(message, "tab_id");
                 if (typeof ended_tab_id === "number" && this._set_captured.has(ended_tab_id)) {
@@ -324,6 +395,10 @@ class MixerBridge {
     private _on_tab_updated(tab_id: number, change: chrome.tabs.OnUpdatedInfo): void {
         if (change.status === "loading" && change.url !== undefined) {
             this._map_frame_modes.delete(tab_id);
+            this._map_frame_videos.delete(tab_id);
+            if (this._map_picture_frames.has(tab_id)) {
+                this._end_picture(tab_id);
+            }
         }
         this._schedule_report();
     }
@@ -333,6 +408,10 @@ class MixerBridge {
         void this._store_settings();
         this._map_frame_modes.delete(tab_id);
         this._map_levels.delete(tab_id);
+        this._map_frame_videos.delete(tab_id);
+        if (this._map_picture_frames.has(tab_id)) {
+            this._end_picture(tab_id);
+        }
         if (this._set_captured.delete(tab_id)) {
             const capture: CaptureMessage = { type: "capture_stop", tab_id };
             void this._send_to_offscreen(capture);
@@ -413,6 +492,84 @@ class MixerBridge {
                 }
                 console.warn(`MuxShots cannot reach tab ${tab.id}: ${err.message}`);
             }
+        }
+    }
+
+    // Showing videos in the sidebar
+
+    /** The frame of a tab playing its largest video, if any frame plays one. */
+    private _largest_video_frame(tab_id: number): number | undefined {
+        let best_frame_id: number | undefined;
+        let best_area = 0;
+        for (const [frame_id, area] of this._map_frame_videos.get(tab_id) ?? []) {
+            if (area > best_area) {
+                best_frame_id = frame_id;
+                best_area = area;
+            }
+        }
+        return best_frame_id;
+    }
+
+    /** Show a tab's video in the sidebar, from the frame playing its largest video. */
+    private async _start_picture(tab_id: number): Promise<void> {
+        await this._stop_picture(tab_id);
+        const frame_id = this._largest_video_frame(tab_id) ?? MixerBridge.FRAME_ID_TOP;
+        this._map_picture_frames.set(tab_id, frame_id);
+        const start: PageMessage = { type: "page_picture_start" };
+        const reply = await this._send_to_frame({ tab_id, frame_id, message: start });
+        const sdp = MessageSchema.field(reply, "sdp");
+        if (typeof sdp !== "string") {
+            this._end_picture(tab_id);
+        } else if (this._map_picture_frames.get(tab_id) === frame_id) {
+            const offer: BrowserEvent = { type: "picture_offer", tab_id, sdp };
+            this._port?.postMessage(offer);
+        }
+        this._schedule_report();
+    }
+
+    private async _stop_picture(tab_id: number): Promise<void> {
+        const frame_id = this._map_picture_frames.get(tab_id);
+        if (frame_id === undefined) {
+            return;
+        }
+        this._map_picture_frames.delete(tab_id);
+        const stop: PageMessage = { type: "page_picture_stop" };
+        await this._send_to_frame({ tab_id, frame_id, message: stop });
+        this._schedule_report();
+    }
+
+    /** Tell the app a tab's video is no longer shown, as it ended, could not be shown or its tab went away. */
+    private _end_picture(tab_id: number): void {
+        this._map_picture_frames.delete(tab_id);
+        const event: BrowserEvent = { type: "picture_ended", tab_id };
+        this._port?.postMessage(event);
+        this._schedule_report();
+    }
+
+    private async _focus_tab(tab_id: number): Promise<void> {
+        const tab = await chrome.tabs.update(tab_id, { active: true });
+        if (tab?.windowId !== undefined) {
+            await chrome.windows.update(tab.windowId, { focused: true });
+        }
+    }
+
+    private async _send_to_frame(options: {
+        tab_id: number;
+        frame_id: number;
+        message: PageMessage;
+    }): Promise<unknown> {
+        try {
+            const reply: unknown = await chrome.tabs.sendMessage(
+                options.tab_id,
+                options.message,
+                { frameId: options.frame_id },
+            );
+            return reply;
+        } catch (err: unknown) {
+            if (err instanceof Error && err.message.includes(MixerBridge.ERROR_NO_RECEIVER)) {
+                return undefined;
+            }
+            throw err;
         }
     }
 

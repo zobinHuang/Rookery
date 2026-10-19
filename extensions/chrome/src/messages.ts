@@ -39,6 +39,8 @@ export interface BrowserTab {
     mode: TabMode;
     /** The settings the tab was given, kept for as long as the tab and the browser live. */
     settings: TrackSettings | null;
+    /** Whether the tab plays a video that could be shown in the sidebar. */
+    has_video: boolean;
 }
 
 /**
@@ -46,14 +48,22 @@ export interface BrowserTab {
  */
 export type BrowserEvent =
     | { type: "tabs"; list_tabs: BrowserTab[] }
-    | { type: "levels"; list_levels: TabLevels[] };
+    | { type: "levels"; list_levels: TabLevels[] }
+    | { type: "picture_offer"; tab_id: number; sdp: string }
+    | { type: "picture_state"; tab_id: number; is_paused: boolean }
+    | { type: "picture_ended"; tab_id: number };
 
 /**
  * A message from the MuxShots app to the extension.
  */
 export type BrowserCommand =
     | { type: "hello" }
-    | { type: "apply"; tab_id: number; settings: TrackSettings };
+    | { type: "apply"; tab_id: number; settings: TrackSettings }
+    | { type: "picture_start"; tab_id: number }
+    | { type: "picture_answer"; tab_id: number; sdp: string }
+    | { type: "picture_stop"; tab_id: number }
+    | { type: "picture_control"; tab_id: number; is_playing: boolean }
+    | { type: "focus_tab"; tab_id: number };
 
 /**
  * A message between the background and a page's content script.
@@ -62,7 +72,14 @@ export type PageMessage =
     | { type: "page_hello" }
     | { type: "page_apply"; settings: TrackSettings }
     | { type: "page_state"; mode: PageMode }
-    | { type: "page_levels"; levels: ChannelLevels };
+    | { type: "page_levels"; levels: ChannelLevels }
+    | { type: "page_video"; area: number }
+    | { type: "page_picture_start" }
+    | { type: "page_picture_stop" }
+    | { type: "page_picture_control"; is_playing: boolean }
+    | { type: "page_picture_answer"; sdp: string }
+    | { type: "page_picture_state"; is_paused: boolean }
+    | { type: "page_picture_ended" };
 
 /**
  * A message between the background and the offscreen document that plays captured tabs.

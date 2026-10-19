@@ -58,4 +58,22 @@ struct AgentUsageTests {
                 == #"CLAUDE_CONFIG_DIR="/tmp/a\$b" claude auth login"#
         )
     }
+
+    @Test func tellsWhichCodeAgentADirectoryBelongsTo() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let claude = root.appending(path: "claude")
+        let codex = root.appending(path: "codex")
+        let empty = root.appending(path: "empty")
+        for directory in [claude, codex, empty] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data().write(to: claude.appending(path: ".claude.json"))
+        try Data().write(to: codex.appending(path: "config.toml"))
+        try Data().write(to: codex.appending(path: "auth.json"))
+
+        #expect(AgentDirectoryContents.inspect(claude.path) == .harness(.claudeCode))
+        #expect(AgentDirectoryContents.inspect(codex.path) == .unsupported(name: "Codex"))
+        #expect(AgentDirectoryContents.inspect(empty.path) == .empty)
+    }
 }

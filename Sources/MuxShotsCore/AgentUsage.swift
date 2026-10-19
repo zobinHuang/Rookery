@@ -228,3 +228,35 @@ public enum ClaudeCodeUsageDecoder {
         }
     }
 }
+
+/// What a configuration directory holds, as far as the code agents it may belong to go.
+public enum AgentDirectoryContents: Equatable, Sendable {
+    /// A harness MuxShots reads the limits of keeps its configuration there.
+    case harness(AgentHarness)
+    /// A code agent MuxShots cannot read the limits of yet keeps its configuration there.
+    case unsupported(name: String)
+    /// Nothing is there yet, as for a directory made for a new account to sign in to.
+    case empty
+    /// Something else is there.
+    case unknown
+
+    private static let listClaudeCodeMarkers = [".claude.json", "settings.json", "projects", "plugins"]
+    private static let listCodexMarkers = ["config.toml", "auth.json"]
+    private static let codexName = "Codex"
+
+    /// Tell what a directory holds from the files each code agent keeps there.
+    ///
+    /// - Parameter path: the directory, a leading "~" standing for the home directory
+    /// - Returns: what the directory holds
+    public static func inspect(_ path: String) -> AgentDirectoryContents {
+        let directory = NSString(string: path).expandingTildeInPath
+        let setNames = Set((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [])
+        if listCodexMarkers.allSatisfy(setNames.contains) {
+            return .unsupported(name: codexName)
+        }
+        if listClaudeCodeMarkers.contains(where: setNames.contains) {
+            return .harness(.claudeCode)
+        }
+        return setNames.allSatisfy { $0.hasPrefix(".") } ? .empty : .unknown
+    }
+}

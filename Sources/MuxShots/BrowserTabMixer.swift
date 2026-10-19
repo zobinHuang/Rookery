@@ -48,6 +48,20 @@ final class BrowserTabMixer {
     private(set) var sessionCount = 0
     /// The tabs' videos shown in the sidebar.
     @ObservationIgnored let pictures = BrowserPictures()
+    /// Whether a mixer shows the tabs' meters, so the browsers should measure and report their levels.
+    @ObservationIgnored var isMeterWanted = false {
+        didSet {
+            guard isMeterWanted != oldValue else {
+                return
+            }
+            for continuation in mapContinuations.values {
+                continuation.yield(.meter(isWanted: isMeterWanted))
+            }
+            if !isMeterWanted {
+                mapLevels = [:]
+            }
+        }
+    }
 
     /// Register a newly connected extension.
     func openSession() -> BrowserSession {
@@ -55,6 +69,9 @@ final class BrowserTabMixer {
         nextSessionId += 1
         let (commands, continuation) = AsyncStream.makeStream(of: BrowserCommand.self)
         continuation.yield(.hello)
+        if isMeterWanted {
+            continuation.yield(.meter(isWanted: true))
+        }
         mapContinuations[sessionId] = continuation
         sessionCount = mapContinuations.count
         return BrowserSession(sessionId: sessionId, commands: commands)

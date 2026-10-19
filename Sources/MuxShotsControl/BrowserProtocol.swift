@@ -179,6 +179,8 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
     case pictureControl(tabId: Int, isPlaying: Bool)
     /// Bring a tab and its browser window to the front.
     case focusTab(tabId: Int)
+    /// Start or stop measuring and reporting the tabs' levels, as a mixer shows their meters or none does.
+    case meter(isWanted: Bool)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -186,6 +188,7 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
         case settings
         case isPlaying
         case sdp
+        case isWanted
     }
 
     private enum Kind: String, Codable {
@@ -196,6 +199,7 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
         case pictureStop = "picture_stop"
         case pictureControl = "picture_control"
         case focusTab = "focus_tab"
+        case meter
     }
 
     public init(from decoder: any Decoder) throws {
@@ -219,6 +223,8 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
             )
         case .focusTab:
             self = .focusTab(tabId: try container.decode(Int.self, forKey: .tabId))
+        case .meter:
+            self = .meter(isWanted: try container.decode(Bool.self, forKey: .isWanted))
         case .apply:
             self = .apply(
                 tabId: try container.decode(Int.self, forKey: .tabId),
@@ -249,6 +255,9 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
         case .focusTab(let tabId):
             try container.encode(Kind.focusTab, forKey: .type)
             try container.encode(tabId, forKey: .tabId)
+        case .meter(let isWanted):
+            try container.encode(Kind.meter, forKey: .type)
+            try container.encode(isWanted, forKey: .isWanted)
         case .apply(let tabId, let settings):
             try container.encode(Kind.apply, forKey: .type)
             try container.encode(tabId, forKey: .tabId)

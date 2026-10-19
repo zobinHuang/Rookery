@@ -23,6 +23,8 @@ final class MixerController {
     @ObservationIgnored private var processObservation: AudioProcessObservation?
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var meterTimer: Timer?
+    /// How many mixers are on screen, which are the only ones whose meters need reading.
+    @ObservationIgnored private var meterViewerCount = 0
     /// The settings of every application ever adjusted, by bundle id.
     private var mapSettings: [String: MixerTrackSettings]
     /// The applications that can be mixed: those connected to the audio system, and those taken over.
@@ -91,16 +93,30 @@ final class MixerController {
         reloadTracks()
     }
 
-    /// Read the captured tracks' levels for their meters while any track is captured.
+    /// Start reading levels for a mixer that came on screen.
+    func beginShowingMeters() {
+        meterViewerCount += 1
+        browserTabs.isMeterWanted = true
+        updateMeterTimer()
+    }
+
+    /// Stop reading levels for a mixer that went off screen, once no mixer shows any.
+    func endShowingMeters() {
+        meterViewerCount = max(meterViewerCount - 1, 0)
+        browserTabs.isMeterWanted = meterViewerCount > 0
+        updateMeterTimer()
+    }
+
+    /// Read the captured tracks' levels for their meters while any track is captured and a mixer shows them.
     private func updateMeterTimer() {
-        let isAnyCapturing = listTracks.contains(where: \.isCapturing)
-        if isAnyCapturing, meterTimer == nil {
+        let isReading = meterViewerCount > 0 && listTracks.contains(where: \.isCapturing)
+        if isReading, meterTimer == nil {
             meterTimer = Timer.scheduledTimer(withTimeInterval: Self.meterInterval, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.readLevels()
                 }
             }
-        } else if !isAnyCapturing {
+        } else if !isReading {
             meterTimer?.invalidate()
             meterTimer = nil
             if !mapLevels.isEmpty {

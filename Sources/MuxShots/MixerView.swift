@@ -15,6 +15,13 @@ struct MixerView: View {
     @State private var expandedStripId: MixerStripId?
 
     var body: some View {
+        content
+            .onAppear(perform: mixer.beginShowingMeters)
+            .onDisappear(perform: mixer.endShowingMeters)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if mixer.listTracks.isEmpty && mixer.browserTabs.listTabs.isEmpty {
             if !isCollapsed {
                 emptyState
@@ -129,7 +136,7 @@ struct MixerView: View {
             icon: .application(bundleId: track.bundleId),
             status: Self.status(of: track, settings: settings),
             settings: settings,
-            levels: mixer.mapLevels[track.bundleId] ?? MixerLevels(),
+            readLevels: { mixer.mapLevels[track.bundleId] ?? MixerLevels() },
             isExpanded: expandedStripId == stripId,
             onToggleExpanded: { toggleExpanded(stripId) },
             onUpdate: { change in mixer.update(track.bundleId, change) }
@@ -144,7 +151,7 @@ struct MixerView: View {
             icon: .website(url: browserTab.tab.favIconUrl.flatMap(URL.init(string:))),
             status: Self.status(of: browserTab.tab),
             settings: browserTabs.settings(of: browserTab.key),
-            levels: browserTabs.mapLevels[browserTab.key] ?? MixerLevels(),
+            readLevels: { browserTabs.mapLevels[browserTab.key] ?? MixerLevels() },
             isExpanded: expandedStripId == stripId,
             onToggleExpanded: { toggleExpanded(stripId) },
             onUpdate: { change in browserTabs.update(browserTab.key, change) },
@@ -195,7 +202,7 @@ struct MixerView: View {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
                             .strokeBorder(Color.accentColor, lineWidth: track.settings.isTakenOver ? 2 : 0)
                     }
-                StereoMeter(levels: mixer.mapLevels[track.bundleId] ?? MixerLevels())
+                LiveStereoMeter { mixer.mapLevels[track.bundleId] ?? MixerLevels() }
                     .frame(width: 30)
                     .opacity(track.isCapturing ? 1 : 0)
             }
@@ -313,7 +320,8 @@ private struct MixerStrip: View {
     let icon: MixerStripIcon
     let status: MixerStripStatus
     let settings: MixerTrackSettings
-    let levels: MixerLevels
+    /// The track's levels now, read by its meter alone so a new level redraws only the meter.
+    let readLevels: () -> MixerLevels
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
     /// Change the track's settings.
@@ -329,7 +337,7 @@ private struct MixerStrip: View {
             }
             if settings.isTakenOver {
                 VStack(alignment: .leading, spacing: 8) {
-                    StereoMeter(levels: levels)
+                    LiveStereoMeter(readLevels: readLevels)
                     labeledSlider(
                         symbol: volumeSymbol,
                         value: binding(\.volume),

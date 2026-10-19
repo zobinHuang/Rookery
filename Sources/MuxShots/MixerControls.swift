@@ -131,6 +131,15 @@ struct EqualizerBandSlider: View {
     }
 }
 
+/// A stereo meter reading its levels itself, so a new level redraws only it and not the strip around it.
+struct LiveStereoMeter: View {
+    let readLevels: () -> MixerLevels
+
+    var body: some View {
+        StereoMeter(levels: readLevels())
+    }
+}
+
 /// Two thin bars, left channel over right, lit green through amber to red as the sound gets louder.
 struct StereoMeter: View {
     private static let barHeight: CGFloat = 3

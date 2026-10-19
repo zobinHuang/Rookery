@@ -8,6 +8,9 @@ struct WorldClockView: View {
     private static let dateDigitHeight: CGFloat = 9
     private static let dateSpacing: CGFloat = 4
     private static let dateWeekdaySpacing: CGFloat = 5
+    /// How the identifiers of zones that are fixed offsets from UTC start.
+    private static let listFixedOffsetPrefixes = ["UTC", "GMT"]
+    private static let fixedOffsetDetail = "Fixed offset"
     /// Room for the widest weekday, so every row's date lines up.
     private static let weekdayWidth: CGFloat = 24
     /// The weekdays as the display spells them, Sunday first as the calendar counts them.
@@ -65,9 +68,11 @@ struct WorldClockView: View {
         }
     }
 
-    /// The zone's abbreviation, with how many days it is ahead of or behind here when that differs.
+    /// The zone's abbreviation, or for a fixed offset from UTC that it is one, with how many days it is
+    /// ahead of or behind here when that differs.
     private func detail(for timeZone: TimeZone, at date: Date) -> String {
-        let abbreviation = timeZone.abbreviation(for: date) ?? timeZone.identifier
+        let isFixedOffset = Self.listFixedOffsetPrefixes.contains { timeZone.identifier.hasPrefix($0) }
+        let abbreviation = isFixedOffset ? Self.fixedOffsetDetail : timeZone.abbreviation(for: date) ?? timeZone.identifier
         var calendarHere = Calendar(identifier: .gregorian)
         calendarHere.timeZone = .current
         var calendarThere = Calendar(identifier: .gregorian)

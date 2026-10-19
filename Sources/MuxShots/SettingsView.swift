@@ -74,7 +74,7 @@ struct SettingsView: View {
                         .help("Remove \(city.name)")
                     }
                 }
-                TextField("Add a city", text: $citySearch.query, prompt: Text("Search any city, e.g. Shenzhen or 深圳"))
+                TextField("Add a city or time zone", text: $citySearch.query, prompt: Text("A city or a zone, e.g. Shenzhen, 深圳, UTC, UTC+8 or PST"))
                 ForEach(WorldClock.searchTimeZoneCities(matching: citySearch.query).filter {
                     !preferences.listClockCities.contains($0)
                 }) { city in
@@ -83,6 +83,20 @@ struct SettingsView: View {
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle")
+                            Text(city.name)
+                            Text(city.timeZoneId)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+                ForEach(listTimeZoneResults) { city in
+                    Button {
+                        addClockCity(city)
+                    } label: {
+                        HStack {
+                            Image(systemName: "clock")
                             Text(city.name)
                             Text(city.timeZoneId)
                                 .font(.caption)
@@ -114,7 +128,7 @@ struct SettingsView: View {
             } header: {
                 Text("World Clock")
             } footer: {
-                Text("Shown at the bottom of the stage's sidebar, from the system clock and time zones. Cities other than those time zones are named after are found through Apple Maps.")
+                Text("Shown at the bottom of the stage's sidebar, from the system clock and time zones. Add a city, found through Apple Maps when it is not one time zones are named after, or a zone itself: UTC, an offset such as UTC+8, an abbreviation such as PST, or a name such as Pacific.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -161,6 +175,13 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Zones the query names as zones, rather than as cities, not on the clock already.
+    private var listTimeZoneResults: [WorldClockCity] {
+        TimeZoneSearch.listMatches(for: citySearch.query)
+            .map { WorldClockCity(name: $0.name, timeZoneId: $0.timeZoneId) }
+            .filter { !preferences.listClockCities.contains($0) }
     }
 
     private func addClockCity(_ city: WorldClockCity) {

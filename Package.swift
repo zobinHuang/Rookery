@@ -13,6 +13,7 @@ let package = Package(
     products: [
         .executable(name: "MuxShots", targets: ["MuxShots"]),
         .executable(name: "muxctl", targets: ["muxctl"]),
+        .executable(name: "muxshots-chrome-host", targets: ["MuxShotsChromeHost"]),
     ],
     targets: [
         .target(
@@ -39,9 +40,14 @@ let package = Package(
             dependencies: ["MuxShotsCore", "MuxShotsControl"],
             swiftSettings: strictSettings
         ),
+        .executableTarget(
+            name: "MuxShotsChromeHost",
+            dependencies: ["MuxShotsControl"],
+            swiftSettings: strictSettings
+        ),
         .testTarget(
             name: "MuxShotsCoreTests",
-            dependencies: ["MuxShotsCore"],
+            dependencies: ["MuxShotsCore", "MuxShotsControl"],
             swiftSettings: strictSettings
         ),
     ]

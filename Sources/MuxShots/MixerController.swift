@@ -18,6 +18,8 @@ final class MixerController {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let mixer = AudioMixer()
+    /// The browser tabs, mixed one by one through the browser extension.
+    @ObservationIgnored let browserTabs = BrowserTabMixer()
     @ObservationIgnored private var processObservation: AudioProcessObservation?
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var meterTimer: Timer?

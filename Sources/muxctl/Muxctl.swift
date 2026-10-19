@@ -14,8 +14,8 @@ enum Muxctl {
                muxctl switch <group-name-or-position> | --all
                muxctl stage on|off
                muxctl audio [--json]
-               muxctl audio take|release <bundle-id>
-               muxctl audio set <bundle-id> <setting>=<value>...
+               muxctl audio take|release <bundle-id>|tab:<session>.<tab>
+               muxctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
                  settings: volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
                            eq=on|off eq<1-10>=-12...12 (\(bandList)) reverb=<room> mix=0...100
                  rooms: \(ReverbRoom.allCases.map(\.rawValue).joined(separator: " "))
@@ -110,7 +110,7 @@ enum Muxctl {
             Swift.print("~ \(row(for: window, isHidden: false))")
         case .change(.removed(let windowId)):
             Swift.print("- \(windowId)")
-        case .mixer(let listTracks, let mapLevels):
+        case .mixer(let listTracks, let mapLevels, let listTabs):
             for track in listTracks {
                 let marker = track.isCapturing ? "* " : track.settings.isTakenOver ? "~ " : "  "
                 let state = track.isPlaying ? "playing" : "silent "
@@ -123,7 +123,16 @@ enum Muxctl {
                     Swift.print("    error: \(error)")
                 }
             }
-            Swift.print("\(listTracks.count) tracks, \(listTracks.filter(\.isCapturing).count) captured")
+            for status in listTabs {
+                let target = MixerTarget.browserTab(sessionId: status.sessionId, tabId: status.tab.tabId)
+                let marker = status.settings.isTakenOver ? "* " : "  "
+                let title = String(status.tab.title.prefix(titleWidth))
+                Swift.print("\(marker)\(status.tab.mode.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0)) \(target.description) \(String(format: "level %.3f", status.level)) \(title)")
+                if status.settings.isTakenOver {
+                    Swift.print("    \(summary(of: status.settings))")
+                }
+            }
+            Swift.print("\(listTracks.count) tracks, \(listTracks.filter(\.isCapturing).count) captured, \(listTabs.count) browser tabs")
         case .done:
             break
         case .failure(let failure):
@@ -168,10 +177,11 @@ enum Muxctl {
         guard let subcommand = listArguments.first, subcommand != jsonFlag else {
             return .mixer
         }
-        guard let bundleId = listArguments.dropFirst().first else {
+        guard let targetText = listArguments.dropFirst().first else {
             exit(withMessage: usage)
         }
-        var settings = await currentSettings(of: bundleId)
+        let target = MixerTarget(targetText)
+        var settings = await currentSettings(of: target)
         switch subcommand {
         case "take":
             settings.isTakenOver = true
@@ -188,18 +198,23 @@ enum Muxctl {
         default:
             exit(withMessage: usage)
         }
-        return .mixerApply(bundleId: bundleId, settings: settings)
+        return .mixerApply(target: target, settings: settings)
     }
 
-    private static func currentSettings(of bundleId: String) async -> MixerTrackSettings {
+    private static func currentSettings(of target: MixerTarget) async -> MixerTrackSettings {
         do {
             let connection = try await ControlConnection.connect(to: ControlSocket.url)
             defer { connection.cancel() }
             try await connection.send(ControlRequest.mixer)
-            guard case .mixer(let listTracks, _) = try await connection.receive(ControlMessage.self) else {
+            guard case .mixer(let listTracks, _, let listTabs) = try await connection.receive(ControlMessage.self) else {
                 return MixerTrackSettings()
             }
-            return listTracks.first { $0.bundleId == bundleId }?.settings ?? MixerTrackSettings()
+            switch target {
+            case .application(let bundleId):
+                return listTracks.first { $0.bundleId == bundleId }?.settings ?? MixerTrackSettings()
+            case .browserTab(let sessionId, let tabId):
+                return listTabs.first { $0.sessionId == sessionId && $0.tab.tabId == tabId }?.settings ?? MixerTrackSettings()
+            }
         } catch {
             exit(withMessage: "muxctl: \(error)")
         }

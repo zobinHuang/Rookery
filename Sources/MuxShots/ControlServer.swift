@@ -152,12 +152,59 @@ final class ControlServer: Sendable {
                 try await connection.send(ControlMessage.done)
             case .mixer:
                 try await connection.send(await mixerMessage(mixerController))
-            case .mixerApply(let bundleId, let settings):
+            case .mixerApply(.application(let bundleId), let settings):
                 await mixerController.apply(settings, to: bundleId)
                 try await connection.send(await mixerMessage(mixerController))
+            case .mixerApply(.browserTab(let sessionId, let tabId), let settings):
+                await mixerController.browserTabs.update(BrowserTabKey(sessionId: sessionId, tabId: tabId)) { $0 = settings }
+                try await connection.send(await mixerMessage(mixerController))
+            case .browserSession:
+                await serveBrowser(connection, browserTabs: mixerController.browserTabs)
             }
         } catch {
             logger.info("control session ended: \(error)")
+        }
+    }
+
+    /// Pass a browser extension's reports to the tab mixer and its commands back, until it disconnects.
+    private static func serveBrowser(_ connection: ControlConnection, browserTabs: BrowserTabMixer) async {
+        let session = await browserTabs.openSession()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await relayBrowserEvents(from: connection, to: browserTabs, sessionId: session.sessionId)
+            }
+            group.addTask {
+                await relayBrowserCommands(session.commands, to: connection)
+            }
+            await group.next()
+            group.cancelAll()
+        }
+        await browserTabs.closeSession(session.sessionId)
+    }
+
+    private static func relayBrowserEvents(
+        from connection: ControlConnection,
+        to browserTabs: BrowserTabMixer,
+        sessionId: Int
+    ) async {
+        let decoder = BrowserWire.makeDecoder()
+        do {
+            while let event = try await connection.receive(BrowserEvent.self, decoder: decoder) {
+                await browserTabs.receive(event, in: sessionId)
+            }
+        } catch {
+            logger.info("browser session ended: \(error)")
+        }
+    }
+
+    private static func relayBrowserCommands(_ commands: AsyncStream<BrowserCommand>, to connection: ControlConnection) async {
+        let encoder = BrowserWire.makeEncoder()
+        do {
+            for await command in commands {
+                try await connection.send(command, encoder: encoder)
+            }
+        } catch {
+            logger.info("browser session ended: \(error)")
         }
     }
 
@@ -168,6 +215,16 @@ final class ControlServer: Sendable {
             let levels = mixerController.takeLevels(of: track.bundleId)
             return (track.bundleId, max(levels.left, levels.right))
         })
-        return .mixer(listTracks: listTracks, mapLevels: mapLevels)
+        let browserTabs = mixerController.browserTabs
+        let listTabs = browserTabs.listTabs.map { browserTab in
+            let levels = browserTabs.mapLevels[browserTab.key] ?? MixerLevels()
+            return MixerTabStatus(
+                sessionId: browserTab.key.sessionId,
+                tab: browserTab.tab,
+                settings: browserTabs.settings(of: browserTab.key),
+                level: max(levels.left, levels.right)
+            )
+        }
+        return .mixer(listTracks: listTracks, mapLevels: mapLevels, listTabs: listTabs)
     }
 }

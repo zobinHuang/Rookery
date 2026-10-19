@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
         NSApplication.shared.mainMenu = makeMainMenu()
         mixerController.start()
+        ChromeNativeHost.register()
         if !AccessibilityPermission.isGranted {
             AccessibilityPermission.requestAccess()
         }

@@ -24,7 +24,9 @@ final class Preferences {
     private static let stageHotkeyKey = "stageHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let themeKey = "theme"
-    private static let clockTimeZonesKey = "clockTimeZoneIds"
+    /// Where the world clock's cities were kept when they were time zones alone, read once to carry them over.
+    private static let legacyClockTimeZonesKey = "clockTimeZoneIds"
+    private static let clockCitiesKey = "clockCities"
 
     static let defaultGroupModifiers: NSEvent.ModifierFlags = [.control, .option]
     static let defaultShowAllHotkey = Hotkey(keyCode: kVK_ANSI_0, modifiers: [.control, .option])
@@ -40,10 +42,14 @@ final class Preferences {
     /// Called after the world clock's cities change, so the stages can show them.
     @ObservationIgnored var onWorldClockChange: (() -> Void)?
 
-    /// The time zones the world clock shows, in order, by identifier such as "Asia/Shanghai".
-    var listClockTimeZoneIds: [String] {
+    /// The cities the world clock shows, in order.
+    var listClockCities: [WorldClockCity] {
         didSet {
-            defaults.set(listClockTimeZoneIds, forKey: Self.clockTimeZonesKey)
+            do {
+                defaults.set(try JSONEncoder().encode(listClockCities), forKey: Self.clockCitiesKey)
+            } catch {
+                Self.logger.error("cannot store the world clock's cities: \(error)")
+            }
             onWorldClockChange?()
         }
     }
@@ -117,7 +123,7 @@ final class Preferences {
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
-        listClockTimeZoneIds = defaults.stringArray(forKey: Self.clockTimeZonesKey) ?? WorldClock.listDefaultTimeZoneIds
+        listClockCities = Self.loadClockCities(from: defaults)
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)
             .map(NSEvent.ModifierFlags.init(rawValue:)) ?? Self.defaultGroupModifiers
         showAllHotkey = Self.load(forKey: Self.showAllHotkeyKey, from: defaults) ?? Self.defaultShowAllHotkey
@@ -142,6 +148,21 @@ final class Preferences {
             Self.logger.error("cannot save shortcut \(key, privacy: .public): \(error, privacy: .public)")
         }
         onShortcutsChange?()
+    }
+
+    /// The stored cities, else those kept as time zones alone by earlier versions, else the defaults.
+    private static func loadClockCities(from defaults: UserDefaults) -> [WorldClockCity] {
+        if let data = defaults.data(forKey: clockCitiesKey) {
+            do {
+                return try JSONDecoder().decode([WorldClockCity].self, from: data)
+            } catch {
+                logger.error("cannot read the world clock's cities: \(error)")
+            }
+        }
+        if let listTimeZoneIds = defaults.stringArray(forKey: legacyClockTimeZonesKey) {
+            return listTimeZoneIds.map(WorldClock.city(forTimeZoneId:))
+        }
+        return WorldClock.listDefaultCities
     }
 
     private static func load(forKey key: String, from defaults: UserDefaults) -> Hotkey? {

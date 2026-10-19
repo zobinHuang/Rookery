@@ -147,8 +147,8 @@ struct StageView: View {
                     .foregroundStyle(.secondary)
                     .padding(14)
             }
-            if !model.isSidebarCollapsed && !model.listClockTimeZoneIds.isEmpty {
-                WorldClockView(listTimeZoneIds: model.listClockTimeZoneIds)
+            if !model.isSidebarCollapsed && !model.listClockCities.isEmpty {
+                WorldClockView(listCities: model.listClockCities)
                     .overlay(alignment: .top) {
                         Rectangle()
                             .fill(StageColors.separator)

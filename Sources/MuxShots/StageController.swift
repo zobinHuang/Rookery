@@ -238,7 +238,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             return
         }
         model.isDarkTheme = NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        model.listClockTimeZoneIds = preferences.listClockTimeZoneIds
+        model.listClockCities = preferences.listClockCities
         let activeGroup = workspaceController.group(onStage: stageId)
         model.listGroups = workspaceController.groups(ofStage: stageId).map { group in
             StageGroupRow(

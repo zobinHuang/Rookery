@@ -5,14 +5,14 @@ import SwiftUI
 struct WorldClockView: View {
     private static let digitHeight: CGFloat = 19
 
-    let listTimeZoneIds: [String]
+    let listCities: [WorldClockCity]
 
     var body: some View {
         TimelineView(.everyMinute) { context in
             VStack(spacing: 8) {
-                ForEach(listTimeZoneIds, id: \.self) { timeZoneId in
-                    if let timeZone = TimeZone(identifier: timeZoneId) {
-                        row(for: timeZone, at: context.date)
+                ForEach(listCities) { city in
+                    if let timeZone = TimeZone(identifier: city.timeZoneId) {
+                        row(for: city, in: timeZone, at: context.date)
                     }
                 }
             }
@@ -21,10 +21,10 @@ struct WorldClockView: View {
         .padding(.vertical, 10)
     }
 
-    private func row(for timeZone: TimeZone, at date: Date) -> some View {
+    private func row(for city: WorldClockCity, in timeZone: TimeZone, at date: Date) -> some View {
         HStack(alignment: .center, spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(WorldClock.cityName(forTimeZoneId: timeZone.identifier))
+                Text(city.name)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
                 Text(detail(for: timeZone, at: date))

@@ -1,4 +1,5 @@
 import AppKit
+import MapKit
 import MuxShotsPlatform
 import SwiftUI
 
@@ -16,7 +17,8 @@ struct SettingsView: View {
     @Bindable var preferences: Preferences
     let recorder: ShortcutRecorder
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
-    @State private var clockSearch = ""
+    @State private var citySearch = WorldClockCitySearch()
+    @State private var clockSearchError: String?
     @State private var loginItemError: String?
 
     /// An AppKit view hosting the settings.
@@ -49,45 +51,64 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
-                ForEach(preferences.listClockTimeZoneIds, id: \.self) { timeZoneId in
+                ForEach(preferences.listClockCities) { city in
                     HStack {
-                        Text(WorldClock.cityName(forTimeZoneId: timeZoneId))
-                        Text(timeZoneId)
+                        Text(city.name)
+                        Text(city.timeZoneId)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()
                         Button {
-                            preferences.listClockTimeZoneIds.removeAll { $0 == timeZoneId }
+                            preferences.listClockCities.removeAll { $0 == city }
                         } label: {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.borderless)
-                        .help("Remove \(WorldClock.cityName(forTimeZoneId: timeZoneId))")
+                        .help("Remove \(city.name)")
                     }
                 }
-                TextField("Add a city", text: $clockSearch, prompt: Text("Search, e.g. Tokyo"))
-                ForEach(WorldClock.searchTimeZones(matching: clockSearch).filter {
-                    !preferences.listClockTimeZoneIds.contains($0)
-                }, id: \.self) { timeZoneId in
+                TextField("Add a city", text: $citySearch.query, prompt: Text("Search any city, e.g. Shenzhen or 深圳"))
+                ForEach(WorldClock.searchTimeZoneCities(matching: citySearch.query).filter {
+                    !preferences.listClockCities.contains($0)
+                }) { city in
                     Button {
-                        preferences.listClockTimeZoneIds.append(timeZoneId)
-                        clockSearch = ""
+                        addClockCity(city)
                     } label: {
                         HStack {
                             Image(systemName: "plus.circle")
-                            Text(WorldClock.cityName(forTimeZoneId: timeZoneId))
-                            Text(timeZoneId)
+                            Text(city.name)
+                            Text(city.timeZoneId)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     .buttonStyle(.borderless)
                 }
+                ForEach(Array(citySearch.listCompletions.enumerated()), id: \.offset) { _, completion in
+                    Button {
+                        addClockCity(from: completion)
+                    } label: {
+                        HStack {
+                            Image(systemName: "mappin.circle")
+                            Text(completion.title)
+                            Text(completion.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+                if let clockSearchError {
+                    Text(clockSearchError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
             } header: {
                 Text("World Clock")
             } footer: {
-                Text("Shown at the bottom of the stage's sidebar, from the system clock and time zones.")
+                Text("Shown at the bottom of the stage's sidebar, from the system clock and time zones. Cities other than those time zones are named after are found through Apple Maps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -119,6 +140,29 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func addClockCity(_ city: WorldClockCity) {
+        preferences.listClockCities.append(city)
+        citySearch.query = ""
+        clockSearchError = nil
+    }
+
+    /// Add the city a place found through Apple Maps lies in, once its time zone is known.
+    private func addClockCity(from completion: MKLocalSearchCompletion) {
+        Task {
+            do {
+                guard let city = try await citySearch.city(for: completion) else {
+                    clockSearchError = "No time zone is known for \(completion.title)."
+                    return
+                }
+                if !preferences.listClockCities.contains(city) {
+                    addClockCity(city)
+                }
+            } catch {
+                clockSearchError = "Couldn't look up \(completion.title): \(error.localizedDescription)"
+            }
+        }
     }
 
     private var groupModifiersBinding: Binding<UInt> {

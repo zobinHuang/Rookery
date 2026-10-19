@@ -30,10 +30,11 @@ public final class AudioMixer {
         mapTracks[bundleId]?.tap != nil
     }
 
-    /// Apply an application's track settings, taking its sound over or giving it back as they say.
+    /// Apply an application's track settings, capturing its sound while it is taken over or muted, and
+    /// giving it back otherwise.
     public func apply(_ settings: MixerTrackSettings, toApplication bundleId: String) {
         let settings = settings.clamped
-        guard settings.isTakenOver else {
+        guard settings.isCaptureNeeded else {
             release(bundleId)
             return
         }
@@ -245,6 +246,7 @@ private final class Track {
     }
 
     func applySettings() {
+        let settings = settings.effective
         processor.setParameters(StereoProcessor.Parameters(
             isLeftInverted: settings.isLeftInverted,
             isRightInverted: settings.isRightInverted,
@@ -263,6 +265,7 @@ private final class Track {
         reverb.wetDryMix = settings.reverbMix
         reverb.bypass = settings.reverbMix == 0
         trackMixer.pan = settings.pan
+        trackMixer.outputVolume = settings.isMuted ? 0 : 1
     }
 }
 

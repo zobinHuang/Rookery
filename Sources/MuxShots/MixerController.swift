@@ -41,7 +41,7 @@ final class MixerController {
         mixer.onChange = { [weak self] in
             self?.reloadTracks()
         }
-        for (bundleId, settings) in mapSettings where settings.isTakenOver {
+        for (bundleId, settings) in mapSettings where settings.isCaptureNeeded {
             mixer.apply(settings, toApplication: bundleId)
         }
         processObservation = AudioProcessDirectory.observeChanges { [weak self] in
@@ -142,7 +142,7 @@ final class MixerController {
             }
             let listOwned = listProcesses.filter { $0.belongs(toApplication: bundleId) }
             let settings = settings(of: bundleId)
-            guard !listOwned.isEmpty || settings.isTakenOver else {
+            guard !listOwned.isEmpty || settings.isCaptureNeeded else {
                 continue
             }
             listTracks.append(MixerTrackStatus(

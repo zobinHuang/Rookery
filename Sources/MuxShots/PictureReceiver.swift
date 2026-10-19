@@ -28,7 +28,13 @@ final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDeleg
         const post = (message) => window.webkit.messageHandlers.muxshots.postMessage(message);
         let connection;
         video.addEventListener("resize", () => post({ type: "size", width: video.videoWidth, height: video.videoHeight }));
-        video.addEventListener("playing", () => post({ type: "playing" }));
+        video.addEventListener("playing", async () => {
+            post({ type: "playing" });
+            const stats = await connection.getStats();
+            stats.forEach((report) => {
+                if (report.type === "codec") { post({ type: "codec", mimeType: report.mimeType }); }
+            });
+        });
         async function answer(offer) {
             connection?.close();
             connection = new RTCPeerConnection();
@@ -123,6 +129,8 @@ final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDeleg
             }
         case "playing":
             onPlaying?()
+        case "codec":
+            Self.logger.info("video codec \(body["mimeType"] as? String ?? "?", privacy: .public)")
         case "connection":
             Self.logger.info("video connection \(body["state"] as? String ?? "?", privacy: .public)")
             if let state = body["state"] as? String, state == "failed" || state == "closed" {

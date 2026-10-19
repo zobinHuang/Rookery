@@ -43,7 +43,7 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 
 - 所有被管理的窗口留在同一个 Space（每块显示器一个）。
 - "全屏"由我们实现为**托管最大化**：窗口铺满显示器可用区域（可选隐藏菜单栏/Dock 的效果另议）。
-- "组"即虚拟工作区：切到一个组 = 把该组窗口恢复到记录的 frame 并 raise，把其他组窗口移到屏幕外。
+- "组"即虚拟工作区：切到一个组 = 把该组窗口恢复到记录的 frame 并 raise，把其他组的托管窗口移到屏幕外；未托管的窗口不受影响（见 §5）。
 - 切换是几十毫秒级的 frame 写入，没有 Space 动画。
 
 保留一个兼容模式：对仍处于原生全屏的窗口，允许"跳转到它"（激活 + raise，接受系统动画），
@@ -82,16 +82,16 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 - **`muxctl` 从第一个里程碑就有**：`muxctl list`、`muxctl focus <id>`、`muxctl group ...`。它既是调试手段，也让代码代理能在不点 UI 的情况下验证行为，也为以后的脚本化留口子。
 - **配置**：`~/.config/muxshots/config.toml`（规则、快捷键），运行时状态（手动分组、记录的 frame）单独存 JSON，App 重启后按规则重新匹配窗口（`CGWindowID` 在 App 重启后会变）。
 
-## 5. 分组模型
+## 5. 接管与分组模型
 
-窗口记录的可匹配字段：`bundle_id`、`pid`、`title`、`role/subrole`、所在显示器、是否原生全屏。
+MuxShots 只管理用户主动交给它的窗口，其余 app 一概不碰。
 
-- **规则归组**（声明式，按顺序第一条命中）：
-  - 按 App：`bundle_id == com.google.Chrome`
-  - 按标题正则提取 key：VSCode 默认标题为 `文件 — 项目 — Visual Studio Code`，提取"项目"作为组名，就能自动做到"每个项目一组"。
-  - 组合规则：同一个 key 可以把 VSCode 和 Chrome 窗口归到同一组（例如 Chrome 窗口标题含项目名）。
-- **手动归组**：快捷键"把当前窗口加入/移出组 X"，优先级高于规则，持久化。
-- **组内顺序**：MRU。组间顺序：MRU 或用户固定编号（`Opt+1..9` 直达）。
+- **拖入**：拖动任意窗口时，屏幕顶部中央浮出托盘，列出各组和"+ New Group"；松手落在哪个组就进哪个组，窗口随即回到拖动前的位置。
+- **拖出**：拖动已托管的窗口时，托盘多出"Release"落点；也可以在面板（菜单栏 → Show Managed Windows…）里把窗口条目拖到面板外，或右键 Release。面板内拖到其他组即移组，双击组名可重命名。
+- **跟踪范围**：只为拥有托管窗口的 app 启动 tracker；拖动识别只用 WindowServer 的窗口列表与全局鼠标事件，不需要对其他 app 做 AX 调用。
+- **持久化**：`~/Library/Application Support/MuxShots/workspace.json`。启动时逐个校验：窗口仍存在且属于同一 bundle 才恢复（防止重启后窗口 ID 被别的窗口复用）。
+- **关闭**：托管窗口关闭后自动移出所在组；组没有成员时自动删除。
+- **以后**：规则自动接管（例如按 VSCode 标题里的项目名），以及"接管当前窗口"的快捷键，用于无法拖动的原生全屏窗口。
 
 ## 6. 里程碑
 
@@ -113,28 +113,35 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 - **实测结果**：5 个原生全屏 VSCode 窗口、2 个全屏 Chrome 窗口、其他 Space 上的 iTerm2 窗口全部列出，ID 稳定；改标题 0.3 秒、关窗 0.3 秒、新建窗口约 0.6 秒内反映；空闲 CPU 约 1%。
 - **遗留问题**：单个窗口找不到时，暴力枚举要扫满 50 万个 ID（单核约 13 秒），只在启动或切 Space 后出现新的不可识别窗口时发生；以后可以改成分片、低优先级扫描。
 
-### M2 动作：可靠地控制单个窗口（1 周）
+### M2 接管：拖入托盘与拖出（已实现，待手动验证）
 
-- `focus`（含跨 App、跨 Space 兼容模式）、`set_frame`、`hide`（移出屏幕）、`show`（恢复记录的 frame）。
-- Chromium/Electron 的 `AXEnhancedUserInterface` 处理；最小尺寸、拒绝移动等异常 App 的降级。
+- 拖动检测（`WindowDragMonitor`）、托盘（`DropTrayController`）、面板（`WorkspacePanelController`）、`Workspace` 模型与持久化，见 §5。
+- tracker 改为只跟踪托管窗口；registry 只在窗口确认关闭时删除。
+- `muxctl manage <id>` / `muxctl release <id>` 走与拖放相同的路径。
+- **退出标准**：拖一个 Chrome 窗口进新组、再拖一个 VSCode 窗口进同一组，面板正确显示；拖出或面板拖出后释放；MuxShots 重启后分组恢复。
+
+### M3 动作：可靠地控制托管窗口（1 周）
+
+- `focus`（含跨 App、跨 Space 兼容模式）、`set_frame`（已有）、`hide`（移出屏幕）、`show`（恢复记录的 frame）。
+- 最小尺寸、拒绝移动等异常 App 的降级。
 - 原生全屏 → 托管最大化 的转换。
 - **退出标准**：`muxctl focus/hide/show` 对 Chrome、VSCode、Finder、Terminal 均可靠，连续 100 次操作无错位；单次切换耗时有测量数据。
 
-### M3 分组与虚拟工作区（1–1.5 周）
+### M4 虚拟工作区（1–1.5 周）
 
-- GroupEngine：规则解析与匹配、手动归组、持久化与重启后重新匹配。
-- WorkspaceManager：切组时批量 hide/show，记录每个窗口在组内的 frame；新窗口按规则自动入组。
+- 切组时批量 hide/show 托管窗口，记录每个窗口在组内的 frame；未托管的窗口保持原样。
+- 规则自动接管（可选）：按 bundle 或标题规则把新窗口直接放进某组。
 - 多显示器：每个显示器独立的当前组（先做单显示器，接口按多显示器设计）。
-- **退出标准**：按 VSCode 项目自动分出组，`muxctl switch <group>` 在组间切换无 Space 动画，App 重启后分组恢复。
+- **退出标准**：`muxctl switch <group>` 在组间切换无 Space 动画，App 重启后分组与 frame 恢复。
 
-### M4 切换体验（1–1.5 周）
+### M5 切换体验（1–1.5 周）
 
 - 全局快捷键（Carbon），`Opt+Tab` 式切换面板（event tap 检测松开修饰键），组内窗口循环。
 - 面板展示组名、窗口标题、App 图标；缩略图在获得屏幕录制权限时启用。
 - 菜单栏：当前组、组列表、暂停管理。
 - **退出标准**：日常使用一周，切换路径不再需要 `Cmd+Tab` 或三指滑动。
 
-### M5 打磨与分发（持续）
+### M6 打磨与分发（持续）
 
 - 设置界面、配置热加载、开机启动（`SMAppService`）。
 - 崩溃/退出时把所有屏幕外窗口恢复回可视区（**必须**，否则用户会"丢窗口"）。

@@ -49,6 +49,8 @@ class PageMixer {
     private _levels_timer: number | undefined;
     private _mode: PageMode | undefined;
     private _is_retired = false;
+    /** Whether the app shows this page's meter, so its levels are worth measuring. */
+    private _is_meter_wanted = false;
     private readonly _on_play_listener = (event: Event): void => this._on_play(event);
     private readonly _on_video_listener = (): void => this._report_video();
     private _picture: PagePicture | undefined;
@@ -78,6 +80,7 @@ class PageMixer {
         const hello: PageMessage = { type: "page_hello" };
         const reply: unknown = await chrome.runtime.sendMessage(hello);
         const settings = TrackSettingsSchema.parse(MessageSchema.field(reply, "settings"));
+        this._is_meter_wanted = MessageSchema.field(reply, "is_meter_wanted") === true;
         await this._apply(settings ?? TrackSettingsSchema.make_neutral());
     }
 
@@ -103,6 +106,9 @@ class PageMixer {
                 }
                 break;
             }
+            case "page_meter":
+                this._is_meter_wanted = MessageSchema.field(message, "is_wanted") === true;
+                break;
             case "page_picture_stop":
                 this._picture?.stop();
                 this._picture = undefined;
@@ -235,7 +241,7 @@ class PageMixer {
             return;
         }
         const audio = globalThis.muxshots_page?.audio;
-        if (audio === undefined || !this._settings.is_taken_over) {
+        if (audio === undefined || !this._settings.is_taken_over || !this._is_meter_wanted) {
             return;
         }
         const message: PageMessage = { type: "page_levels", levels: audio.graph.read_levels() };

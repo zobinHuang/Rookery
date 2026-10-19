@@ -63,13 +63,15 @@ export type BrowserCommand =
     | { type: "picture_answer"; tab_id: number; sdp: string }
     | { type: "picture_stop"; tab_id: number }
     | { type: "picture_control"; tab_id: number; is_playing: boolean }
-    | { type: "focus_tab"; tab_id: number };
+    | { type: "focus_tab"; tab_id: number }
+    | { type: "meter"; is_wanted: boolean };
 
 /**
  * A message between the background and a page's content script.
  */
 export type PageMessage =
     | { type: "page_hello" }
+    | { type: "page_meter"; is_wanted: boolean }
     | { type: "page_apply"; settings: TrackSettings }
     | { type: "page_state"; mode: PageMode }
     | { type: "page_levels"; levels: ChannelLevels }
@@ -89,6 +91,7 @@ export type CaptureMessage =
     | { type: "capture_apply"; tab_id: number; settings: TrackSettings }
     | { type: "capture_stop"; tab_id: number }
     | { type: "capture_levels"; list_levels: TabLevels[] }
+    | { type: "capture_meter"; is_wanted: boolean }
     | { type: "capture_ended"; tab_id: number };
 
 /**

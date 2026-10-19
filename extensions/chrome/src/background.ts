@@ -49,6 +49,8 @@ class MixerBridge {
     private readonly _map_frame_videos = new Map<number, Map<number, number>>();
     /** The frame showing each tab's video in the sidebar. */
     private readonly _map_picture_frames = new Map<number, number>();
+    /** Whether the app shows the tabs' meters, so the pages and captures should measure their levels. */
+    private _is_meter_wanted = false;
     private _report_timer: ReturnType<typeof setTimeout> | undefined;
     private _levels_timer: ReturnType<typeof setInterval> | undefined;
 
@@ -155,6 +157,7 @@ class MixerBridge {
     private _on_disconnect(): void {
         void chrome.runtime.lastError;
         this._port = undefined;
+        void this._want_meter(false);
         clearInterval(this._levels_timer);
         this._levels_timer = undefined;
         const list_tab_ids = [...new Set([...this._map_settings.keys(), ...this._set_captured])];
@@ -223,6 +226,13 @@ class MixerBridge {
                     void this._focus_tab(tab_id);
                 }
                 return;
+            case "meter": {
+                const is_wanted = MessageSchema.field(message, "is_wanted");
+                if (typeof is_wanted === "boolean") {
+                    void this._want_meter(is_wanted);
+                }
+                return;
+            }
         }
         const settings = TrackSettingsSchema.parse(MessageSchema.field(message, "settings"));
         if (
@@ -306,8 +316,26 @@ class MixerBridge {
         this._port?.postMessage(event);
     }
 
+    /** Have the pages and captures measure their levels only while the app shows them. */
+    private async _want_meter(is_wanted: boolean): Promise<void> {
+        this._is_meter_wanted = is_wanted;
+        this._map_levels.clear();
+        const page: PageMessage = { type: "page_meter", is_wanted };
+        for (const tab_id of this._map_settings.keys()) {
+            try {
+                await chrome.tabs.sendMessage(tab_id, page);
+            } catch (err: unknown) {
+                if (!(err instanceof Error)) {
+                    throw err;
+                }
+            }
+        }
+        const capture: CaptureMessage = { type: "capture_meter", is_wanted };
+        await this._send_to_offscreen(capture);
+    }
+
     private _send_levels(): void {
-        if (this._map_levels.size === 0) {
+        if (this._map_levels.size === 0 || !this._is_meter_wanted) {
             return;
         }
         const list_levels: TabLevels[] = [...this._map_levels].map(
@@ -328,7 +356,7 @@ class MixerBridge {
         const tab_id = sender.tab?.id;
         switch (MessageSchema.type_of(message)) {
             case "page_hello":
-                send_response({ settings: this._page_settings(tab_id) });
+                send_response({ settings: this._page_settings(tab_id), is_meter_wanted: this._is_meter_wanted });
                 return false;
             case "page_state": {
                 const mode = MessageSchema.field(message, "mode");
@@ -603,6 +631,8 @@ class MixerBridge {
         await this._send_to_page(tab_id);
         const capture: CaptureMessage = { type: "capture_start", tab_id, stream_id, settings };
         await this._send_to_offscreen(capture);
+        const meter: CaptureMessage = { type: "capture_meter", is_wanted: this._is_meter_wanted };
+        await this._send_to_offscreen(meter);
         await chrome.action.setBadgeBackgroundColor({ tabId: tab_id, color: MixerBridge.BADGE_COLOR_CAPTURED });
         await chrome.action.setBadgeText({ tabId: tab_id, text: MixerBridge.BADGE_TEXT_CAPTURED });
         this._schedule_report();

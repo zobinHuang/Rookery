@@ -32,6 +32,8 @@ class CaptureMixer {
     private readonly _context = new AudioContext();
     private readonly _map_tabs = new Map<number, CapturedTab>();
     private _levels_timer: number | undefined;
+    /** Whether the app shows the captured tabs' meters, so their levels are worth measuring. */
+    private _is_meter_wanted = false;
 
     /**
      * Start taking the background's requests.
@@ -43,6 +45,11 @@ class CaptureMixer {
     }
 
     private _receive(message: unknown, send_response: (response: unknown) => void): boolean {
+        if (MessageSchema.type_of(message) === "capture_meter") {
+            this._is_meter_wanted = MessageSchema.field(message, "is_wanted") === true;
+            send_response({});
+            return false;
+        }
         const tab_id = MessageSchema.field(message, "tab_id");
         if (typeof tab_id !== "number") {
             return false;
@@ -141,6 +148,9 @@ class CaptureMixer {
     }
 
     private _send_levels(): void {
+        if (!this._is_meter_wanted) {
+            return;
+        }
         const list_levels: TabLevels[] = [...this._map_tabs].map(
             ([tab_id, captured]) => ({ tab_id, ...captured.graph.read_levels() }),
         );

@@ -1,4 +1,4 @@
-.PHONY: build app run test clean
+.PHONY: build app run install icon test clean
 
 # Swift Testing ships outside the default search paths when only the Command Line Tools are installed.
 DEVELOPER_DIR := $(shell xcode-select -p)
@@ -17,6 +17,19 @@ app:
 
 run: app
 	open .build/MuxShots.app
+
+# Install into /Applications, quitting a running copy first so the new build is the one that opens.
+install: app
+	-osascript -e 'quit app "MuxShots"'
+	while pgrep -f 'MuxShots.app/Contents/MacOS/MuxShots' > /dev/null; do sleep 0.2; done
+	rm -rf /Applications/MuxShots.app
+	cp -R .build/MuxShots.app /Applications/MuxShots.app
+	open /Applications/MuxShots.app
+
+icon:
+	swiftc -o .build/make-icon scripts/make-icon.swift
+	.build/make-icon .build
+	iconutil -c icns .build/AppIcon.iconset -o Resources/AppIcon.icns
 
 test:
 	swift test $(TEST_FLAGS)

@@ -11,8 +11,9 @@ swift build --package-path "$root" -c "$configuration" --product MuxShots
 bin_path=$(swift build --package-path "$root" -c "$configuration" --show-bin-path)
 
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
+cp "$root/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 cp "$bin_path/MuxShots" "$app/Contents/MacOS/MuxShots"
 
 if security find-identity -p codesigning | grep -q "\"$identity\""; then

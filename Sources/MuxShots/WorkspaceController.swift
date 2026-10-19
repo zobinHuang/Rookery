@@ -10,6 +10,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "workspace")
     /// Lets the dragged application finish its own drag before the window is moved back.
     private static let settleDelay = Duration.milliseconds(120)
+    private static let fullscreenPollInterval = Duration.milliseconds(100)
+    private static let fullscreenExitTimeout = Duration.seconds(3)
+    /// The Space transition keeps animating briefly after the window reports leaving full screen.
+    private static let fullscreenSettleDelay = Duration.milliseconds(400)
+    /// A hidden window may keep at most this share of itself on screen.
+    private static let hiddenVisibleShareLimit: CGFloat = 0.02
 
     private(set) var workspace: Workspace
     private let tracker: WindowTracker
@@ -50,6 +56,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             for (windowId, application) in listRestored {
                 await tracker.manage(windowId, of: application)
             }
+            await showAllHidden()
             for await change in await tracker.changes() {
                 handle(change)
             }
@@ -110,6 +117,30 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         didChange()
         Task { [tracker] in
             await tracker.release(windowId)
+        }
+    }
+
+    /// Act on a managed window.
+    func perform(_ action: WindowAction, on windowId: WindowId) async throws {
+        guard workspace.isManaged(windowId) else {
+            throw WindowActionError.notManaged(windowId: windowId)
+        }
+        switch action {
+        case .focus:
+            try await focus(windowId)
+        case .hide:
+            try await hide(windowId)
+        case .show:
+            try await show(windowId)
+        case .maximize:
+            try await maximize(windowId)
+        }
+    }
+
+    /// Put every hidden window back, as MuxShots quits.
+    func showAllHidden() async {
+        for window in workspace.listHiddenWindows {
+            try? await show(window.windowId)
         }
     }
 
@@ -177,6 +208,85 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 self.release(drag.windowId)
             }
         }
+    }
+
+    private func focus(_ windowId: WindowId) async throws {
+        if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
+            try await show(windowId)
+        }
+        guard await tracker.raise(windowId) else {
+            throw WindowActionError.cannotRaise(windowId: windowId)
+        }
+        guard
+            let processId = await tracker.processId(of: windowId),
+            let running = NSRunningApplication(processIdentifier: processId)
+        else {
+            throw WindowActionError.cannotRaise(windowId: windowId)
+        }
+        running.activate()
+    }
+
+    private func hide(_ windowId: WindowId) async throws {
+        guard !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) else {
+            return
+        }
+        try await leaveFullscreen(windowId)
+        guard let frame = WindowServer.window(withId: windowId)?.frame else {
+            throw WindowActionError.noDisplay(windowId: windowId)
+        }
+        guard let parkedFrame = await tracker.applyFrame(ScreenGeometry.offscreenFrame(for: frame), to: windowId) else {
+            throw WindowActionError.cannotMove(windowId: windowId)
+        }
+        workspace.markHidden(windowId, restoreFrame: frame)
+        didChange()
+        if ScreenGeometry.visibleShare(of: parkedFrame) > Self.hiddenVisibleShareLimit {
+            Self.logger.error("window \(windowId.rawValue) stayed visible at \(String(describing: parkedFrame))")
+            throw WindowActionError.cannotMove(windowId: windowId)
+        }
+    }
+
+    private func show(_ windowId: WindowId) async throws {
+        guard let restoreFrame = workspace.markShown(windowId) else {
+            throw WindowActionError.notHidden(windowId: windowId)
+        }
+        didChange()
+        guard await tracker.applyFrame(restoreFrame, to: windowId) != nil else {
+            throw WindowActionError.cannotMove(windowId: windowId)
+        }
+    }
+
+    private func maximize(_ windowId: WindowId) async throws {
+        if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
+            try await show(windowId)
+        }
+        try await leaveFullscreen(windowId)
+        guard
+            let frame = WindowServer.window(withId: windowId)?.frame,
+            let visibleFrame = ScreenGeometry.visibleDisplayFrame(containing: frame)
+        else {
+            throw WindowActionError.noDisplay(windowId: windowId)
+        }
+        guard await tracker.applyFrame(visibleFrame, to: windowId) != nil else {
+            throw WindowActionError.cannotMove(windowId: windowId)
+        }
+    }
+
+    /// Bring a window out of native full screen onto a normal Space, waiting for the transition.
+    private func leaveFullscreen(_ windowId: WindowId) async throws {
+        guard await tracker.isFullscreen(windowId) else {
+            return
+        }
+        guard await tracker.requestExitFullscreen(windowId) else {
+            throw WindowActionError.stuckInFullscreen(windowId: windowId)
+        }
+        let deadline = ContinuousClock.now + Self.fullscreenExitTimeout
+        while await tracker.isFullscreen(windowId) {
+            guard ContinuousClock.now < deadline else {
+                throw WindowActionError.stuckInFullscreen(windowId: windowId)
+            }
+            try await Task.sleep(for: Self.fullscreenPollInterval)
+        }
+        try await Task.sleep(for: Self.fullscreenSettleDelay)
     }
 
     private func handle(_ change: WindowChange) {

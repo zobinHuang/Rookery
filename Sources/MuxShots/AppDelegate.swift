@@ -36,6 +36,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    /// Put hidden windows back before quitting, so no window is left off screen.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let workspaceController, !workspaceController.workspace.listHiddenWindows.isEmpty else {
+            return .terminateNow
+        }
+        Task {
+            await workspaceController.showAllHidden()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         statusMenuController?.stop()
         applicationMonitor?.stop()

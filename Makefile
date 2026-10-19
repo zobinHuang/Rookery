@@ -1,4 +1,4 @@
-.PHONY: build app run install icon test clean
+.PHONY: build app run install icon test chrome-extension clean
 
 # Swift Testing ships outside the default search paths when only the Command Line Tools are installed.
 DEVELOPER_DIR := $(shell xcode-select -p)
@@ -33,6 +33,10 @@ icon:
 
 test:
 	swift test $(TEST_FLAGS)
+
+# Build the Chrome extension into extensions/chrome/dist, to load unpacked from chrome://extensions.
+chrome-extension:
+	cd extensions/chrome && npm ci && npm run build
 
 clean:
 	rm -rf .build

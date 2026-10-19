@@ -1,0 +1,35 @@
+{
+    "manifest_version": 3,
+    "name": "MuxShots Mixer",
+    "description": "Mix each tab's sound on its own from the MuxShots mixer.",
+    "version": "0.1.0",
+    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4IPoBR9heTEeEYILA29XEhtZo/MEdkK1SKqAs5GP79nphyPDKmzbdWXgP8HtnXLBSXFVX7FkWH0oxmqNXA2DBdp0RofDcOC2tUiGAMJfsNpf9UrkHppXflWATMDTARrBlmj+GGODeC9HfZKx8Tdn4Bg9npbZihf6nxoN+kDPs57vaaCszHDjYRgWJtNIz9i1f+rbW5vEym6oTt1058ajJsVqcLTnMvCKjBhu3xCQ2xrf4fEfVtfkLwHRk3ktqmCiHSr+fBcEw3iybYdFangfCDCwqiJtjng/jzKSxL962Gp99L7Sabv+RHF14lyaM/fZ9d0h0iqvvwjBhOz6U9t7uwIDAQAB",
+    "minimum_chrome_version": "120",
+    "permissions": ["nativeMessaging", "tabs", "tabCapture", "offscreen", "alarms", "scripting"],
+    "host_permissions": ["<all_urls>"],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+            "matches": ["<all_urls>"],
+            "js": ["content.js"],
+            "all_frames": true,
+            "match_about_blank": true,
+            "run_at": "document_start"
+        }
+    ],
+    "action": {
+        "default_title": "Capture this tab's sound for the MuxShots mixer",
+        "default_icon": {
+            "16": "icons/icon-16.png",
+            "32": "icons/icon-32.png"
+        }
+    },
+    "icons": {
+        "16": "icons/icon-16.png",
+        "32": "icons/icon-32.png",
+        "48": "icons/icon-48.png",
+        "128": "icons/icon-128.png"
+    }
+}

@@ -1,0 +1,14 @@
+{
+    "name": "muxshots-chrome-extension",
+    "private": true,
+    "description": "Mixes Chrome tabs one by one from the MuxShots mixer",
+    "scripts": {
+        "check": "tsc --noEmit",
+        "build": "tsc --noEmit && esbuild src/background.ts src/content.ts src/offscreen.ts --bundle --format=iife --target=chrome120 --outdir=dist && cp -R static/ dist/"
+    },
+    "devDependencies": {
+        "@types/chrome": "0.3.5",
+        "esbuild": "0.28.2",
+        "typescript": "7.0.2"
+    }
+}

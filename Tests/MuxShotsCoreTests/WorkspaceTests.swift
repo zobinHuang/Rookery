@@ -72,6 +72,49 @@ struct WorkspaceTests {
         #expect(workspace.listManagedWindows.map(\.title) == ["new"])
     }
 
+    @Test func hidingRemembersTheFrameUntilShown() {
+        var workspace = Workspace()
+        workspace.adopt(Self.window(1), into: nil)
+        let frame = CGRect(x: 10, y: 20, width: 300, height: 200)
+
+        workspace.markHidden(WindowId(rawValue: 1), restoreFrame: frame)
+        let listHiddenIds = workspace.listHiddenWindows.map(\.windowId.rawValue)
+        let restoreFrame = workspace.markShown(WindowId(rawValue: 1))
+        let secondRestoreFrame = workspace.markShown(WindowId(rawValue: 1))
+
+        #expect(listHiddenIds == [1])
+        #expect(restoreFrame == frame)
+        #expect(secondRestoreFrame == nil)
+        #expect(workspace.listHiddenWindows.isEmpty)
+    }
+
+    @Test func movingAHiddenWindowKeepsItsRestoreFrame() {
+        var workspace = Workspace()
+        workspace.adopt(Self.window(1), into: nil)
+        let secondGroupId = workspace.adopt(Self.window(2), into: nil)
+        let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
+        workspace.markHidden(WindowId(rawValue: 1), restoreFrame: frame)
+
+        let window = workspace.listManagedWindows.first { $0.windowId.rawValue == 1 }
+        if let window {
+            workspace.adopt(window, into: secondGroupId)
+        }
+
+        #expect(workspace.group(containing: WindowId(rawValue: 1))?.groupId == secondGroupId)
+        #expect(workspace.listHiddenWindows.first?.restoreFrame == frame)
+    }
+
+    @Test func savedWorkspaceWithoutRestoreFramesStillDecodes() throws {
+        let json = """
+            {"listGroups":[{"groupId":"g","name":"Paper","listMembers":[{"windowId":7,"title":"t",
+            "application":{"processId":1,"bundleId":"com.example","name":"Example"}}]}]}
+            """
+
+        let workspace = try JSONDecoder().decode(Workspace.self, from: Data(json.utf8))
+
+        #expect(workspace.listManagedWindows.first?.isHidden == false)
+    }
+
     @Test func workspaceSurvivesAJsonRoundTrip() throws {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1, title: "a"), into: nil)

@@ -1,3 +1,5 @@
+import CoreGraphics
+
 /// Which windows MuxShots manages and how they are grouped; a window belongs to at most one group.
 public struct Workspace: Codable, Equatable, Sendable {
     private static let defaultGroupNamePrefix = "Group "
@@ -58,11 +60,31 @@ public struct Workspace: Codable, Equatable, Sendable {
 
     /// Record a managed window's latest title.
     public mutating func updateTitle(of windowId: WindowId, to title: String) {
-        for groupIndex in listGroups.indices {
-            if let memberIndex = listGroups[groupIndex].listMembers.firstIndex(where: { $0.windowId == windowId }) {
-                listGroups[groupIndex].listMembers[memberIndex].title = title
-            }
-        }
+        modifyMember(windowId) { $0.title = title }
+    }
+
+    /// The managed windows MuxShots has moved off screen.
+    public var listHiddenWindows: [ManagedWindow] {
+        listManagedWindows.filter(\.isHidden)
+    }
+
+    /// Remember where a window was before hiding it.
+    ///
+    /// - Parameters:
+    ///   - windowId: the window
+    ///   - restoreFrame: where to put the window back
+    public mutating func markHidden(_ windowId: WindowId, restoreFrame: CGRect) {
+        modifyMember(windowId) { $0.restoreFrame = restoreFrame }
+    }
+
+    /// Forget that a window is hidden.
+    ///
+    /// - Returns: where the window was before it was hidden, or nil if it was not hidden
+    @discardableResult
+    public mutating func markShown(_ windowId: WindowId) -> CGRect? {
+        let restoreFrame = listManagedWindows.first { $0.windowId == windowId }?.restoreFrame
+        modifyMember(windowId) { $0.restoreFrame = nil }
+        return restoreFrame
     }
 
     /// Rename a group; a blank name leaves the group unchanged.
@@ -75,6 +97,14 @@ public struct Workspace: Codable, Equatable, Sendable {
             return
         }
         listGroups[groupIndex].name = trimmedName
+    }
+
+    private mutating func modifyMember(_ windowId: WindowId, _ modify: (inout ManagedWindow) -> Void) {
+        for groupIndex in listGroups.indices {
+            if let memberIndex = listGroups[groupIndex].listMembers.firstIndex(where: { $0.windowId == windowId }) {
+                modify(&listGroups[groupIndex].listMembers[memberIndex])
+            }
+        }
     }
 
     private mutating func removeMember(_ windowId: WindowId) {

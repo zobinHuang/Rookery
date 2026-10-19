@@ -65,6 +65,8 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 - **实现状态（已完成第一版）**：`StageController`（底板窗口、拖放目标）、`StageView`（侧栏、标签栏、内容区）、`WorkspaceController.enterStage/exitStage/performStageSwitch`。入口：菜单栏 Enter Stage、⌃⌥↩、再次打开 app、`muxctl stage on|off`；⌃⌥\` 在舞台里切下一个标签，⌃⌥0 退出舞台。
 - **Space 的约束**：舞台只能放在桌面 Space 上（别的 app 的窗口进不了 MuxShots 的全屏 Space），进入舞台时托管窗口会退出原生全屏，回到桌面 Space，摆进舞台。舞台因此是用户那些原生全屏 Space 的替代品。
 - **坐标来源**：窗口的当前位置一律用 AX 读取。WindowServer 的位置在 Space 切换动画期间带偏移，曾导致记下错误的原位置。
+- **第二轮（2026-10-19）**：组和标签可在原地改名（双击或右键）；标签可拖到侧栏的组上换组、拖到空白处新建组、拖到 Release 释放；侧栏可折叠成图标条；拖动侧栏顶部可把舞台移到另一块显示器（也可用菜单 Move Stage to Next Display）；舞台层级改为普通窗口减一，桌面小组件不再盖住它。
+- **⌘⇥ 接管**：舞台打开且前台是舞台当前窗口所属的 app 或 MuxShots 时，用 event tap 截住 ⌘⇥，弹出跨组的最近使用窗口切换器；其他时候放行给系统。
 
 ## 4. 架构
 

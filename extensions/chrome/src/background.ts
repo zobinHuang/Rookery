@@ -109,6 +109,17 @@ class MixerBridge {
                 void this._send_to_page(tab_id);
             }
         }
+        void this._unmute_own_tabs();
+    }
+
+    /** Unmute the tabs the mixer muted, leaving those the user muted from Chrome's tab strip. */
+    private async _unmute_own_tabs(): Promise<void> {
+        const list_muted_tabs = await chrome.tabs.query({ muted: true });
+        for (const tab of list_muted_tabs) {
+            if (tab.id !== undefined && tab.mutedInfo?.extensionId === chrome.runtime.id) {
+                await chrome.tabs.update(tab.id, { muted: false });
+            }
+        }
     }
 
     private _receive_command(message: unknown): void {
@@ -122,6 +133,7 @@ class MixerBridge {
             return;
         }
         this._map_settings.set(tab_id, settings);
+        void this._apply_mute(tab_id, settings.is_muted);
         if (!this._set_captured.has(tab_id)) {
             void this._send_to_page(tab_id);
         } else if (settings.is_taken_over) {
@@ -153,7 +165,12 @@ class MixerBridge {
                 continue;
             }
             const mode = this._mode_of(tab.id);
-            if (!tab.audible && mode === "idle" && !this._map_settings.has(tab.id)) {
+            if (
+                !tab.audible
+                && !(tab.mutedInfo?.muted ?? false)
+                && mode === "idle"
+                && !this._map_settings.has(tab.id)
+            ) {
                 continue;
             }
             list_tabs.push({
@@ -163,6 +180,7 @@ class MixerBridge {
                 url: tab.url ?? "",
                 fav_icon_url: tab.favIconUrl ?? null,
                 is_audible: tab.audible ?? false,
+                is_muted: tab.mutedInfo?.muted ?? false,
                 mode,
             });
         }
@@ -280,6 +298,14 @@ class MixerBridge {
             left: Math.max(left, previous?.left ?? 0),
             right: Math.max(right, previous?.right ?? 0),
         });
+    }
+
+    /** Mute or unmute a tab as Chrome itself does, which silences it however its sound is played. */
+    private async _apply_mute(tab_id: number, is_muted: boolean): Promise<void> {
+        const tab = await chrome.tabs.get(tab_id);
+        if ((tab.mutedInfo?.muted ?? false) !== is_muted) {
+            await chrome.tabs.update(tab_id, { muted: is_muted });
+        }
     }
 
     private async _send_to_page(tab_id: number): Promise<void> {

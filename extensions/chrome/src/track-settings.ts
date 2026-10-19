@@ -16,6 +16,8 @@ export type ReverbRoom =
 export interface TrackSettings {
     /** Whether the extension processes the tab's sound at all. */
     is_taken_over: boolean;
+    /** Whether the tab is silenced, whether or not it is taken over. */
+    is_muted: boolean;
     /** The gain, 1 unchanged. */
     volume: number;
     /** The stereo position, -1 hard left to 1 hard right. */
@@ -56,6 +58,7 @@ export class TrackSettingsSchema {
     static make_neutral(): TrackSettings {
         return {
             is_taken_over: false,
+            is_muted: false,
             volume: 1,
             pan: 0,
             is_left_inverted: false,
@@ -86,6 +89,7 @@ export class TrackSettingsSchema {
         const reverb_room = record["reverb_room"];
         if (
             typeof record["is_taken_over"] !== "boolean"
+            || typeof record["is_muted"] !== "boolean"
             || typeof record["volume"] !== "number"
             || typeof record["pan"] !== "number"
             || typeof record["is_left_inverted"] !== "boolean"
@@ -102,6 +106,7 @@ export class TrackSettingsSchema {
         }
         return {
             is_taken_over: record["is_taken_over"],
+            is_muted: record["is_muted"],
             volume: record["volume"],
             pan: record["pan"],
             is_left_inverted: record["is_left_inverted"],

@@ -35,6 +35,7 @@ export interface BrowserTab {
     url: string;
     fav_icon_url: string | null;
     is_audible: boolean;
+    is_muted: boolean;
     mode: TabMode;
 }
 

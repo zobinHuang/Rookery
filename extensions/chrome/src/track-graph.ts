@@ -4,7 +4,8 @@ import { TrackSettingsSchema } from "./track-settings";
 
 /**
  * One track's sound on its way to the speakers, as the MuxShots mixer treats it: phase and channel swap,
- * stereo width, volume, a ten-band equalizer, reverb and pan, then meters.
+ * stereo width, volume, a ten-band equalizer, reverb and pan, then meters, and muting last so a muted
+ * track still shows on its meters.
  */
 export class TrackGraph {
     /** Each band's width, one octave as in the app's equalizer. */
@@ -40,6 +41,7 @@ export class TrackGraph {
     private readonly _wet: GainNode;
     private readonly _convolver: ConvolverNode;
     private readonly _panner: StereoPannerNode;
+    private readonly _mute: GainNode;
     private readonly _meter_splitter: ChannelSplitterNode;
     private readonly _left_analyser: AnalyserNode;
     private readonly _right_analyser: AnalyserNode;
@@ -73,6 +75,7 @@ export class TrackGraph {
         this._wet = new GainNode(context, { gain: 0 });
         this._convolver = new ConvolverNode(context);
         this._panner = new StereoPannerNode(context);
+        this._mute = new GainNode(context);
         this._meter_splitter = new ChannelSplitterNode(context, { numberOfOutputs: 2 });
         this._left_analyser = new AnalyserNode(context, { fftSize: TrackGraph.METER_FFT_SIZE });
         this._right_analyser = new AnalyserNode(context, { fftSize: TrackGraph.METER_FFT_SIZE });
@@ -98,7 +101,8 @@ export class TrackGraph {
         this._convolver.connect(this._wet);
         this._dry.connect(this._panner);
         this._wet.connect(this._panner);
-        this._panner.connect(destination);
+        this._panner.connect(this._mute);
+        this._mute.connect(destination);
         this._panner.connect(this._meter_splitter);
         this._meter_splitter.connect(this._left_analyser, 0);
         this._meter_splitter.connect(this._right_analyser, 1);
@@ -145,6 +149,7 @@ export class TrackGraph {
         this._ramp(this._wet.gain, wet_share);
         this._ramp(this._dry.gain, 1 - wet_share);
         this._ramp(this._panner.pan, effective.pan);
+        this._ramp(this._mute.gain, settings.is_muted ? 0 : 1);
     }
 
     /**
@@ -164,7 +169,7 @@ export class TrackGraph {
      */
     dispose(): void {
         this._input.disconnect();
-        this._panner.disconnect();
+        this._mute.disconnect();
     }
 
     private _ramp(parameter: AudioParam, value: number): void {

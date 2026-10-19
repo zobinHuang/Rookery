@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// The time in each chosen city, city on the left and a 24-hour seven-segment clock on the right, updated
-/// on the minute from the system clock.
+/// The time in each chosen city, city on the left and a 24-hour seven-segment clock on the right, read
+/// from the system clock every second so the colons blink with the seconds.
 struct WorldClockView: View {
     private static let digitHeight: CGFloat = 19
+    private static let colonFadeSeconds = 0.3
 
     let listCities: [WorldClockCity]
 
     var body: some View {
-        TimelineView(.everyMinute) { context in
+        TimelineView(.periodic(from: .distantPast, by: 1)) { context in
             VStack(spacing: 8) {
                 ForEach(listCities) { city in
                     if let timeZone = TimeZone(identifier: city.timeZoneId) {
@@ -33,7 +34,13 @@ struct WorldClockView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            SevenSegmentDisplay(text: Self.clockText(for: timeZone, at: date), digitHeight: Self.digitHeight)
+            SevenSegmentDisplay(
+                text: Self.clockText(for: timeZone, at: date),
+                digitHeight: Self.digitHeight,
+                color: StageColors.clockSegment,
+                colonOpacity: Self.isColonLit(at: date) ? 1 : 0
+            )
+            .animation(.easeInOut(duration: Self.colonFadeSeconds), value: Self.isColonLit(at: date))
         }
     }
 
@@ -55,6 +62,11 @@ struct WorldClockView: View {
             return abbreviation
         }
         return "\(abbreviation) · \(dayOffset > 0 ? "+" : "−")\(abs(dayOffset))d"
+    }
+
+    /// Whether the colons are lit: on even seconds, dark on odd ones.
+    private static func isColonLit(at date: Date) -> Bool {
+        Int(date.timeIntervalSince1970.rounded(.down)) % 2 == 0
     }
 
     private static func clockText(for timeZone: TimeZone, at date: Date) -> String {

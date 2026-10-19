@@ -14,6 +14,12 @@ enum StageColors {
     static let separator = color(light: NSColor(white: 0, alpha: 0.08), dark: NSColor(white: 1, alpha: 0.07))
     /// The chosen segment of a segmented switch.
     static let selectedSegment = color(light: .white, dark: NSColor(white: 0.22, alpha: 1))
+    /// A lit segment of the world clock's display: warm yellow, deeper in the light theme to stand out on
+    /// its pale sidebar.
+    static let clockSegment = color(
+        light: NSColor(srgbRed: 0.85, green: 0.6, blue: 0, alpha: 1),
+        dark: NSColor(srgbRed: 1, green: 0.78, blue: 0.12, alpha: 1)
+    )
     /// A sidebar row under the pointer.
     static let hoveredRow = color(light: NSColor(white: 0, alpha: 0.045), dark: NSColor(white: 1, alpha: 0.05))
     /// The square a group's application icons sit in.

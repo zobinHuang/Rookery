@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Digits and colons drawn as a seven-segment display, unlit segments faintly showing, as on a digital
-/// clock. Drawn rather than set in a font so it is crisp at any size and follows the theme.
-struct SevenSegmentDisplay: View {
+/// Digits and colons drawn as a seven-segment display in one color, unlit segments faintly showing in it
+/// and lit ones glowing in the dark theme, as on a digital clock. Drawn rather than set in a font so it is
+/// crisp at any size and follows the theme. The colons fade in and out smoothly as they blink.
+struct SevenSegmentDisplay: View, Animatable {
     /// Each segment's place: top, top right, bottom right, bottom, bottom left, top left, middle.
     private enum Segment: CaseIterable {
         case top, topRight, bottomRight, bottom, bottomLeft, topLeft, middle
@@ -26,31 +27,68 @@ struct SevenSegmentDisplay: View {
     private static let colonWidthRatio: CGFloat = 0.26
     /// How far the display leans, as a share of its height, like the slanted digits of a real display.
     private static let slant: CGFloat = 0.08
-    private static let unlitOpacity = 0.07
+    private static let unlitOpacity = 0.1
+    private static let glowRadiusRatio: CGFloat = 0.18
+    private static let glowOpacity = 0.55
 
     let text: String
     let digitHeight: CGFloat
+    let color: Color
+    /// How lit the colons are, 0 dark to 1 lit.
+    var colonOpacity: Double
+    @Environment(\.colorScheme) private var colorScheme
+
+    nonisolated var animatableData: Double {
+        get { colonOpacity }
+        set { colonOpacity = newValue }
+    }
 
     var body: some View {
         Canvas { context, size in
-            let lean = CGAffineTransform(a: 1, b: 0, c: -Self.slant, d: 1, tx: Self.slant * size.height, ty: 0)
+            let lean = CGAffineTransform(a: 1, b: 0, c: -Self.slant, d: 1, tx: Self.slant * digitHeight, ty: 0)
+                .concatenating(CGAffineTransform(translationX: glowPadding, y: glowPadding))
+            var unlitPath = Path()
+            var litPath = Path()
+            var colonPath = Path()
             var x: CGFloat = 0
             for character in text {
                 if character == ":" {
-                    drawColon(at: x, in: &context, transform: lean)
+                    colonPath.addPath(self.colonPath(at: x).applying(lean))
                     x += colonWidth + digitSpacing
                 } else {
                     let setLit = Self.mapDigitSegments[character] ?? []
                     for segment in Segment.allCases {
                         let path = segmentPath(segment, originX: x).applying(lean)
-                        context.fill(path, with: .color(.primary.opacity(setLit.contains(segment) ? 1 : Self.unlitOpacity)))
+                        if setLit.contains(segment) {
+                            litPath.addPath(path)
+                        } else {
+                            unlitPath.addPath(path)
+                        }
                     }
                     x += digitWidth + digitSpacing
                 }
             }
+            context.fill(unlitPath, with: .color(color.opacity(Self.unlitOpacity)))
+            context.fill(colonPath, with: .color(color.opacity(Self.unlitOpacity)))
+            context.drawLayer { layer in
+                if colorScheme == .dark {
+                    layer.addFilter(.shadow(
+                        color: color.opacity(Self.glowOpacity),
+                        radius: digitHeight * Self.glowRadiusRatio
+                    ))
+                }
+                layer.fill(litPath, with: .color(color))
+                layer.fill(colonPath, with: .color(color.opacity((1 - Self.unlitOpacity) * colonOpacity)))
+            }
         }
-        .frame(width: totalWidth + Self.slant * digitHeight, height: digitHeight)
+        .frame(width: totalWidth + Self.slant * digitHeight + glowPadding * 2, height: digitHeight + glowPadding * 2)
+        .padding(-glowPadding)
         .accessibilityLabel(text)
+    }
+
+    /// Room around the digits for their glow.
+    private var glowPadding: CGFloat {
+        digitHeight * Self.glowRadiusRatio * 2
     }
 
     private var digitWidth: CGFloat {
@@ -74,18 +112,23 @@ struct SevenSegmentDisplay: View {
         return listWidths.reduce(0, +) + digitSpacing * CGFloat(max(listWidths.count - 1, 0))
     }
 
-    private func drawColon(at originX: CGFloat, in context: inout GraphicsContext, transform: CGAffineTransform) {
+    /// The colon's two dots.
+    private func colonPath(at originX: CGFloat) -> Path {
         let dotSize = thickness
         let centerX = originX + colonWidth / 2
+        var path = Path()
         for centerY in [digitHeight * 0.32, digitHeight * 0.7] {
-            let dot = Path(roundedRect: CGRect(
-                x: centerX - dotSize / 2,
-                y: centerY - dotSize / 2,
-                width: dotSize,
-                height: dotSize
-            ), cornerRadius: dotSize * 0.25)
-            context.fill(dot.applying(transform), with: .color(.primary))
+            path.addRoundedRect(
+                in: CGRect(
+                    x: centerX - dotSize / 2,
+                    y: centerY - dotSize / 2,
+                    width: dotSize,
+                    height: dotSize
+                ),
+                cornerSize: CGSize(width: dotSize * 0.25, height: dotSize * 0.25)
+            )
         }
+        return path
     }
 
     /// A segment as a long hexagon with pointed ends, the shape of a real display's segment.

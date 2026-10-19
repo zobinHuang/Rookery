@@ -16,12 +16,24 @@ struct AgentUsageTests {
         let usage = try ClaudeCodeUsageDecoder.decode(Data(Self.answer.utf8), fetchedAt: Date(timeIntervalSince1970: 0))
 
         #expect(usage.plan == "max")
-        #expect(usage.listLimits.map(\.title) == ["5H", "7D", "FABLE"])
+        #expect(usage.listLimits.map(\.title) == ["5h", "7d", "Fable"])
         #expect(usage.listLimits.map(\.severity) == [.normal, .normal, .critical])
         #expect(usage.listLimits[0].remainingFraction == 0.77)
         let expectedReset = try #require(ISO8601DateFormatter().date(from: "2026-10-19T21:10:00Z"))
         let reset = try #require(usage.listLimits[0].resetsAt)
         #expect(abs(reset.timeIntervalSince(expectedReset) - 0.409) < 0.01)
+    }
+
+    @Test func readsWhoIsSignedInFromTheInitializeAnswer() throws {
+        let initialize = #"{"account":{"email":"someone@example.com","organization":"Org","subscriptionType":"max"}}"#
+
+        let usage = try ClaudeCodeUsageDecoder.decode(
+            Data(Self.answer.utf8),
+            initializeData: Data(initialize.utf8),
+            fetchedAt: Date()
+        )
+
+        #expect(usage.signedInAs == "someone@example.com")
     }
 
     @Test func refusesAnAnswerWithoutPlanLimits() {

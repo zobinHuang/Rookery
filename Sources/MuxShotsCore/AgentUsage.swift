@@ -43,7 +43,7 @@ public enum AgentLimitSeverity: String, Codable, Sendable {
 public struct AgentLimit: Codable, Equatable, Identifiable, Sendable {
     /// What distinguishes the limit among the account's, stable across refreshes.
     public let id: String
-    /// A short name for the limit, as "5H", "7D" or a model's name.
+    /// A short name for the limit, as "5h", "7d" or a model's name.
     public let title: String
     /// How much of the limit is used, 0 to 100.
     public let usedPercent: Double
@@ -65,13 +65,16 @@ public struct AgentLimit: Codable, Equatable, Identifiable, Sendable {
 }
 
 /// An account's plan limits as last read from its harness.
-public struct AgentUsage: Equatable, Sendable {
+public struct AgentUsage: Codable, Equatable, Sendable {
+    /// Who the harness is signed in as, as an email address; nil when the harness does not say.
+    public let signedInAs: String?
     /// The plan, as "max" or "pro"; nil when the harness does not say.
     public let plan: String?
     public let listLimits: [AgentLimit]
     public let fetchedAt: Date
 
-    public init(plan: String?, listLimits: [AgentLimit], fetchedAt: Date) {
+    public init(signedInAs: String? = nil, plan: String?, listLimits: [AgentLimit], fetchedAt: Date) {
+        self.signedInAs = signedInAs
         self.plan = plan
         self.listLimits = listLimits
         self.fetchedAt = fetchedAt
@@ -87,17 +90,19 @@ public enum ClaudeCodeUsageDecoder {
         case malformed(String)
     }
 
-    private static let titleSession = "5H"
-    private static let titleWeekly = "7D"
+    private static let titleSession = "5h"
+    private static let titleWeekly = "7d"
 
-    /// Read the body of a successful `get_usage` response.
+    /// Read the body of a successful `get_usage` response, with who is signed in from the `initialize`
+    /// response's body when there is one.
     ///
     /// - Parameters:
-    ///   - data: the response body as JSON
+    ///   - data: the `get_usage` response body as JSON
+    ///   - initializeData: the `initialize` response body as JSON
     ///   - fetchedAt: when the answer came
     /// - Returns: the account's usage
     /// - Throws: `DecodingError` when the answer has no plan limits or cannot be read
-    public static func decode(_ data: Data, fetchedAt: Date) throws -> AgentUsage {
+    public static func decode(_ data: Data, initializeData: Data? = nil, fetchedAt: Date) throws -> AgentUsage {
         let body: Body
         do {
             body = try JSONDecoder().decode(Body.self, from: data)
@@ -116,17 +121,27 @@ public enum ClaudeCodeUsageDecoder {
                 severity: AgentLimitSeverity(rawValue: limit.severity ?? "") ?? .normal
             )
         }
-        return AgentUsage(plan: body.subscriptionType, listLimits: listLimits, fetchedAt: fetchedAt)
+        let signedInAs = initializeData.flatMap { try? JSONDecoder().decode(Initialize.self, from: $0) }?.account?.email
+        return AgentUsage(signedInAs: signedInAs, plan: body.subscriptionType, listLimits: listLimits, fetchedAt: fetchedAt)
+    }
+
+    /// The part of the `initialize` answer that says who is signed in.
+    private struct Initialize: Decodable {
+        struct Account: Decodable {
+            let email: String?
+        }
+
+        let account: Account?
     }
 
     private static func title(of limit: Body.Limit) -> String {
         if let model = limit.scope?.model?.displayName {
-            return model.uppercased()
+            return model
         }
         switch limit.group {
         case "session": return titleSession
         case "weekly": return titleWeekly
-        default: return limit.kind.uppercased()
+        default: return limit.kind
         }
     }
 

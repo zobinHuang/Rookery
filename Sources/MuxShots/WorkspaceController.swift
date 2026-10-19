@@ -36,6 +36,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// The stage, which receives dragged windows while it is open, in preference to the panel.
     weak var stageSurface: DropSurface?
     private var changeTask: Task<Void, Never>?
+    /// Resuming the saved windows at launch, which every layout change waits for.
+    private var startupTask: Task<Void, Never>?
     /// The latest layout change (a switch, or opening or closing the stage); each waits for the one before.
     private var switchTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
@@ -68,12 +70,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         let listRestored = workspace.listManagedWindows.compactMap { window in
             liveApplication(of: window).map { (window.windowId, $0) }
         }
-        changeTask = Task { [tracker] in
+        let startupTask = Task { [tracker] in
             await tracker.start()
             for (windowId, application) in listRestored {
                 await tracker.manage(windowId, of: application)
             }
             await restoreAllWindows()
+        }
+        self.startupTask = startupTask
+        changeTask = Task { [tracker] in
+            await startupTask.value
             for await change in await tracker.changes() {
                 handle(change)
             }
@@ -250,7 +256,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Run a layout change after the ones already requested.
     private func enqueue(_ work: @escaping @MainActor () async -> Void) async {
         let previousTask = switchTask
+        let startupTask = startupTask
         let task = Task {
+            await startupTask?.value
             await previousTask?.value
             isSwitching = true
             await work()

@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         statusMenuController = controller
         controller.start()
+        NSApplication.shared.mainMenu = makeMainMenu()
         if !AccessibilityPermission.isGranted {
             AccessibilityPermission.requestAccess()
         }
@@ -89,6 +90,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlServer?.stop()
     }
 
+    /// The menu bar MuxShots shows while it is the active application.
+    private func makeMainMenu() -> NSMenu {
+        let applicationMenu = NSMenu(title: "MuxShots")
+        applicationMenu.addItem(withTitle: "About MuxShots", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        applicationMenu.addItem(.separator())
+        applicationMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        applicationMenu.addItem(withTitle: "Enter or Exit Stage", action: #selector(toggleStage), keyEquivalent: "").target = self
+        applicationMenu.addItem(withTitle: "Show Managed Windows…", action: #selector(showPanel), keyEquivalent: "").target = self
+        applicationMenu.addItem(.separator())
+        applicationMenu.addItem(withTitle: "Hide MuxShots", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        applicationMenu.addItem(withTitle: "Quit MuxShots", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        NSApplication.shared.windowsMenu = windowMenu
+
+        let mainMenu = NSMenu()
+        for submenu in [applicationMenu, editMenu, windowMenu] {
+            let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            mainMenu.addItem(item)
+        }
+        return mainMenu
+    }
+
+    @objc private func showSettings() {
+        settingsWindowController?.show()
+    }
+
+    @objc private func toggleStage() {
+        stageController?.toggle()
+    }
+
+    @objc private func showPanel() {
+        workspacePanelController?.show()
+    }
+
     /// Start managing windows, once Accessibility access is granted.
     private func startManaging() {
         guard workspaceController == nil else {
@@ -113,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcutController = shortcuts
         shortcuts.start()
         settingsWindowController = SettingsWindowController(preferences: preferences, shortcutController: shortcuts)
+        stage.open()
 
         do {
             let server = try ControlServer(tracker: tracker, workspaceController: workspace, stage: stage)

@@ -41,6 +41,9 @@ protocol StageActions: AnyObject {
 struct StageView: View {
     private static let zoneAnimation = Animation.spring(response: 0.28, dampingFraction: 0.82)
     private static let sidebarAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86)
+    /// The most of the sidebar's height the videos shown in it may take, leaving the rest to the groups or
+    /// the mixer.
+    private static let pictureHeightShare: CGFloat = 0.45
 
     let model: StageModel
     let mixer: MixerController
@@ -48,6 +51,7 @@ struct StageView: View {
     @Namespace private var tabNamespace
     @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
+    @State private var sidebarHeight: CGFloat = 0
 
     /// An AppKit view hosting the stage.
     static func makeHostingView(model: StageModel, mixer: MixerController, actions: any StageActions) -> NSView {
@@ -151,7 +155,8 @@ struct StageView: View {
                 SidebarPicturesView(
                     pictures: mixer.browserTabs.pictures,
                     browserTabs: mixer.browserTabs,
-                    width: StageModel.sidebarWidth
+                    width: StageModel.sidebarWidth,
+                    heightBudget: sidebarHeight * Self.pictureHeightShare
                 )
                 .overlay(alignment: .top) {
                     Rectangle()
@@ -172,6 +177,11 @@ struct StageView: View {
             sidebarToolbar
         }
         .frame(maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            sidebarHeight = height
+        }
         .background(StageColors.sidebar)
         .overlay(alignment: .trailing) {
             Rectangle()

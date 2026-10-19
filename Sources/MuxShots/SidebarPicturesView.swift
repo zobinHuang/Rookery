@@ -1,23 +1,33 @@
 import SwiftUI
 import WebKit
 
-/// The browser videos shown in the sidebar, above the world clock: side by side, sharing the sidebar's
-/// width evenly so each gets narrower as more are opened, and wrapping onto a new row past a few.
+/// The browser videos shown in the sidebar, above the world clock, as large as the room allows: stacked one
+/// above another while the sidebar has height to spare, then side by side in more columns, each narrower,
+/// as more are opened.
 struct SidebarPicturesView: View {
-    private static let maxColumns = 4
     private static let spacing: CGFloat = 6
     private static let horizontalPadding: CGFloat = 10
+    private static let verticalPadding: CGFloat = 10
     private static let layoutAnimation = Animation.spring(response: 0.38, dampingFraction: 0.84)
 
     let pictures: BrowserPictures
     let browserTabs: BrowserTabMixer
     /// The width the pictures share.
     let width: CGFloat
+    /// The most height the pictures may take.
+    let heightBudget: CGFloat
 
     var body: some View {
         let listPictures = pictures.listPictures
-        let columns = min(max(listPictures.count, 1), Self.maxColumns)
-        let tileWidth = (width - Self.horizontalPadding * 2 - Self.spacing * CGFloat(columns - 1)) / CGFloat(columns)
+        let usableWidth = width - Self.horizontalPadding * 2
+        let tallestAspectRatio = listPictures.map(\.aspectRatio).min() ?? BrowserPictures.defaultAspectRatio
+        let columns = Self.columns(
+            count: listPictures.count,
+            width: usableWidth,
+            heightBudget: heightBudget - Self.verticalPadding * 2,
+            aspectRatio: tallestAspectRatio
+        )
+        let tileWidth = (usableWidth - Self.spacing * CGFloat(columns - 1)) / CGFloat(columns)
         let listRows = stride(from: 0, to: listPictures.count, by: columns).map { start in
             Array(listPictures[start..<min(start + columns, listPictures.count)])
         }
@@ -39,8 +49,26 @@ struct SidebarPicturesView: View {
             }
         }
         .padding(.horizontal, Self.horizontalPadding)
-        .padding(.vertical, 10)
+        .padding(.vertical, Self.verticalPadding)
         .animation(Self.layoutAnimation, value: listPictures.map(\.id))
+        .animation(Self.layoutAnimation, value: columns)
+    }
+
+    /// The fewest columns, so the largest pictures, whose rows fit the height budget; as many columns as
+    /// there are pictures when even one row does not fit.
+    private static func columns(count: Int, width: CGFloat, heightBudget: CGFloat, aspectRatio: CGFloat) -> Int {
+        guard count > 1 else {
+            return 1
+        }
+        for columns in 1...count {
+            let tileWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+            let rows = (count + columns - 1) / columns
+            let height = CGFloat(rows) * tileWidth / aspectRatio + spacing * CGFloat(rows - 1)
+            if height <= heightBudget {
+                return columns
+            }
+        }
+        return count
     }
 }
 

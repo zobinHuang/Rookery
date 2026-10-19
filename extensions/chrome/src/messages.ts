@@ -37,6 +37,8 @@ export interface BrowserTab {
     is_audible: boolean;
     is_muted: boolean;
     mode: TabMode;
+    /** The settings the tab was given, kept for as long as the tab and the browser live. */
+    settings: TrackSettings | null;
 }
 
 /**
@@ -49,7 +51,9 @@ export type BrowserEvent =
 /**
  * A message from the MuxShots app to the extension.
  */
-export type BrowserCommand = { type: "apply"; tab_id: number; settings: TrackSettings };
+export type BrowserCommand =
+    | { type: "hello" }
+    | { type: "apply"; tab_id: number; settings: TrackSettings };
 
 /**
  * A message between the background and a page's content script.

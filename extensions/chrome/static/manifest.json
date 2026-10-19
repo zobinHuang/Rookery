@@ -5,7 +5,7 @@
     "version": "0.1.0",
     "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4IPoBR9heTEeEYILA29XEhtZo/MEdkK1SKqAs5GP79nphyPDKmzbdWXgP8HtnXLBSXFVX7FkWH0oxmqNXA2DBdp0RofDcOC2tUiGAMJfsNpf9UrkHppXflWATMDTARrBlmj+GGODeC9HfZKx8Tdn4Bg9npbZihf6nxoN+kDPs57vaaCszHDjYRgWJtNIz9i1f+rbW5vEym6oTt1058ajJsVqcLTnMvCKjBhu3xCQ2xrf4fEfVtfkLwHRk3ktqmCiHSr+fBcEw3iybYdFangfCDCwqiJtjng/jzKSxL962Gp99L7Sabv+RHF14lyaM/fZ9d0h0iqvvwjBhOz6U9t7uwIDAQAB",
     "minimum_chrome_version": "120",
-    "permissions": ["nativeMessaging", "tabs", "tabCapture", "offscreen", "alarms", "scripting"],
+    "permissions": ["nativeMessaging", "tabs", "tabCapture", "offscreen", "alarms", "scripting", "storage"],
     "host_permissions": ["<all_urls>"],
     "background": {
         "service_worker": "background.js"

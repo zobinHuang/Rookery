@@ -18,7 +18,8 @@ import { TrackSettingsSchema } from "./track-settings";
  * to a capture of the whole tab when the user asked for one with the toolbar button.
  *
  * Whenever the app goes away every tab gets its sound back untouched, and the extension keeps trying to
- * reconnect.
+ * reconnect. Each tab's settings are kept in the browser's session storage, so they come back when the
+ * app does, and go with the tab when it closes or with the browser when it quits.
  */
 class MixerBridge {
     static readonly BRIDGE_HOST_NAME = "io.github.zobinhuang.muxshots";
@@ -32,6 +33,7 @@ class MixerBridge {
     /** How strongly each page mode speaks for a tab whose frames disagree. */
     static readonly LIST_MODE_PRECEDENCE: readonly PageMode[] = ["page", "blocked", "waiting", "idle"];
     static readonly ERROR_NO_RECEIVER = "Receiving end does not exist";
+    static readonly STORAGE_KEY_TAB_SETTINGS = "tab_settings";
     static readonly CONTENT_SCRIPT_PATH = "content.js";
     /** The pages a content script can run in. */
     static readonly LIST_SCRIPTABLE_SCHEMES: readonly string[] = ["http:", "https:", "file:"];
@@ -69,7 +71,57 @@ class MixerBridge {
         void chrome.alarms.create(MixerBridge.BRIDGE_RECONNECT_ALARM, {
             periodInMinutes: MixerBridge.BRIDGE_RECONNECT_MINUTES,
         });
-        this._connect();
+        void this._start_connected();
+    }
+
+    /** Connect once the kept settings are read back, or without them if they cannot be. */
+    private async _start_connected(): Promise<void> {
+        try {
+            await this._load_settings();
+        } finally {
+            this._connect();
+        }
+    }
+
+    /** Read back the settings kept for the tabs, as after the extension's worker was restarted. */
+    private async _load_settings(): Promise<void> {
+        const stored = await chrome.storage.session.get(MixerBridge.STORAGE_KEY_TAB_SETTINGS);
+        const map_stored = MessageSchema.field(stored, MixerBridge.STORAGE_KEY_TAB_SETTINGS);
+        if (typeof map_stored !== "object" || map_stored === null) {
+            return;
+        }
+        for (const [key, value] of Object.entries(map_stored)) {
+            const settings = TrackSettingsSchema.parse(value);
+            const tab_id = Number(key);
+            if (settings !== undefined && Number.isInteger(tab_id) && !this._map_settings.has(tab_id)) {
+                this._map_settings.set(tab_id, settings);
+            }
+        }
+    }
+
+    private async _store_settings(): Promise<void> {
+        await chrome.storage.session.set({
+            [MixerBridge.STORAGE_KEY_TAB_SETTINGS]: Object.fromEntries(this._map_settings),
+        });
+    }
+
+    /** Apply the kept settings again once the app is back, forgetting tabs that have closed meanwhile. */
+    private async _restore_tabs(): Promise<void> {
+        for (const [tab_id, settings] of [...this._map_settings]) {
+            try {
+                await chrome.tabs.get(tab_id);
+            } catch (err: unknown) {
+                if (!(err instanceof Error)) {
+                    throw err;
+                }
+                this._map_settings.delete(tab_id);
+                continue;
+            }
+            await this._apply_mute(tab_id, settings.is_muted);
+            await this._send_to_page(tab_id);
+        }
+        await this._store_settings();
+        this._schedule_report();
     }
 
     // The app
@@ -93,14 +145,13 @@ class MixerBridge {
         this._schedule_report();
     }
 
-    /** Give every tab its sound back, as the app is gone. */
+    /** Give every tab its sound back while the app is gone, keeping its settings for when it is back. */
     private _on_disconnect(): void {
         void chrome.runtime.lastError;
         this._port = undefined;
         clearInterval(this._levels_timer);
         this._levels_timer = undefined;
         const list_tab_ids = [...new Set([...this._map_settings.keys(), ...this._set_captured])];
-        this._map_settings.clear();
         this._map_levels.clear();
         for (const tab_id of list_tab_ids) {
             if (this._set_captured.has(tab_id)) {
@@ -123,6 +174,10 @@ class MixerBridge {
     }
 
     private _receive_command(message: unknown): void {
+        if (MessageSchema.type_of(message) === "hello") {
+            void this._restore_tabs();
+            return;
+        }
         const tab_id = MessageSchema.field(message, "tab_id");
         const settings = TrackSettingsSchema.parse(MessageSchema.field(message, "settings"));
         if (
@@ -132,7 +187,21 @@ class MixerBridge {
         ) {
             return;
         }
+        void this._apply_settings(tab_id, settings);
+    }
+
+    /** Keep and apply a tab's new settings, unless the tab no longer exists. */
+    private async _apply_settings(tab_id: number, settings: TrackSettings): Promise<void> {
+        try {
+            await chrome.tabs.get(tab_id);
+        } catch (err: unknown) {
+            if (err instanceof Error) {
+                return;
+            }
+            throw err;
+        }
         this._map_settings.set(tab_id, settings);
+        void this._store_settings();
         void this._apply_mute(tab_id, settings.is_muted);
         if (!this._set_captured.has(tab_id)) {
             void this._send_to_page(tab_id);
@@ -182,6 +251,7 @@ class MixerBridge {
                 is_audible: tab.audible ?? false,
                 is_muted: tab.mutedInfo?.muted ?? false,
                 mode,
+                settings: this._map_settings.get(tab.id) ?? null,
             });
         }
         const event: BrowserEvent = { type: "tabs", list_tabs };
@@ -260,6 +330,7 @@ class MixerBridge {
 
     private _forget(tab_id: number): void {
         this._map_settings.delete(tab_id);
+        void this._store_settings();
         this._map_frame_modes.delete(tab_id);
         this._map_levels.delete(tab_id);
         if (this._set_captured.delete(tab_id)) {
@@ -269,9 +340,10 @@ class MixerBridge {
         this._schedule_report();
     }
 
-    /** The settings a tab's page should apply itself: none while the whole tab is captured instead. */
+    /** The settings a tab's page should apply itself: none while the app is gone or the whole tab is
+     * captured instead. */
     private _page_settings(tab_id: number | undefined): TrackSettings {
-        if (tab_id === undefined || this._set_captured.has(tab_id)) {
+        if (tab_id === undefined || this._port === undefined || this._set_captured.has(tab_id)) {
             return TrackSettingsSchema.make_neutral();
         }
         return this._map_settings.get(tab_id) ?? TrackSettingsSchema.make_neutral();
@@ -369,6 +441,7 @@ class MixerBridge {
         await this._ensure_offscreen();
         const settings = { ...this._map_settings.get(tab_id) ?? TrackSettingsSchema.make_neutral(), is_taken_over: true };
         this._map_settings.set(tab_id, settings);
+        void this._store_settings();
         this._set_captured.add(tab_id);
         await this._send_to_page(tab_id);
         const capture: CaptureMessage = { type: "capture_start", tab_id, stream_id, settings };

@@ -10,6 +10,10 @@ enum StageZone: Hashable {
     case group(GroupId)
     case newGroup
     case release
+    /// The whole sidebar; a drop on its empty space starts a new group.
+    case sidebar
+    /// The placeholder row that appears below the groups while a new group would be started.
+    case newGroupRow
 }
 
 /// One tab: a member of the active group.

@@ -176,7 +176,7 @@ final class StageController: DropSurface {
             workspaceController.workspace.listActiveGroups.first.map { .group($0.groupId) } ?? .newGroup
         case .group(let groupId):
             .group(groupId)
-        case .newGroup:
+        case .newGroup, .sidebar, .newGroupRow:
             .newGroup
         case .release:
             .release
@@ -207,11 +207,18 @@ final class StageController: DropSurface {
                 self?.model.landedZone = nil
             }
         }
+        let landingZone: StageZone? = switch zone {
+        case .group:
+            zone
+        case .newGroup:
+            model.mapZoneFrames[.newGroupRow] == nil ? .newGroup : .newGroupRow
+        default:
+            nil
+        }
         guard
-            case .group = zone,
             let windowFrame,
-            let zone,
-            let targetFrame = screenFrame(of: zone),
+            let landingZone,
+            let targetFrame = screenFrame(of: landingZone),
             !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         else {
             finish()
@@ -241,9 +248,17 @@ final class StageController: DropSurface {
         guard panel.isVisible, panel.frame.contains(cursorLocation) else {
             return nil
         }
-        let listPriority: [StageZone] = [.release, .newGroup] + model.listGroups.map { .group($0.groupId) } + [.content]
-        return listPriority.first { zone in
+        let listPriority: [StageZone] = [.release, .newGroup, .newGroupRow]
+            + model.listGroups.map { .group($0.groupId) }
+            + [.sidebar, .content]
+        let zone = listPriority.first { zone in
             screenFrame(of: zone)?.contains(cursorLocation) == true
+        }
+        switch zone {
+        case .sidebar, .newGroupRow:
+            return .newGroup
+        default:
+            return zone
         }
     }
 
@@ -251,7 +266,11 @@ final class StageController: DropSurface {
         guard let frame = model.mapZoneFrames[zone] else {
             return nil
         }
-        if zone == .release && !model.isDraggingManagedWindow || (zone == .newGroup || zone == .release) && !model.isReceivingWindow {
+        let isDropOnlyZone = [StageZone.newGroup, .release, .newGroupRow].contains(zone)
+        if zone == .release && !model.isDraggingManagedWindow || isDropOnlyZone && !model.isReceivingWindow {
+            return nil
+        }
+        if zone == .newGroupRow && model.hoveredZone != .newGroup {
             return nil
         }
         return CGRect(

@@ -76,6 +76,10 @@ struct StageView: View {
                     ForEach(model.listGroups) { row in
                         groupRow(row)
                     }
+                    if model.hoveredZone == .newGroup {
+                        newGroupPlaceholder
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                 }
                 .padding(.horizontal, 8)
             }
@@ -99,6 +103,31 @@ struct StageView: View {
             }
         }
         .background(.thinMaterial)
+        .modifier(ZoneFrameReporter(zone: .sidebar, model: model))
+    }
+
+    /// The row a new group would take, shown while a drop would start one.
+    private var newGroupPlaceholder: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 22, height: 22)
+            Text("New Group")
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Color.accentColor)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.accentColor.opacity(0.14))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+        }
+        .modifier(ZoneFrameReporter(zone: .newGroupRow, model: model))
     }
 
     private func groupRow(_ row: StageGroupRow) -> some View {

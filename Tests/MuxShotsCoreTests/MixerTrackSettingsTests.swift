@@ -1,3 +1,4 @@
+import Foundation
 import MuxShotsCore
 import Testing
 
@@ -36,5 +37,26 @@ struct MixerTrackSettingsTests {
         #expect(clamped.reverbMix == 100)
         #expect(clamped.listEqualizerGains.count == MixerTrackSettings.listEqualizerFrequencies.count)
         #expect(clamped.listEqualizerGains.prefix(3) == [12, -12, 0])
+    }
+
+    @Test func settingsSavedBeforeMutingExistedStillLoad() throws {
+        let json = #"{"isTakenOver":true,"volume":0.5}"#
+
+        let settings = try JSONDecoder().decode(MixerTrackSettings.self, from: Data(json.utf8))
+
+        #expect(settings.isTakenOver)
+        #expect(settings.volume == 0.5)
+        #expect(!settings.isMuted)
+        #expect(settings.listEqualizerGains.count == MixerTrackSettings.listEqualizerFrequencies.count)
+    }
+
+    @Test func mutingWithoutTakingOverSilencesButDoesNotTreat() {
+        var settings = MixerTrackSettings()
+        settings.isMuted = true
+        settings.volume = 0.3
+
+        #expect(settings.isCaptureNeeded)
+        #expect(settings.effective.isMuted)
+        #expect(settings.effective.volume == 1)
     }
 }

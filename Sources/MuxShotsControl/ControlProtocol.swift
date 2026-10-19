@@ -22,6 +22,8 @@ public enum ControlRequest: Codable, Sendable {
     /// Change how the mixer treats an application's or a browser tab's sound, taking it over or giving it
     /// back as the settings say, then reply with the mixer's tracks.
     case mixerApply(target: MixerTarget, settings: MixerTrackSettings)
+    /// Show a browser tab's video in the sidebar, or stop showing it, then reply with the mixer's tracks.
+    case mixerTogglePicture(sessionId: Int, tabId: Int)
     /// Keep the connection open for the browser extension: `BrowserEvent`s come in and `BrowserCommand`s go
     /// out, one JSON line each, spelled as `BrowserWire` says, until either side closes.
     case browserSession
@@ -68,12 +70,16 @@ public struct MixerTabStatus: Codable, Equatable, Sendable {
     public let settings: MixerTrackSettings
     /// How loud the tab is now, 0 to 1.
     public let level: Float
+    /// The size of the latest picture of the tab's video shown in the sidebar, in pixels: nil while it is
+    /// not shown, zero until its first picture arrives.
+    public let pictureSize: CGSize?
 
-    public init(sessionId: Int, tab: BrowserTab, settings: MixerTrackSettings, level: Float) {
+    public init(sessionId: Int, tab: BrowserTab, settings: MixerTrackSettings, level: Float, pictureSize: CGSize?) {
         self.sessionId = sessionId
         self.tab = tab
         self.settings = settings
         self.level = level
+        self.pictureSize = pictureSize
     }
 }
 

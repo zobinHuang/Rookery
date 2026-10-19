@@ -158,6 +158,15 @@ final class ControlServer: Sendable {
             case .mixerApply(.browserTab(let sessionId, let tabId), let settings):
                 await mixerController.browserTabs.update(BrowserTabKey(sessionId: sessionId, tabId: tabId)) { $0 = settings }
                 try await connection.send(await mixerMessage(mixerController))
+            case .mixerTogglePicture(let sessionId, let tabId):
+                await MainActor.run {
+                    let browserTabs = mixerController.browserTabs
+                    let key = BrowserTabKey(sessionId: sessionId, tabId: tabId)
+                    if let browserTab = browserTabs.listTabs.first(where: { $0.key == key }) {
+                        browserTabs.togglePicture(of: browserTab)
+                    }
+                }
+                try await connection.send(await mixerMessage(mixerController))
             case .browserSession:
                 await serveBrowser(connection, browserTabs: mixerController.browserTabs)
             }
@@ -226,7 +235,8 @@ final class ControlServer: Sendable {
                 sessionId: browserTab.key.sessionId,
                 tab: browserTab.tab,
                 settings: browserTabs.settings(of: browserTab.key),
-                level: max(levels.left, levels.right)
+                level: max(levels.left, levels.right),
+                pictureSize: browserTabs.pictures.picture(for: browserTab.key)?.videoSize
             )
         }
         return .mixer(listTracks: listTracks, mapLevels: mapLevels, listTabs: listTabs)

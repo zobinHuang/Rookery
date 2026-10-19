@@ -16,6 +16,7 @@ enum Muxctl {
                muxctl audio [--json]
                muxctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
                muxctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
+               muxctl audio pip tab:<session>.<tab>
                  settings: mute=on|off volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
                            eq=on|off eq<1-10>=-12...12 (\(bandList)) preset=<preset> reverb=<room> mix=0...100
                  presets: \(EqualizerPreset.allCases.map(\.rawValue).joined(separator: " "))
@@ -132,6 +133,9 @@ enum Muxctl {
                 if status.settings.isCaptureNeeded {
                     Swift.print("    \(summary(of: status.settings))")
                 }
+                if let size = status.pictureSize {
+                    Swift.print("    in sidebar: \(size == .zero ? "waiting for the first picture" : "\(Int(size.width))x\(Int(size.height))")")
+                }
             }
             Swift.print("\(listTracks.count) tracks, \(listTracks.filter(\.isCapturing).count) captured, \(listTabs.count) browser tabs")
         case .done:
@@ -182,6 +186,12 @@ enum Muxctl {
             exit(withMessage: usage)
         }
         let target = MixerTarget(targetText)
+        if subcommand == "pip" {
+            guard case .browserTab(let sessionId, let tabId) = target else {
+                exit(withMessage: usage)
+            }
+            return .mixerTogglePicture(sessionId: sessionId, tabId: tabId)
+        }
         var settings = await currentSettings(of: target)
         switch subcommand {
         case "take":

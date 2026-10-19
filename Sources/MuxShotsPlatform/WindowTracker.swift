@@ -210,17 +210,28 @@ public actor WindowTracker {
         mapSubscribers[subscriberId] = nil
     }
 
+    /// Record a tracker's snapshot. A managed window that closed is reported removed even if it closed before
+    /// it was ever observed, as a window an application merges away right after it is dropped on MuxShots.
     private func apply(_ snapshot: ApplicationSnapshot) {
         let processId = snapshot.application.processId
         let listWindows = snapshot.listWindows.filter { mapManagedProcessIds[$0.windowId] == processId }
-        for windowId in snapshot.listClosedIds where mapManagedProcessIds[windowId] == processId {
+        let listClosedIds = snapshot.listClosedIds.filter { mapManagedProcessIds[$0] == processId }
+        for windowId in listClosedIds {
             mapManagedProcessIds[windowId] = nil
         }
-        publish(registry.apply(ApplicationSnapshot(
+        var listChanges = registry.apply(ApplicationSnapshot(
             application: snapshot.application,
             listWindows: listWindows,
-            listClosedIds: snapshot.listClosedIds
-        )))
+            listClosedIds: listClosedIds
+        ))
+        let setReportedIds = Set(listChanges.compactMap { change -> WindowId? in
+            if case .removed(let windowId) = change {
+                return windowId
+            }
+            return nil
+        })
+        listChanges += listClosedIds.filter { !setReportedIds.contains($0) }.map { .removed(windowId: $0) }
+        publish(listChanges)
         stopTrackerIfUnused(processId: processId)
     }
 

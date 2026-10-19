@@ -1,5 +1,6 @@
 import Foundation
 import MuxShotsControl
+import MuxShotsCore
 import MuxShotsPlatform
 import Network
 import os
@@ -9,11 +10,16 @@ final class ControlServer: Sendable {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "control")
 
     private let tracker: WindowTracker
+    private let workspaceController: WorkspaceController
     private let listener: NWListener
     private let queue = DispatchQueue(label: "MuxShots.control.listener")
 
     /// Bind the control socket, replacing a stale one left by an earlier run.
-    init(tracker: WindowTracker) throws {
+    ///
+    /// - Parameters:
+    ///   - tracker: the source of observed window state
+    ///   - workspaceController: the owner of the groups
+    init(tracker: WindowTracker, workspaceController: WorkspaceController) throws {
         let url = ControlSocket.url
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -26,14 +32,15 @@ final class ControlServer: Sendable {
         parameters.requiredLocalEndpoint = .unix(path: url.path)
         self.listener = try NWListener(using: parameters)
         self.tracker = tracker
+        self.workspaceController = workspaceController
     }
 
     /// Start accepting connections.
     func start() {
-        listener.newConnectionHandler = { [tracker] connection in
+        listener.newConnectionHandler = { [tracker, workspaceController] connection in
             let control = ControlConnection(accepted: connection)
             Task {
-                await Self.serve(control, tracker: tracker)
+                await Self.serve(control, tracker: tracker, workspaceController: workspaceController)
             }
         }
         listener.stateUpdateHandler = { state in
@@ -50,7 +57,11 @@ final class ControlServer: Sendable {
         try? FileManager.default.removeItem(at: ControlSocket.url)
     }
 
-    private static func serve(_ connection: ControlConnection, tracker: WindowTracker) async {
+    private static func serve(
+        _ connection: ControlConnection,
+        tracker: WindowTracker,
+        workspaceController: WorkspaceController
+    ) async {
         defer { connection.cancel() }
         do {
             guard let request = try await connection.receive(ControlRequest.self) else {
@@ -58,10 +69,16 @@ final class ControlServer: Sendable {
             }
             switch request {
             case .list:
-                try await connection.send(ControlMessage.windows(listWindows: await tracker.listWindows()))
+                try await connection.send(ControlMessage.workspace(
+                    listGroups: await workspaceController.workspace.listGroups,
+                    listWindows: await tracker.listWindows()
+                ))
             case .watch:
                 let changes = await tracker.changes()
-                try await connection.send(ControlMessage.windows(listWindows: await tracker.listWindows()))
+                try await connection.send(ControlMessage.workspace(
+                    listGroups: await workspaceController.workspace.listGroups,
+                    listWindows: await tracker.listWindows()
+                ))
                 for await change in changes {
                     try await connection.send(ControlMessage.change(change))
                 }

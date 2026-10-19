@@ -10,12 +10,17 @@ final class StatusMenuController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let permissionItem = NSMenuItem()
     private let grantItem = NSMenuItem()
+    private let showWorkspaceItem = NSMenuItem()
     private let onAccessGranted: @MainActor () -> Void
+    private let onShowWorkspace: @MainActor () -> Void
     private var permissionPollTask: Task<Void, Never>?
 
-    /// - Parameter onAccessGranted: called whenever the permission is found granted
-    init(onAccessGranted: @escaping @MainActor () -> Void) {
+    /// - Parameters:
+    ///   - onAccessGranted: called whenever the permission is found granted
+    ///   - onShowWorkspace: called when the user asks to see the managed windows
+    init(onAccessGranted: @escaping @MainActor () -> Void, onShowWorkspace: @escaping @MainActor () -> Void) {
         self.onAccessGranted = onAccessGranted
+        self.onShowWorkspace = onShowWorkspace
     }
 
     /// Install the menu and start tracking the Accessibility permission.
@@ -30,6 +35,10 @@ final class StatusMenuController: NSObject {
         grantItem.target = self
         grantItem.action = #selector(grantAccess)
 
+        showWorkspaceItem.title = "Show Managed Windows…"
+        showWorkspaceItem.target = self
+        showWorkspaceItem.action = #selector(showWorkspace)
+
         let quitItem = NSMenuItem(
             title: "Quit MuxShots",
             action: #selector(NSApplication.terminate(_:)),
@@ -37,8 +46,11 @@ final class StatusMenuController: NSObject {
         )
 
         let menu = NSMenu()
+        menu.autoenablesItems = false
         menu.addItem(permissionItem)
         menu.addItem(grantItem)
+        menu.addItem(.separator())
+        menu.addItem(showWorkspaceItem)
         menu.addItem(.separator())
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -65,9 +77,14 @@ final class StatusMenuController: NSObject {
             ? "Accessibility access granted"
             : "Accessibility access required"
         grantItem.isHidden = isPermissionGranted
+        showWorkspaceItem.isEnabled = isPermissionGranted
         if isPermissionGranted {
             onAccessGranted()
         }
+    }
+
+    @objc private func showWorkspace() {
+        onShowWorkspace()
     }
 
     @objc private func grantAccess() {

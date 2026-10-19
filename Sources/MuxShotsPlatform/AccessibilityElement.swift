@@ -4,6 +4,7 @@ import MuxShotsCore
 /// A typed view of an Accessibility element: an application or one of its windows.
 struct AccessibilityElement {
     private static let fullscreenAttribute = "AXFullScreen"
+    private static let enhancedUserInterfaceAttribute = "AXEnhancedUserInterface"
     private static let remoteTokenLength = 20
     private static let remoteTokenCocoaTag: Int32 = 0x636f_636f
     private static let remoteElementIdLimit: UInt64 = 500_000
@@ -97,6 +98,40 @@ struct AccessibilityElement {
 
     func isFullscreen() throws -> Bool {
         try bool(Self.fullscreenAttribute) ?? false
+    }
+
+    /// Move and resize this window.
+    ///
+    /// - Parameter frame: the frame in global screen coordinates, origin at the top-left of the main display
+    func applyFrame(_ frame: CGRect) throws {
+        var origin = frame.origin
+        var size = frame.size
+        guard
+            let originValue = AXValueCreate(.cgPoint, &origin),
+            let sizeValue = AXValueCreate(.cgSize, &size)
+        else {
+            throw AccessibilityError.unexpectedValueType(attribute: kAXPositionAttribute)
+        }
+        try write(kAXSizeAttribute, value: sizeValue)
+        try write(kAXPositionAttribute, value: originValue)
+        try write(kAXSizeAttribute, value: sizeValue)
+    }
+
+    /// Whether this application runs its enhanced interface for assistive clients, which makes Chromium and
+    /// Electron applications animate and lag when their windows are moved.
+    func isEnhancedUserInterface() throws -> Bool {
+        try bool(Self.enhancedUserInterfaceAttribute) ?? false
+    }
+
+    func applyEnhancedUserInterface(_ isEnabled: Bool) throws {
+        try write(Self.enhancedUserInterfaceAttribute, value: isEnabled as CFBoolean)
+    }
+
+    private func write(_ attribute: String, value: CFTypeRef) throws {
+        try Self.check(
+            AXUIElementSetAttributeValue(element, attribute as CFString, value),
+            operation: attribute
+        )
     }
 
     private func string(_ attribute: String) throws -> String? {

@@ -1,32 +1,47 @@
 import CoreGraphics
+import Foundation
 import MuxShotsCore
 
 /// A window as the window server lists it, across every Space.
-struct WindowServerWindow: Sendable {
-    let windowId: WindowId
-    let processId: pid_t
-    let isOnScreen: Bool
+public struct WindowServerWindow: Sendable {
+    public let windowId: WindowId
+    public let processId: pid_t
+    /// The frame in global screen coordinates, origin at the top-left of the main display.
+    public let frame: CGRect
+    public let isOnScreen: Bool
     /// Whether the window is shown on some Space; false for minimized windows, windows of hidden
     /// applications and windows an application has closed but keeps alive.
-    let isOrderedIn: Bool
+    public let isOrderedIn: Bool
 }
 
-/// Read-only queries of the window server: its window list and its Spaces.
-enum WindowServer {
+/// Read-only queries of the window server's window list.
+public enum WindowServer {
     private static let normalWindowLayer = 0
     private static let transparentAlpha = 0.0
-    private static let allSpacesMask: Int32 = 0x7
-    private static let currentSpaceKey = "Current Space"
-    private static let managedSpaceIdKey = "ManagedSpaceID"
 
     /// Every visible normal-layer window of every application, on any Space.
-    static func listWindows() -> [WindowServerWindow] {
-        guard
-            let listInfo = CGWindowListCopyWindowInfo(
-                [.optionAll, .excludeDesktopElements],
-                kCGNullWindowID
-            ) as? [[String: Any]]
-        else {
+    public static func listWindows() -> [WindowServerWindow] {
+        windows(options: [.optionAll, .excludeDesktopElements], relativeTo: kCGNullWindowID)
+    }
+
+    /// One window, if it still exists.
+    public static func window(withId windowId: WindowId) -> WindowServerWindow? {
+        windows(options: [.optionIncludingWindow], relativeTo: windowId.rawValue).first
+    }
+
+    /// The frontmost on-screen normal window under a point, ignoring windows of one process.
+    ///
+    /// - Parameters:
+    ///   - point: the point in global screen coordinates, origin at the top-left of the main display
+    ///   - excludedProcessId: the process whose windows never match, typically MuxShots itself
+    public static func frontmostWindow(at point: CGPoint, excluding excludedProcessId: pid_t) -> WindowServerWindow? {
+        windows(options: [.optionOnScreenOnly, .excludeDesktopElements], relativeTo: kCGNullWindowID)
+            .first { $0.processId != excludedProcessId && $0.frame.contains(point) }
+    }
+
+    /// Normal-layer, non-transparent windows in front-to-back order.
+    private static func windows(options: CGWindowListOption, relativeTo windowId: CGWindowID) -> [WindowServerWindow] {
+        guard let listInfo = CGWindowListCopyWindowInfo(options, windowId) as? [[String: Any]] else {
             return []
         }
         let connectionId = cgsMainConnectionId()
@@ -36,7 +51,9 @@ enum WindowServer {
                 let processId = info[kCGWindowOwnerPID as String] as? pid_t,
                 let layer = info[kCGWindowLayer as String] as? Int,
                 layer == normalWindowLayer,
-                info[kCGWindowAlpha as String] as? Double != transparentAlpha
+                info[kCGWindowAlpha as String] as? Double != transparentAlpha,
+                let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
+                let frame = CGRect(dictionaryRepresentation: boundsInfo)
             else {
                 return nil
             }
@@ -45,34 +62,10 @@ enum WindowServer {
             return WindowServerWindow(
                 windowId: WindowId(rawValue: rawId),
                 processId: processId,
+                frame: frame,
                 isOnScreen: info[kCGWindowIsOnscreen as String] as? Bool ?? false,
                 isOrderedIn: isOrderedIn
             )
         }
-    }
-
-    /// The Space currently shown on each display.
-    static func currentSpaceIds() -> Set<UInt64> {
-        guard
-            let listDisplays = cgsCopyManagedDisplaySpaces(cgsMainConnectionId())?
-                .takeRetainedValue() as? [[String: Any]]
-        else {
-            return []
-        }
-        return Set(listDisplays.compactMap { display in
-            (display[currentSpaceKey] as? [String: Any])?[managedSpaceIdKey] as? UInt64
-        })
-    }
-
-    /// The Spaces a window belongs to.
-    static func spaceIds(ofWindow windowId: WindowId) -> Set<UInt64> {
-        let listWindowIds = [windowId.rawValue] as CFArray
-        guard
-            let listSpaceIds = cgsCopySpacesForWindows(cgsMainConnectionId(), allSpacesMask, listWindowIds)?
-                .takeRetainedValue() as? [UInt64]
-        else {
-            return []
-        }
-        return Set(listSpaceIds)
     }
 }

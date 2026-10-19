@@ -1,7 +1,7 @@
 import AppKit
 import MuxShotsCore
 
-/// Feeds application launches, quits and Space changes from `NSWorkspace` into a window tracker.
+/// Feeds application quits and Space changes from `NSWorkspace` into a window tracker.
 @MainActor
 public final class ApplicationMonitor {
     private let tracker: WindowTracker
@@ -11,26 +11,34 @@ public final class ApplicationMonitor {
         self.tracker = tracker
     }
 
-    /// Start tracking every regular application already running, then follow launches and quits.
+    /// The running application with a process identifier, in tracker terms.
+    ///
+    /// - Returns: the application, or nil if no such process is running
+    public static func application(processId: pid_t) -> RunningApplication? {
+        guard let running = NSRunningApplication(processIdentifier: processId) else {
+            return nil
+        }
+        return RunningApplication(
+            processId: processId,
+            bundleId: running.bundleIdentifier,
+            name: running.localizedName ?? running.bundleIdentifier ?? String(processId)
+        )
+    }
+
+    /// Start following quits and Space changes.
     public func start() {
         let center = NSWorkspace.shared.notificationCenter
         listObservers = [
-            center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main) {
-                [tracker] notification in
-                guard let application = Self.trackedApplication(from: notification) else {
-                    return
-                }
-                Task {
-                    await tracker.applicationLaunched(application)
-                }
-            },
             center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) {
                 [tracker] notification in
-                guard let application = Self.trackedApplication(from: notification) else {
+                guard
+                    let running = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                else {
                     return
                 }
+                let processId = running.processIdentifier
                 Task {
-                    await tracker.applicationTerminated(processId: application.processId)
+                    await tracker.applicationTerminated(processId: processId)
                 }
             },
             center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) {
@@ -40,42 +48,14 @@ public final class ApplicationMonitor {
                 }
             },
         ]
-
-        let listApplications = NSWorkspace.shared.runningApplications.compactMap(Self.trackedApplication(from:))
-        Task { [tracker] in
-            await tracker.start(listApplications: listApplications)
-        }
     }
 
-    /// Stop following the workspace and stop the tracker.
-    public func stop() async {
+    /// Stop following the workspace.
+    public func stop() {
         let center = NSWorkspace.shared.notificationCenter
         for observer in listObservers {
             center.removeObserver(observer)
         }
         listObservers.removeAll()
-        await tracker.stop()
-    }
-
-    private nonisolated static func trackedApplication(from notification: Notification) -> RunningApplication? {
-        guard let running = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else {
-            return nil
-        }
-        return trackedApplication(from: running)
-    }
-
-    /// The application in tracker terms, or nil for background agents and MuxShots itself.
-    private nonisolated static func trackedApplication(from running: NSRunningApplication) -> RunningApplication? {
-        guard
-            running.activationPolicy == .regular,
-            running.processIdentifier != ProcessInfo.processInfo.processIdentifier
-        else {
-            return nil
-        }
-        return RunningApplication(
-            processId: running.processIdentifier,
-            bundleId: running.bundleIdentifier,
-            name: running.localizedName ?? running.bundleIdentifier ?? String(running.processIdentifier)
-        )
     }
 }

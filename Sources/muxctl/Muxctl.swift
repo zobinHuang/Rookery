@@ -49,9 +49,15 @@ enum Muxctl {
             return
         }
         switch message {
-        case .windows(let listWindows):
-            Swift.print(listWindows.map(row(for:)).joined(separator: "\n"))
-            Swift.print("\(listWindows.count) windows")
+        case .workspace(let listGroups, let listWindows):
+            let mapWindows = Dictionary(uniqueKeysWithValues: listWindows.map { ($0.windowId, $0) })
+            for group in listGroups {
+                Swift.print("\(group.name) (\(group.listMembers.count))")
+                for member in group.listMembers {
+                    Swift.print("  " + (mapWindows[member.windowId].map(row(for:)) ?? row(for: member)))
+                }
+            }
+            Swift.print("\(listGroups.count) groups, \(listGroups.map(\.listMembers.count).reduce(0, +)) windows")
         case .change(.added(let window)):
             Swift.print("+ \(row(for: window))")
         case .change(.updated(let window)):
@@ -78,6 +84,17 @@ enum Muxctl {
             window.application.name.padding(toLength: 20, withPad: " ", startingAt: 0),
             frameText.padding(toLength: 22, withPad: " ", startingAt: 0),
             String(window.title.prefix(titleWidth)),
+        ].joined(separator: " ")
+    }
+
+    /// A row for a managed window whose state has not been observed yet.
+    private static func row(for member: ManagedWindow) -> String {
+        [
+            String(describing: member.windowId).padding(toLength: 8, withPad: " ", startingAt: 0),
+            "???",
+            member.application.name.padding(toLength: 20, withPad: " ", startingAt: 0),
+            "".padding(toLength: 22, withPad: " ", startingAt: 0),
+            String(member.title.prefix(titleWidth)),
         ].joined(separator: " ")
     }
 

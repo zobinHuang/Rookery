@@ -3,15 +3,15 @@ import MuxShotsCore
 
 /// A request `muxctl` sends to the running app.
 public enum ControlRequest: Codable, Sendable {
-    /// Reply once with every tracked window.
+    /// Reply once with the groups and the observed state of their windows.
     case list
-    /// Reply with every tracked window, then stream every change until the client disconnects.
+    /// Reply with the groups and their windows, then stream every window change until the client disconnects.
     case watch
 }
 
 /// A message the running app sends back.
 public enum ControlMessage: Codable, Sendable {
-    case windows(listWindows: [WindowRecord])
+    case workspace(listGroups: [WindowGroup], listWindows: [WindowRecord])
     case change(WindowChange)
     case failure(message: String)
 }

@@ -10,6 +10,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private static let refreshDebounce: TimeInterval = 0.05
     private static let discoveryRetryInterval = Duration.seconds(30)
     private static let discoverySliceSize: UInt64 = 10_000
+    private static let frameTolerance: CGFloat = 2
     private static let listApplicationNotifications = [
         kAXWindowCreatedNotification,
         kAXFocusedWindowChangedNotification,
@@ -128,13 +129,34 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             }
             do {
                 try element.applyFrame(frame)
-                return try element.frame()
+                var landedFrame = try element.frame()
+                if !Self.isClose(landedFrame, to: frame) {
+                    try element.applyFrame(frame)
+                    landedFrame = try element.frame()
+                }
+                return landedFrame
             } catch {
                 Self.logger.error("cannot move window \(windowId.rawValue): \(error, privacy: .public)")
                 return nil
             }
         }
         return result ?? nil
+    }
+
+    /// Where a managed window is, as Accessibility reports it. Unlike the window server's list, this is not
+    /// skewed while a Space transition animates the window.
+    func frame(of windowId: WindowId) async -> CGRect? {
+        await thread.run { [self] in
+            try? mapElements[windowId]?.frame()
+        } ?? nil
+    }
+
+    /// Whether two frames match within the rounding applications apply.
+    private static func isClose(_ lhs: CGRect, to rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) <= frameTolerance
+            && abs(lhs.minY - rhs.minY) <= frameTolerance
+            && abs(lhs.width - rhs.width) <= frameTolerance
+            && abs(lhs.height - rhs.height) <= frameTolerance
     }
 
     /// Bring a managed window to the front of its application, restoring it from the Dock first.

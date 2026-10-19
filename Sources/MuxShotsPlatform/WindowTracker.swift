@@ -99,6 +99,14 @@ public actor WindowTracker {
         return await tracker.applyFrame(frame, to: windowId)
     }
 
+    /// Where a managed window is, as Accessibility reports it.
+    public func frame(of windowId: WindowId) async -> CGRect? {
+        guard let tracker = tracker(of: windowId) else {
+            return nil
+        }
+        return await tracker.frame(of: windowId)
+    }
+
     /// Bring a managed window to the front of its application; activating the application is the caller's.
     ///
     /// - Returns: whether the window was raised

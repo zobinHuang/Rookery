@@ -12,6 +12,16 @@ enum StageColors {
     static let selectedTab = color(light: .white, dark: NSColor(white: 0.13, alpha: 1))
     static let idleTab = color(light: NSColor(white: 0, alpha: 0.05), dark: NSColor(white: 1, alpha: 0.05))
     static let separator = color(light: NSColor(white: 0, alpha: 0.08), dark: NSColor(white: 1, alpha: 0.07))
+    /// The chosen segment of a segmented switch.
+    static let selectedSegment = color(light: .white, dark: NSColor(white: 0.22, alpha: 1))
+    /// A sidebar row under the pointer.
+    static let hoveredRow = color(light: NSColor(white: 0, alpha: 0.045), dark: NSColor(white: 1, alpha: 0.05))
+    /// The square a group's application icons sit in.
+    static let tile = color(light: NSColor(white: 1, alpha: 0.9), dark: NSColor(white: 1, alpha: 0.07))
+    /// A raised panel in the sidebar, such as a mixer track.
+    static let card = color(light: NSColor(white: 1, alpha: 0.75), dark: NSColor(white: 1, alpha: 0.045))
+    /// The groove of a slider or a meter.
+    static let groove = color(light: NSColor(white: 0, alpha: 0.1), dark: NSColor(white: 1, alpha: 0.1))
 
     private static func color(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in

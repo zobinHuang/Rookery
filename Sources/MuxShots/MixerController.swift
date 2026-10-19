@@ -12,15 +12,21 @@ import os
 final class MixerController {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "mixer")
     private static let settingsKey = "mixerTracks"
+    private static let meterInterval: TimeInterval = 1 / 30
+    /// How much of its level a meter keeps from one reading to the next, so it falls back smoothly.
+    private static let meterDecay: Float = 0.8
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let mixer = AudioMixer()
     @ObservationIgnored private var processObservation: AudioProcessObservation?
     @ObservationIgnored private var applicationObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var meterTimer: Timer?
     /// The settings of every application ever adjusted, by bundle id.
     private var mapSettings: [String: MixerTrackSettings]
     /// The applications that can be mixed: those connected to the audio system, and those taken over.
     private(set) var listTracks: [MixerTrackStatus] = []
+    /// How loud each captured track is now, for its meter, by bundle id.
+    private(set) var mapLevels: [String: MixerLevels] = [:]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -52,6 +58,8 @@ final class MixerController {
 
     /// Give every application its sound back.
     func stop() {
+        meterTimer?.invalidate()
+        meterTimer = nil
         mixer.releaseAll()
         processObservation?.invalidate()
         processObservation = nil
@@ -84,6 +92,39 @@ final class MixerController {
     /// How loud each channel of an application's track has been since this was last asked, 0 to 1.
     func takeLevels(of bundleId: String) -> (left: Float, right: Float) {
         mixer.takeLevels(ofApplication: bundleId)
+    }
+
+    /// Read the captured tracks' levels for their meters while any track is captured.
+    private func updateMeterTimer() {
+        let isAnyCapturing = listTracks.contains(where: \.isCapturing)
+        if isAnyCapturing, meterTimer == nil {
+            meterTimer = Timer.scheduledTimer(withTimeInterval: Self.meterInterval, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.readLevels()
+                }
+            }
+        } else if !isAnyCapturing {
+            meterTimer?.invalidate()
+            meterTimer = nil
+            if !mapLevels.isEmpty {
+                mapLevels = [:]
+            }
+        }
+    }
+
+    private func readLevels() {
+        var mapLevels: [String: MixerLevels] = [:]
+        for track in listTracks where track.isCapturing {
+            let raw = mixer.takeLevels(ofApplication: track.bundleId)
+            let previous = self.mapLevels[track.bundleId] ?? MixerLevels()
+            mapLevels[track.bundleId] = MixerLevels(
+                left: max(raw.left, previous.left * Self.meterDecay),
+                right: max(raw.right, previous.right * Self.meterDecay)
+            )
+        }
+        if mapLevels != self.mapLevels {
+            self.mapLevels = mapLevels
+        }
     }
 
     private func reloadTracks() {
@@ -120,6 +161,7 @@ final class MixerController {
         if listTracks != self.listTracks {
             self.listTracks = listTracks
         }
+        updateMeterTimer()
     }
 
     private func store() {
@@ -129,4 +171,10 @@ final class MixerController {
             Self.logger.error("cannot store mixer settings: \(error)")
         }
     }
+}
+
+/// How loud a track's channels are, 0 silent to 1 full scale.
+struct MixerLevels: Equatable {
+    var left: Float = 0
+    var right: Float = 0
 }

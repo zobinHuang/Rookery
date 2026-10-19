@@ -32,6 +32,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let workspaceController: WorkspaceController
     private weak var coordinator: StageCoordinator?
     private let preferences: Preferences
+    private let mixerController: MixerController
     private let ghostAnimator: DropGhostAnimator
     private let model = StageModel()
     private let panel: StagePanel
@@ -52,6 +53,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         stageId: StageId,
         workspaceController: WorkspaceController,
         preferences: Preferences,
+        mixerController: MixerController,
         ghostAnimator: DropGhostAnimator,
         coordinator: StageCoordinator
     ) {
@@ -59,6 +61,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         self.coordinator = coordinator
         self.workspaceController = workspaceController
         self.preferences = preferences
+        self.mixerController = mixerController
         self.ghostAnimator = ghostAnimator
         panel = StagePanel(
             contentRect: .zero,
@@ -82,7 +85,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         background.layer?.masksToBounds = true
         panel.contentView = background
         super.init()
-        let stageView = StageView.makeHostingView(model: model, actions: self)
+        let stageView = StageView.makeHostingView(model: model, mixer: mixerController, actions: self)
         stageView.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(stageView)
         NSLayoutConstraint.activate([
@@ -242,6 +245,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
                 groupId: group.groupId,
                 name: group.name,
                 listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
+                frontWindowName: group.listMembersFrontToBack.first?.displayName,
                 isActive: group.groupId == activeGroup?.groupId
             )
         }

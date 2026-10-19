@@ -43,12 +43,15 @@ struct StageView: View {
     private static let sidebarAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86)
 
     let model: StageModel
+    let mixer: MixerController
     unowned let actions: any StageActions
     @Namespace private var tabNamespace
+    @Namespace private var modeNamespace
+    @State private var hoveredGroupId: GroupId?
 
     /// An AppKit view hosting the stage.
-    static func makeHostingView(model: StageModel, actions: any StageActions) -> NSView {
-        let view = NSHostingView(rootView: StageView(model: model, actions: actions))
+    static func makeHostingView(model: StageModel, mixer: MixerController, actions: any StageActions) -> NSView {
+        let view = NSHostingView(rootView: StageView(model: model, mixer: mixer, actions: actions))
         view.sizingOptions = []
         return view
     }
@@ -74,6 +77,7 @@ struct StageView: View {
         .animation(Self.zoneAnimation, value: model.tabInsertBeforeId)
         .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
         .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
+        .animation(Self.sidebarAnimation, value: sidebarMode)
     }
 
     // MARK: - Sidebar
@@ -82,25 +86,51 @@ struct StageView: View {
         model.isReceivingWindow || model.isDraggingTab
     }
 
+    /// What the sidebar shows: the groups whenever a window or tab is being dragged, so it can be dropped
+    /// on one, else the chosen mode.
+    private var sidebarMode: SidebarMode {
+        showsDropZones ? .groups : model.sidebarMode
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 6) {
             sidebarHeader
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(model.listGroups) { row in
-                        groupRow(row)
+            modeSwitch
+            ZStack(alignment: .top) {
+                if sidebarMode == .groups {
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(model.listGroups) { row in
+                                groupRow(row)
+                            }
+                            if model.highlightedZone == .newGroup && !model.isSidebarCollapsed {
+                                newGroupPlaceholder
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                            if model.isGroupOverSidebarEnd {
+                                InsertionMark(isVertical: false)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
                     }
-                    if model.highlightedZone == .newGroup && !model.isSidebarCollapsed {
-                        newGroupPlaceholder
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .leading).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)
+                    ))
+                } else {
+                    ScrollView {
+                        MixerView(mixer: mixer, isCollapsed: model.isSidebarCollapsed)
+                            .padding(.vertical, 2)
                     }
-                    if model.isGroupOverSidebarEnd {
-                        InsertionMark(isVertical: false)
-                    }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .trailing).combined(with: .opacity)
+                    ))
                 }
-                .padding(.horizontal, 8)
             }
-            Spacer(minLength: 0)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .clipped()
             if showsDropZones {
                 VStack(spacing: 6) {
                     dropZone(.newGroup, title: "New Group", symbol: "plus", tint: .accentColor)
@@ -111,7 +141,7 @@ struct StageView: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if model.listGroups.isEmpty && !model.isSidebarCollapsed {
+            } else if sidebarMode == .groups && model.listGroups.isEmpty && !model.isSidebarCollapsed {
                 Text("Drag a window here to start a group.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -192,6 +222,73 @@ struct StageView: View {
         .help("Drag to move the stage; double-click to fill the display")
     }
 
+    /// The switch between the groups and the mixer: a segmented control, or a column of two buttons in the
+    /// collapsed sidebar.
+    private var modeSwitch: some View {
+        Group {
+            if model.isSidebarCollapsed {
+                VStack(spacing: 4) {
+                    ForEach(SidebarMode.allCases, id: \.self) { mode in
+                        Button {
+                            model.sidebarMode = mode
+                        } label: {
+                            Image(systemName: mode.symbol)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                                .frame(width: 34, height: 26)
+                                .background {
+                                    if sidebarMode == mode {
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .fill(Color.accentColor.opacity(0.16))
+                                            .matchedGeometryEffect(id: "mode", in: modeNamespace)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(mode.title)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: 2) {
+                    ForEach(SidebarMode.allCases, id: \.self) { mode in
+                        Button {
+                            model.sidebarMode = mode
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: mode.symbol)
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(mode.title)
+                                    .font(.system(size: 11.5, weight: .semibold))
+                            }
+                            .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 24)
+                            .background {
+                                if sidebarMode == mode {
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(StageColors.selectedSegment)
+                                        .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
+                                        .matchedGeometryEffect(id: "mode", in: modeNamespace)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(2)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(StageColors.groove.opacity(0.7))
+                }
+                .padding(.horizontal, 12)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
     /// The tools along the bottom of the sidebar.
     private var sidebarToolbar: some View {
         let layout = model.isSidebarCollapsed ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 4))
@@ -229,65 +326,80 @@ struct StageView: View {
     }
 
     private func groupRow(_ row: StageGroupRow) -> some View {
-        let isHovered = model.highlightedZone == .group(row.groupId)
+        let isDropTarget = model.highlightedZone == .group(row.groupId)
         let isLanded = model.landedZone == .group(row.groupId)
+        let isHovered = hoveredGroupId == row.groupId
         return Button {
             actions.selectGroup(row.groupId)
         } label: {
             Group {
                 if model.isSidebarCollapsed {
-                    IconStack(listBundleIds: Array(row.listBundleIds.prefix(1)), iconSize: 30, overlap: 0)
-                        .overlay(alignment: .bottomTrailing) {
-                            if row.listBundleIds.count > 1 {
-                                Text("\(row.listBundleIds.count)")
-                                    .font(.system(size: 9, weight: .bold).monospacedDigit())
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(Color.secondary, in: .capsule)
-                                    .offset(x: 6, y: 4)
-                            }
-                        }
+                    GroupAvatar(listBundleIds: row.listBundleIds, size: 38)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
+                        .padding(.vertical, 5)
                 } else {
                     HStack(spacing: 10) {
-                        IconStack(listBundleIds: row.listBundleIds, iconSize: 22, overlap: -9)
-                        if model.editingGroupId == row.groupId {
-                            InlineRenameField(initialText: row.name, placeholder: "Group name") { name in
-                                finishEditing()
-                                actions.renameGroup(row.groupId, to: name)
-                            } onCancel: {
-                                finishEditing()
+                        GroupAvatar(listBundleIds: row.listBundleIds, size: 36)
+                        VStack(alignment: .leading, spacing: 1) {
+                            if model.editingGroupId == row.groupId {
+                                InlineRenameField(initialText: row.name, placeholder: "Group name") { name in
+                                    finishEditing()
+                                    actions.renameGroup(row.groupId, to: name)
+                                } onCancel: {
+                                    finishEditing()
+                                }
+                                .font(.system(size: 13, weight: .semibold))
+                            } else {
+                                Text(row.name)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(row.isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.primary))
+                                    .lineLimit(1)
                             }
-                            .font(.system(size: 13, weight: .semibold))
-                        } else {
-                            Text(row.name)
-                                .font(.system(size: 13, weight: row.isActive ? .semibold : .medium))
+                            Text(Self.subtitle(of: row))
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        Text("\(row.listBundleIds.count)")
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
-                            .foregroundStyle(row.isActive ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                        if isHovered && model.editingGroupId != row.groupId {
+                            groupMenu(row)
+                                .transition(.opacity)
+                        }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                 }
             }
-            .foregroundStyle(row.isActive ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(rowFill(isActive: row.isActive, isHovered: isHovered))
+                    .fill(rowFill(isActive: row.isActive, isHovered: isHovered, isDropTarget: isDropTarget))
             }
             .overlay {
-                if isHovered {
+                if isDropTarget {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(row.isActive ? Color.white.opacity(0.7) : Color.accentColor, lineWidth: 2)
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
                 }
             }
-            .scaleEffect(isLanded ? 1.06 : (isHovered ? 1.03 : 1))
+            .overlay(alignment: .leading) {
+                if row.isActive {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: 3, height: 20)
+                        .offset(x: -6)
+                        .transition(.opacity)
+                }
+            }
+            .scaleEffect(isLanded ? 1.05 : (isDropTarget ? 1.02 : 1))
             .contentShape(Rectangle())
+        }
+        .onHover { isInside in
+            withAnimation(.easeOut(duration: 0.12)) {
+                if isInside {
+                    hoveredGroupId = row.groupId
+                } else if hoveredGroupId == row.groupId {
+                    hoveredGroupId = nil
+                }
+            }
         }
         .buttonStyle(.plain)
         .help(row.name)
@@ -343,11 +455,43 @@ struct StageView: View {
         .modifier(ZoneFrameReporter(zone: .group(row.groupId), model: model))
     }
 
-    private func rowFill(isActive: Bool, isHovered: Bool) -> AnyShapeStyle {
-        if isActive {
-            return AnyShapeStyle(Color.accentColor.gradient)
+    private func rowFill(isActive: Bool, isHovered: Bool, isDropTarget: Bool) -> AnyShapeStyle {
+        if isDropTarget {
+            return AnyShapeStyle(Color.accentColor.opacity(0.18))
         }
-        return isHovered ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(.clear)
+        if isActive {
+            return AnyShapeStyle(Color.accentColor.opacity(isHovered ? 0.2 : 0.15))
+        }
+        return isHovered ? AnyShapeStyle(StageColors.hoveredRow) : AnyShapeStyle(.clear)
+    }
+
+    /// The group's front window and how many windows it holds, as its row's second line.
+    private static func subtitle(of row: StageGroupRow) -> String {
+        let count = row.listBundleIds.count
+        let countText = count == 1 ? "1 window" : "\(count) windows"
+        guard let frontWindowName = row.frontWindowName, !frontWindowName.isEmpty, count > 1 else {
+            return row.frontWindowName ?? countText
+        }
+        return "\(frontWindowName) · \(countText)"
+    }
+
+    /// The "⋯" button a hovered group row shows, with what can be done to the group.
+    private func groupMenu(_ row: StageGroupRow) -> some View {
+        Menu {
+            Button("Rename Group…") {
+                beginRenaming(group: row.groupId)
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
     }
 
     /// The row a new group would take, shown while a drop would start one.
@@ -736,6 +880,52 @@ struct IconStack: View {
                 }
             }
         }
+    }
+}
+
+/// A group's picture: the icon of its only application, or up to four of its applications' icons in a
+/// grid, on a rounded tile.
+struct GroupAvatar: View {
+    let listBundleIds: [String?]
+    let size: CGFloat
+
+    var body: some View {
+        let listDistinct = listBundleIds.reduce(into: [String?]()) { list, bundleId in
+            if !list.contains(bundleId) {
+                list.append(bundleId)
+            }
+        }
+        RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+            .fill(StageColors.tile)
+            .shadow(color: .black.opacity(0.08), radius: 1, y: 0.5)
+            .overlay {
+                RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+                    .strokeBorder(StageColors.separator, lineWidth: 0.5)
+            }
+            .overlay {
+                if listDistinct.count <= 1 {
+                    ApplicationIconView(bundleId: listDistinct.first ?? nil, size: size * 0.74)
+                } else {
+                    let iconSize = size * 0.39
+                    let listIcons = Array(listDistinct.prefix(4))
+                    // Two icons sit side by side in the middle; more fill a grid of two rows.
+                    VStack(spacing: size * 0.04) {
+                        ForEach(0..<(listIcons.count > 2 ? 2 : 1), id: \.self) { line in
+                            HStack(spacing: size * 0.04) {
+                                ForEach(0..<2, id: \.self) { column in
+                                    let index = line * 2 + column
+                                    if index < listIcons.count {
+                                        ApplicationIconView(bundleId: listIcons[index], size: iconSize)
+                                    } else {
+                                        Color.clear.frame(width: iconSize, height: iconSize)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(width: size, height: size)
     }
 }
 

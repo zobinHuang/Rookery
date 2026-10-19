@@ -191,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let workspace = WorkspaceController(tracker: tracker, preferences: preferences)
         let panel = workspace.makePanel()
-        let stages = workspace.makeStageCoordinator()
+        let stages = workspace.makeStageCoordinator(mixerController: mixerController)
         stageCoordinator = stages
         stages.onShowSettings = { [weak self] in
             self?.settingsWindowController?.show()

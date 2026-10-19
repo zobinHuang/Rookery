@@ -15,6 +15,7 @@ final class StageCoordinator: DropSurface {
 
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
+    private let mixerController: MixerController
     private let ghostAnimator: DropGhostAnimator
     private var listStages: [StageController] = []
     /// Opens the settings window, for the stages' settings button.
@@ -29,9 +30,15 @@ final class StageCoordinator: DropSurface {
     private var followStartCursor: CGPoint?
     private var followStartOrigin: CGPoint?
 
-    init(workspaceController: WorkspaceController, preferences: Preferences, ghostAnimator: DropGhostAnimator) {
+    init(
+        workspaceController: WorkspaceController,
+        preferences: Preferences,
+        mixerController: MixerController,
+        ghostAnimator: DropGhostAnimator
+    ) {
         self.workspaceController = workspaceController
         self.preferences = preferences
+        self.mixerController = mixerController
         self.ghostAnimator = ghostAnimator
         mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             let window = event.window
@@ -89,6 +96,7 @@ final class StageCoordinator: DropSurface {
             stageId: .make(),
             workspaceController: workspaceController,
             preferences: preferences,
+            mixerController: mixerController,
             ghostAnimator: ghostAnimator,
             coordinator: self
         )

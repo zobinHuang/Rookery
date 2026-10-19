@@ -62,11 +62,33 @@ struct StageTab: Identifiable {
 struct StageGroupRow: Identifiable {
     let groupId: GroupId
     let name: String
+    /// The applications of the group's windows, front to back.
     let listBundleIds: [String?]
+    let frontWindowName: String?
     let isActive: Bool
 
     var id: GroupId {
         groupId
+    }
+}
+
+/// What the sidebar shows below its header.
+enum SidebarMode: String, CaseIterable {
+    case groups
+    case mixer
+
+    var title: String {
+        switch self {
+        case .groups: "Groups"
+        case .mixer: "Mixer"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .groups: "square.grid.2x2"
+        case .mixer: "slider.vertical.3"
+        }
     }
 }
 
@@ -93,6 +115,7 @@ final class StageModel {
     /// A zone that just received a window, which pulses once.
     var landedZone: StageZone?
     var isSidebarCollapsed = false
+    var sidebarMode = SidebarMode.groups
     /// Whether MuxShots draws dark now, which picks the theme button's symbol.
     var isDarkTheme = false
     /// The time zones the world clock shows.

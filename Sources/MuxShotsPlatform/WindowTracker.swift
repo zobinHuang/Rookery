@@ -11,6 +11,8 @@ public actor WindowTracker {
     private var mapTrackers: [pid_t: ApplicationWindowTracker] = [:]
     private var mapManagedProcessIds: [WindowId: pid_t] = [:]
     private var mapSubscribers: [UUID: AsyncStream<WindowChange>.Continuation] = [:]
+    private let focusEvents: AsyncStream<WindowId>
+    private let focusContinuation: AsyncStream<WindowId>.Continuation
     private let snapshots: AsyncStream<ApplicationSnapshot>
     private let snapshotContinuation: AsyncStream<ApplicationSnapshot>.Continuation
     private var snapshotTask: Task<Void, Never>?
@@ -18,6 +20,20 @@ public actor WindowTracker {
 
     public init() {
         (snapshots, snapshotContinuation) = AsyncStream.makeStream(of: ApplicationSnapshot.self)
+        (focusEvents, focusContinuation) = AsyncStream.makeStream(of: WindowId.self)
+    }
+
+    /// Managed windows as their applications focus them, for a single consumer.
+    public nonisolated var focusedWindows: AsyncStream<WindowId> {
+        focusEvents
+    }
+
+    /// The managed window an application has focused, if it has one.
+    public func focusedWindowId(ofProcess processId: pid_t) async -> WindowId? {
+        guard let tracker = mapTrackers[processId] else {
+            return nil
+        }
+        return await tracker.focusedWindowId()
     }
 
     /// Begin consuming tracker snapshots and reconciling periodically.
@@ -161,9 +177,15 @@ public actor WindowTracker {
     }
 
     private func startTracker(for application: RunningApplication) -> ApplicationWindowTracker {
-        let tracker = ApplicationWindowTracker(application: application) { [snapshotContinuation] snapshot in
-            snapshotContinuation.yield(snapshot)
-        }
+        let tracker = ApplicationWindowTracker(
+            application: application,
+            onSnapshot: { [snapshotContinuation] snapshot in
+                snapshotContinuation.yield(snapshot)
+            },
+            onFocus: { [focusContinuation] windowId in
+                focusContinuation.yield(windowId)
+            }
+        )
         mapTrackers[application.processId] = tracker
         tracker.start()
         return tracker

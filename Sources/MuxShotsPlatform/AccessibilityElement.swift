@@ -82,6 +82,17 @@ struct AccessibilityElement {
         return listElements.map { AccessibilityElement(element: $0) }
     }
 
+    /// The window this application has focused, if any.
+    func focusedWindow() throws -> AccessibilityElement? {
+        guard let value = try copyAttribute(kAXFocusedWindowAttribute) else {
+            return nil
+        }
+        guard CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            throw AccessibilityError.unexpectedValueType(attribute: kAXFocusedWindowAttribute)
+        }
+        return AccessibilityElement(element: value as! AXUIElement)
+    }
+
     func title() throws -> String {
         try string(kAXTitleAttribute) ?? ""
     }

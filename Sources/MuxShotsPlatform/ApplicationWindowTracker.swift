@@ -24,6 +24,10 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         kAXWindowMiniaturizedNotification,
         kAXWindowDeminiaturizedNotification,
     ]
+    private static let setFocusNotifications: Set<String> = [
+        kAXFocusedWindowChangedNotification,
+        kAXMainWindowChangedNotification,
+    ]
     private static let setServerListChangingNotifications: Set<String> = [
         kAXWindowCreatedNotification,
         kAXUIElementDestroyedNotification,
@@ -32,6 +36,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     let application: RunningApplication
     private let thread: RunLoopThread
     private let onSnapshot: @Sendable (ApplicationSnapshot) -> Void
+    private let onFocus: @Sendable (WindowId) -> Void
     private let root: AccessibilityElement
     private var observer: AXObserver?
     private var isApplicationObserved = false
@@ -46,9 +51,15 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Parameters:
     ///   - application: the application to track
     ///   - onSnapshot: receives the managed windows' state after every change, on the tracker's thread
-    init(application: RunningApplication, onSnapshot: @escaping @Sendable (ApplicationSnapshot) -> Void) {
+    ///   - onFocus: receives a managed window that the application has just focused, on the tracker's thread
+    init(
+        application: RunningApplication,
+        onSnapshot: @escaping @Sendable (ApplicationSnapshot) -> Void,
+        onFocus: @escaping @Sendable (WindowId) -> Void
+    ) {
         self.application = application
         self.onSnapshot = onSnapshot
+        self.onFocus = onFocus
         self.root = AccessibilityElement.application(processId: application.processId)
         self.thread = RunLoopThread(name: "MuxShots.tracker.\(application.processId)")
     }
@@ -221,7 +232,27 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         }
     }
 
+    /// The managed window the application has focused.
+    func focusedWindowId() async -> WindowId? {
+        await thread.run { [self] in
+            focusedManagedWindowId()
+        } ?? nil
+    }
+
+    private func focusedManagedWindowId() -> WindowId? {
+        guard
+            let windowId = try? root.focusedWindow()?.windowId(),
+            setManagedIds.contains(windowId)
+        else {
+            return nil
+        }
+        return windowId
+    }
+
     private func handle(notification: String) {
+        if Self.setFocusNotifications.contains(notification), let windowId = focusedManagedWindowId() {
+            onFocus(windowId)
+        }
         if Self.setServerListChangingNotifications.contains(notification) {
             isServerListStale = true
         }

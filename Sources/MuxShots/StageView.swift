@@ -47,6 +47,7 @@ struct StageView: View {
 
     let model: StageModel
     let mixer: MixerController
+    let agentUsage: AgentUsageMonitor
     unowned let actions: any StageActions
     @Namespace private var tabNamespace
     @Namespace private var modeNamespace
@@ -54,8 +55,13 @@ struct StageView: View {
     @State private var sidebarHeight: CGFloat = 0
 
     /// An AppKit view hosting the stage.
-    static func makeHostingView(model: StageModel, mixer: MixerController, actions: any StageActions) -> NSView {
-        let view = NSHostingView(rootView: StageView(model: model, mixer: mixer, actions: actions))
+    static func makeHostingView(
+        model: StageModel,
+        mixer: MixerController,
+        agentUsage: AgentUsageMonitor,
+        actions: any StageActions
+    ) -> NSView {
+        let view = NSHostingView(rootView: StageView(model: model, mixer: mixer, agentUsage: agentUsage, actions: actions))
         view.sizingOptions = []
         return view
     }
@@ -164,6 +170,15 @@ struct StageView: View {
                         .frame(height: 1)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if !model.isSidebarCollapsed && !agentUsage.listShownAccounts.isEmpty {
+                AgentUsagePanel(monitor: agentUsage)
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(StageColors.separator)
+                            .frame(height: 1)
+                    }
+                    .transition(.opacity)
             }
             if !model.isSidebarCollapsed && !model.listClockCities.isEmpty {
                 WorldClockView(listCities: model.listClockCities)

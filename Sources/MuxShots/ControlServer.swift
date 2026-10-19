@@ -13,6 +13,7 @@ final class ControlServer: Sendable {
     private let workspaceController: WorkspaceController
     private let stages: StageCoordinator
     private let mixerController: MixerController
+    private let agentUsageMonitor: AgentUsageMonitor
     private let listener: NWListener
     private let queue = DispatchQueue(label: "MuxShots.control.listener")
 
@@ -23,11 +24,13 @@ final class ControlServer: Sendable {
     ///   - workspaceController: the owner of the groups
     ///   - stages: the stages to open and close
     ///   - mixerController: the mixer to report and adjust
+    ///   - agentUsageMonitor: the code agent limits to report
     init(
         tracker: WindowTracker,
         workspaceController: WorkspaceController,
         stages: StageCoordinator,
-        mixerController: MixerController
+        mixerController: MixerController,
+        agentUsageMonitor: AgentUsageMonitor
     ) throws {
         let url = ControlSocket.url
         try FileManager.default.createDirectory(
@@ -44,11 +47,12 @@ final class ControlServer: Sendable {
         self.workspaceController = workspaceController
         self.stages = stages
         self.mixerController = mixerController
+        self.agentUsageMonitor = agentUsageMonitor
     }
 
     /// Start accepting connections.
     func start() {
-        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController] connection in
+        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController, agentUsageMonitor] connection in
             let control = ControlConnection(accepted: connection)
             Task {
                 await Self.serve(
@@ -56,7 +60,8 @@ final class ControlServer: Sendable {
                     tracker: tracker,
                     workspaceController: workspaceController,
                     stages: stages,
-                    mixerController: mixerController
+                    mixerController: mixerController,
+                    agentUsageMonitor: agentUsageMonitor
                 )
             }
         }
@@ -79,7 +84,8 @@ final class ControlServer: Sendable {
         tracker: WindowTracker,
         workspaceController: WorkspaceController,
         stages: StageCoordinator,
-        mixerController: MixerController
+        mixerController: MixerController,
+        agentUsageMonitor: AgentUsageMonitor
     ) async {
         defer { connection.cancel() }
         do {
@@ -167,6 +173,20 @@ final class ControlServer: Sendable {
                     }
                 }
                 try await connection.send(await mixerMessage(mixerController))
+            case .agentUsage:
+                let message = await MainActor.run {
+                    ControlMessage.agentUsage(
+                        listAccounts: agentUsageMonitor.listShownAccounts.map { account in
+                            AgentAccountStatus(
+                                account: account,
+                                usage: agentUsageMonitor.mapUsage[account.id],
+                                error: agentUsageMonitor.mapErrors[account.id]
+                            )
+                        },
+                        nextRefreshAt: agentUsageMonitor.nextRefreshAt
+                    )
+                }
+                try await connection.send(message)
             case .browserSession:
                 await serveBrowser(connection, browserTabs: mixerController.browserTabs)
             }

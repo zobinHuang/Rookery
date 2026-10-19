@@ -16,6 +16,7 @@ final class StageCoordinator: DropSurface {
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
     private let mixerController: MixerController
+    private let agentUsageMonitor: AgentUsageMonitor
     private let ghostAnimator: DropGhostAnimator
     private var listStages: [StageController] = []
     /// Opens the settings window, for the stages' settings button.
@@ -34,11 +35,13 @@ final class StageCoordinator: DropSurface {
         workspaceController: WorkspaceController,
         preferences: Preferences,
         mixerController: MixerController,
+        agentUsageMonitor: AgentUsageMonitor,
         ghostAnimator: DropGhostAnimator
     ) {
         self.workspaceController = workspaceController
         self.preferences = preferences
         self.mixerController = mixerController
+        self.agentUsageMonitor = agentUsageMonitor
         self.ghostAnimator = ghostAnimator
         mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             let window = event.window
@@ -97,6 +100,7 @@ final class StageCoordinator: DropSurface {
             workspaceController: workspaceController,
             preferences: preferences,
             mixerController: mixerController,
+            agentUsageMonitor: agentUsageMonitor,
             ghostAnimator: ghostAnimator,
             coordinator: self
         )

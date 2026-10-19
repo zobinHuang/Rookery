@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import MuxShotsCore
 import MuxShotsPlatform
 import Observation
 import os
@@ -27,6 +28,9 @@ final class Preferences {
     /// Where the world clock's cities were kept when they were time zones alone, read once to carry them over.
     private static let legacyClockTimeZonesKey = "clockTimeZoneIds"
     private static let clockCitiesKey = "clockCities"
+    private static let agentAccountsKey = "agentAccounts"
+    /// Where Claude Code keeps its default account, which is set up for the user when present.
+    private static let defaultClaudeDirectory = "~/.claude"
 
     static let defaultGroupModifiers: NSEvent.ModifierFlags = [.control, .option]
     static let defaultShowAllHotkey = Hotkey(keyCode: kVK_ANSI_0, modifiers: [.control, .option])
@@ -41,6 +45,20 @@ final class Preferences {
     @ObservationIgnored var onThemeChange: (() -> Void)?
     /// Called after the world clock's cities change, so the stages can show them.
     @ObservationIgnored var onWorldClockChange: (() -> Void)?
+    /// Called after the code agent accounts change, so their limits can be read again.
+    @ObservationIgnored var onAgentAccountsChange: (() -> Void)?
+
+    /// The code agent accounts whose plan limits the sidebar can show, in order.
+    var listAgentAccounts: [AgentAccount] {
+        didSet {
+            do {
+                defaults.set(try JSONEncoder().encode(listAgentAccounts), forKey: Self.agentAccountsKey)
+            } catch {
+                Self.logger.error("cannot store the code agent accounts: \(error)")
+            }
+            onAgentAccountsChange?()
+        }
+    }
 
     /// The cities the world clock shows, in order.
     var listClockCities: [WorldClockCity] {
@@ -124,6 +142,7 @@ final class Preferences {
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         listClockCities = Self.loadClockCities(from: defaults)
+        listAgentAccounts = Self.loadAgentAccounts(from: defaults)
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)
             .map(NSEvent.ModifierFlags.init(rawValue:)) ?? Self.defaultGroupModifiers
         showAllHotkey = Self.load(forKey: Self.showAllHotkeyKey, from: defaults) ?? Self.defaultShowAllHotkey
@@ -151,6 +170,21 @@ final class Preferences {
     }
 
     /// The stored cities, else those kept as time zones alone by earlier versions, else the defaults.
+    /// The stored accounts, else Claude Code's default account when Claude Code is set up.
+    private static func loadAgentAccounts(from defaults: UserDefaults) -> [AgentAccount] {
+        if let data = defaults.data(forKey: agentAccountsKey) {
+            do {
+                return try JSONDecoder().decode([AgentAccount].self, from: data)
+            } catch {
+                logger.error("cannot read the code agent accounts: \(error)")
+            }
+        }
+        guard FileManager.default.fileExists(atPath: NSString(string: defaultClaudeDirectory).expandingTildeInPath) else {
+            return []
+        }
+        return [AgentAccount(harness: .claudeCode, label: AgentHarness.claudeCode.title, configDirectory: nil)]
+    }
+
     private static func loadClockCities(from defaults: UserDefaults) -> [WorldClockCity] {
         if let data = defaults.data(forKey: clockCitiesKey) {
             do {

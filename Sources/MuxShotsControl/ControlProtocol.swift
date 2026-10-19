@@ -24,6 +24,8 @@ public enum ControlRequest: Codable, Sendable {
     case mixerApply(target: MixerTarget, settings: MixerTrackSettings)
     /// Show a browser tab's video in the sidebar, or stop showing it, then reply with the mixer's tracks.
     case mixerTogglePicture(sessionId: Int, tabId: Int)
+    /// Reply with the code agent accounts the sidebar shows and their plan limits.
+    case agentUsage
     /// Keep the connection open for the browser extension: `BrowserEvent`s come in and `BrowserCommand`s go
     /// out, one JSON line each, spelled as `BrowserWire` says, until either side closes.
     case browserSession
@@ -83,6 +85,19 @@ public struct MixerTabStatus: Codable, Equatable, Sendable {
     }
 }
 
+/// A code agent account as the sidebar shows it: its limits as last read, or why they could not be.
+public struct AgentAccountStatus: Codable, Equatable, Sendable {
+    public let account: AgentAccount
+    public let usage: AgentUsage?
+    public let error: String?
+
+    public init(account: AgentAccount, usage: AgentUsage?, error: String?) {
+        self.account = account
+        self.usage = usage
+        self.error = error
+    }
+}
+
 /// An application's sound as the mixer sees it.
 public struct MixerTrackStatus: Codable, Equatable, Sendable {
     public let bundleId: String
@@ -112,6 +127,8 @@ public enum ControlMessage: Codable, Sendable {
     /// The mixer's tracks, with how loud each captured one is now, 0 to 1, by bundle id,
     /// and the browser tabs it can mix.
     case mixer(listTracks: [MixerTrackStatus], mapLevels: [String: Float], listTabs: [MixerTabStatus])
+    /// The code agent accounts the sidebar shows, with their limits, and when they are read next.
+    case agentUsage(listAccounts: [AgentAccountStatus], nextRefreshAt: Date?)
     case done
     case failure(message: String)
 }

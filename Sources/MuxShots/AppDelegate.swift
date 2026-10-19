@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let tracker = WindowTracker()
     private let preferences = Preferences()
     private let mixerController = MixerController()
+    private lazy var agentUsageMonitor = AgentUsageMonitor(preferences: preferences)
     private var settingsWindowController: SettingsWindowController?
     private var statusMenuController: StatusMenuController?
     private var applicationMonitor: ApplicationMonitor?
@@ -62,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
         NSApplication.shared.mainMenu = makeMainMenu()
         mixerController.start()
+        agentUsageMonitor.start()
+        preferences.onAgentAccountsChange = { [weak self] in
+            self?.agentUsageMonitor.accountsDidChange()
+        }
         ChromeNativeHost.register()
         if !AccessibilityPermission.isGranted {
             AccessibilityPermission.requestAccess()
@@ -97,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcutController?.stop()
         controlServer?.stop()
         mixerController.stop()
+        agentUsageMonitor.stop()
     }
 
     /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen, fading the
@@ -192,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let workspace = WorkspaceController(tracker: tracker, preferences: preferences)
         let panel = workspace.makePanel()
-        let stages = workspace.makeStageCoordinator(mixerController: mixerController)
+        let stages = workspace.makeStageCoordinator(mixerController: mixerController, agentUsageMonitor: agentUsageMonitor)
         stageCoordinator = stages
         stages.onShowSettings = { [weak self] in
             self?.settingsWindowController?.show()
@@ -215,7 +221,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 tracker: tracker,
                 workspaceController: workspace,
                 stages: stages,
-                mixerController: mixerController
+                mixerController: mixerController,
+                agentUsageMonitor: agentUsageMonitor
             )
             controlServer = server
             server.start()

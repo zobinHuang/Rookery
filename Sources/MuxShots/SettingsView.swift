@@ -1,5 +1,6 @@
 import AppKit
 import MapKit
+import MuxShotsCore
 import MuxShotsPlatform
 import SwiftUI
 
@@ -113,6 +114,47 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                ForEach($preferences.listAgentAccounts) { $account in
+                    HStack(spacing: 8) {
+                        Toggle("", isOn: $account.isShown)
+                            .labelsHidden()
+                            .help(account.isShown ? "Hide this account from the sidebar" : "Show this account in the sidebar")
+                        VStack(alignment: .leading, spacing: 2) {
+                            TextField("Name", text: $account.label)
+                                .textFieldStyle(.plain)
+                            Text("\(account.harness.title) · \(account.configDirectory ?? "default account")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button {
+                            preferences.listAgentAccounts.removeAll { $0.id == account.id }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove \(account.label)")
+                    }
+                }
+                Menu("Add Account") {
+                    ForEach(AgentHarness.allCases, id: \.self) { harness in
+                        Button("\(harness.title) Account…") {
+                            addAgentAccount(of: harness)
+                        }
+                    }
+                }
+                .fixedSize()
+            } header: {
+                Text("Code Agent Usage")
+            } footer: {
+                Text("Shown in the sidebar as the plan's limits left, read from each harness itself. An account is a harness's configuration directory, as CLAUDE_CONFIG_DIR names it for Claude Code; leave the default for the one you sign in to normally.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Show group 1–9", selection: groupModifiersBinding) {
                     ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
                         Text("\(Hotkey.symbols(for: modifiers))1 … \(Hotkey.symbols(for: modifiers))9")
@@ -163,6 +205,27 @@ struct SettingsView: View {
                 clockSearchError = "Couldn't look up \(completion.title): \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Add an account of a harness, from the configuration directory the user picks.
+    private func addAgentAccount(of harness: AgentHarness) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.showsHiddenFiles = true
+        panel.directoryURL = URL.homeDirectory
+        panel.message = "Choose the \(harness.title) configuration directory that holds the account's sign-in"
+        panel.prompt = "Add Account"
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+        let path = url.path.replacingOccurrences(of: URL.homeDirectory.path, with: "~")
+        let isDefault = path == "~/.claude"
+        preferences.listAgentAccounts.append(AgentAccount(
+            harness: harness,
+            label: isDefault ? harness.title : url.lastPathComponent,
+            configDirectory: isDefault ? nil : path
+        ))
     }
 
     private var groupModifiersBinding: Binding<UInt> {

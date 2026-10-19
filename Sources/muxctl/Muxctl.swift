@@ -13,6 +13,7 @@ enum Muxctl {
                muxctl focus|hide|show|maximize <window-id>
                muxctl switch <group-name-or-position> | --all
                muxctl stage on|off
+               muxctl agents [--json]
                muxctl audio [--json]
                muxctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
                muxctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
@@ -60,6 +61,8 @@ enum Muxctl {
                 exit(withMessage: usage)
             }
             request = .stage(isOpen: state == "on")
+        case "agents":
+            request = .agentUsage
         case "audio":
             request = await audioRequest(Array(listArguments.dropFirst()))
         case let name where WindowAction(rawValue: name) != nil:
@@ -138,6 +141,19 @@ enum Muxctl {
                 }
             }
             Swift.print("\(listTracks.count) tracks, \(listTracks.filter(\.isCapturing).count) captured, \(listTabs.count) browser tabs")
+        case .agentUsage(let listAccounts, let nextRefreshAt):
+            for status in listAccounts {
+                let plan = status.usage?.plan.map { " · \($0)" } ?? ""
+                Swift.print("\(status.account.label)\(plan)  (\(status.account.configDirectory ?? "default account"))")
+                for limit in status.usage?.listLimits ?? [] {
+                    let resets = limit.resetsAt.map { " resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? ""
+                    Swift.print("  \(limit.title.padding(toLength: 8, withPad: " ", startingAt: 0)) \(Int((limit.remainingFraction * 100).rounded()))% left\(resets)")
+                }
+                if let error = status.error {
+                    Swift.print("  error: \(error)")
+                }
+            }
+            Swift.print("next read: \(nextRefreshAt.map { $0.formatted(date: .omitted, time: .standard) } ?? "not scheduled")")
         case .done:
             break
         case .failure(let failure):

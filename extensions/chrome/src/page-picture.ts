@@ -15,6 +15,10 @@ export class PagePicture {
     /** How long to wait for the connection's addresses before offering it with those found so far. */
     static readonly ICE_GATHERING_TIMEOUT_MS = 2000;
     static readonly LIST_FAILED_STATES: readonly RTCPeerConnectionState[] = ["failed", "closed"];
+    /** The codec both ends encode and decode in hardware, offered first. */
+    static readonly CODEC_PREFERRED_MIME_TYPE = "video/H264";
+    /** H.264's packetization that both browsers and the system decoder take. */
+    static readonly CODEC_PACKETIZATION_MODE = "packetization-mode=1";
 
     private readonly _video: HTMLVideoElement;
     private readonly _track: MediaStreamTrack;
@@ -70,7 +74,11 @@ export class PagePicture {
      * @returns the offer's session description, with every address the app can reach it at
      */
     async offer(): Promise<string> {
-        this._connection.addTrack(this._track, new MediaStream([this._track]));
+        const transceiver = this._connection.addTransceiver(this._track, {
+            direction: "sendonly",
+            streams: [new MediaStream([this._track])],
+        });
+        transceiver.setCodecPreferences(PagePicture._codecs_hardware_first());
         this._connection.addEventListener(
             "connectionstatechange",
             () => this._on_connection_state(),
@@ -161,6 +169,20 @@ export class PagePicture {
     private _send_state(): void {
         const message: PageMessage = { type: "page_picture_state", is_paused: this._video.paused };
         void chrome.runtime.sendMessage(message);
+    }
+
+    /** Every video codec the browser sends, H.264 first so neither end encodes or decodes in software. */
+    private static _codecs_hardware_first(): RTCRtpCodec[] {
+        const list_codecs = RTCRtpSender.getCapabilities("video")?.codecs ?? [];
+        return [
+            ...list_codecs.filter((codec) => PagePicture._is_hardware_codec(codec)),
+            ...list_codecs.filter((codec) => !PagePicture._is_hardware_codec(codec)),
+        ];
+    }
+
+    private static _is_hardware_codec(codec: RTCRtpCodec): boolean {
+        return codec.mimeType === PagePicture.CODEC_PREFERRED_MIME_TYPE
+            && (codec.sdpFmtpLine?.includes(PagePicture.CODEC_PACKETIZATION_MODE) ?? false);
     }
 
     private static _largest_video(): HTMLVideoElement | undefined {

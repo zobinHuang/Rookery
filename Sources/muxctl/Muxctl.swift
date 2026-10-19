@@ -76,10 +76,10 @@ enum Muxctl {
             return
         }
         switch message {
-        case .workspace(let listGroups, let activeGroupId, let listWindows):
+        case .workspace(let listGroups, let setActiveGroupIds, let listWindows):
             let mapWindows = Dictionary(uniqueKeysWithValues: listWindows.map { ($0.windowId, $0) })
             for group in listGroups {
-                let marker = group.groupId == activeGroupId ? "* " : ""
+                let marker = setActiveGroupIds.contains(group.groupId) ? "* " : ""
                 Swift.print("\(marker)\(group.name) (\(group.listMembers.count))")
                 for member in group.listMembers {
                     let observedRow = mapWindows[member.windowId].map { row(for: $0, isHidden: member.isHidden) }

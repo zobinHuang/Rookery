@@ -115,26 +115,41 @@ struct WorkspaceTests {
         #expect(workspace.listManagedWindows.first?.isHidden == false)
     }
 
-    @Test func activatingAnUnknownGroupLeavesGroupMode() {
+    @Test func activatingAGroupDisplacesOnlyTheGroupsItShares() {
         var workspace = Workspace()
-        let groupId = workspace.adopt(Self.window(1), into: nil)
+        let laptopGroupId = workspace.adopt(Self.window(1), into: nil)
+        let externalGroupId = workspace.adopt(Self.window(2), into: nil)
+        let otherLaptopGroupId = workspace.adopt(Self.window(3), into: nil)
 
-        workspace.activate(groupId)
-        let activeAfterActivate = workspace.activeGroupId
-        workspace.activate(GroupId(rawValue: "missing"))
+        workspace.activate(laptopGroupId, displacing: [])
+        workspace.activate(externalGroupId, displacing: [])
+        workspace.activate(otherLaptopGroupId, displacing: [laptopGroupId])
 
-        #expect(activeAfterActivate == groupId)
-        #expect(workspace.activeGroupId == nil)
+        #expect(workspace.setActiveGroupIds == [externalGroupId, otherLaptopGroupId])
+        #expect(workspace.listActiveGroups.map(\.groupId) == [externalGroupId, otherLaptopGroupId])
     }
 
-    @Test func removingTheActiveGroupsLastMemberLeavesGroupMode() {
+    @Test func activatingAnUnknownGroupChangesNothing() {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1), into: nil)
-        workspace.activate(groupId)
+        workspace.activate(groupId, displacing: [])
+
+        workspace.activate(GroupId(rawValue: "missing"), displacing: [groupId])
+        let setAfterUnknown = workspace.setActiveGroupIds
+        workspace.deactivateAll()
+
+        #expect(setAfterUnknown == [groupId])
+        #expect(workspace.setActiveGroupIds.isEmpty)
+    }
+
+    @Test func removingAnActiveGroupsLastMemberDeactivatesIt() {
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+        workspace.activate(groupId, displacing: [])
 
         workspace.release(WindowId(rawValue: 1))
 
-        #expect(workspace.activeGroupId == nil)
+        #expect(workspace.setActiveGroupIds.isEmpty)
     }
 
     @Test func stackOrderPutsRecordedMembersFirstAndNewcomersAfter() {
@@ -165,7 +180,7 @@ struct WorkspaceTests {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1, title: "a"), into: nil)
         workspace.adopt(Self.window(2, title: "b"), into: groupId)
-        workspace.activate(groupId)
+        workspace.activate(groupId, displacing: [])
         workspace.recordStack(of: groupId, frontToBack: [WindowId(rawValue: 2), WindowId(rawValue: 1)])
 
         let decoded = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(workspace))

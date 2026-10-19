@@ -5,24 +5,58 @@ import Foundation
 public struct Workspace: Codable, Equatable, Sendable {
     private static let defaultGroupNamePrefix = "Group "
 
+    private enum CodingKeys: String, CodingKey {
+        case listGroups
+        case setActiveGroupIds
+    }
+
     /// The groups in creation order; a group with no members is removed.
     public private(set) var listGroups: [WindowGroup] = []
-    /// The group currently shown, with every other group's windows hidden; nil when no group is active.
-    public private(set) var activeGroupId: GroupId?
+    /// The groups currently shown, at most one per display, with other groups' windows on those displays
+    /// hidden; empty when no group is active.
+    public private(set) var setActiveGroupIds: Set<GroupId> = []
 
-    public init(listGroups: [WindowGroup] = [], activeGroupId: GroupId? = nil) {
+    public init(listGroups: [WindowGroup] = [], setActiveGroupIds: Set<GroupId> = []) {
         self.listGroups = listGroups.filter { !$0.listMembers.isEmpty }
-        self.activeGroupId = self.listGroups.contains { $0.groupId == activeGroupId } ? activeGroupId : nil
+        self.setActiveGroupIds = setActiveGroupIds.filter { groupId in
+            self.listGroups.contains { $0.groupId == groupId }
+        }
     }
 
-    /// The group currently shown.
-    public var activeGroup: WindowGroup? {
-        listGroups.first { $0.groupId == activeGroupId }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            listGroups: try container.decode([WindowGroup].self, forKey: .listGroups),
+            setActiveGroupIds: try container.decodeIfPresent(Set<GroupId>.self, forKey: .setActiveGroupIds) ?? []
+        )
     }
 
-    /// Make a group the one shown, or leave group mode with nil.
-    public mutating func activate(_ groupId: GroupId?) {
-        activeGroupId = listGroups.contains { $0.groupId == groupId } ? groupId : nil
+    /// Whether a group is currently shown.
+    public func isActive(_ groupId: GroupId) -> Bool {
+        setActiveGroupIds.contains(groupId)
+    }
+
+    /// The groups currently shown, in creation order.
+    public var listActiveGroups: [WindowGroup] {
+        listGroups.filter { setActiveGroupIds.contains($0.groupId) }
+    }
+
+    /// Show a group in place of the active groups it displaces from its displays.
+    ///
+    /// - Parameters:
+    ///   - groupId: the group to show
+    ///   - setDisplacedIds: the active groups that shared a display with it
+    public mutating func activate(_ groupId: GroupId, displacing setDisplacedIds: Set<GroupId>) {
+        guard listGroups.contains(where: { $0.groupId == groupId }) else {
+            return
+        }
+        setActiveGroupIds.subtract(setDisplacedIds)
+        setActiveGroupIds.insert(groupId)
+    }
+
+    /// Leave group mode: no group is active.
+    public mutating func deactivateAll() {
+        setActiveGroupIds.removeAll()
     }
 
     /// Record a group's front-to-back order of members, ignoring identifiers that are not its members.
@@ -146,8 +180,8 @@ public struct Workspace: Codable, Equatable, Sendable {
             listGroups[groupIndex].listMembers.removeAll { $0.windowId == windowId }
         }
         listGroups.removeAll { $0.listMembers.isEmpty }
-        if activeGroup == nil {
-            activeGroupId = nil
+        setActiveGroupIds = setActiveGroupIds.filter { groupId in
+            listGroups.contains { $0.groupId == groupId }
         }
     }
 

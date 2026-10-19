@@ -58,15 +58,16 @@ final class SwitcherController {
         guard !workspace.listGroups.isEmpty else {
             return
         }
+        let currentGroupId = workspaceController.frontmostActiveGroup()?.groupId
         model.listEntries = workspace.listGroups.map { group in
             SwitcherEntry(
                 groupId: group.groupId,
                 title: group.name,
                 listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
-                isActive: group.groupId == workspace.activeGroupId
+                isActive: workspace.isActive(group.groupId)
             )
         } + [SwitcherEntry(groupId: nil, title: "All Windows", listBundleIds: [], isActive: false)]
-        let activeIndex = model.listEntries.firstIndex { $0.isActive } ?? model.listEntries.count - 1
+        let activeIndex = model.listEntries.firstIndex { $0.groupId == currentGroupId } ?? model.listEntries.count - 1
         let count = model.listEntries.count
         model.selectedIndex = ((activeIndex + step) % count + count) % count
         isOpen = true

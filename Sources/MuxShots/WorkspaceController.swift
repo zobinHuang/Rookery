@@ -199,7 +199,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         for window in workspace.listHiddenWindows {
             try? await show(window.windowId)
         }
-        workspace.activate(nil)
+        workspace.deactivateAll()
         didChange()
     }
 
@@ -269,17 +269,27 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Bring the next window of the active group to the front, cycling through its members in join order.
+    /// The active group holding the frontmost managed window, which is where the user is working.
+    func frontmostActiveGroup() -> WindowGroup? {
+        let listActiveGroups = workspace.listActiveGroups
+        for windowId in WindowServer.listWindows().map(\.windowId) {
+            if let group = listActiveGroups.first(where: { group in group.listMembers.contains { $0.windowId == windowId } }) {
+                return group
+            }
+        }
+        return listActiveGroups.first
+    }
+
+    /// Bring the next window of the frontmost active group to the front, cycling through its members in
+    /// join order.
     func cycleActiveGroupWindow() async {
-        guard let activeGroup = workspace.activeGroup, activeGroup.listMembers.count > 1 else {
+        guard let group = frontmostActiveGroup(), group.listMembers.count > 1 else {
             return
         }
         let listServerOrder = WindowServer.listWindows().map(\.windowId)
-        let setMemberIds = Set(activeGroup.listMembers.map(\.windowId))
-        let frontId = listServerOrder.first { setMemberIds.contains($0) }
-        let frontIndex = activeGroup.listMembers.firstIndex { $0.windowId == frontId } ?? -1
-        let nextWindow = activeGroup.listMembers[(frontIndex + 1) % activeGroup.listMembers.count]
-        try? await focus(nextWindow.windowId)
+        let frontId = listServerOrder.first { windowId in group.listMembers.contains { $0.windowId == windowId } }
+        let frontIndex = group.listMembers.firstIndex { $0.windowId == frontId } ?? -1
+        try? await focus(group.listMembers[(frontIndex + 1) % group.listMembers.count].windowId)
     }
 
     /// Follow the user to a hidden window they focused, through Cmd-Tab, the Dock or a notification, by
@@ -300,25 +310,65 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     private func performSwitch(to groupId: GroupId?, bringingToFront frontWindowId: WindowId?) async {
         let startTime = ContinuousClock.now
-        let listServerOrder = WindowServer.listWindows().map(\.windowId)
-        if let activeGroupId = workspace.activeGroupId {
-            workspace.recordStack(of: activeGroupId, frontToBack: listServerOrder)
+        let listServerWindows = WindowServer.listWindows()
+        let listServerOrder = listServerWindows.map(\.windowId)
+        let mapServerFrames = Dictionary(listServerWindows.map { ($0.windowId, $0.frame) }) { first, _ in first }
+        for group in workspace.listActiveGroups {
+            workspace.recordStack(of: group.groupId, frontToBack: listServerOrder)
         }
-        let targetGroup = groupId.flatMap { groupId in workspace.listGroups.first { $0.groupId == groupId } }
-        let setTargetIds = Set(targetGroup?.listMembers.map(\.windowId) ?? [])
         let mapRecords = Dictionary(uniqueKeysWithValues: await tracker.listWindows().map { ($0.windowId, $0) })
+        let displayIndex = { (window: ManagedWindow) -> Int? in
+            (window.restoreFrame ?? mapServerFrames[window.windowId]).flatMap(ScreenGeometry.displayIndex(containing:))
+        }
 
-        let listToShow = workspace.listHiddenWindows.filter { targetGroup == nil || setTargetIds.contains($0.windowId) }
-        let listToHide = targetGroup == nil ? [] : workspace.listManagedWindows.filter { window in
+        guard let targetGroup = groupId.flatMap({ groupId in workspace.listGroups.first { $0.groupId == groupId } }) else {
+            let listToShow = workspace.listHiddenWindows
+            await run(showing: listToShow, hiding: [])
+            workspace.deactivateAll()
+            didChange()
+            Self.logger.info("showed all \(listToShow.count) hidden windows in \(ContinuousClock.now - startTime, privacy: .public)")
+            return
+        }
+        let setTargetIds = Set(targetGroup.listMembers.map(\.windowId))
+        let setTargetDisplays = Set(targetGroup.listMembers.compactMap(displayIndex))
+        let listToShow = workspace.listHiddenWindows.filter { setTargetIds.contains($0.windowId) }
+        let listToHide = workspace.listManagedWindows.filter { window in
             guard
                 !setTargetIds.contains(window.windowId),
                 !window.isHidden,
-                let record = mapRecords[window.windowId]
+                let record = mapRecords[window.windowId],
+                let display = displayIndex(window)
             else {
                 return false
             }
-            return !record.isMinimized && !record.isFullscreen
+            return !record.isMinimized && !record.isFullscreen && setTargetDisplays.contains(display)
         }
+        let setDisplacedIds = Set(workspace.listActiveGroups.filter { group in
+            group.groupId != targetGroup.groupId
+                && !Set(group.listMembers.compactMap(displayIndex)).isDisjoint(with: setTargetDisplays)
+        }.map(\.groupId))
+        await run(showing: listToShow, hiding: listToHide)
+
+        var listVisible = targetGroup.listMembersFrontToBack.filter { mapRecords[$0.windowId]?.isMinimized != true }
+        if let frontIndex = listVisible.firstIndex(where: { $0.windowId == frontWindowId }) {
+            listVisible.insert(listVisible.remove(at: frontIndex), at: 0)
+        }
+        for window in listVisible.reversed() {
+            _ = await tracker.raise(window.windowId)
+        }
+        if let frontWindow = listVisible.first, let processId = await tracker.processId(of: frontWindow.windowId) {
+            NSRunningApplication(processIdentifier: processId)?.activate()
+        }
+        workspace.activate(targetGroup.groupId, displacing: setDisplacedIds)
+        didChange()
+        Self.logger.info("""
+            switched to \(targetGroup.name, privacy: .public) on displays \(setTargetDisplays.sorted(), privacy: .public): \
+            showed \(listToShow.count), hid \(listToHide.count) in \(ContinuousClock.now - startTime, privacy: .public)
+            """)
+    }
+
+    /// Show and hide windows concurrently, each application on its own tracker thread.
+    private func run(showing listToShow: [ManagedWindow], hiding listToHide: [ManagedWindow]) async {
         await withTaskGroup(of: Void.self) { taskGroup in
             for window in listToShow {
                 taskGroup.addTask {
@@ -331,25 +381,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
             }
         }
-
-        if let targetGroup {
-            var listVisible = targetGroup.listMembersFrontToBack.filter { mapRecords[$0.windowId]?.isMinimized != true }
-            if let frontIndex = listVisible.firstIndex(where: { $0.windowId == frontWindowId }) {
-                listVisible.insert(listVisible.remove(at: frontIndex), at: 0)
-            }
-            for window in listVisible.reversed() {
-                _ = await tracker.raise(window.windowId)
-            }
-            if let frontWindow = listVisible.first, let processId = await tracker.processId(of: frontWindow.windowId) {
-                NSRunningApplication(processIdentifier: processId)?.activate()
-            }
-        }
-        workspace.activate(groupId)
-        didChange()
-        Self.logger.info("""
-            switched to \(targetGroup?.name ?? "all windows", privacy: .public): showed \(listToShow.count), \
-            hid \(listToHide.count) in \(ContinuousClock.now - startTime, privacy: .public)
-            """)
     }
 
     private func focus(_ windowId: WindowId) async throws {
@@ -376,9 +407,14 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         guard let frame = WindowServer.window(withId: windowId)?.frame else {
             throw WindowActionError.noDisplay(windowId: windowId)
         }
-        guard let parkedFrame = await tracker.applyFrame(ScreenGeometry.offscreenFrame(for: frame), to: windowId) else {
+        let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
+        guard let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId) else {
             throw WindowActionError.cannotMove(windowId: windowId)
         }
+        Self.logger.info("""
+            hid \(windowId.rawValue) from \(String(describing: frame), privacy: .public) to \
+            \(String(describing: requestedFrame), privacy: .public), landed at \(String(describing: parkedFrame), privacy: .public)
+            """)
         workspace.markHidden(windowId, restoreFrame: frame)
         didChange()
         if ScreenGeometry.visibleShare(of: parkedFrame) > Self.hiddenVisibleShareLimit {
@@ -392,9 +428,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             throw WindowActionError.notHidden(windowId: windowId)
         }
         didChange()
-        guard await tracker.applyFrame(restoreFrame, to: windowId) != nil else {
+        guard let landedFrame = await tracker.applyFrame(restoreFrame, to: windowId) else {
             throw WindowActionError.cannotMove(windowId: windowId)
         }
+        Self.logger.info("""
+            showed \(windowId.rawValue) at \(String(describing: restoreFrame), privacy: .public), \
+            landed at \(String(describing: landedFrame), privacy: .public)
+            """)
     }
 
     private func maximize(_ windowId: WindowId) async throws {

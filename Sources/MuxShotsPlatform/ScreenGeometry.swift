@@ -37,6 +37,17 @@ public enum ScreenGeometry {
         return screen.map { windowServerFrame(fromAppKit: $0.visibleFrame) }
     }
 
+    /// The position in `listDisplayFrames` of the display showing most of a frame.
+    public static func displayIndex(containing frame: CGRect) -> Int? {
+        let listFrames = listDisplayFrames
+        guard let best = listFrames.indices.max(by: { overlapArea(listFrames[$0], frame) < overlapArea(listFrames[$1], frame) }),
+            overlapArea(listFrames[best], frame) > 0
+        else {
+            return nil
+        }
+        return best
+    }
+
     /// The display frame showing most of a frame, in window-server coordinates.
     public static func displayFrame(containing frame: CGRect) -> CGRect? {
         listDisplayFrames.max { overlapArea($0, frame) < overlapArea($1, frame) }

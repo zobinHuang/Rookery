@@ -71,14 +71,14 @@ final class ControlServer: Sendable {
             case .list:
                 try await connection.send(ControlMessage.workspace(
                     listGroups: await workspaceController.workspace.listGroups,
-                    activeGroupId: await workspaceController.workspace.activeGroupId,
+                    setActiveGroupIds: await workspaceController.workspace.setActiveGroupIds,
                     listWindows: await tracker.listWindows()
                 ))
             case .watch:
                 let changes = await tracker.changes()
                 try await connection.send(ControlMessage.workspace(
                     listGroups: await workspaceController.workspace.listGroups,
-                    activeGroupId: await workspaceController.workspace.activeGroupId,
+                    setActiveGroupIds: await workspaceController.workspace.setActiveGroupIds,
                     listWindows: await tracker.listWindows()
                 ))
                 for await change in changes {

@@ -110,7 +110,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             let item = NSMenuItem(title: group.name, action: #selector(switchToGroup(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = group.groupId.rawValue
-            item.state = group.groupId == workspace.activeGroupId ? .on : .off
+            item.state = workspace.isActive(group.groupId) ? .on : .off
             if ShortcutController.listGroupKeyCodes.indices.contains(position) {
                 item.keyEquivalent = String(position + 1)
                 item.keyEquivalentModifierMask = [.control, .option]
@@ -120,7 +120,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         let showAllItem = NSMenuItem(title: "Show All Windows", action: #selector(showAllWindows), keyEquivalent: "0")
         showAllItem.keyEquivalentModifierMask = [.control, .option]
         showAllItem.target = self
-        showAllItem.isEnabled = workspace.activeGroupId != nil
+        showAllItem.isEnabled = !workspace.setActiveGroupIds.isEmpty
         listGroupItems.append(showAllItem)
         listGroupItems.append(.separator())
         let insertionIndex = menu.index(of: showWorkspaceItem)

@@ -242,7 +242,7 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
         if let group = group(for: item) {
             let cell = outlineView.makeView(withIdentifier: GroupCellView.identifier, owner: self) as? GroupCellView
                 ?? GroupCellView(nameDelegate: self)
-            cell.show(group, isActive: group.groupId == controller.workspace.activeGroupId)
+            cell.show(group, isActive: controller.workspace.isActive(group.groupId))
             return cell
         }
         guard let window = managedWindow(for: item) else {

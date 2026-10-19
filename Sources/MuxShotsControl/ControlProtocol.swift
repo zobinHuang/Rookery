@@ -19,7 +19,7 @@ public enum ControlRequest: Codable, Sendable {
 
 /// A message the running app sends back.
 public enum ControlMessage: Codable, Sendable {
-    case workspace(listGroups: [WindowGroup], activeGroupId: GroupId?, listWindows: [WindowRecord])
+    case workspace(listGroups: [WindowGroup], setActiveGroupIds: Set<GroupId>, listWindows: [WindowRecord])
     case change(WindowChange)
     case done
     case failure(message: String)

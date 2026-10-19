@@ -25,7 +25,8 @@ struct MixerBrowserTab: Identifiable, Equatable {
 }
 
 /// The browser tabs the mixer can treat one by one, through the MuxShots browser extension: which tabs
-/// the connected extensions report, the settings of each, and their meters. Settings last as long as the
+/// the connected extensions report, the settings of each, and their meters. The extension keeps each tab's
+/// settings across the app's restarts and hands them back on reconnecting. Here, settings last as long as the
 /// tab's browser stays connected; when it disconnects, the extension gives every tab its sound back.
 @MainActor
 @Observable
@@ -49,6 +50,7 @@ final class BrowserTabMixer {
         let sessionId = nextSessionId
         nextSessionId += 1
         let (commands, continuation) = AsyncStream.makeStream(of: BrowserCommand.self)
+        continuation.yield(.hello)
         mapContinuations[sessionId] = continuation
         sessionCount = mapContinuations.count
         return BrowserSession(sessionId: sessionId, commands: commands)
@@ -77,10 +79,16 @@ final class BrowserTabMixer {
             for tab in listSessionTabs where mapPreviousTabs[tab.tabId].map({ $0.isMuted != tab.isMuted }) ?? tab.isMuted {
                 mapSettings[BrowserTabKey(sessionId: sessionId, tabId: tab.tabId), default: MixerTrackSettings()].isMuted = tab.isMuted
             }
-            // A tab the user captured from the browser's toolbar is taken over without the app asking.
-            for tab in listSessionTabs where tab.mode == .captured {
+            // A tab keeps the settings the extension held for it while the app was away, and a tab the user
+            // captured from the browser's toolbar is taken over without the app asking.
+            for tab in listSessionTabs {
                 let key = BrowserTabKey(sessionId: sessionId, tabId: tab.tabId)
-                if mapSettings[key] == nil {
+                guard mapSettings[key] == nil else {
+                    continue
+                }
+                if let settings = tab.settings {
+                    mapSettings[key] = settings.clamped
+                } else if tab.mode == .captured {
                     var settings = MixerTrackSettings()
                     settings.isTakenOver = true
                     mapSettings[key] = settings

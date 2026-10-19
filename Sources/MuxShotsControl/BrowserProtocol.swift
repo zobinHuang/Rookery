@@ -29,6 +29,8 @@ public struct BrowserTab: Codable, Equatable, Sendable {
     /// Whether the browser has the tab muted, by the mixer or from its own tab strip.
     public let isMuted: Bool
     public let mode: BrowserTabMode
+    /// The settings the extension keeps for the tab, which outlive the app's restarts but not the tab.
+    public let settings: MixerTrackSettings?
 
     public init(
         tabId: Int,
@@ -38,7 +40,8 @@ public struct BrowserTab: Codable, Equatable, Sendable {
         favIconUrl: String?,
         isAudible: Bool,
         isMuted: Bool,
-        mode: BrowserTabMode
+        mode: BrowserTabMode,
+        settings: MixerTrackSettings? = nil
     ) {
         self.tabId = tabId
         self.windowId = windowId
@@ -48,9 +51,10 @@ public struct BrowserTab: Codable, Equatable, Sendable {
         self.isAudible = isAudible
         self.isMuted = isMuted
         self.mode = mode
+        self.settings = settings
     }
 
-    /// Read a tab, taking it as unmuted from an extension too old to say.
+    /// Read a tab, taking it as unmuted and without kept settings from an extension too old to say.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tabId = try container.decode(Int.self, forKey: .tabId)
@@ -61,6 +65,7 @@ public struct BrowserTab: Codable, Equatable, Sendable {
         isAudible = try container.decode(Bool.self, forKey: .isAudible)
         isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
         mode = try container.decode(BrowserTabMode.self, forKey: .mode)
+        settings = try container.decodeIfPresent(MixerTrackSettings.self, forKey: .settings)
     }
 }
 
@@ -120,6 +125,8 @@ public enum BrowserEvent: Codable, Equatable, Sendable {
 
 /// A message from the app to the browser extension.
 public enum BrowserCommand: Codable, Equatable, Sendable {
+    /// The app is ready: the extension applies the settings it kept for its tabs again.
+    case hello
     /// Treat a tab's sound as the settings say, taking it over or giving it back.
     case apply(tabId: Int, settings: MixerTrackSettings)
 
@@ -130,12 +137,15 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
     }
 
     private enum Kind: String, Codable {
+        case hello
         case apply
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .type) {
+        case .hello:
+            self = .hello
         case .apply:
             self = .apply(
                 tabId: try container.decode(Int.self, forKey: .tabId),
@@ -147,6 +157,8 @@ public enum BrowserCommand: Codable, Equatable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .hello:
+            try container.encode(Kind.hello, forKey: .type)
         case .apply(let tabId, let settings):
             try container.encode(Kind.apply, forKey: .type)
             try container.encode(tabId, forKey: .tabId)

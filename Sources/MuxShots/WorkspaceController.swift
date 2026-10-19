@@ -14,7 +14,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private(set) var workspace: Workspace
     private let tracker: WindowTracker
     private let dragMonitor = WindowDragMonitor()
-    private let tray = DropTrayController()
+    private let ghostAnimator = DropGhostAnimator()
+    private lazy var tray = DropTrayController(ghostAnimator: ghostAnimator)
+    /// Where the current window drag is being dropped.
+    private var activeSurface: DropSurface?
+
+    /// The panel, which receives dragged windows while it is open.
+    weak var panel: WorkspacePanelController?
     private var changeTask: Task<Void, Never>?
 
     /// Called after every change to the workspace, including title updates.
@@ -112,22 +118,39 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         didChange()
     }
 
+    /// Make a panel that shares the drop animation with the tray.
+    func makePanel() -> WorkspacePanelController {
+        let panel = WorkspacePanelController(controller: self, ghostAnimator: ghostAnimator)
+        self.panel = panel
+        return panel
+    }
+
     func windowDragBegan(_ drag: WindowDrag, at cursorLocation: CGPoint) {
-        tray.show(
+        let surface: DropSurface = if let panel, panel.isShowing {
+            panel
+        } else {
+            tray
+        }
+        activeSurface = surface
+        surface.beginWindowDrag(
             listGroups: workspace.listGroups,
             currentGroup: workspace.group(containing: drag.windowId),
             draggedWindowId: drag.windowId,
-            near: cursorLocation
+            at: cursorLocation
         )
     }
 
     func windowDragMoved(_ drag: WindowDrag, to cursorLocation: CGPoint) {
-        tray.update(cursorLocation: cursorLocation)
+        activeSurface?.updateWindowDrag(at: cursorLocation)
     }
 
     func windowDragEnded(_ drag: WindowDrag, at cursorLocation: CGPoint) {
-        guard let target = tray.target(at: cursorLocation) else {
-            tray.dismiss()
+        guard let surface = activeSurface else {
+            return
+        }
+        activeSurface = nil
+        guard let target = surface.target(at: cursorLocation) else {
+            surface.cancelWindowDrag()
             return
         }
         let droppedFrame = WindowServer.window(withId: drag.windowId).map { Self.appKitFrame(fromWindowServer: $0.frame) }
@@ -140,7 +163,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         case .release:
             nil
         }
-        tray.land(
+        surface.land(
             on: target,
             landedGroupId: landedGroupId,
             windowFrame: droppedFrame,

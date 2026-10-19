@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.start()
 
         let workspace = WorkspaceController(tracker: tracker)
-        let panel = WorkspacePanelController(controller: workspace)
+        let panel = workspace.makePanel()
         workspace.onChange = { [weak panel] in
             panel?.reload()
         }

@@ -5,7 +5,7 @@ import MuxShotsCore
 /// window, stays a pill until the cursor nears the top of the screen, then offers the groups to drop into
 /// and, for a managed window, the way out.
 @MainActor
-final class DropTrayController {
+final class DropTrayController: DropSurface {
     private static let panelHeight: CGFloat = 150
     private static let panelWidthLimit: CGFloat = 1100
     /// How close to the top of the screen the cursor must be to expand the tray.
@@ -15,11 +15,12 @@ final class DropTrayController {
 
     private let model = TrayModel()
     private let panel: NSPanel
-    private let ghostAnimator = DropGhostAnimator()
+    private let ghostAnimator: DropGhostAnimator
     private var screen: NSScreen?
     private var hideTask: Task<Void, Never>?
 
-    init() {
+    init(ghostAnimator: DropGhostAnimator) {
+        self.ghostAnimator = ghostAnimator
         panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -35,18 +36,13 @@ final class DropTrayController {
         panel.contentView = TrayView.makeHostingView(model: model)
     }
 
-    /// Show the tray, collapsed, on the screen under the cursor and just beneath the dragged window.
-    ///
-    /// - Parameters:
-    ///   - listGroups: the groups to offer
-    ///   - currentGroup: the group the dragged window is in, which is not offered
-    ///   - draggedWindowId: the window being dragged
-    ///   - cursorLocation: the cursor, in AppKit screen coordinates
-    func show(
+    /// Show the tray, collapsed, on the screen under the cursor and just beneath the dragged window; the
+    /// dragged window's own group is not offered.
+    func beginWindowDrag(
         listGroups: [WindowGroup],
         currentGroup: WindowGroup?,
         draggedWindowId: WindowId,
-        near cursorLocation: CGPoint
+        at cursorLocation: CGPoint
     ) {
         hideTask?.cancel()
         model.listTiles = Self.tiles(for: listGroups, currentGroup: currentGroup)
@@ -72,11 +68,11 @@ final class DropTrayController {
         )
         panel.order(.below, relativeTo: Int(draggedWindowId.rawValue))
         model.isVisible = true
-        update(cursorLocation: cursorLocation)
+        updateWindowDrag(at: cursorLocation)
     }
 
     /// Follow the cursor: expand near the top of the screen and light up the target under it.
-    func update(cursorLocation: CGPoint) {
+    func updateWindowDrag(at cursorLocation: CGPoint) {
         guard let screen, model.isVisible else {
             return
         }
@@ -100,14 +96,7 @@ final class DropTrayController {
         }?.target
     }
 
-    /// Animate a dropped window into its target, then dismiss the tray.
-    ///
-    /// - Parameters:
-    ///   - target: the target the window was dropped on
-    ///   - landedGroupId: the group the window joined, or nil when it was released
-    ///   - windowFrame: the dropped window's frame, in AppKit screen coordinates
-    ///   - icon: the window's application icon
-    ///   - listGroups: the groups after the drop, so the landing tile shows its new member
+    /// Animate a dropped window into its tile, then dismiss the tray.
     func land(
         on target: DropTarget,
         landedGroupId: GroupId?,
@@ -136,8 +125,12 @@ final class DropTrayController {
         ghostAnimator.fly(from: windowFrame, to: targetFrame, icon: icon, completion: finish)
     }
 
+    func cancelWindowDrag() {
+        dismiss(after: .zero)
+    }
+
     /// Fade the tray out.
-    func dismiss(after delay: Duration = .zero) {
+    private func dismiss(after delay: Duration) {
         hideTask?.cancel()
         hideTask = Task { [weak self] in
             try? await Task.sleep(for: delay)

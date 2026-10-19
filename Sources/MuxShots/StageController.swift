@@ -352,6 +352,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         coordinator?.openStage()
     }
 
+    func showSettings() {
+        coordinator?.onShowSettings?()
+    }
+
     func toggleTheme() {
         preferences.theme = model.isDarkTheme ? .light : .dark
     }

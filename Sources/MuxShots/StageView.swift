@@ -30,6 +30,7 @@ protocol StageActions: AnyObject {
     func exitStage()
     /// Open another MuxShots window.
     func newStage()
+    func showSettings()
     /// The user is dragging the stage by its sidebar header, towards another display.
     func moveStageChanged()
     func moveStageEnded()
@@ -201,6 +202,7 @@ struct StageView: View {
                 help: model.isDarkTheme ? "Switch to the light theme" : "Switch to the dark theme",
                 action: actions.toggleTheme
             )
+            headerButton("gearshape", help: "Settings", action: actions.showSettings)
             if !model.isSidebarCollapsed {
                 Spacer(minLength: 0)
             }

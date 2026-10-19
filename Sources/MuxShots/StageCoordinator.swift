@@ -17,6 +17,8 @@ final class StageCoordinator: DropSurface {
     private let preferences: Preferences
     private let ghostAnimator: DropGhostAnimator
     private var listStages: [StageController] = []
+    /// Opens the settings window, for the stages' settings button.
+    var onShowSettings: (() -> Void)?
     private var mouseDownMonitor: Any?
     /// The stage a window drag is over, which shows the drop feedback.
     private var dropStage: StageController?

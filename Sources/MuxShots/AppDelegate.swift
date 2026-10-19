@@ -190,6 +190,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = workspace.makePanel()
         let stages = workspace.makeStageCoordinator()
         stageCoordinator = stages
+        stages.onShowSettings = { [weak self] in
+            self?.settingsWindowController?.show()
+        }
         workspace.onChange = { [weak panel, weak stages] in
             panel?.reload()
             stages?.refresh()

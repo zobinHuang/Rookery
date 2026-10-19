@@ -30,6 +30,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Opening the app again, from Finder or `open`, shows the managed windows.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        workspacePanelController?.show()
+        return false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         statusMenuController?.stop()
         applicationMonitor?.stop()

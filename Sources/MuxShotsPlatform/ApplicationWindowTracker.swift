@@ -9,6 +9,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "tracker")
     private static let refreshDebounce: TimeInterval = 0.05
     private static let discoveryRetryInterval = Duration.seconds(30)
+    private static let discoverySliceSize: UInt64 = 10_000
     private static let listApplicationNotifications = [
         kAXWindowCreatedNotification,
         kAXFocusedWindowChangedNotification,
@@ -47,6 +48,10 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private var setObservedIds: Set<WindowId> = []
     private var mapServerWindows: [WindowId: WindowServerWindow] = [:]
     private var mapLastProbeTimes: [WindowId: ContinuousClock.Instant] = [:]
+    /// The next element identifier to probe while a discovery is running; nil when none is.
+    private var discoveryCursor: UInt64?
+    private var setDiscoveryTargetIds: Set<WindowId> = []
+    private var discoveryStartTime = ContinuousClock.now
 
     /// - Parameters:
     ///   - application: the application to track
@@ -288,9 +293,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         }
 
         publishSnapshot()
-        if discoverMissingWindows() {
-            publishSnapshot()
-        }
+        discoverMissingWindows()
     }
 
     /// Report every managed window the tracker can see, and those that have closed.
@@ -324,10 +327,12 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         ))
     }
 
-    /// Look up managed windows that `kAXWindowsAttribute` does not list, as happens for windows on other Spaces.
-    ///
-    /// - Returns: whether any window was found
-    private func discoverMissingWindows() -> Bool {
+    /// Start looking up managed windows that `kAXWindowsAttribute` does not list, as happens for windows on
+    /// other Spaces. The probe runs in slices queued behind other work, so window actions never wait long.
+    private func discoverMissingWindows() {
+        guard discoveryCursor == nil else {
+            return
+        }
         let now = ContinuousClock.now
         let setTargetIds = setManagedIds.filter { windowId in
             guard
@@ -342,21 +347,49 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             return now - lastProbeTime >= Self.discoveryRetryInterval
         }
         guard !setTargetIds.isEmpty else {
-            return false
+            return
         }
         for windowId in setTargetIds {
             mapLastProbeTimes[windowId] = now
         }
-        let mapFound = AccessibilityElement.discoverWindows(
+        setDiscoveryTargetIds = setTargetIds
+        discoveryCursor = AccessibilityElement.remoteElementIdRange.lowerBound
+        discoveryStartTime = now
+        thread.perform { [self] in
+            continueDiscovery()
+        }
+    }
+
+    private func continueDiscovery() {
+        guard let cursor = discoveryCursor else {
+            return
+        }
+        let setTargetIds = setDiscoveryTargetIds.filter { setManagedIds.contains($0) && mapElements[$0] == nil }
+        let upperBound = min(cursor + Self.discoverySliceSize, AccessibilityElement.remoteElementIdRange.upperBound)
+        let mapFound = setTargetIds.isEmpty ? [:] : AccessibilityElement.discoverWindows(
             processId: application.processId,
-            setTargetIds: setTargetIds
+            setTargetIds: setTargetIds,
+            in: cursor..<upperBound
         )
-        Self.logger.info("""
-            discovery for \(self.application.name, privacy: .public): found \(mapFound.count) of \(setTargetIds.count) \
-            in \(ContinuousClock.now - now, privacy: .public)
-            """)
         mapElements.merge(mapFound) { _, found in found }
-        return !mapFound.isEmpty
+        if !mapFound.isEmpty {
+            publishSnapshot()
+        }
+        let isFinished = setTargetIds.count == mapFound.count
+            || upperBound == AccessibilityElement.remoteElementIdRange.upperBound
+        guard isFinished else {
+            discoveryCursor = upperBound
+            thread.perform { [self] in
+                continueDiscovery()
+            }
+            return
+        }
+        Self.logger.info("""
+            discovery for \(self.application.name, privacy: .public): \(setTargetIds.count - mapFound.count) of \
+            \(self.setDiscoveryTargetIds.count) not found after \(ContinuousClock.now - self.discoveryStartTime, privacy: .public)
+            """)
+        discoveryCursor = nil
+        setDiscoveryTargetIds = []
     }
 
     private func record(windowId: WindowId, element: AccessibilityElement) throws -> WindowRecord {

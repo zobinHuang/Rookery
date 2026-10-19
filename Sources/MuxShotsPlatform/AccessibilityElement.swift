@@ -7,7 +7,8 @@ struct AccessibilityElement {
     private static let enhancedUserInterfaceAttribute = "AXEnhancedUserInterface"
     private static let remoteTokenLength = 20
     private static let remoteTokenCocoaTag: Int32 = 0x636f_636f
-    private static let remoteElementIdLimit: UInt64 = 500_000
+    /// The element identifiers probed when looking for windows `kAXWindowsAttribute` omits.
+    static let remoteElementIdRange: Range<UInt64> = 0..<500_000
     private static let listWindowSubroles = [kAXStandardWindowSubrole, kAXDialogSubrole]
 
     let element: AXUIElement
@@ -29,14 +30,19 @@ struct AccessibilityElement {
     /// - Parameters:
     ///   - processId: the application's process identifier
     ///   - setTargetIds: the windows to find
+    ///   - elementIds: the slice of element identifiers to probe
     /// - Returns: the found windows' elements
-    static func discoverWindows(processId: pid_t, setTargetIds: Set<WindowId>) -> [WindowId: AccessibilityElement] {
+    static func discoverWindows(
+        processId: pid_t,
+        setTargetIds: Set<WindowId>,
+        in elementIds: Range<UInt64>
+    ) -> [WindowId: AccessibilityElement] {
         var mapFound: [WindowId: AccessibilityElement] = [:]
         var token = Data(count: remoteTokenLength)
         token.replaceSubrange(0..<4, with: withUnsafeBytes(of: processId) { Data($0) })
         token.replaceSubrange(4..<8, with: withUnsafeBytes(of: Int32(0)) { Data($0) })
         token.replaceSubrange(8..<12, with: withUnsafeBytes(of: remoteTokenCocoaTag) { Data($0) })
-        for elementId in 0..<remoteElementIdLimit where mapFound.count < setTargetIds.count {
+        for elementId in elementIds where mapFound.count < setTargetIds.count {
             token.replaceSubrange(12..<20, with: withUnsafeBytes(of: elementId) { Data($0) })
             guard let created = axUIElementCreateWithRemoteToken(token as CFData) else {
                 continue

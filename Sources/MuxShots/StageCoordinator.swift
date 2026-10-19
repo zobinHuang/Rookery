@@ -165,11 +165,13 @@ final class StageCoordinator: DropSurface {
         guard let followingStage else {
             return
         }
+        followingStage.isFollowingWindow = false
         if isReturning, let followStartOrigin {
             followingStage.move(to: followStartOrigin)
+            followingStage.relayout()
+        } else {
+            followingStage.settleOnCursorDisplay()
         }
-        followingStage.isFollowingWindow = false
-        followingStage.relayout()
         self.followingStage = nil
         followStartCursor = nil
         followStartOrigin = nil

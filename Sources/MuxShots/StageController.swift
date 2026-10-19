@@ -8,6 +8,12 @@ final class StagePanel: NSPanel {
     override var canBecomeKey: Bool {
         true
     }
+
+    /// Go wherever the stage is dragged, across displays: AppKit would otherwise hold a window that crosses
+    /// a display's top edge on that display. The stage settles onto one display when the drag ends.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
 }
 
 /// One stage: a window of its own, moved and resized like any other, with its groups, the tabs of the group
@@ -337,6 +343,30 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     func moveStageEnded() {
         moveStartCursor = nil
         moveStartOrigin = nil
+        settleOnCursorDisplay()
+    }
+
+    /// Fit the stage wholly onto the display under the cursor, as a drag of it ends.
+    func settleOnCursorDisplay() {
+        let cursor = NSEvent.mouseLocation
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) }) ?? panel.screen {
+            settle(on: screen)
+        }
+    }
+
+    /// Fit the stage wholly onto a display, shrinking it if it is larger, and refit its front window.
+    private func settle(on screen: NSScreen) {
+        let visibleFrame = screen.visibleFrame
+        var frame = panel.frame
+        frame.size.width = min(frame.width, visibleFrame.width)
+        frame.size.height = min(frame.height, visibleFrame.height)
+        frame.origin.x = min(max(frame.minX, visibleFrame.minX), visibleFrame.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        if frame == panel.frame {
+            relayout()
+        } else {
+            animate(to: frame)
+        }
     }
 
     // MARK: - Dropping windows

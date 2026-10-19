@@ -40,8 +40,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Called after every change to the workspace, including title updates.
     var onChange: (() -> Void)?
 
-    init(tracker: WindowTracker) {
+    private let preferences: Preferences
+
+    init(tracker: WindowTracker, preferences: Preferences) {
         self.tracker = tracker
+        self.preferences = preferences
         do {
             workspace = try WorkspaceStore.load()
         } catch {
@@ -216,6 +219,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     func windowDragBegan(_ drag: WindowDrag, at cursorLocation: CGPoint) {
+        guard preferences.isDropTrayEnabled else {
+            return
+        }
         let surface: DropSurface = if let panel, panel.isShowing {
             panel
         } else {
@@ -260,9 +266,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             icon: icon,
             listGroups: workspace.listGroups
         )
+        let isReturning = preferences.isReturningDroppedWindows
         Task { [tracker] in
             try? await Task.sleep(for: Self.settleDelay)
-            await tracker.applyFrame(drag.startFrame, to: drag.windowId)
+            if isReturning {
+                await tracker.applyFrame(drag.startFrame, to: drag.windowId)
+            }
             if target == .release {
                 self.release(drag.windowId)
             }

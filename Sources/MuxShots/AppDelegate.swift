@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "app")
 
     private let tracker = WindowTracker()
+    private let preferences = Preferences()
+    private var settingsWindowController: SettingsWindowController?
     private var statusMenuController: StatusMenuController?
     private var applicationMonitor: ApplicationMonitor?
     private var workspaceController: WorkspaceController?
@@ -25,6 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             workspaceProvider: { [weak self] in
                 self?.workspaceController?.workspace
+            },
+            onShowSettings: { [weak self] in
+                self?.settingsWindowController?.show()
+            },
+            groupModifiersProvider: { [weak self] in
+                self?.preferences.groupModifiers ?? Preferences.defaultGroupModifiers
             },
             onSwitch: { [weak self] groupId in
                 guard let workspaceController = self?.workspaceController else {
@@ -77,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applicationMonitor = monitor
         monitor.start()
 
-        let workspace = WorkspaceController(tracker: tracker)
+        let workspace = WorkspaceController(tracker: tracker, preferences: preferences)
         let panel = workspace.makePanel()
         workspace.onChange = { [weak panel] in
             panel?.reload()
@@ -85,9 +93,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceController = workspace
         workspacePanelController = panel
         workspace.start()
-        let shortcuts = ShortcutController(workspaceController: workspace)
+        let shortcuts = ShortcutController(workspaceController: workspace, preferences: preferences)
         shortcutController = shortcuts
         shortcuts.start()
+        settingsWindowController = SettingsWindowController(preferences: preferences, shortcutController: shortcuts)
 
         do {
             let server = try ControlServer(tracker: tracker, workspaceController: workspace)

@@ -12,9 +12,12 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let permissionItem = NSMenuItem()
     private let grantItem = NSMenuItem()
     private let showWorkspaceItem = NSMenuItem()
+    private let settingsItem = NSMenuItem()
     private let onAccessGranted: @MainActor () -> Void
     private let onShowWorkspace: @MainActor () -> Void
     private let workspaceProvider: @MainActor () -> Workspace?
+    private let onShowSettings: @MainActor () -> Void
+    private let groupModifiersProvider: @MainActor () -> NSEvent.ModifierFlags
     private let onSwitch: @MainActor (GroupId?) -> Void
     private var listGroupItems: [NSMenuItem] = []
     private var permissionPollTask: Task<Void, Never>?
@@ -23,16 +26,22 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     ///   - onAccessGranted: called whenever the permission is found granted
     ///   - onShowWorkspace: called when the user asks to see the managed windows
     ///   - workspaceProvider: the groups to list, or nil before managing starts
+    ///   - onShowSettings: called when the user asks for the settings
+    ///   - groupModifiersProvider: the modifiers of the group shortcuts, shown beside each group
     ///   - onSwitch: called with the group to show, or nil to show every window
     init(
         onAccessGranted: @escaping @MainActor () -> Void,
         onShowWorkspace: @escaping @MainActor () -> Void,
         workspaceProvider: @escaping @MainActor () -> Workspace?,
+        onShowSettings: @escaping @MainActor () -> Void,
+        groupModifiersProvider: @escaping @MainActor () -> NSEvent.ModifierFlags,
         onSwitch: @escaping @MainActor (GroupId?) -> Void
     ) {
         self.onAccessGranted = onAccessGranted
         self.onShowWorkspace = onShowWorkspace
         self.workspaceProvider = workspaceProvider
+        self.onShowSettings = onShowSettings
+        self.groupModifiersProvider = groupModifiersProvider
         self.onSwitch = onSwitch
     }
 
@@ -52,6 +61,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         showWorkspaceItem.target = self
         showWorkspaceItem.action = #selector(showWorkspace)
 
+        settingsItem.title = "Settings…"
+        settingsItem.keyEquivalent = ","
+        settingsItem.target = self
+        settingsItem.action = #selector(showSettings)
+
         let quitItem = NSMenuItem(
             title: "Quit MuxShots",
             action: #selector(NSApplication.terminate(_:)),
@@ -65,6 +79,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.addItem(grantItem)
         menu.addItem(.separator())
         menu.addItem(showWorkspaceItem)
+        menu.addItem(settingsItem)
         menu.addItem(.separator())
         menu.addItem(quitItem)
         statusItem.menu = menu
@@ -92,6 +107,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             : "Accessibility access required"
         grantItem.isHidden = isPermissionGranted
         showWorkspaceItem.isEnabled = isPermissionGranted
+        settingsItem.isEnabled = isPermissionGranted
         if isPermissionGranted {
             onAccessGranted()
         }
@@ -113,12 +129,11 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             item.state = workspace.isActive(group.groupId) ? .on : .off
             if ShortcutController.listGroupKeyCodes.indices.contains(position) {
                 item.keyEquivalent = String(position + 1)
-                item.keyEquivalentModifierMask = [.control, .option]
+                item.keyEquivalentModifierMask = groupModifiersProvider()
             }
             listGroupItems.append(item)
         }
-        let showAllItem = NSMenuItem(title: "Show All Windows", action: #selector(showAllWindows), keyEquivalent: "0")
-        showAllItem.keyEquivalentModifierMask = [.control, .option]
+        let showAllItem = NSMenuItem(title: "Show All Windows", action: #selector(showAllWindows), keyEquivalent: "")
         showAllItem.target = self
         showAllItem.isEnabled = !workspace.setActiveGroupIds.isEmpty
         listGroupItems.append(showAllItem)
@@ -138,6 +153,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func showAllWindows() {
         onSwitch(nil)
+    }
+
+    @objc private func showSettings() {
+        onShowSettings()
     }
 
     @objc private func showWorkspace() {

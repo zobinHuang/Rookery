@@ -3,24 +3,21 @@ import Carbon.HIToolbox
 import MuxShotsCore
 import MuxShotsPlatform
 
-/// The hold-to-choose group switcher: ⌥⇥ opens it on the next group, further presses move the selection,
-/// releasing ⌥ switches and esc cancels. A quick tap switches without showing anything, like Cmd-Tab.
+/// The hold-to-choose group switcher: its shortcut opens it on the next group, further presses move the
+/// selection, releasing the held modifiers switches and esc cancels. A quick tap switches without showing
+/// anything, like Cmd-Tab.
 @MainActor
 final class SwitcherController {
-    private static let holdModifiers: NSEvent.ModifierFlags = [.option]
     private static let revealDelay = Duration.milliseconds(140)
     private static let fadeOutDelay = Duration.milliseconds(200)
     private static let panelSize = CGSize(width: 1100, height: 320)
-    private static let listCancelHotkeys = [
-        Hotkey(keyCode: kVK_Escape, modifiers: []),
-        Hotkey(keyCode: kVK_Escape, modifiers: holdModifiers),
-    ]
 
     private let workspaceController: WorkspaceController
     private let hotkeyCenter: HotkeyCenter
     private let model = SwitcherModel()
     private let panel: NSPanel
     private var isOpen = false
+    private var listCancelHotkeys: [Hotkey] = []
     private var revealTask: Task<Void, Never>?
 
     init(workspaceController: WorkspaceController, hotkeyCenter: HotkeyCenter) {
@@ -43,17 +40,19 @@ final class SwitcherController {
 
     /// Open the switcher on the group after the current one, or move the selection while it is open.
     ///
-    /// - Parameter step: 1 for the next entry, -1 for the previous one
-    func advance(by step: Int) {
+    /// - Parameters:
+    ///   - step: 1 for the next entry, -1 for the previous one
+    ///   - holdModifiers: the modifiers whose release chooses the selection
+    func advance(by step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
         guard isOpen else {
-            open(step: step)
+            open(step: step, holding: holdModifiers)
             return
         }
         let count = model.listEntries.count
         model.selectedIndex = ((model.selectedIndex + step) % count + count) % count
     }
 
-    private func open(step: Int) {
+    private func open(step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
         let workspace = workspaceController.workspace
         guard !workspace.listGroups.isEmpty else {
             return
@@ -72,12 +71,16 @@ final class SwitcherController {
         model.selectedIndex = ((activeIndex + step) % count + count) % count
         isOpen = true
 
-        for hotkey in Self.listCancelHotkeys {
+        listCancelHotkeys = [
+            Hotkey(keyCode: kVK_Escape, modifiers: []),
+            Hotkey(keyCode: kVK_Escape, modifiers: holdModifiers),
+        ]
+        for hotkey in listCancelHotkeys {
             hotkeyCenter.register(hotkey) { [weak self] in
                 self?.close()
             }
         }
-        hotkeyCenter.whenReleased(Self.holdModifiers) { [weak self] in
+        hotkeyCenter.whenReleased(holdModifiers) { [weak self] in
             self?.commit()
         }
         revealTask = Task { [weak self] in
@@ -127,9 +130,10 @@ final class SwitcherController {
         isOpen = false
         revealTask?.cancel()
         hotkeyCenter.stopWatchingModifiers()
-        for hotkey in Self.listCancelHotkeys {
+        for hotkey in listCancelHotkeys {
             hotkeyCenter.unregister(hotkey)
         }
+        listCancelHotkeys.removeAll()
         model.isVisible = false
         Task { [panel] in
             try? await Task.sleep(for: Self.fadeOutDelay)

@@ -115,10 +115,58 @@ struct WorkspaceTests {
         #expect(workspace.listManagedWindows.first?.isHidden == false)
     }
 
+    @Test func activatingAnUnknownGroupLeavesGroupMode() {
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+
+        workspace.activate(groupId)
+        let activeAfterActivate = workspace.activeGroupId
+        workspace.activate(GroupId(rawValue: "missing"))
+
+        #expect(activeAfterActivate == groupId)
+        #expect(workspace.activeGroupId == nil)
+    }
+
+    @Test func removingTheActiveGroupsLastMemberLeavesGroupMode() {
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+        workspace.activate(groupId)
+
+        workspace.release(WindowId(rawValue: 1))
+
+        #expect(workspace.activeGroupId == nil)
+    }
+
+    @Test func stackOrderPutsRecordedMembersFirstAndNewcomersAfter() {
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+        workspace.adopt(Self.window(2), into: groupId)
+        workspace.adopt(Self.window(3), into: groupId)
+
+        workspace.recordStack(of: groupId, frontToBack: [WindowId(rawValue: 3), WindowId(rawValue: 9), WindowId(rawValue: 1)])
+        workspace.adopt(Self.window(4), into: groupId)
+
+        let listOrder = workspace.listGroups[0].listMembersFrontToBack
+        #expect(listOrder.map(\.windowId.rawValue) == [3, 1, 2, 4])
+    }
+
+    @Test func groupsAreFoundByNameOrPosition() {
+        var workspace = Workspace()
+        let paperId = workspace.adopt(Self.window(1), into: nil)
+        workspace.rename(paperId, to: "Paper")
+        let secondId = workspace.adopt(Self.window(2), into: nil)
+
+        #expect(workspace.group(named: "paper")?.groupId == paperId)
+        #expect(workspace.group(named: "2")?.groupId == secondId)
+        #expect(workspace.group(named: "3") == nil)
+    }
+
     @Test func workspaceSurvivesAJsonRoundTrip() throws {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1, title: "a"), into: nil)
         workspace.adopt(Self.window(2, title: "b"), into: groupId)
+        workspace.activate(groupId)
+        workspace.recordStack(of: groupId, frontToBack: [WindowId(rawValue: 2), WindowId(rawValue: 1)])
 
         let decoded = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(workspace))
 

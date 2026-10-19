@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// Which windows MuxShots manages and how they are grouped; a window belongs to at most one group.
 public struct Workspace: Codable, Equatable, Sendable {
@@ -6,9 +7,42 @@ public struct Workspace: Codable, Equatable, Sendable {
 
     /// The groups in creation order; a group with no members is removed.
     public private(set) var listGroups: [WindowGroup] = []
+    /// The group currently shown, with every other group's windows hidden; nil when no group is active.
+    public private(set) var activeGroupId: GroupId?
 
-    public init(listGroups: [WindowGroup] = []) {
+    public init(listGroups: [WindowGroup] = [], activeGroupId: GroupId? = nil) {
         self.listGroups = listGroups.filter { !$0.listMembers.isEmpty }
+        self.activeGroupId = self.listGroups.contains { $0.groupId == activeGroupId } ? activeGroupId : nil
+    }
+
+    /// The group currently shown.
+    public var activeGroup: WindowGroup? {
+        listGroups.first { $0.groupId == activeGroupId }
+    }
+
+    /// Make a group the one shown, or leave group mode with nil.
+    public mutating func activate(_ groupId: GroupId?) {
+        activeGroupId = listGroups.contains { $0.groupId == groupId } ? groupId : nil
+    }
+
+    /// Record a group's front-to-back order of members, ignoring identifiers that are not its members.
+    public mutating func recordStack(of groupId: GroupId, frontToBack listWindowIds: [WindowId]) {
+        guard let groupIndex = listGroups.firstIndex(where: { $0.groupId == groupId }) else {
+            return
+        }
+        let setMemberIds = Set(listGroups[groupIndex].listMembers.map(\.windowId))
+        listGroups[groupIndex].listStackIds = listWindowIds.filter { setMemberIds.contains($0) }
+    }
+
+    /// A group by name, ignoring case, or by its 1-based position.
+    public func group(named nameOrPosition: String) -> WindowGroup? {
+        if let group = listGroups.first(where: { $0.name.caseInsensitiveCompare(nameOrPosition) == .orderedSame }) {
+            return group
+        }
+        guard let position = Int(nameOrPosition), listGroups.indices.contains(position - 1) else {
+            return nil
+        }
+        return listGroups[position - 1]
     }
 
     /// Every managed window, in group order.
@@ -112,6 +146,9 @@ public struct Workspace: Codable, Equatable, Sendable {
             listGroups[groupIndex].listMembers.removeAll { $0.windowId == windowId }
         }
         listGroups.removeAll { $0.listMembers.isEmpty }
+        if activeGroup == nil {
+            activeGroupId = nil
+        }
     }
 
     /// The lowest "Group N" name not in use.

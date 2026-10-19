@@ -204,6 +204,23 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
+    /// Move the stage's content area, as when the sidebar collapses or the stage moves to another display,
+    /// and refit the front window to it.
+    ///
+    /// - Parameter contentFrame: the new content area, in window-server coordinates
+    func relayoutStage(contentFrame: CGRect) async {
+        await enqueue {
+            guard self.stageContentFrame != nil else {
+                return
+            }
+            self.stageContentFrame = contentFrame
+            guard let windowId = self.workspace.listActiveGroups.first?.listMembersFrontToBack.first?.windowId else {
+                return
+            }
+            await self.tracker.applyFrame(contentFrame, to: windowId)
+        }
+    }
+
     /// Close the stage, putting every window back where it was before the stage took it over.
     func exitStage() async {
         await enqueue {
@@ -316,9 +333,33 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         didChange()
     }
 
+    /// Give a window a name of its own, or with a blank name go back to its title.
+    func rename(window windowId: WindowId, to name: String) {
+        workspace.rename(window: windowId, to: name)
+        didChange()
+    }
+
+    /// Move a managed window to a group, or to a new group with nil, laying out the stage afterwards.
+    func moveWindow(_ windowId: WindowId, to groupId: GroupId?) {
+        guard let window = workspace.listManagedWindows.first(where: { $0.windowId == windowId }) else {
+            return
+        }
+        adopt(windowId, processId: window.application.processId, into: groupId)
+    }
+
+    /// Give keyboard focus back to the stage's front window, as after editing a name on the stage.
+    func focusStageFront() {
+        guard isStageOpen, let windowId = workspace.listActiveGroups.first?.listMembersFrontToBack.first?.windowId else {
+            return
+        }
+        Task {
+            try? await focus(windowId)
+        }
+    }
+
     /// Make the stage, which shares the drop animation with the tray.
     func makeStage() -> StageController {
-        let stage = StageController(workspaceController: self, ghostAnimator: ghostAnimator)
+        let stage = StageController(workspaceController: self, preferences: preferences, ghostAnimator: ghostAnimator)
         stageSurface = stage
         return stage
     }

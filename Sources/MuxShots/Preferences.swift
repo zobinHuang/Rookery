@@ -16,6 +16,7 @@ final class Preferences {
     private static let switcherHotkeyKey = "switcherHotkey"
     private static let cycleHotkeyKey = "cycleHotkey"
     private static let stageHotkeyKey = "stageHotkey"
+    private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
 
     static let defaultGroupModifiers: NSEvent.ModifierFlags = [.control, .option]
     static let defaultShowAllHotkey = Hotkey(keyCode: kVK_ANSI_0, modifiers: [.control, .option])
@@ -68,6 +69,13 @@ final class Preferences {
         }
     }
 
+    /// Whether the stage shows its sidebar as a narrow strip of icons.
+    var isStageSidebarCollapsed: Bool {
+        didSet {
+            defaults.set(isStageSidebarCollapsed, forKey: Self.stageSidebarCollapsedKey)
+        }
+    }
+
     /// Opens or closes the stage.
     var stageHotkey: Hotkey {
         didSet {
@@ -79,6 +87,7 @@ final class Preferences {
         self.defaults = defaults
         isDropTrayEnabled = defaults.object(forKey: Self.dropTrayKey) as? Bool ?? true
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
+        isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)
             .map(NSEvent.ModifierFlags.init(rawValue:)) ?? Self.defaultGroupModifiers
         showAllHotkey = Self.load(forKey: Self.showAllHotkeyKey, from: defaults) ?? Self.defaultShowAllHotkey

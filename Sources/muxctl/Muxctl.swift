@@ -88,7 +88,7 @@ enum Muxctl {
                 let marker = setActiveGroupIds.contains(group.groupId) ? "* " : ""
                 Swift.print("\(marker)\(group.name) (\(group.listMembers.count))")
                 for member in group.listMembers {
-                    let observedRow = mapWindows[member.windowId].map { row(for: $0, isHidden: member.isHidden) }
+                    let observedRow = mapWindows[member.windowId].map { row(for: $0, isHidden: member.isHidden, name: member.customName) }
                     Swift.print("  " + (observedRow ?? row(for: member)))
                 }
             }
@@ -107,7 +107,7 @@ enum Muxctl {
     }
 
     /// One table row: id, flags (Fullscreen, Minimized, On screen, Hidden by MuxShots), application, frame, title.
-    private static func row(for window: WindowRecord, isHidden: Bool) -> String {
+    private static func row(for window: WindowRecord, isHidden: Bool, name: String? = nil) -> String {
         let flags = [
             window.isFullscreen ? "F" : "-",
             window.isMinimized ? "M" : "-",
@@ -121,7 +121,7 @@ enum Muxctl {
             flags,
             window.application.name.padding(toLength: 20, withPad: " ", startingAt: 0),
             frameText.padding(toLength: 22, withPad: " ", startingAt: 0),
-            String(window.title.prefix(titleWidth)),
+            String((name ?? window.title).prefix(titleWidth)),
         ].joined(separator: " ")
     }
 
@@ -132,7 +132,7 @@ enum Muxctl {
             member.isHidden ? "???H" : "????",
             member.application.name.padding(toLength: 20, withPad: " ", startingAt: 0),
             "".padding(toLength: 22, withPad: " ", startingAt: 0),
-            String(member.title.prefix(titleWidth)),
+            String(member.displayName.prefix(titleWidth)),
         ].joined(separator: " ")
     }
 

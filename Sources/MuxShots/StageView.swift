@@ -2,33 +2,41 @@ import AppKit
 import MuxShotsCore
 import SwiftUI
 
+/// What the stage view asks of its controller.
+@MainActor
+protocol StageActions: AnyObject {
+    func selectGroup(_ groupId: GroupId)
+    func selectTab(_ windowId: WindowId)
+    func releaseWindow(_ windowId: WindowId)
+    /// Move a window to a group, or to a new group with nil.
+    func moveWindow(_ windowId: WindowId, to groupId: GroupId?)
+    func renameGroup(_ groupId: GroupId, to name: String)
+    func renameWindow(_ windowId: WindowId, to name: String)
+    /// Take keyboard input for a name being edited.
+    func beginEditing()
+    /// Give keyboard input back to the stage's front window.
+    func endEditing()
+    func tabDragBegan()
+    func toggleSidebar()
+    func exitStage()
+    /// The user is dragging the stage by its sidebar header, towards another display.
+    func moveStageChanged()
+    func moveStageEnded()
+}
+
 /// The stage: groups down the left, the active group's windows as tabs along the top, and the content
 /// area the front window is laid over.
 struct StageView: View {
     private static let zoneAnimation = Animation.spring(response: 0.28, dampingFraction: 0.82)
+    private static let sidebarAnimation = Animation.spring(response: 0.34, dampingFraction: 0.86)
 
     let model: StageModel
-    let onSelectGroup: (GroupId) -> Void
-    let onSelectTab: (WindowId) -> Void
-    let onReleaseTab: (WindowId) -> Void
-    let onExit: () -> Void
+    unowned let actions: any StageActions
     @Namespace private var tabNamespace
 
     /// An AppKit view hosting the stage.
-    static func makeHostingView(
-        model: StageModel,
-        onSelectGroup: @escaping (GroupId) -> Void,
-        onSelectTab: @escaping (WindowId) -> Void,
-        onReleaseTab: @escaping (WindowId) -> Void,
-        onExit: @escaping () -> Void
-    ) -> NSView {
-        let view = NSHostingView(rootView: StageView(
-            model: model,
-            onSelectGroup: onSelectGroup,
-            onSelectTab: onSelectTab,
-            onReleaseTab: onReleaseTab,
-            onExit: onExit
-        ))
+    static func makeHostingView(model: StageModel, actions: any StageActions) -> NSView {
+        let view = NSHostingView(rootView: StageView(model: model, actions: actions))
         view.sizingOptions = []
         return view
     }
@@ -36,7 +44,7 @@ struct StageView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: StageModel.sidebarWidth)
+                .frame(width: model.sidebarWidth)
             VStack(spacing: 0) {
                 tabBar
                     .frame(height: StageModel.tabBarHeight)
@@ -48,62 +56,182 @@ struct StageView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .opacity(model.isVisible ? 1 : 0)
         .animation(.easeOut(duration: 0.22), value: model.isVisible)
-        .animation(Self.zoneAnimation, value: model.hoveredZone)
-        .animation(Self.zoneAnimation, value: model.isReceivingWindow)
+        .animation(Self.zoneAnimation, value: model.highlightedZone)
+        .animation(Self.zoneAnimation, value: showsDropZones)
+        .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
     }
 
     // MARK: - Sidebar
 
+    private var showsDropZones: Bool {
+        model.isReceivingWindow || model.isDraggingTab
+    }
+
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("MuxShots")
-                    .font(.system(size: 15, weight: .bold))
-                Spacer()
-                Button(action: onExit) {
-                    Image(systemName: "arrow.down.right.and.arrow.up.left")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(.borderless)
-                .help("Leave the stage")
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 8)
-
+            sidebarHeader
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(model.listGroups) { row in
                         groupRow(row)
                     }
-                    if model.hoveredZone == .newGroup {
+                    if model.highlightedZone == .newGroup && !model.isSidebarCollapsed {
                         newGroupPlaceholder
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
                 .padding(.horizontal, 8)
             }
-
             Spacer(minLength: 0)
-            if model.isReceivingWindow {
+            if showsDropZones {
                 VStack(spacing: 6) {
                     dropZone(.newGroup, title: "New Group", symbol: "plus", tint: .accentColor)
-                    if model.isDraggingManagedWindow {
+                    if model.isDraggingManagedWindow || model.isDraggingTab {
                         dropZone(.release, title: "Release", symbol: "arrow.up.forward.square", tint: .red)
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.bottom, 10)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if model.listGroups.isEmpty {
+            } else if model.listGroups.isEmpty && !model.isSidebarCollapsed {
                 Text("Drag a window here to start a group.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(14)
             }
         }
+        .frame(maxHeight: .infinity)
         .background(.thinMaterial)
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { listPayloads, _ in
+            dropTab(listPayloads, into: nil)
+        } isTargeted: { isTargeted in
+            model.isTabOverSidebar = isTargeted
+        }
         .modifier(ZoneFrameReporter(zone: .sidebar, model: model))
+    }
+
+    private var sidebarHeader: some View {
+        Group {
+            if model.isSidebarCollapsed {
+                VStack(spacing: 10) {
+                    headerButton("sidebar.left", help: "Show the sidebar", action: actions.toggleSidebar)
+                    headerButton("arrow.down.right.and.arrow.up.left", help: "Leave the stage", action: actions.exitStage)
+                }
+                .frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: 10) {
+                    Text("MuxShots")
+                        .font(.system(size: 15, weight: .bold))
+                    Spacer()
+                    headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
+                    headerButton("arrow.down.right.and.arrow.up.left", help: "Leave the stage", action: actions.exitStage)
+                }
+                .padding(.horizontal, 14)
+            }
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+                .onChanged { _ in
+                    actions.moveStageChanged()
+                }
+                .onEnded { _ in
+                    actions.moveStageEnded()
+                }
+        )
+        .help("Drag to move the stage to another display")
+    }
+
+    private func headerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+    }
+
+    private func groupRow(_ row: StageGroupRow) -> some View {
+        let isHovered = model.highlightedZone == .group(row.groupId)
+        let isLanded = model.landedZone == .group(row.groupId)
+        return Button {
+            actions.selectGroup(row.groupId)
+        } label: {
+            Group {
+                if model.isSidebarCollapsed {
+                    IconStack(listBundleIds: row.listBundleIds, iconSize: 26, overlap: -18)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                } else {
+                    HStack(spacing: 10) {
+                        IconStack(listBundleIds: row.listBundleIds, iconSize: 22, overlap: -9)
+                        if model.editingGroupId == row.groupId {
+                            InlineRenameField(initialText: row.name, placeholder: "Group name") { name in
+                                finishEditing()
+                                actions.renameGroup(row.groupId, to: name)
+                            } onCancel: {
+                                finishEditing()
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                        } else {
+                            Text(row.name)
+                                .font(.system(size: 13, weight: row.isActive ? .semibold : .medium))
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Text("\(row.listBundleIds.count)")
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(row.isActive ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                }
+            }
+            .foregroundStyle(row.isActive ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(rowFill(isActive: row.isActive, isHovered: isHovered))
+            }
+            .overlay {
+                if isHovered {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(row.isActive ? Color.white.opacity(0.7) : Color.accentColor, lineWidth: 2)
+                }
+            }
+            .scaleEffect(isLanded ? 1.06 : (isHovered ? 1.03 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(row.name)
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            beginRenaming(group: row.groupId)
+        })
+        .contextMenu {
+            Button("Rename Group…") {
+                beginRenaming(group: row.groupId)
+            }
+        }
+        .dropDestination(for: String.self) { listPayloads, _ in
+            dropTab(listPayloads, into: row.groupId)
+        } isTargeted: { isTargeted in
+            if isTargeted {
+                model.tabDropGroupId = row.groupId
+            } else if model.tabDropGroupId == row.groupId {
+                model.tabDropGroupId = nil
+            }
+        }
+        .modifier(ZoneFrameReporter(zone: .group(row.groupId), model: model))
+    }
+
+    private func rowFill(isActive: Bool, isHovered: Bool) -> AnyShapeStyle {
+        if isActive {
+            return AnyShapeStyle(Color.accentColor.gradient)
+        }
+        return isHovered ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(.clear)
     }
 
     /// The row a new group would take, shown while a drop would start one.
@@ -130,56 +258,15 @@ struct StageView: View {
         .modifier(ZoneFrameReporter(zone: .newGroupRow, model: model))
     }
 
-    private func groupRow(_ row: StageGroupRow) -> some View {
-        let isHovered = model.hoveredZone == .group(row.groupId)
-        let isLanded = model.landedZone == .group(row.groupId)
-        return Button {
-            onSelectGroup(row.groupId)
-        } label: {
-            HStack(spacing: 10) {
-                IconStack(listBundleIds: row.listBundleIds, iconSize: 22, overlap: -9)
-                Text(row.name)
-                    .font(.system(size: 13, weight: row.isActive ? .semibold : .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text("\(row.listBundleIds.count)")
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
-                    .foregroundStyle(row.isActive ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
-            }
-            .foregroundStyle(row.isActive ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(rowFill(isActive: row.isActive, isHovered: isHovered))
-            }
-            .overlay {
-                if isHovered {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(row.isActive ? Color.white.opacity(0.7) : Color.accentColor, lineWidth: 2)
-                }
-            }
-            .scaleEffect(isLanded ? 1.06 : (isHovered ? 1.03 : 1))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .modifier(ZoneFrameReporter(zone: .group(row.groupId), model: model))
-    }
-
-    private func rowFill(isActive: Bool, isHovered: Bool) -> AnyShapeStyle {
-        if isActive {
-            return AnyShapeStyle(Color.accentColor.gradient)
-        }
-        return isHovered ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(.clear)
-    }
-
     private func dropZone(_ zone: StageZone, title: String, symbol: String, tint: Color) -> some View {
-        let isHovered = model.hoveredZone == zone
+        let isHovered = model.highlightedZone == zone
         return HStack(spacing: 8) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
+            if !model.isSidebarCollapsed {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+            }
         }
         .foregroundStyle(isHovered ? AnyShapeStyle(.white) : AnyShapeStyle(tint))
         .frame(maxWidth: .infinity)
@@ -195,6 +282,18 @@ struct StageView: View {
             }
         }
         .scaleEffect(isHovered ? 1.03 : 1)
+        .help(title)
+        .dropDestination(for: String.self) { listPayloads, _ in
+            guard zone == .release else {
+                return dropTab(listPayloads, into: nil)
+            }
+            model.isDraggingTab = false
+            guard let windowId = Self.windowId(from: listPayloads) else {
+                return false
+            }
+            actions.releaseWindow(windowId)
+            return true
+        }
         .modifier(ZoneFrameReporter(zone: zone, model: model))
     }
 
@@ -216,7 +315,7 @@ struct StageView: View {
     private func tabButton(_ tab: StageTab) -> some View {
         let isSelected = tab.windowId == model.selectedWindowId
         return Button {
-            onSelectTab(tab.windowId)
+            actions.selectTab(tab.windowId)
         } label: {
             HStack(spacing: 7) {
                 if let icon = ApplicationIcon.icon(forBundleId: tab.bundleId) {
@@ -224,10 +323,24 @@ struct StageView: View {
                         .resizable()
                         .frame(width: 18, height: 18)
                 }
-                Text(tab.title.isEmpty ? tab.applicationName : tab.title)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if model.editingWindowId == tab.windowId {
+                    InlineRenameField(
+                        initialText: tab.hasCustomName ? tab.title : "",
+                        placeholder: tab.title
+                    ) { name in
+                        finishEditing()
+                        actions.renameWindow(tab.windowId, to: name)
+                    } onCancel: {
+                        finishEditing()
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 180)
+                } else {
+                    Text(tab.title)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
             .frame(maxWidth: 220)
             .fixedSize(horizontal: true, vertical: false)
@@ -248,9 +361,33 @@ struct StageView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
+            beginRenaming(tab: tab.windowId)
+        })
+        .onDrag {
+            actions.tabDragBegan()
+            return NSItemProvider(object: String(tab.windowId.rawValue) as NSString)
+        } preview: {
+            HStack(spacing: 7) {
+                if let icon = ApplicationIcon.icon(forBundleId: tab.bundleId) {
+                    Image(nsImage: icon)
+                        .resizable()
+                        .frame(width: 18, height: 18)
+                }
+                Text(tab.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: .rect(cornerRadius: 9))
+        }
         .contextMenu {
+            Button("Rename Tab…") {
+                beginRenaming(tab: tab.windowId)
+            }
             Button("Release Window") {
-                onReleaseTab(tab.windowId)
+                actions.releaseWindow(tab.windowId)
             }
         }
     }
@@ -258,7 +395,7 @@ struct StageView: View {
     // MARK: - Content
 
     private var content: some View {
-        let isHovered = model.hoveredZone == .content
+        let isHovered = model.highlightedZone == .content
         return ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
@@ -288,10 +425,93 @@ struct StageView: View {
     }
 
     private var contentHint: String {
-        guard model.hoveredZone == .content else {
+        guard model.highlightedZone == .content else {
             return "Drag a window here"
         }
         return model.activeGroupName.map { "Drop to add to \($0)" } ?? "Drop to start a group"
+    }
+
+    // MARK: - Editing and dropping
+
+    private func beginRenaming(group groupId: GroupId) {
+        guard !model.isSidebarCollapsed else {
+            return
+        }
+        actions.beginEditing()
+        model.editingWindowId = nil
+        model.editingGroupId = groupId
+    }
+
+    private func beginRenaming(tab windowId: WindowId) {
+        actions.beginEditing()
+        model.editingGroupId = nil
+        model.editingWindowId = windowId
+    }
+
+    private func finishEditing() {
+        model.editingGroupId = nil
+        model.editingWindowId = nil
+        actions.endEditing()
+    }
+
+    /// Move a dragged tab's window into a group, or into a new group with nil.
+    private func dropTab(_ listPayloads: [String], into groupId: GroupId?) -> Bool {
+        model.isDraggingTab = false
+        model.tabDropGroupId = nil
+        model.isTabOverSidebar = false
+        guard let windowId = Self.windowId(from: listPayloads) else {
+            return false
+        }
+        actions.moveWindow(windowId, to: groupId)
+        return true
+    }
+
+    private static func windowId(from listPayloads: [String]) -> WindowId? {
+        listPayloads.first.flatMap(UInt32.init).map { WindowId(rawValue: $0) }
+    }
+}
+
+/// A text field that edits a name in place: return commits, escape cancels, and leaving it commits.
+struct InlineRenameField: View {
+    let initialText: String
+    let placeholder: String
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+    @State private var text = ""
+    @State private var isFinished = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .focused($isFocused)
+            .onAppear {
+                text = initialText
+                isFocused = true
+            }
+            .onSubmit {
+                finish(isCommitted: true)
+            }
+            .onExitCommand {
+                finish(isCommitted: false)
+            }
+            .onChange(of: isFocused) { _, isNowFocused in
+                if !isNowFocused {
+                    finish(isCommitted: true)
+                }
+            }
+    }
+
+    private func finish(isCommitted: Bool) {
+        guard !isFinished else {
+            return
+        }
+        isFinished = true
+        if isCommitted {
+            onCommit(text)
+        } else {
+            onCancel()
+        }
     }
 }
 

@@ -127,7 +127,7 @@ final class WindowCellView: NSTableCellView {
 
     @MainActor
     func show(_ window: ManagedWindow) {
-        titleLabel.stringValue = window.title.isEmpty ? "Untitled" : window.title
+        titleLabel.stringValue = window.displayName
         applicationLabel.stringValue = window.application.name
         iconView.image = ApplicationIcon.icon(forBundleId: window.application.bundleId)
     }

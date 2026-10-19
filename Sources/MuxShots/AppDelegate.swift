@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         applicationMenu.addItem(withTitle: "Enter or Exit Stage", action: #selector(toggleStage), keyEquivalent: "").target = self
+        applicationMenu.addItem(withTitle: "Move Stage to Next Display", action: #selector(moveStageToNextDisplay), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Show Managed Windows…", action: #selector(showPanel), keyEquivalent: "").target = self
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Hide MuxShots", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
@@ -131,6 +132,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleStage() {
         stageController?.toggle()
+    }
+
+    @objc private func moveStageToNextDisplay() {
+        stageController?.moveToNextDisplay()
     }
 
     @objc private func showPanel() {

@@ -120,9 +120,8 @@ struct MixerView: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.system(size: 9.5, weight: .semibold))
-            .tracking(0.6)
+        Text(title)
+            .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 6)
             .padding(.top, 6)
@@ -594,9 +593,8 @@ private struct MixerStrip: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(title.uppercased())
-                    .font(.system(size: 9.5, weight: .semibold))
-                    .tracking(0.6)
+                Text(title)
+                    .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 accessory

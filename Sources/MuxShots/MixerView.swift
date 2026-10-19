@@ -119,6 +119,17 @@ struct MixerView: View {
         } label: {
             VStack(spacing: 4) {
                 ApplicationIconView(bundleId: track.bundleId, size: 28)
+                    .opacity(track.settings.isMuted ? 0.45 : 1)
+                    .overlay(alignment: .bottomTrailing) {
+                        if track.settings.isMuted {
+                            Image(systemName: "speaker.slash.fill")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 15, height: 15)
+                                .background(Color.red, in: Circle())
+                                .offset(x: 4, y: 4)
+                        }
+                    }
                     .padding(3)
                     .background {
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -140,6 +151,9 @@ struct MixerView: View {
         if let error = track.error {
             return MixerStripStatus(text: "Couldn't take over: \(error)", color: .red)
         }
+        if settings.isMuted {
+            return MixerStripStatus(text: "Muted", color: .red)
+        }
         switch (settings.isTakenOver, track.isCapturing, track.isPlaying) {
         case (true, true, _):
             return MixerStripStatus(text: "Mixing", color: .accentColor)
@@ -153,7 +167,10 @@ struct MixerView: View {
     }
 
     private static func status(of tab: BrowserTab) -> MixerStripStatus {
-        switch tab.mode {
+        if tab.isMuted {
+            return MixerStripStatus(text: "Muted", color: .red)
+        }
+        return switch tab.mode {
         case .idle:
             tab.isAudible
                 ? MixerStripStatus(text: "Playing", color: .green)
@@ -263,6 +280,12 @@ private struct MixerStrip: View {
                 .help(status.help ?? status.text)
             }
             Spacer(minLength: 4)
+            MixerMuteButton(
+                isMuted: settings.isMuted,
+                help: settings.isMuted ? "Unmute \(title)" : "Mute \(title)"
+            ) {
+                onUpdate { $0.isMuted.toggle() }
+            }
             MixerSwitch(
                 isOn: binding(\.isTakenOver),
                 help: settings.isTakenOver ? "Give the sound back to \(title)" : "Take over the sound of \(title)"

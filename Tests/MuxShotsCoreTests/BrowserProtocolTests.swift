@@ -7,7 +7,7 @@ struct BrowserProtocolTests {
     @Test func decodesTheExtensionsTabList() throws {
         let json = """
             {"type":"tabs","list_tabs":[{"tab_id":7,"window_id":2,"title":"Lofi","url":"https://example.com/",\
-            "fav_icon_url":null,"is_audible":true,"mode":"page"}]}
+            "fav_icon_url":null,"is_audible":true,"is_muted":false,"mode":"page"}]}
             """
 
         let event = try BrowserWire.makeDecoder().decode(BrowserEvent.self, from: Data(json.utf8))
@@ -19,6 +19,7 @@ struct BrowserProtocolTests {
             url: "https://example.com/",
             favIconUrl: nil,
             isAudible: true,
+            isMuted: false,
             mode: .page
         )]))
     }
@@ -35,5 +36,14 @@ struct BrowserProtocolTests {
         #expect(object["tab_id"] as? Int == 7)
         #expect(encodedSettings["is_taken_over"] as? Bool == true)
         #expect(encodedSettings["list_equalizer_gains"] is [Any])
+    }
+
+    @Test func readsTabsFromAnExtensionThatPredatesMuting() throws {
+        let json = #"{"tab_id":7,"window_id":2,"title":"t","url":"u","is_audible":true,"mode":"idle"}"#
+
+        let tab = try BrowserWire.makeDecoder().decode(BrowserTab.self, from: Data(json.utf8))
+
+        #expect(!tab.isMuted)
+        #expect(tab.favIconUrl == nil)
     }
 }

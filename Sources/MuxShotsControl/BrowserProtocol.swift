@@ -24,8 +24,10 @@ public struct BrowserTab: Codable, Equatable, Sendable {
     public let url: String
     /// The tab's icon, as an address the app can load.
     public let favIconUrl: String?
-    /// Whether the tab is playing sound.
+    /// Whether the tab is playing sound, heard or not.
     public let isAudible: Bool
+    /// Whether the browser has the tab muted, by the mixer or from its own tab strip.
+    public let isMuted: Bool
     public let mode: BrowserTabMode
 
     public init(
@@ -35,6 +37,7 @@ public struct BrowserTab: Codable, Equatable, Sendable {
         url: String,
         favIconUrl: String?,
         isAudible: Bool,
+        isMuted: Bool,
         mode: BrowserTabMode
     ) {
         self.tabId = tabId
@@ -43,7 +46,21 @@ public struct BrowserTab: Codable, Equatable, Sendable {
         self.url = url
         self.favIconUrl = favIconUrl
         self.isAudible = isAudible
+        self.isMuted = isMuted
         self.mode = mode
+    }
+
+    /// Read a tab, taking it as unmuted from an extension too old to say.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tabId = try container.decode(Int.self, forKey: .tabId)
+        windowId = try container.decode(Int.self, forKey: .windowId)
+        title = try container.decode(String.self, forKey: .title)
+        url = try container.decode(String.self, forKey: .url)
+        favIconUrl = try container.decodeIfPresent(String.self, forKey: .favIconUrl)
+        isAudible = try container.decode(Bool.self, forKey: .isAudible)
+        isMuted = try container.decodeIfPresent(Bool.self, forKey: .isMuted) ?? false
+        mode = try container.decode(BrowserTabMode.self, forKey: .mode)
     }
 }
 

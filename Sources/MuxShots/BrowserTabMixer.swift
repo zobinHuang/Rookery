@@ -68,7 +68,15 @@ final class BrowserTabMixer {
     func receive(_ event: BrowserEvent, in sessionId: Int) {
         switch event {
         case .tabs(let listSessionTabs):
+            let mapPreviousTabs = Dictionary(
+                (mapSessionTabs[sessionId] ?? []).map { ($0.tabId, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
             mapSessionTabs[sessionId] = listSessionTabs
+            // A tab muted or unmuted from the browser's own tab strip is muted or unmuted here too.
+            for tab in listSessionTabs where mapPreviousTabs[tab.tabId].map({ $0.isMuted != tab.isMuted }) ?? tab.isMuted {
+                mapSettings[BrowserTabKey(sessionId: sessionId, tabId: tab.tabId), default: MixerTrackSettings()].isMuted = tab.isMuted
+            }
             // A tab the user captured from the browser's toolbar is taken over without the app asking.
             for tab in listSessionTabs where tab.mode == .captured {
                 let key = BrowserTabKey(sessionId: sessionId, tabId: tab.tabId)
@@ -113,7 +121,7 @@ final class BrowserTabMixer {
         let listNewTabs = mapSessionTabs.keys.sorted().flatMap { sessionId in
             (mapSessionTabs[sessionId] ?? []).compactMap { tab -> MixerBrowserTab? in
                 let key = BrowserTabKey(sessionId: sessionId, tabId: tab.tabId)
-                guard tab.isAudible || tab.mode != .idle || settings(of: key).isTakenOver else {
+                guard tab.isAudible || tab.mode != .idle || settings(of: key).isCaptureNeeded else {
                     return nil
                 }
                 return MixerBrowserTab(key: key, tab: tab)

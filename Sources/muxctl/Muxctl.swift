@@ -14,9 +14,9 @@ enum Muxctl {
                muxctl switch <group-name-or-position> | --all
                muxctl stage on|off
                muxctl audio [--json]
-               muxctl audio take|release <bundle-id>|tab:<session>.<tab>
+               muxctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
                muxctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
-                 settings: volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
+                 settings: mute=on|off volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
                            eq=on|off eq<1-10>=-12...12 (\(bandList)) reverb=<room> mix=0...100
                  rooms: \(ReverbRoom.allCases.map(\.rawValue).joined(separator: " "))
         """
@@ -116,7 +116,7 @@ enum Muxctl {
                 let state = track.isPlaying ? "playing" : "silent "
                 let level = mapLevels[track.bundleId].map { String(format: " level %.3f", $0) } ?? ""
                 Swift.print("\(marker)\(state) \(track.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(track.bundleId)\(level)")
-                if track.settings.isTakenOver {
+                if track.settings.isCaptureNeeded {
                     Swift.print("    \(summary(of: track.settings))")
                 }
                 if let error = track.error {
@@ -128,7 +128,7 @@ enum Muxctl {
                 let marker = status.settings.isTakenOver ? "* " : "  "
                 let title = String(status.tab.title.prefix(titleWidth))
                 Swift.print("\(marker)\(status.tab.mode.rawValue.padding(toLength: 8, withPad: " ", startingAt: 0)) \(target.description) \(String(format: "level %.3f", status.level)) \(title)")
-                if status.settings.isTakenOver {
+                if status.settings.isCaptureNeeded {
                     Swift.print("    \(summary(of: status.settings))")
                 }
             }
@@ -187,6 +187,8 @@ enum Muxctl {
             settings.isTakenOver = true
         case "release":
             settings.isTakenOver = false
+        case "mute", "unmute":
+            settings.isMuted = subcommand == "mute"
         case "set":
             settings.isTakenOver = true
             for assignment in listArguments.dropFirst(2) where assignment != jsonFlag {
@@ -240,6 +242,9 @@ enum Muxctl {
             guard ["none", "left", "right", "both"].contains(value) else { return false }
             settings.isLeftInverted = value == "left" || value == "both"
             settings.isRightInverted = value == "right" || value == "both"
+        case "mute":
+            guard value == "on" || value == "off" else { return false }
+            settings.isMuted = value == "on"
         case "swap":
             guard value == "on" || value == "off" else { return false }
             settings.isSwapped = value == "on"
@@ -273,6 +278,7 @@ enum Muxctl {
         }
         let listGains = settings.listEqualizerGains.map { String(format: "%+.0f", $0) }.joined(separator: " ")
         return [
+            settings.isMuted ? "muted" : "unmuted",
             String(format: "volume %.2f", settings.volume),
             String(format: "pan %+.2f", settings.pan),
             String(format: "width %.2f", settings.width),

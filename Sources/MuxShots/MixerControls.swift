@@ -241,3 +241,32 @@ struct MixerSwitch: View {
         .help(help)
     }
 }
+
+/// The round button that mutes a track in one click, lit red while the track is muted.
+struct MixerMuteButton: View {
+    private static let diameter: CGFloat = 22
+
+    let isMuted: Bool
+    let help: String
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(isMuted ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: Self.diameter, height: Self.diameter)
+                .background {
+                    Circle()
+                        .fill(isMuted ? AnyShapeStyle(Color.red.opacity(0.16)) : AnyShapeStyle(isHovered ? StageColors.hoveredRow : Color.clear))
+                }
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.15), value: isMuted)
+        .help(help)
+    }
+}

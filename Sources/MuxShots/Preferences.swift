@@ -24,6 +24,7 @@ final class Preferences {
     private static let stageHotkeyKey = "stageHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let themeKey = "theme"
+    private static let clockTimeZonesKey = "clockTimeZoneIds"
 
     static let defaultGroupModifiers: NSEvent.ModifierFlags = [.control, .option]
     static let defaultShowAllHotkey = Hotkey(keyCode: kVK_ANSI_0, modifiers: [.control, .option])
@@ -36,6 +37,16 @@ final class Preferences {
     @ObservationIgnored var onShortcutsChange: (() -> Void)?
     /// Called after the theme changes, so it can be applied.
     @ObservationIgnored var onThemeChange: (() -> Void)?
+    /// Called after the world clock's cities change, so the stages can show them.
+    @ObservationIgnored var onWorldClockChange: (() -> Void)?
+
+    /// The time zones the world clock shows, in order, by identifier such as "Asia/Shanghai".
+    var listClockTimeZoneIds: [String] {
+        didSet {
+            defaults.set(listClockTimeZoneIds, forKey: Self.clockTimeZonesKey)
+            onWorldClockChange?()
+        }
+    }
 
     /// The appearance the user chose, or nil to follow the system's.
     var theme: Theme? {
@@ -106,6 +117,7 @@ final class Preferences {
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
+        listClockTimeZoneIds = defaults.stringArray(forKey: Self.clockTimeZonesKey) ?? WorldClock.listDefaultTimeZoneIds
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)
             .map(NSEvent.ModifierFlags.init(rawValue:)) ?? Self.defaultGroupModifiers
         showAllHotkey = Self.load(forKey: Self.showAllHotkeyKey, from: defaults) ?? Self.defaultShowAllHotkey

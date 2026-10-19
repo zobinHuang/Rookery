@@ -95,6 +95,8 @@ final class StageModel {
     var isSidebarCollapsed = false
     /// Whether MuxShots draws dark now, which picks the theme button's symbol.
     var isDarkTheme = false
+    /// The time zones the world clock shows.
+    var listClockTimeZoneIds: [String] = []
     /// The group whose name is being edited.
     var editingGroupId: GroupId?
     /// The tab whose name is being edited.

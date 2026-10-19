@@ -116,6 +116,15 @@ struct StageView: View {
                     .foregroundStyle(.secondary)
                     .padding(14)
             }
+            if !model.isSidebarCollapsed && !model.listClockTimeZoneIds.isEmpty {
+                WorldClockView(listTimeZoneIds: model.listClockTimeZoneIds)
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(StageColors.separator)
+                            .frame(height: 1)
+                    }
+                    .transition(.opacity)
+            }
             sidebarToolbar
         }
         .frame(maxHeight: .infinity)

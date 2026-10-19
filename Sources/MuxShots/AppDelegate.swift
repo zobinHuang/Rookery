@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferences.onThemeChange = { [weak self] in
             self?.applyTheme()
         }
+        preferences.onWorldClockChange = { [weak self] in
+            self?.stageCoordinator?.refresh()
+        }
         let controller = StatusMenuController(
             onAccessGranted: { [weak self] in
                 self?.startManaging()

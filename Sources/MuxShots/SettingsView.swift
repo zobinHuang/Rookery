@@ -16,6 +16,7 @@ struct SettingsView: View {
     @Bindable var preferences: Preferences
     let recorder: ShortcutRecorder
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
+    @State private var clockSearch = ""
     @State private var loginItemError: String?
 
     /// An AppKit view hosting the settings.
@@ -44,6 +45,49 @@ struct SettingsView: View {
                 Text("Dragging")
             } footer: {
                 Text("With the panel open, drop windows on it; otherwise a tray appears at the top of the screen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Section {
+                ForEach(preferences.listClockTimeZoneIds, id: \.self) { timeZoneId in
+                    HStack {
+                        Text(WorldClock.cityName(forTimeZoneId: timeZoneId))
+                        Text(timeZoneId)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            preferences.listClockTimeZoneIds.removeAll { $0 == timeZoneId }
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove \(WorldClock.cityName(forTimeZoneId: timeZoneId))")
+                    }
+                }
+                TextField("Add a city", text: $clockSearch, prompt: Text("Search, e.g. Tokyo"))
+                ForEach(WorldClock.searchTimeZones(matching: clockSearch).filter {
+                    !preferences.listClockTimeZoneIds.contains($0)
+                }, id: \.self) { timeZoneId in
+                    Button {
+                        preferences.listClockTimeZoneIds.append(timeZoneId)
+                        clockSearch = ""
+                    } label: {
+                        HStack {
+                            Image(systemName: "plus.circle")
+                            Text(WorldClock.cityName(forTimeZoneId: timeZoneId))
+                            Text(timeZoneId)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                }
+            } header: {
+                Text("World Clock")
+            } footer: {
+                Text("Shown at the bottom of the stage's sidebar, from the system clock and time zones.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

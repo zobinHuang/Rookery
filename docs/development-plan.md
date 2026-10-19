@@ -62,6 +62,9 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 - **拖放**：舞台打开时它就是拖放目标：拖到侧栏的组上就进那个组，拖到内容区就作为当前组的新标签；拖动托管窗口时侧栏出现"Release"。被拖离内容区又没放到目标上的托管窗口，松手后弹回内容区。
 - **未托管的窗口**照常浮在底板之上，不受影响。
 - **先做单个显示器**（打开舞台时光标所在的那块），之后再扩展到每块显示器各一个舞台。
+- **实现状态（已完成第一版）**：`StageController`（底板窗口、拖放目标）、`StageView`（侧栏、标签栏、内容区）、`WorkspaceController.enterStage/exitStage/performStageSwitch`。入口：菜单栏 Enter Stage、⌃⌥↩、再次打开 app、`muxctl stage on|off`；⌃⌥\` 在舞台里切下一个标签，⌃⌥0 退出舞台。
+- **Space 的约束**：舞台只能放在桌面 Space 上（别的 app 的窗口进不了 MuxShots 的全屏 Space），进入舞台时托管窗口会退出原生全屏，回到桌面 Space，摆进舞台。舞台因此是用户那些原生全屏 Space 的替代品。
+- **坐标来源**：窗口的当前位置一律用 AX 读取。WindowServer 的位置在 Space 切换动画期间带偏移，曾导致记下错误的原位置。
 
 ## 4. 架构
 

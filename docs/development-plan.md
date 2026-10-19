@@ -1,5 +1,9 @@
 # MuxShots 开发计划
 
+> **现状（2026-10-20）**：本文是最初的开发计划和设计决策记录，M0–M5 已完成，主交互已从"托盘 + 面板"演进为 §3.1 的舞台模式（多个独立的 stage 窗口，各自拥有自己的 group）。计划之外后来加入了：按 app / Chrome tab 的混音台（Core Audio process tap + Chrome 扩展）、侧边栏画中画（WebRTC 推流）、世界时、code agent 限额面板。最低系统版本已提到 macOS 14.2（process tap 需要）。
+>
+> 现在的实现以英文文档为准：[architecture](architecture.md)、[development](development.md)、[windows](windows.md)、[audio](audio.md)、[chrome-extension](chrome-extension.md)、[agent-usage](agent-usage.md)。
+
 ## 1. 问题与目标
 
 macOS 的窗口模型有三层：App → Window → Space。原生全屏会给每个全屏窗口单独开一个 Space，

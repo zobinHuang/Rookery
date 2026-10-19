@@ -10,9 +10,9 @@ final class StagePanel: NSPanel {
     }
 }
 
-/// The stage: a backdrop that fills a display beneath every window, with the groups, the active group's
-/// tabs and the content area its front window is laid over. While it is open it is also where dragged
-/// windows are dropped.
+/// One stage: a backdrop that fills a display beneath every window, with the groups, the tabs of the group
+/// it shows and the content area that group's front window is laid over. While it is open it is also where
+/// windows dragged over it are dropped.
 @MainActor
 final class StageController: DropSurface, StageActions {
     /// Just beneath normal windows, and so above the desktop and its widgets.
@@ -22,21 +22,33 @@ final class StageController: DropSurface, StageActions {
     private static let mouseReleasePollInterval = Duration.milliseconds(100)
     private static let snapDuration: TimeInterval = 0.28
 
+    let stageId: StageId
     private let workspaceController: WorkspaceController
+    private weak var coordinator: StageCoordinator?
     private let preferences: Preferences
     private let ghostAnimator: DropGhostAnimator
     private let model = StageModel()
     private let panel: StagePanel
     private var hideTask: Task<Void, Never>?
     /// Whether the stage window is up while the workspace is still moving windows onto it.
-    private var isEntering = false
+    private(set) var isEntering = false
+    /// The display the user started dragging the stage from.
+    private var moveStartScreen: NSScreen?
     /// Where the cursor was when the user started dragging the stage.
     private var moveStartCursor: CGPoint?
     /// Where the stage was when the user started dragging it.
     private var moveStartOrigin: CGPoint?
     private var tabDragTask: Task<Void, Never>?
 
-    init(workspaceController: WorkspaceController, preferences: Preferences, ghostAnimator: DropGhostAnimator) {
+    init(
+        stageId: StageId,
+        workspaceController: WorkspaceController,
+        preferences: Preferences,
+        ghostAnimator: DropGhostAnimator,
+        coordinator: StageCoordinator
+    ) {
+        self.stageId = stageId
+        self.coordinator = coordinator
         self.workspaceController = workspaceController
         self.preferences = preferences
         self.ghostAnimator = ghostAnimator
@@ -70,28 +82,28 @@ final class StageController: DropSurface, StageActions {
         panel.contentView = background
     }
 
-    /// Whether the stage is showing.
-    var isOpen: Bool {
-        workspaceController.isStageOpen
+    /// Whether the stage's window is up.
+    var isShowing: Bool {
+        model.isVisible
     }
 
-    /// Open the stage on the display under the cursor, or close it if it is open.
-    func toggle() {
-        if isOpen {
-            close()
-        } else {
-            open()
-        }
+    /// Whether the stage has closed and its window has faded out, so nothing refers to it any more.
+    var isClosed: Bool {
+        !model.isVisible && !isEntering && hideTask == nil
     }
 
-    /// Open the stage on the display under the cursor.
-    func open() {
-        let cursor = NSEvent.mouseLocation
-        guard
-            let screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) }) ?? NSScreen.main
-        else {
-            return
-        }
+    /// The stage's frame, in AppKit screen coordinates.
+    var frame: CGRect {
+        panel.frame
+    }
+
+    /// The display the stage is on.
+    var screen: NSScreen? {
+        panel.screen
+    }
+
+    /// Open the stage filling a display.
+    func open(on screen: NSScreen) {
         hideTask?.cancel()
         hideTask = nil
         panel.setFrame(screen.visibleFrame, display: true)
@@ -100,32 +112,32 @@ final class StageController: DropSurface, StageActions {
         isEntering = true
         refresh()
         let contentFrame = contentFrame()
-        Task { [weak self, workspaceController] in
-            await workspaceController.enterStage(contentFrame: contentFrame)
+        Task { [weak self, workspaceController, stageId] in
+            await workspaceController.enterStage(stageId, contentFrame: contentFrame)
             self?.isEntering = false
-            self?.refresh()
+            self?.coordinator?.refresh()
         }
     }
 
-    /// Close the stage, putting every window back where it was.
+    /// Close the stage, hiding the windows it showed, or putting every window back if it is the last.
     func close() {
-        Task { [workspaceController] in
-            await workspaceController.exitStage()
+        Task { [workspaceController, stageId] in
+            await workspaceController.exitStage(stageId)
         }
         dismiss()
     }
 
-    /// Move the stage to the next display, if there is more than one.
-    func moveToNextDisplay() {
-        let listScreens = NSScreen.screens
-        guard
-            isOpen,
-            listScreens.count > 1,
-            let currentIndex = listScreens.firstIndex(where: { $0.visibleFrame.intersects(panel.frame) })
-        else {
-            return
+    /// Fill a display with the stage, animating there, and refit its front window.
+    func place(on screen: NSScreen) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.snapDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(screen.visibleFrame, display: true)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                self?.relayout()
+            }
         }
-        snap(to: listScreens[(currentIndex + 1) % listScreens.count])
     }
 
     /// Redisplay the groups and tabs; take the window down if the stage closed some other way, as when
@@ -134,20 +146,20 @@ final class StageController: DropSurface, StageActions {
         guard model.isVisible else {
             return
         }
-        guard workspaceController.isStageOpen || isEntering else {
+        guard workspaceController.isStageOpen(stageId) || isEntering else {
             dismiss()
             return
         }
         let workspace = workspaceController.workspace
+        let activeGroup = workspaceController.group(onStage: stageId)
         model.listGroups = workspace.listGroups.map { group in
             StageGroupRow(
                 groupId: group.groupId,
                 name: group.name,
                 listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
-                isActive: workspace.isActive(group.groupId)
+                isActive: group.groupId == activeGroup?.groupId
             )
         }
-        let activeGroup = workspace.listActiveGroups.first
         model.activeGroupName = activeGroup?.name
         model.listTabs = activeGroup?.listMembers.map { window in
             StageTab(
@@ -163,8 +175,8 @@ final class StageController: DropSurface, StageActions {
     // MARK: - Stage actions
 
     func selectGroup(_ groupId: GroupId) {
-        Task { [workspaceController] in
-            await workspaceController.switchTo(groupId)
+        Task { [workspaceController, stageId] in
+            await workspaceController.switchTo(groupId, onStage: stageId)
         }
     }
 
@@ -172,8 +184,8 @@ final class StageController: DropSurface, StageActions {
         guard let groupId = workspaceController.workspace.group(containing: windowId)?.groupId else {
             return
         }
-        Task { [workspaceController] in
-            await workspaceController.switchTo(groupId, bringingToFront: windowId)
+        Task { [workspaceController, stageId] in
+            await workspaceController.switchTo(groupId, bringingToFront: windowId, onStage: stageId)
         }
     }
 
@@ -182,7 +194,7 @@ final class StageController: DropSurface, StageActions {
     }
 
     func moveWindow(_ windowId: WindowId, to groupId: GroupId?) {
-        workspaceController.moveWindow(windowId, to: groupId)
+        workspaceController.moveWindow(windowId, to: groupId, onStage: stageId)
     }
 
     func renameGroup(_ groupId: GroupId, to name: String) {
@@ -246,6 +258,7 @@ final class StageController: DropSurface, StageActions {
         guard let moveStartCursor, let moveStartOrigin else {
             moveStartCursor = cursor
             moveStartOrigin = panel.frame.origin
+            moveStartScreen = panel.screen
             return
         }
         panel.setFrameOrigin(CGPoint(
@@ -257,11 +270,9 @@ final class StageController: DropSurface, StageActions {
     func moveStageEnded() {
         moveStartCursor = nil
         moveStartOrigin = nil
-        let cursor = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { NSMouseInRect(cursor, $0.frame, false) }) ?? NSScreen.main else {
-            return
-        }
-        snap(to: screen)
+        let originalScreen = moveStartScreen
+        moveStartScreen = nil
+        coordinator?.stageDragEnded(self, from: originalScreen)
     }
 
     // MARK: - Dropping windows
@@ -288,7 +299,7 @@ final class StageController: DropSurface, StageActions {
     func target(at cursorLocation: CGPoint) -> DropTarget? {
         switch zone(at: cursorLocation) {
         case .content:
-            workspaceController.workspace.listActiveGroups.first.map { .group($0.groupId) } ?? .newGroup
+            workspaceController.group(onStage: stageId).map { .group($0.groupId) } ?? .newGroup
         case .group(let groupId):
             .group(groupId)
         case .newGroup, .sidebar, .newGroupRow:
@@ -361,23 +372,10 @@ final class StageController: DropSurface, StageActions {
         ))
     }
 
-    /// Fill a display with the stage, animating there, and refit the front window.
-    private func snap(to screen: NSScreen) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.snapDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(screen.visibleFrame, display: true)
-        } completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                self?.relayout()
-            }
-        }
-    }
-
     private func relayout() {
         let contentFrame = contentFrame()
-        Task { [workspaceController] in
-            await workspaceController.relayoutStage(contentFrame: contentFrame)
+        Task { [workspaceController, stageId] in
+            await workspaceController.relayoutStage(stageId, contentFrame: contentFrame)
         }
     }
 
@@ -418,7 +416,8 @@ final class StageController: DropSurface, StageActions {
         )
     }
 
-    private func dismiss() {
+    /// Take the stage's window down.
+    func dismiss() {
         model.isVisible = false
         hideTask?.cancel()
         hideTask = Task { [weak self] in
@@ -428,6 +427,7 @@ final class StageController: DropSurface, StageActions {
             }
             panel.orderOut(nil)
             hideTask = nil
+            coordinator?.refresh()
         }
     }
 }

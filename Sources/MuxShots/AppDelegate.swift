@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var workspacePanelController: WorkspacePanelController?
     private var controlServer: ControlServer?
     private var shortcutController: ShortcutController?
-    private var stageController: StageController?
+    private var stageCoordinator: StageCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = StatusMenuController(
@@ -30,10 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.workspaceController?.workspace
             },
             isStageOpenProvider: { [weak self] in
-                self?.stageController?.isOpen ?? false
+                self?.stageCoordinator?.isAnyOpen ?? false
             },
             onToggleStage: { [weak self] in
-                self?.stageController?.toggle()
+                self?.stageCoordinator?.toggleOnCursorDisplay()
             },
             onShowSettings: { [weak self] in
                 self?.settingsWindowController?.show()
@@ -60,9 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opening the app again, from Finder or `open`, opens the stage.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        if stageController?.isOpen == false {
-            stageController?.open()
-        }
+        stageCoordinator?.openOnCursorDisplay()
         return false
     }
 
@@ -96,7 +94,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applicationMenu.addItem(withTitle: "About MuxShots", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        applicationMenu.addItem(withTitle: "Enter or Exit Stage", action: #selector(toggleStage), keyEquivalent: "").target = self
+        applicationMenu.addItem(withTitle: "Open or Close Stage on This Display", action: #selector(toggleStage), keyEquivalent: "").target = self
+        applicationMenu.addItem(withTitle: "Close All Stages", action: #selector(closeAllStages), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Move Stage to Next Display", action: #selector(moveStageToNextDisplay), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Show Managed Windows…", action: #selector(showPanel), keyEquivalent: "").target = self
         applicationMenu.addItem(.separator())
@@ -131,11 +130,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleStage() {
-        stageController?.toggle()
+        stageCoordinator?.toggleOnCursorDisplay()
+    }
+
+    @objc private func closeAllStages() {
+        stageCoordinator?.closeAll()
     }
 
     @objc private func moveStageToNextDisplay() {
-        stageController?.moveToNextDisplay()
+        stageCoordinator?.moveStageUnderCursorToNextDisplay()
     }
 
     @objc private func showPanel() {
@@ -153,23 +156,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let workspace = WorkspaceController(tracker: tracker, preferences: preferences)
         let panel = workspace.makePanel()
-        let stage = workspace.makeStage()
-        stageController = stage
-        workspace.onChange = { [weak panel, weak stage] in
+        let stages = workspace.makeStageCoordinator()
+        stageCoordinator = stages
+        workspace.onChange = { [weak panel, weak stages] in
             panel?.reload()
-            stage?.refresh()
+            stages?.refresh()
         }
         workspaceController = workspace
         workspacePanelController = panel
         workspace.start()
-        let shortcuts = ShortcutController(workspaceController: workspace, preferences: preferences, stage: stage)
+        let shortcuts = ShortcutController(workspaceController: workspace, preferences: preferences, stages: stages)
         shortcutController = shortcuts
         shortcuts.start()
         settingsWindowController = SettingsWindowController(preferences: preferences, shortcutController: shortcuts)
-        stage.open()
+        stages.openOnCursorDisplay()
 
         do {
-            let server = try ControlServer(tracker: tracker, workspaceController: workspace, stage: stage)
+            let server = try ControlServer(tracker: tracker, workspaceController: workspace, stages: stages)
             controlServer = server
             server.start()
         } catch {

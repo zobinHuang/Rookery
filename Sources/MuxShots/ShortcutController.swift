@@ -17,17 +17,17 @@ final class ShortcutController {
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
     private let hotkeyCenter = HotkeyCenter()
-    private let stage: StageController
+    private let stages: StageCoordinator
     private lazy var switcher = SwitcherController(hotkeyCenter: hotkeyCenter)
     private lazy var keyInterceptor = KeyInterceptor { [weak self] keyCode, modifiers in
         self?.interceptWindowSwitch(keyCode: keyCode, modifiers: modifiers) ?? false
     }
     private var isSuspended = false
 
-    init(workspaceController: WorkspaceController, preferences: Preferences, stage: StageController) {
+    init(workspaceController: WorkspaceController, preferences: Preferences, stages: StageCoordinator) {
         self.workspaceController = workspaceController
         self.preferences = preferences
-        self.stage = stage
+        self.stages = stages
     }
 
     /// Register every shortcut, and register them again whenever the preferences change.
@@ -71,7 +71,7 @@ final class ShortcutController {
             }
         }
         bind(preferences.stageHotkey, name: "stage") { [weak self] in
-            self?.stage.toggle()
+            self?.stages.toggleOnCursorDisplay()
         }
         bind(preferences.showAllHotkey, name: "all windows") { [weak self] in
             guard let workspaceController = self?.workspaceController else {

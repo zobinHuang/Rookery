@@ -671,6 +671,14 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         return groups(ofStage: stageId)
     }
 
+    /// The frame of the stage the user is working on, in AppKit screen coordinates, for the switchers to fit.
+    private var focusedStageFrame: CGRect? {
+        guard isStageOpen, let stageId = focusedStageId() else {
+            return nil
+        }
+        return stageCoordinator?.frame(ofStage: stageId)
+    }
+
     func groupSwitcherRequest() -> SwitcherRequest? {
         let listGroups = listSwitchableGroups
         guard !listGroups.isEmpty else {
@@ -695,7 +703,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             isActive: false
         )]
         let currentIndex = listEntries.firstIndex { $0.id == currentGroupId?.rawValue } ?? listEntries.count - 1
-        return SwitcherRequest(listEntries: listEntries, currentIndex: currentIndex) { [weak self] entry in
+        return SwitcherRequest(listEntries: listEntries, currentIndex: currentIndex, fitFrame: focusedStageFrame) { [weak self] entry in
             let groupId = entry.id == "all" ? nil : GroupId(rawValue: entry.id)
             Task {
                 await self?.switchTo(groupId)
@@ -720,7 +728,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 isActive: false
             )
         }
-        return SwitcherRequest(listEntries: listEntries, currentIndex: 0) { [weak self] entry in
+        return SwitcherRequest(listEntries: listEntries, currentIndex: 0, fitFrame: focusedStageFrame) { [weak self] entry in
             guard
                 let self,
                 let rawId = UInt32(entry.id),

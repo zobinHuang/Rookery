@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The group switcher: a row of group cards with a selection that slides between them.
+/// The switcher: its cards in as many rows as the area it fits in needs, with a selection that slides
+/// between them, scrolling to keep it in view when there are more rows than fit.
 struct SwitcherView: View {
     private static let selectionAnimation = Animation.spring(response: 0.26, dampingFraction: 0.82)
     private static let appearAnimation = Animation.spring(response: 0.24, dampingFraction: 0.9)
@@ -15,31 +16,68 @@ struct SwitcherView: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                ForEach(Array(model.listEntries.enumerated()), id: \.element.id) { index, entry in
-                    SwitcherCardView(entry: entry, isSelected: index == model.selectedIndex)
-                        .background {
-                            if index == model.selectedIndex {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color.accentColor.opacity(0.9))
-                                    .matchedGeometryEffect(id: "selection", in: selectionNamespace)
-                            }
-                        }
-                }
-            }
-            .animation(Self.selectionAnimation, value: model.selectedIndex)
+        VStack(spacing: SwitcherLayout.hintSpacing) {
+            cards
             Text("⇥ next   ⇧⇥ previous   release \(model.holdSymbols) to switch   esc to cancel")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(height: SwitcherLayout.hintHeight)
         }
-        .padding(16)
+        .padding(SwitcherLayout.padding)
         .modifier(TraySurface(cornerRadius: 26))
         .shadow(color: .black.opacity(0.2), radius: 24, y: 10)
         .scaleEffect(model.isVisible ? 1 : 0.94)
         .opacity(model.isVisible ? 1 : 0)
         .animation(Self.appearAnimation, value: model.isVisible)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var cards: some View {
+        let columns = model.grid.columns
+        let listRows = stride(from: 0, to: model.listEntries.count, by: columns).map { start in
+            Array(start..<min(start + columns, model.listEntries.count))
+        }
+        let visibleHeight = CGFloat(model.grid.visibleRows) * SwitcherLayout.cardSize.height
+            + CGFloat(model.grid.visibleRows - 1) * SwitcherLayout.spacing
+            + SwitcherLayout.cardInset * 2
+        return ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: SwitcherLayout.spacing) {
+                    ForEach(listRows.indices, id: \.self) { rowIndex in
+                        HStack(spacing: SwitcherLayout.spacing) {
+                            ForEach(listRows[rowIndex], id: \.self) { index in
+                                card(at: index)
+                            }
+                        }
+                        .id(rowIndex)
+                    }
+                }
+                .padding(SwitcherLayout.cardInset)
+            }
+            .scrollDisabled(model.grid.rows <= model.grid.visibleRows)
+            .frame(height: visibleHeight)
+            .onChange(of: model.selectedIndex) { _, selectedIndex in
+                withAnimation(Self.selectionAnimation) {
+                    proxy.scrollTo(selectedIndex / max(columns, 1))
+                }
+            }
+            .onAppear {
+                proxy.scrollTo(model.selectedIndex / max(columns, 1))
+            }
+        }
+        .animation(Self.selectionAnimation, value: model.selectedIndex)
+    }
+
+    private func card(at index: Int) -> some View {
+        SwitcherCardView(entry: model.listEntries[index], isSelected: index == model.selectedIndex)
+            .background {
+                if index == model.selectedIndex {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.9))
+                        .matchedGeometryEffect(id: "selection", in: selectionNamespace)
+                }
+            }
     }
 }
 
@@ -75,7 +113,7 @@ struct SwitcherCardView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)
-        .frame(width: 132, height: 118)
+        .frame(width: SwitcherLayout.cardSize.width, height: SwitcherLayout.cardSize.height)
         .scaleEffect(isSelected ? 1.04 : 1)
     }
 

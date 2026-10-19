@@ -163,6 +163,11 @@ final class StageCoordinator: DropSurface {
         listStages.removeAll { $0.isClosed }
     }
 
+    /// A stage's frame, in AppKit screen coordinates, while it is open.
+    func frame(ofStage stageId: StageId) -> CGRect? {
+        listStages.first { $0.stageId == stageId && $0.isShowing }?.frame
+    }
+
     /// The stage under a point, in AppKit screen coordinates.
     func stageId(at location: CGPoint) -> StageId? {
         stage(at: location)?.stageId

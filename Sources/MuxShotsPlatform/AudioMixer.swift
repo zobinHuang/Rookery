@@ -219,11 +219,17 @@ private final class Track {
         }
     }
 
-    /// The node that pulls the captured frames and treats their stereo image, on the render thread.
+    /// The node that pulls the captured frames and treats their stereo image.
     func makeSourceNode(format: AVAudioFormat) -> AVAudioSourceNode {
-        let ringBuffer = ringBuffer
-        let processor = processor
-        return AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList in
+        AVAudioSourceNode(format: format, renderBlock: Self.renderBlock(ringBuffer: ringBuffer, processor: processor))
+    }
+
+    /// The render block, built outside the main actor since it runs on the audio render thread.
+    private nonisolated static func renderBlock(
+        ringBuffer: AudioRingBuffer,
+        processor: StereoProcessor
+    ) -> AVAudioSourceNodeRenderBlock {
+        { _, _, frameCount, audioBufferList in
             let listBuffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
             guard
                 listBuffers.count >= 2,

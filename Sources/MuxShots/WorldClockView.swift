@@ -1,13 +1,15 @@
 import SwiftUI
 
 /// The time in each chosen city, city on the left and a 24-hour seven-segment clock on the right with the
-/// date and weekday under it, read from the system clock on the minute; the colons blink with the seconds.
+/// date and, in plain text, the weekday under it, read from the system clock on the minute; the colons blink with the seconds.
 struct WorldClockView: View {
     private static let digitHeight: CGFloat = 19
     /// The date and weekday under each time, smaller than it.
     private static let dateDigitHeight: CGFloat = 9
     private static let dateSpacing: CGFloat = 4
-    private static let dateWeekdaySpacing: CGFloat = 6
+    private static let dateWeekdaySpacing: CGFloat = 5
+    /// Room for the widest weekday, so every row's date lines up.
+    private static let weekdayWidth: CGFloat = 24
     /// The weekdays as the display spells them, Sunday first as the calendar counts them.
     private static let listWeekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -46,17 +48,18 @@ struct WorldClockView: View {
                     color: StageColors.clockSegment,
                     isBlinking: true
                 )
-                HStack(spacing: Self.dateWeekdaySpacing) {
+                HStack(alignment: .center, spacing: Self.dateWeekdaySpacing) {
                     SevenSegmentDisplay(
                         text: Self.dateText(for: timeZone, at: date),
                         digitHeight: Self.dateDigitHeight,
                         color: StageColors.clockSegment
                     )
-                    SevenSegmentDisplay(
-                        text: Self.weekdayText(for: timeZone, at: date),
-                        digitHeight: Self.dateDigitHeight,
-                        color: StageColors.clockSegment
-                    )
+                    Text(Self.weekdayText(for: timeZone, at: date))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(width: Self.weekdayWidth, alignment: .trailing)
                 }
             }
         }

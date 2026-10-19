@@ -6,7 +6,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
     private let recorder: ShortcutRecorder
 
-    init(preferences: Preferences, shortcutController: ShortcutController) {
+    init(preferences: Preferences, shortcutController: ShortcutController, agentUsageMonitor: AgentUsageMonitor) {
         recorder = ShortcutRecorder(
             onBegin: { [weak shortcutController] in
                 shortcutController?.suspend()
@@ -25,7 +25,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.title = "MuxShots Settings"
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = SettingsView.makeHostingView(preferences: preferences, recorder: recorder)
+        window.contentView = SettingsView.makeHostingView(
+            preferences: preferences,
+            recorder: recorder,
+            agentUsageMonitor: agentUsageMonitor
+        )
         window.center()
     }
 

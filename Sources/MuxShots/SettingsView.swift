@@ -17,14 +17,19 @@ struct SettingsView: View {
 
     @Bindable var preferences: Preferences
     let recorder: ShortcutRecorder
+    let agentUsageMonitor: AgentUsageMonitor
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
     @State private var citySearch = WorldClockCitySearch()
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
 
     /// An AppKit view hosting the settings.
-    static func makeHostingView(preferences: Preferences, recorder: ShortcutRecorder) -> NSView {
-        NSHostingView(rootView: SettingsView(preferences: preferences, recorder: recorder))
+    static func makeHostingView(
+        preferences: Preferences,
+        recorder: ShortcutRecorder,
+        agentUsageMonitor: AgentUsageMonitor
+    ) -> NSView {
+        NSHostingView(rootView: SettingsView(preferences: preferences, recorder: recorder, agentUsageMonitor: agentUsageMonitor))
     }
 
     var body: some View {
@@ -115,28 +120,8 @@ struct SettingsView: View {
             }
             Section {
                 ForEach($preferences.listAgentAccounts) { $account in
-                    HStack(spacing: 8) {
-                        Toggle("", isOn: $account.isShown)
-                            .labelsHidden()
-                            .help(account.isShown ? "Hide this account from the sidebar" : "Show this account in the sidebar")
-                        VStack(alignment: .leading, spacing: 2) {
-                            TextField("Name", text: $account.label)
-                                .textFieldStyle(.plain)
-                            Text("\(account.harness.title) · \(account.configDirectory ?? "default account")")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer()
-                        Button {
-                            preferences.listAgentAccounts.removeAll { $0.id == account.id }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Remove \(account.label)")
+                    AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
+                        preferences.listAgentAccounts.removeAll { $0.id == account.id }
                     }
                 }
                 Menu("Add Account") {
@@ -212,9 +197,10 @@ struct SettingsView: View {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
+        panel.canCreateDirectories = true
         panel.showsHiddenFiles = true
         panel.directoryURL = URL.homeDirectory
-        panel.message = "Choose the \(harness.title) configuration directory that holds the account's sign-in"
+        panel.message = "Choose the \(harness.title) configuration directory for the account, or make a new one to sign a new account in to"
         panel.prompt = "Add Account"
         guard panel.runModal() == .OK, let url = panel.url else {
             return
@@ -260,6 +246,97 @@ struct SettingsView: View {
         } catch {
             loginItemError = "Could not change: \(error.localizedDescription)"
             isLaunchingAtLogin = LoginItem.isEnabled
+        }
+    }
+}
+
+/// One code agent account in the settings: whether the sidebar shows it, its name, who it is signed in
+/// as, and the command that signs it in, to copy into a terminal.
+private struct AgentAccountRow: View {
+    private static let copiedFeedbackDuration = Duration.seconds(1.5)
+
+    @Binding var account: AgentAccount
+    let monitor: AgentUsageMonitor
+    let onRemove: () -> Void
+    @State private var isCopied = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Toggle("", isOn: $account.isShown)
+                .labelsHidden()
+                .help(account.isShown ? "Hide this account from the sidebar" : "Show this account in the sidebar")
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Name", text: $account.label)
+                    .textFieldStyle(.plain)
+                Text("\(account.harness.title) · \(account.configDirectory ?? "default account")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                status
+                signInCommand
+            }
+            Spacer(minLength: 0)
+            Button(action: onRemove) {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Remove \(account.label)")
+        }
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        if let signedInAs = monitor.mapUsage[account.id]?.signedInAs {
+            Label("Signed in as \(signedInAs)", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+        } else if let error = monitor.mapErrors[account.id] {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+        } else if account.isShown {
+            Label("Checking…", systemImage: "clock")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// The command that signs the account in, with buttons to copy it and to check again once it ran.
+    private var signInCommand: some View {
+        let command = account.harness.signInCommand(configDirectory: account.configDirectory)
+        return HStack(spacing: 6) {
+            Text(command)
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(command, forType: .string)
+                isCopied = true
+            } label: {
+                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(.borderless)
+            .help("Copy the command, then run it in a terminal to sign this account in")
+            .task(id: isCopied) {
+                guard isCopied, (try? await Task.sleep(for: Self.copiedFeedbackDuration)) != nil else {
+                    return
+                }
+                isCopied = false
+            }
+            Button(action: monitor.refreshNow) {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help("Check this account again, as after signing in")
         }
     }
 }

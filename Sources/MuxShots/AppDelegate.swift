@@ -213,7 +213,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shortcuts = ShortcutController(workspaceController: workspace, preferences: preferences, stages: stages)
         shortcutController = shortcuts
         shortcuts.start()
-        settingsWindowController = SettingsWindowController(preferences: preferences, shortcutController: shortcuts)
+        settingsWindowController = SettingsWindowController(
+            preferences: preferences,
+            shortcutController: shortcuts,
+            agentUsageMonitor: agentUsageMonitor
+        )
         stages.openOnCursorDisplay()
 
         do {

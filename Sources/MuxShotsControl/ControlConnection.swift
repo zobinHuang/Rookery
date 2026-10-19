@@ -44,8 +44,30 @@ public final class ControlConnection: @unchecked Sendable {
     }
 
     /// Send one message.
-    public func send<Message: Encodable>(_ message: Message) async throws {
-        var data = try JSONEncoder().encode(message)
+    ///
+    /// - Parameters:
+    ///   - message: the message
+    ///   - encoder: how to encode it, for peers that expect other key spellings
+    public func send<Message: Encodable>(_ message: Message, encoder: JSONEncoder = JSONEncoder()) async throws {
+        try await sendLine(encoder.encode(message))
+    }
+
+    /// Receive the next message.
+    ///
+    /// - Parameters:
+    ///   - type: the type of message expected
+    ///   - decoder: how to decode it, for peers that use other key spellings
+    /// - Returns: the message, or nil once the peer has closed the connection
+    public func receive<Message: Decodable>(_ type: Message.Type, decoder: JSONDecoder = JSONDecoder()) async throws -> Message? {
+        guard let line = try await receiveLine() else {
+            return nil
+        }
+        return try decoder.decode(type, from: line)
+    }
+
+    /// Send one message already encoded as JSON, which must not contain a newline.
+    public func sendLine(_ line: Data) async throws {
+        var data = line
         data.append(Self.delimiter)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             connection.send(content: data, completion: .contentProcessed { error in
@@ -58,15 +80,15 @@ public final class ControlConnection: @unchecked Sendable {
         }
     }
 
-    /// Receive the next message.
+    /// Receive the next message still encoded as JSON.
     ///
     /// - Returns: the message, or nil once the peer has closed the connection
-    public func receive<Message: Decodable>(_ type: Message.Type) async throws -> Message? {
+    public func receiveLine() async throws -> Data? {
         while true {
             if let delimiterIndex = buffer.firstIndex(of: Self.delimiter) {
-                let line = buffer[buffer.startIndex..<delimiterIndex]
+                let line = Data(buffer[buffer.startIndex..<delimiterIndex])
                 buffer.removeSubrange(buffer.startIndex...delimiterIndex)
-                return try JSONDecoder().decode(type, from: line)
+                return line
             }
             guard let chunk = try await readChunk() else {
                 return nil

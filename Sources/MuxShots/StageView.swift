@@ -147,6 +147,19 @@ struct StageView: View {
                     .foregroundStyle(.secondary)
                     .padding(14)
             }
+            if !model.isSidebarCollapsed && !mixer.browserTabs.pictures.listPictures.isEmpty {
+                SidebarPicturesView(
+                    pictures: mixer.browserTabs.pictures,
+                    browserTabs: mixer.browserTabs,
+                    width: StageModel.sidebarWidth
+                )
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(StageColors.separator)
+                        .frame(height: 1)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if !model.isSidebarCollapsed && !model.listClockCities.isEmpty {
                 WorldClockView(listCities: model.listClockCities)
                     .overlay(alignment: .top) {

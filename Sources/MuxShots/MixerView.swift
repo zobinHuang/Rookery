@@ -147,8 +147,23 @@ struct MixerView: View {
             levels: browserTabs.mapLevels[browserTab.key] ?? MixerLevels(),
             isExpanded: expandedStripId == stripId,
             onToggleExpanded: { toggleExpanded(stripId) },
-            onUpdate: { change in browserTabs.update(browserTab.key, change) }
+            onUpdate: { change in browserTabs.update(browserTab.key, change) },
+            pictureToggle: pictureToggle(of: browserTab)
         )
+    }
+
+    /// The button for showing a tab's video in the sidebar, while the tab plays one or shows it already.
+    private func pictureToggle(of browserTab: MixerBrowserTab) -> MixerPictureToggle? {
+        let browserTabs = mixer.browserTabs
+        let isShowing = browserTabs.pictures.contains(browserTab.key)
+        guard browserTab.tab.hasVideo || isShowing else {
+            return nil
+        }
+        return MixerPictureToggle(isShowing: isShowing) {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.84)) {
+                browserTabs.togglePicture(of: browserTab)
+            }
+        }
     }
 
     private func toggleExpanded(_ stripId: MixerStripId) {
@@ -250,6 +265,12 @@ struct MixerStripStatus {
     var help: String?
 }
 
+/// A tab strip's button for showing the tab's video in the sidebar.
+struct MixerPictureToggle {
+    let isShowing: Bool
+    let action: () -> Void
+}
+
 /// What a strip shows as its picture.
 enum MixerStripIcon {
     case application(bundleId: String)
@@ -297,10 +318,15 @@ private struct MixerStrip: View {
     let onToggleExpanded: () -> Void
     /// Change the track's settings.
     let onUpdate: ((inout MixerTrackSettings) -> Void) -> Void
+    /// The button for showing the track's video in the sidebar, for a tab playing one.
+    var pictureToggle: MixerPictureToggle?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if let pictureToggle {
+                pictureButton(pictureToggle)
+            }
             if settings.isTakenOver {
                 VStack(alignment: .leading, spacing: 8) {
                     StereoMeter(levels: levels)
@@ -368,6 +394,26 @@ private struct MixerStrip: View {
 
     private var iconView: some View {
         MixerStripIconView(icon: icon)
+    }
+
+    private func pictureButton(_ toggle: MixerPictureToggle) -> some View {
+        Button(action: toggle.action) {
+            Label(
+                toggle.isShowing ? "Showing in Sidebar" : "Show in Sidebar",
+                systemImage: toggle.isShowing ? "pip.fill" : "pip.enter"
+            )
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(toggle.isShowing ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            .frame(maxWidth: .infinity)
+            .frame(height: 22)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(toggle.isShowing ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(StageColors.groove.opacity(0.6)))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(toggle.isShowing ? "Stop showing this tab's video in the sidebar" : "Show this tab's video in the sidebar")
     }
 
     private var volumeSymbol: String {

@@ -1,6 +1,7 @@
 import MuxShotsControl
 import MuxShotsCore
 import Observation
+import os
 
 /// A tab of one connected browser, which identifies it across the browsers connected at once.
 struct BrowserTabKey: Hashable, Sendable {
@@ -31,6 +32,7 @@ struct MixerBrowserTab: Identifiable, Equatable {
 @MainActor
 @Observable
 final class BrowserTabMixer {
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "browser")
     /// How much of its level a tab's meter keeps from one report to the next, so it falls back smoothly.
     private static let meterDecay: Float = 0.7
 
@@ -44,6 +46,8 @@ final class BrowserTabMixer {
     private(set) var mapLevels: [BrowserTabKey: MixerLevels] = [:]
     /// How many browsers have the extension connected.
     private(set) var sessionCount = 0
+    /// The tabs' videos shown in the sidebar.
+    @ObservationIgnored let pictures = BrowserPictures()
 
     /// Register a newly connected extension.
     func openSession() -> BrowserSession {
@@ -62,6 +66,7 @@ final class BrowserTabMixer {
         mapSessionTabs[sessionId] = nil
         mapSettings = mapSettings.filter { $0.key.sessionId != sessionId }
         mapLevels = mapLevels.filter { $0.key.sessionId != sessionId }
+        pictures.closeSession(sessionId)
         sessionCount = mapContinuations.count
         reloadTabs()
     }
@@ -75,6 +80,7 @@ final class BrowserTabMixer {
                 uniquingKeysWith: { first, _ in first }
             )
             mapSessionTabs[sessionId] = listSessionTabs
+            pictures.retitle(from: listSessionTabs, in: sessionId)
             // A tab muted or unmuted from the browser's own tab strip is muted or unmuted here too.
             for tab in listSessionTabs where mapPreviousTabs[tab.tabId].map({ $0.isMuted != tab.isMuted }) ?? tab.isMuted {
                 mapSettings[BrowserTabKey(sessionId: sessionId, tabId: tab.tabId), default: MixerTrackSettings()].isMuted = tab.isMuted
@@ -108,6 +114,12 @@ final class BrowserTabMixer {
             if mapNewLevels != mapLevels {
                 mapLevels = mapNewLevels
             }
+        case .pictureOffer(let tabId, let sdp):
+            answerPicture(BrowserTabKey(sessionId: sessionId, tabId: tabId), offer: sdp)
+        case .pictureState(let tabId, let isPaused):
+            pictures.markPaused(isPaused, for: BrowserTabKey(sessionId: sessionId, tabId: tabId))
+        case .pictureEnded(let tabId):
+            pictures.close(BrowserTabKey(sessionId: sessionId, tabId: tabId))
         }
     }
 
@@ -125,11 +137,61 @@ final class BrowserTabMixer {
         reloadTabs()
     }
 
+    /// Show a tab's video in the sidebar, or stop showing it.
+    func togglePicture(of browserTab: MixerBrowserTab) {
+        let key = browserTab.key
+        if pictures.contains(key) {
+            pictures.close(key)
+            mapContinuations[key.sessionId]?.yield(.pictureStop(tabId: key.tabId))
+        } else {
+            pictures.open(key, title: browserTab.tab.title) { [weak self] in
+                self?.closePicture(key)
+            }
+            mapContinuations[key.sessionId]?.yield(.pictureStart(tabId: key.tabId))
+        }
+    }
+
+    /// Accept a tab's offered video stream and send the answer back, or stop showing the tab when the stream
+    /// cannot be accepted.
+    private func answerPicture(_ key: BrowserTabKey, offer: String) {
+        guard let picture = pictures.picture(for: key) else {
+            return
+        }
+        Task {
+            do {
+                Self.logger.info("answering the video of tab \(key.tabId)")
+                let answer = try await picture.receiver.answer(offer)
+                Self.logger.info("answered the video of tab \(key.tabId) with \(answer.count) bytes")
+                mapContinuations[key.sessionId]?.yield(.pictureAnswer(tabId: key.tabId, sdp: answer))
+            } catch {
+                Self.logger.error("cannot accept the video of tab \(key.tabId): \(error)")
+                closePicture(key)
+            }
+        }
+    }
+
+    /// Stop showing a tab's video in the sidebar.
+    func closePicture(_ key: BrowserTabKey) {
+        pictures.close(key)
+        mapContinuations[key.sessionId]?.yield(.pictureStop(tabId: key.tabId))
+    }
+
+    /// Play or pause a video shown in the sidebar.
+    func playPicture(_ key: BrowserTabKey, isPlaying: Bool) {
+        pictures.markPaused(!isPlaying, for: key)
+        mapContinuations[key.sessionId]?.yield(.pictureControl(tabId: key.tabId, isPlaying: isPlaying))
+    }
+
+    /// Bring a tab and its browser window to the front.
+    func focus(_ key: BrowserTabKey) {
+        mapContinuations[key.sessionId]?.yield(.focusTab(tabId: key.tabId))
+    }
+
     private func reloadTabs() {
         let listNewTabs = mapSessionTabs.keys.sorted().flatMap { sessionId in
             (mapSessionTabs[sessionId] ?? []).compactMap { tab -> MixerBrowserTab? in
                 let key = BrowserTabKey(sessionId: sessionId, tabId: tab.tabId)
-                guard tab.isAudible || tab.mode != .idle || settings(of: key).isCaptureNeeded else {
+                guard tab.isAudible || tab.hasVideo || tab.mode != .idle || settings(of: key).isCaptureNeeded else {
                     return nil
                 }
                 return MixerBrowserTab(key: key, tab: tab)

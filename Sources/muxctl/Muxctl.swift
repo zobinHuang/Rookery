@@ -8,11 +8,13 @@ enum Muxctl {
     private static let usage = """
         usage: muxctl list [--json]
                muxctl watch
-               muxctl manage <window-id>
+               muxctl manage <window-id> [group-name-or-position]
                muxctl release <window-id>
                muxctl focus|hide|show|maximize <window-id>
+               muxctl switch <group-name-or-position> | --all
         """
     private static let jsonFlag = "--json"
+    private static let allFlag = "--all"
     private static let titleWidth = 60
 
     static func main() async {
@@ -32,7 +34,15 @@ enum Muxctl {
                 exit(withMessage: usage)
             }
             let windowId = WindowId(rawValue: rawId)
-            request = command == "manage" ? .manage(windowId: windowId) : .release(windowId: windowId)
+            let groupNameOrPosition = listArguments.dropFirst(2).first
+            request = command == "manage"
+                ? .manage(windowId: windowId, groupNameOrPosition: groupNameOrPosition)
+                : .release(windowId: windowId)
+        case "switch":
+            guard let argument = listArguments.dropFirst().first else {
+                exit(withMessage: usage)
+            }
+            request = .switchGroup(nameOrPosition: argument == allFlag ? nil : argument)
         case let name where WindowAction(rawValue: name) != nil:
             guard
                 let action = WindowAction(rawValue: name),
@@ -66,10 +76,11 @@ enum Muxctl {
             return
         }
         switch message {
-        case .workspace(let listGroups, let listWindows):
+        case .workspace(let listGroups, let activeGroupId, let listWindows):
             let mapWindows = Dictionary(uniqueKeysWithValues: listWindows.map { ($0.windowId, $0) })
             for group in listGroups {
-                Swift.print("\(group.name) (\(group.listMembers.count))")
+                let marker = group.groupId == activeGroupId ? "* " : ""
+                Swift.print("\(marker)\(group.name) (\(group.listMembers.count))")
                 for member in group.listMembers {
                     let observedRow = mapWindows[member.windowId].map { row(for: $0, isHidden: member.isHidden) }
                     Swift.print("  " + (observedRow ?? row(for: member)))

@@ -71,23 +71,33 @@ final class ControlServer: Sendable {
             case .list:
                 try await connection.send(ControlMessage.workspace(
                     listGroups: await workspaceController.workspace.listGroups,
+                    activeGroupId: await workspaceController.workspace.activeGroupId,
                     listWindows: await tracker.listWindows()
                 ))
             case .watch:
                 let changes = await tracker.changes()
                 try await connection.send(ControlMessage.workspace(
                     listGroups: await workspaceController.workspace.listGroups,
+                    activeGroupId: await workspaceController.workspace.activeGroupId,
                     listWindows: await tracker.listWindows()
                 ))
                 for await change in changes {
                     try await connection.send(ControlMessage.change(change))
                 }
-            case .manage(let windowId):
+            case .manage(let windowId, let groupNameOrPosition):
                 guard let window = WindowServer.window(withId: windowId) else {
                     try await connection.send(ControlMessage.failure(message: "no window \(windowId)"))
                     return
                 }
-                await workspaceController.adopt(windowId, processId: window.processId, into: nil)
+                var groupId: GroupId?
+                if let groupNameOrPosition {
+                    guard let group = await workspaceController.workspace.group(named: groupNameOrPosition) else {
+                        try await connection.send(ControlMessage.failure(message: "no group \(groupNameOrPosition)"))
+                        return
+                    }
+                    groupId = group.groupId
+                }
+                await workspaceController.adopt(windowId, processId: window.processId, into: groupId)
                 try await connection.send(ControlMessage.done)
             case .release(let windowId):
                 await workspaceController.release(windowId)
@@ -99,6 +109,19 @@ final class ControlServer: Sendable {
                 } catch let error as WindowActionError {
                     try await connection.send(ControlMessage.failure(message: error.description))
                 }
+            case .switchGroup(let nameOrPosition):
+                let groupId: GroupId?
+                if let nameOrPosition {
+                    guard let group = await workspaceController.workspace.group(named: nameOrPosition) else {
+                        try await connection.send(ControlMessage.failure(message: "no group \(nameOrPosition)"))
+                        return
+                    }
+                    groupId = group.groupId
+                } else {
+                    groupId = nil
+                }
+                await workspaceController.switchTo(groupId)
+                try await connection.send(ControlMessage.done)
             }
         } catch {
             logger.info("control session ended: \(error)")

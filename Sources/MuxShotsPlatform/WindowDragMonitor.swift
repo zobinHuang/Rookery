@@ -63,7 +63,7 @@ public final class WindowDragMonitor {
             reset()
             pressLocation = cursorLocation
             pressedWindow = WindowServer.frontmostWindow(
-                at: Self.windowServerPoint(fromAppKit: cursorLocation),
+                at: ScreenGeometry.windowServerPoint(fromAppKit: cursorLocation),
                 excluding: ProcessInfo.processInfo.processIdentifier
             )
         case .leftMouseDragged:
@@ -114,11 +114,5 @@ public final class WindowDragMonitor {
         pressLocation = nil
         pressedWindow = nil
         activeDrag = nil
-    }
-
-    /// Convert from AppKit's bottom-left origin to the window server's top-left origin on the main display.
-    private static func windowServerPoint(fromAppKit point: CGPoint) -> CGPoint {
-        let mainDisplayHeight = NSScreen.screens.first?.frame.height ?? 0
-        return CGPoint(x: point.x, y: mainDisplayHeight - point.y)
     }
 }

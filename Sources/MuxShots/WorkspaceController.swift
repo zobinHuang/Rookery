@@ -153,7 +153,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             surface.cancelWindowDrag()
             return
         }
-        let droppedFrame = WindowServer.window(withId: drag.windowId).map { Self.appKitFrame(fromWindowServer: $0.frame) }
+        let droppedFrame = WindowServer.window(withId: drag.windowId).map { ScreenGeometry.appKitFrame(fromWindowServer: $0.frame) }
         let icon = NSRunningApplication(processIdentifier: drag.processId)?.icon
         let landedGroupId: GroupId? = switch target {
         case .group(let groupId):
@@ -202,17 +202,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return nil
         }
         return application
-    }
-
-    /// Convert a frame from the window server's top-left origin to AppKit's bottom-left origin.
-    private static func appKitFrame(fromWindowServer frame: CGRect) -> CGRect {
-        let mainDisplayHeight = NSScreen.screens.first?.frame.height ?? 0
-        return CGRect(
-            x: frame.minX,
-            y: mainDisplayHeight - frame.maxY,
-            width: frame.width,
-            height: frame.height
-        )
     }
 
     private func didChange() {

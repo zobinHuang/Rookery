@@ -6,51 +6,80 @@ import MuxShotsCore
 @MainActor
 final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTextFieldDelegate {
     private static let windowIdPasteboardType = NSPasteboard.PasteboardType("io.github.zobinhuang.muxshots.window-id")
-    private static let initialSize = CGSize(width: 380, height: 460)
-    private static let iconSize: CGFloat = 16
-    private static let cellIdentifier = NSUserInterfaceItemIdentifier("cell")
+    private static let initialSize = CGSize(width: 360, height: 480)
+    private static let columnIdentifier = NSUserInterfaceItemIdentifier("content")
+    private static let topContentInset: CGFloat = 28
 
     private let controller: WorkspaceController
     private let panel: NSPanel
     private let outlineView = NSOutlineView()
+    private let emptyStateView = WorkspaceEmptyStateView.makeHostingView()
     private var draggedWindowId: WindowId?
 
     init(controller: WorkspaceController) {
         self.controller = controller
         panel = NSPanel(
             contentRect: CGRect(origin: .zero, size: Self.initialSize),
-            styleMask: [.titled, .closable, .resizable, .utilityWindow],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: true
         )
         super.init()
 
         panel.title = "MuxShots"
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.minSize = CGSize(width: 280, height: 260)
 
-        let column = NSTableColumn(identifier: Self.cellIdentifier)
+        let column = NSTableColumn(identifier: Self.columnIdentifier)
         outlineView.addTableColumn(column)
         outlineView.outlineTableColumn = column
         outlineView.headerView = nil
         outlineView.style = .sourceList
+        outlineView.backgroundColor = .clear
+        outlineView.floatsGroupRows = false
         outlineView.dataSource = self
         outlineView.delegate = self
+        outlineView.target = self
+        outlineView.doubleAction = #selector(renameClickedGroup)
         outlineView.registerForDraggedTypes([Self.windowIdPasteboardType])
         outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
         outlineView.setDraggingSourceOperationMask(.delete, forLocal: false)
 
         let releaseItem = NSMenuItem(title: "Release Window", action: #selector(releaseClickedWindow), keyEquivalent: "")
         releaseItem.target = self
+        let renameItem = NSMenuItem(title: "Rename Group", action: #selector(renameClickedGroup), keyEquivalent: "")
+        renameItem.target = self
         let menu = NSMenu()
+        menu.addItem(renameItem)
         menu.addItem(releaseItem)
         outlineView.menu = menu
 
         let scrollView = NSScrollView()
         scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
-        panel.contentView = scrollView
+        scrollView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: Self.topContentInset, left: 0, bottom: 8, right: 0)
+
+        let background = NSVisualEffectView()
+        background.material = .sidebar
+        background.blendingMode = .behindWindow
+        background.state = .followsWindowActiveState
+        for view in [scrollView, emptyStateView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            background.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+                view.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+                view.topAnchor.constraint(equalTo: background.topAnchor),
+                view.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            ])
+        }
+        panel.contentView = background
         panel.center()
     }
 
@@ -68,6 +97,7 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
         }
         outlineView.reloadData()
         outlineView.expandItem(nil, expandChildren: true)
+        emptyStateView.isHidden = !controller.workspace.listGroups.isEmpty
     }
 
     // Items are group identifiers as `NSString` and window identifiers as `NSNumber`.
@@ -92,24 +122,23 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
     }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-        let cell = outlineView.makeView(withIdentifier: Self.cellIdentifier, owner: self) as? NSTableCellView
-            ?? makeCell()
-        guard let textField = cell.textField, let imageView = cell.imageView else {
+        if let group = group(for: item) {
+            let cell = outlineView.makeView(withIdentifier: GroupCellView.identifier, owner: self) as? GroupCellView
+                ?? GroupCellView(nameDelegate: self)
+            cell.show(group)
             return cell
         }
-        if let group = group(for: item) {
-            textField.stringValue = group.name
-            textField.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
-            textField.isEditable = true
-            imageView.image = nil
-        } else if let window = managedWindow(for: item) {
-            let title = window.title.isEmpty ? "Untitled" : window.title
-            textField.stringValue = "\(window.application.name) — \(title)"
-            textField.font = .systemFont(ofSize: NSFont.systemFontSize)
-            textField.isEditable = false
-            imageView.image = Self.icon(for: window.application)
+        guard let window = managedWindow(for: item) else {
+            return nil
         }
+        let cell = outlineView.makeView(withIdentifier: WindowCellView.identifier, owner: self) as? WindowCellView
+            ?? WindowCellView(frame: .zero)
+        cell.show(window)
         return cell
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        group(for: item) == nil ? WindowCellView.rowHeight : GroupCellView.rowHeight
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
@@ -186,6 +215,18 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
         return true
     }
 
+    @objc private func renameClickedGroup() {
+        let row = outlineView.clickedRow
+        guard
+            row >= 0,
+            group(for: outlineView.item(atRow: row) as Any) != nil,
+            let nameField = (outlineView.view(atColumn: 0, row: row, makeIfNecessary: false) as? NSTableCellView)?.textField
+        else {
+            return
+        }
+        panel.makeFirstResponder(nameField)
+    }
+
     @objc private func releaseClickedWindow() {
         guard let window = managedWindow(for: outlineView.item(atRow: outlineView.clickedRow) as Any) else {
             return
@@ -209,39 +250,5 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
             return nil
         }
         return controller.workspace.listManagedWindows.first { $0.windowId.rawValue == number.uint32Value }
-    }
-
-    private func makeCell() -> NSTableCellView {
-        let cell = NSTableCellView()
-        cell.identifier = Self.cellIdentifier
-        let imageView = NSImageView()
-        let textField = NSTextField(labelWithString: "")
-        textField.lineBreakMode = .byTruncatingTail
-        textField.delegate = self
-        let stack = NSStackView(views: [imageView, textField])
-        stack.orientation = .horizontal
-        stack.spacing = 6
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(stack)
-        cell.imageView = imageView
-        cell.textField = textField
-        NSLayoutConstraint.activate([
-            imageView.widthAnchor.constraint(equalToConstant: Self.iconSize),
-            imageView.heightAnchor.constraint(equalToConstant: Self.iconSize),
-            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
-        return cell
-    }
-
-    private static func icon(for application: RunningApplication) -> NSImage? {
-        guard
-            let bundleId = application.bundleId,
-            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
-        else {
-            return nil
-        }
-        return NSWorkspace.shared.icon(forFile: url.path)
     }
 }

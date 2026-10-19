@@ -195,6 +195,38 @@ public struct Workspace: Codable, Equatable, Sendable {
         modifyMember(windowId) { $0.customName = trimmedName.isEmpty ? nil : trimmedName }
     }
 
+    /// Move a group to just before another, or to the end with nil.
+    public mutating func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {
+        guard groupId != targetGroupId, let sourceIndex = listGroups.firstIndex(where: { $0.groupId == groupId }) else {
+            return
+        }
+        let group = listGroups.remove(at: sourceIndex)
+        let targetIndex = targetGroupId.flatMap { targetGroupId in
+            listGroups.firstIndex { $0.groupId == targetGroupId }
+        } ?? listGroups.endIndex
+        listGroups.insert(group, at: targetIndex)
+    }
+
+    /// Move a member to just before another member of its group, or to the end of its group with nil; a
+    /// target in another group is ignored.
+    public mutating func moveMember(_ windowId: WindowId, before targetWindowId: WindowId?) {
+        guard
+            windowId != targetWindowId,
+            let groupIndex = listGroups.firstIndex(where: { group in group.listMembers.contains { $0.windowId == windowId } }),
+            let sourceIndex = listGroups[groupIndex].listMembers.firstIndex(where: { $0.windowId == windowId })
+        else {
+            return
+        }
+        if let targetWindowId, !listGroups[groupIndex].listMembers.contains(where: { $0.windowId == targetWindowId }) {
+            return
+        }
+        let member = listGroups[groupIndex].listMembers.remove(at: sourceIndex)
+        let targetIndex = targetWindowId.flatMap { targetWindowId in
+            listGroups[groupIndex].listMembers.firstIndex { $0.windowId == targetWindowId }
+        } ?? listGroups[groupIndex].listMembers.endIndex
+        listGroups[groupIndex].listMembers.insert(member, at: targetIndex)
+    }
+
     /// Rename a group; a blank name leaves the group unchanged.
     public mutating func rename(_ groupId: GroupId, to name: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)

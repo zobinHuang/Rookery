@@ -226,6 +226,37 @@ struct WorkspaceTests {
         #expect(workspace.listManagedWindows[0].displayName == "Code")
     }
 
+    @Test func groupsMoveBeforeATargetOrToTheEnd() {
+        var workspace = Workspace()
+        let firstId = workspace.adopt(Self.window(1), into: nil)
+        let secondId = workspace.adopt(Self.window(2), into: nil)
+        let thirdId = workspace.adopt(Self.window(3), into: nil)
+
+        workspace.moveGroup(thirdId, before: firstId)
+        let afterMoveToFront = workspace.listGroups.map(\.groupId)
+        workspace.moveGroup(thirdId, before: nil)
+        workspace.moveGroup(firstId, before: firstId)
+
+        #expect(afterMoveToFront == [thirdId, firstId, secondId])
+        #expect(workspace.listGroups.map(\.groupId) == [firstId, secondId, thirdId])
+    }
+
+    @Test func membersMoveWithinTheirGroupOnly() {
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+        workspace.adopt(Self.window(2), into: groupId)
+        workspace.adopt(Self.window(3), into: groupId)
+        workspace.adopt(Self.window(9), into: nil)
+
+        workspace.moveMember(WindowId(rawValue: 3), before: WindowId(rawValue: 1))
+        let afterMoveToFront = workspace.listGroups[0].listMembers.map(\.windowId.rawValue)
+        workspace.moveMember(WindowId(rawValue: 3), before: nil)
+        workspace.moveMember(WindowId(rawValue: 1), before: WindowId(rawValue: 9))
+
+        #expect(afterMoveToFront == [3, 1, 2])
+        #expect(workspace.listGroups[0].listMembers.map(\.windowId.rawValue) == [1, 2, 3])
+    }
+
     @Test func workspaceSurvivesAJsonRoundTrip() throws {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1, title: "a"), into: nil)

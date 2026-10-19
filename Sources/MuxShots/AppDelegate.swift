@@ -21,6 +21,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onShowWorkspace: { [weak self] in
                 self?.workspacePanelController?.show()
+            },
+            workspaceProvider: { [weak self] in
+                self?.workspaceController?.workspace
+            },
+            onSwitch: { [weak self] groupId in
+                guard let workspaceController = self?.workspaceController else {
+                    return
+                }
+                Task {
+                    await workspaceController.switchTo(groupId)
+                }
             }
         )
         statusMenuController = controller

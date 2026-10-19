@@ -60,9 +60,12 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
 
         let releaseItem = NSMenuItem(title: "Release Window", action: #selector(releaseClickedWindow), keyEquivalent: "")
         releaseItem.target = self
+        let switchItem = NSMenuItem(title: "Switch to Group", action: #selector(switchToClickedGroup), keyEquivalent: "")
+        switchItem.target = self
         let renameItem = NSMenuItem(title: "Rename Group", action: #selector(renameClickedGroup), keyEquivalent: "")
         renameItem.target = self
         let menu = NSMenu()
+        menu.addItem(switchItem)
         menu.addItem(renameItem)
         menu.addItem(releaseItem)
         outlineView.menu = menu
@@ -239,7 +242,7 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
         if let group = group(for: item) {
             let cell = outlineView.makeView(withIdentifier: GroupCellView.identifier, owner: self) as? GroupCellView
                 ?? GroupCellView(nameDelegate: self)
-            cell.show(group)
+            cell.show(group, isActive: group.groupId == controller.workspace.activeGroupId)
             return cell
         }
         guard let window = managedWindow(for: item) else {
@@ -327,6 +330,16 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
         }
         controller.move(WindowId(rawValue: rawId), to: group.groupId)
         return true
+    }
+
+    @objc private func switchToClickedGroup() {
+        let row = outlineView.clickedRow
+        guard row >= 0, let item = outlineView.item(atRow: row), let group = group(for: item) ?? groupContaining(item) else {
+            return
+        }
+        Task { [controller] in
+            await controller.switchTo(group.groupId)
+        }
     }
 
     @objc private func renameClickedGroup() {

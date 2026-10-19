@@ -12,6 +12,7 @@ final class GroupCellView: NSTableCellView {
     private let iconStack = NSStackView()
     private let nameField = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
+    private let activeDot = NSView()
 
     init(nameDelegate: NSTextFieldDelegate) {
         super.init(frame: .zero)
@@ -28,8 +29,15 @@ final class GroupCellView: NSTableCellView {
         countLabel.textColor = .secondaryLabelColor
         countLabel.setContentHuggingPriority(.required, for: .horizontal)
         textField = nameField
+        activeDot.wantsLayer = true
+        activeDot.layer?.cornerRadius = 3.5
+        activeDot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        NSLayoutConstraint.activate([
+            activeDot.widthAnchor.constraint(equalToConstant: 7),
+            activeDot.heightAnchor.constraint(equalToConstant: 7),
+        ])
 
-        let row = NSStackView(views: [iconStack, nameField, countLabel])
+        let row = NSStackView(views: [iconStack, nameField, activeDot, countLabel])
         row.orientation = .horizontal
         row.spacing = 8
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -46,9 +54,14 @@ final class GroupCellView: NSTableCellView {
         fatalError("init(coder:) is not supported")
     }
 
+    /// - Parameters:
+    ///   - group: the group to show
+    ///   - isActive: whether the group is the one currently shown
     @MainActor
-    func show(_ group: WindowGroup) {
+    func show(_ group: WindowGroup, isActive: Bool) {
         nameField.stringValue = group.name
+        nameField.textColor = isActive ? .controlAccentColor : .labelColor
+        activeDot.isHidden = !isActive
         countLabel.stringValue = String(group.listMembers.count)
         for view in iconStack.arrangedSubviews {
             iconStack.removeArrangedSubview(view)

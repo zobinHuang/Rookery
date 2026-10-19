@@ -176,6 +176,34 @@ struct WorkspaceTests {
         #expect(workspace.group(named: "3") == nil)
     }
 
+    @Test func stagingKeepsTheFirstHomeUntilUnstaged() {
+        var workspace = Workspace()
+        workspace.adopt(Self.window(1), into: nil)
+        let home = CGRect(x: 10, y: 10, width: 400, height: 300)
+
+        workspace.markStaged(WindowId(rawValue: 1), homeFrame: home)
+        workspace.markStaged(WindowId(rawValue: 1), homeFrame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let listStagedIds = workspace.listStagedWindows.map(\.windowId.rawValue)
+        let returnedHome = workspace.markUnstaged(WindowId(rawValue: 1))
+
+        #expect(listStagedIds == [1])
+        #expect(returnedHome == home)
+        #expect(workspace.listStagedWindows.isEmpty)
+    }
+
+    @Test func bringingToFrontReordersOnlyThatGroup() {
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+        workspace.adopt(Self.window(2), into: groupId)
+        workspace.adopt(Self.window(3), into: groupId)
+
+        workspace.bringToFront(WindowId(rawValue: 3))
+        workspace.bringToFront(WindowId(rawValue: 2))
+
+        #expect(workspace.listGroups[0].listMembersFrontToBack.map(\.windowId.rawValue) == [2, 3, 1])
+        #expect(workspace.listGroups[0].listMembers.map(\.windowId.rawValue) == [1, 2, 3])
+    }
+
     @Test func workspaceSurvivesAJsonRoundTrip() throws {
         var workspace = Workspace()
         let groupId = workspace.adopt(Self.window(1, title: "a"), into: nil)

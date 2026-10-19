@@ -11,12 +11,22 @@ public struct ManagedWindow: Codable, Equatable, Sendable {
     /// Where the window was before MuxShots hid it, in global screen coordinates with the origin at the
     /// top-left of the main display; nil while the window is not hidden.
     public var restoreFrame: CGRect?
+    /// Where the window was before the stage took it over, in the same coordinates; the window goes back
+    /// there when it leaves the stage. Nil while the window is not on the stage.
+    public var homeFrame: CGRect?
 
-    public init(windowId: WindowId, application: RunningApplication, title: String, restoreFrame: CGRect? = nil) {
+    public init(
+        windowId: WindowId,
+        application: RunningApplication,
+        title: String,
+        restoreFrame: CGRect? = nil,
+        homeFrame: CGRect? = nil
+    ) {
         self.windowId = windowId
         self.application = application
         self.title = title
         self.restoreFrame = restoreFrame
+        self.homeFrame = homeFrame
     }
 
     /// Whether MuxShots has moved the window off screen.

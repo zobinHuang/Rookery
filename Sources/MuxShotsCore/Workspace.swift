@@ -155,6 +155,40 @@ public struct Workspace: Codable, Equatable, Sendable {
         return restoreFrame
     }
 
+    /// The managed windows the stage has taken over.
+    public var listStagedWindows: [ManagedWindow] {
+        listManagedWindows.filter { $0.homeFrame != nil }
+    }
+
+    /// Remember where a window was before the stage takes it over; a window already on the stage keeps
+    /// its first home.
+    public mutating func markStaged(_ windowId: WindowId, homeFrame: CGRect) {
+        modifyMember(windowId) { window in
+            if window.homeFrame == nil {
+                window.homeFrame = homeFrame
+            }
+        }
+    }
+
+    /// Take a window off the stage.
+    ///
+    /// - Returns: where the window was before the stage took it over, or nil if it was not on the stage
+    @discardableResult
+    public mutating func markUnstaged(_ windowId: WindowId) -> CGRect? {
+        let homeFrame = listManagedWindows.first { $0.windowId == windowId }?.homeFrame
+        modifyMember(windowId) { $0.homeFrame = nil }
+        return homeFrame
+    }
+
+    /// Put a member at the front of its group's stacking order, as selecting its tab does.
+    public mutating func bringToFront(_ windowId: WindowId) {
+        guard let group = group(containing: windowId) else {
+            return
+        }
+        let listOrder = [windowId] + group.listMembersFrontToBack.map(\.windowId).filter { $0 != windowId }
+        recordStack(of: group.groupId, frontToBack: listOrder)
+    }
+
     /// Rename a group; a blank name leaves the group unchanged.
     public mutating func rename(_ groupId: GroupId, to name: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)

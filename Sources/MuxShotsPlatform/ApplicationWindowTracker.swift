@@ -159,7 +159,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             && abs(lhs.height - rhs.height) <= frameTolerance
     }
 
-    /// Bring a managed window to the front of its application, restoring it from the Dock first.
+    /// Bring a managed window to the front, restoring it from the Dock first, and give it keyboard focus.
     ///
     /// - Returns: whether the window was raised
     func raise(_ windowId: WindowId) async -> Bool {
@@ -172,6 +172,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
                     try element.applyMinimized(false)
                 }
                 try element.raise()
+                try? root.focusWindow(element)
                 return true
             } catch {
                 Self.logger.error("cannot raise window \(windowId.rawValue): \(error, privacy: .public)")

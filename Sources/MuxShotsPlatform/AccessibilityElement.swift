@@ -140,6 +140,13 @@ struct AccessibilityElement {
         try Self.check(AXUIElementPerformAction(element, kAXRaiseAction as CFString), operation: kAXRaiseAction)
     }
 
+    /// Make a window this application's focused window and bring the application to the front, so the
+    /// window takes keyboard input.
+    func focusWindow(_ window: AccessibilityElement) throws {
+        try write(kAXFocusedWindowAttribute, value: window.element)
+        try write(kAXFrontmostAttribute, value: kCFBooleanTrue)
+    }
+
     func applyMinimized(_ isMinimized: Bool) throws {
         try write(kAXMinimizedAttribute, value: isMinimized as CFBoolean)
     }

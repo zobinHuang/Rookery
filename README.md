@@ -4,7 +4,7 @@ MuxShots is a macOS app that fills a display with a stage and hosts your windows
 
 ## Usage
 
-Requires macOS 14 or later and the Swift 6.2 toolchain.
+Requires macOS 14.2 or later and the Swift 6.2 toolchain.
 
     scripts/create-dev-certificate.sh   # once: a stable local signing identity
     make install                        # builds, installs to /Applications and opens it

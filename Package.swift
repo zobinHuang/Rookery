@@ -8,7 +8,7 @@ let strictSettings: [SwiftSetting] = [
 let package = Package(
     name: "MuxShots",
     platforms: [
-        .macOS(.v14),
+        .macOS("14.2"),
     ],
     products: [
         .executable(name: "MuxShots", targets: ["MuxShots"]),

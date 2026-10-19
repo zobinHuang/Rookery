@@ -2,18 +2,20 @@ import MuxShotsControl
 import MuxShotsCore
 import SwiftUI
 
-/// The mixer in the stage's sidebar: a strip for every application connected to the audio system. A strip
-/// takes its application's sound over with its switch, then offers a meter and volume, and opens to show
-/// pan, stereo, equalizer and reverb.
+/// The mixer in the stage's sidebar: a strip for every application connected to the audio system, then
+/// one for every browser tab playing or taken over through the MuxShots browser extension. A strip takes
+/// its sound over with its switch, then offers a meter and volume, and opens to show pan, stereo,
+/// equalizer and reverb.
 struct MixerView: View {
     private static let expandAnimation = Animation.spring(response: 0.32, dampingFraction: 0.86)
+    private static let chromeBundleId = "com.google.Chrome"
 
     let mixer: MixerController
     let isCollapsed: Bool
-    @State private var expandedBundleId: String?
+    @State private var expandedStripId: MixerStripId?
 
     var body: some View {
-        if mixer.listTracks.isEmpty {
+        if mixer.listTracks.isEmpty && mixer.browserTabs.listTabs.isEmpty {
             if !isCollapsed {
                 emptyState
             }
@@ -25,21 +27,26 @@ struct MixerView: View {
             }
             .padding(.horizontal, 8)
         } else {
-            VStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(mixer.listTracks, id: \.bundleId) { track in
-                    MixerStrip(
-                        track: track,
-                        mixer: mixer,
-                        isExpanded: expandedBundleId == track.bundleId
-                    ) {
-                        withAnimation(Self.expandAnimation) {
-                            expandedBundleId = expandedBundleId == track.bundleId ? nil : track.bundleId
-                        }
+                    applicationStrip(track)
+                }
+                if !mixer.browserTabs.listTabs.isEmpty {
+                    sectionHeader("Browser Tabs")
+                    ForEach(mixer.browserTabs.listTabs) { browserTab in
+                        tabStrip(browserTab)
                     }
+                } else if mixer.browserTabs.sessionCount == 0 && mixer.listTracks.contains(where: { $0.bundleId == Self.chromeBundleId }) {
+                    Text("Add the MuxShots extension to Chrome to mix its tabs one by one.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.top, 2)
                 }
             }
             .padding(.horizontal, 8)
             .animation(Self.expandAnimation, value: mixer.listTracks.map(\.bundleId))
+            .animation(Self.expandAnimation, value: mixer.browserTabs.listTabs.map(\.id))
         }
     }
 
@@ -58,6 +65,51 @@ struct MixerView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 20)
         .padding(.vertical, 28)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9.5, weight: .semibold))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.top, 6)
+    }
+
+    private func applicationStrip(_ track: MixerTrackStatus) -> some View {
+        let stripId = MixerStripId.application(track.bundleId)
+        let settings = mixer.settings(of: track.bundleId)
+        return MixerStrip(
+            title: track.name,
+            icon: .application(bundleId: track.bundleId),
+            status: Self.status(of: track, settings: settings),
+            settings: settings,
+            levels: mixer.mapLevels[track.bundleId] ?? MixerLevels(),
+            isExpanded: expandedStripId == stripId,
+            onToggleExpanded: { toggleExpanded(stripId) },
+            onUpdate: { change in mixer.update(track.bundleId, change) }
+        )
+    }
+
+    private func tabStrip(_ browserTab: MixerBrowserTab) -> some View {
+        let stripId = MixerStripId.tab(browserTab.key)
+        let browserTabs = mixer.browserTabs
+        return MixerStrip(
+            title: browserTab.tab.title.isEmpty ? browserTab.tab.url : browserTab.tab.title,
+            icon: .website(url: browserTab.tab.favIconUrl.flatMap(URL.init(string:))),
+            status: Self.status(of: browserTab.tab),
+            settings: browserTabs.settings(of: browserTab.key),
+            levels: browserTabs.mapLevels[browserTab.key] ?? MixerLevels(),
+            isExpanded: expandedStripId == stripId,
+            onToggleExpanded: { toggleExpanded(stripId) },
+            onUpdate: { change in browserTabs.update(browserTab.key, change) }
+        )
+    }
+
+    private func toggleExpanded(_ stripId: MixerStripId) {
+        withAnimation(Self.expandAnimation) {
+            expandedStripId = expandedStripId == stripId ? nil : stripId
+        }
     }
 
     /// A track in the collapsed sidebar: its icon, ringed while taken over, with a meter below.
@@ -83,27 +135,85 @@ struct MixerView: View {
         .buttonStyle(.plain)
         .help(track.settings.isTakenOver ? "\(track.name): taken over; click to give it back" : "\(track.name): click to take over its sound")
     }
+
+    private static func status(of track: MixerTrackStatus, settings: MixerTrackSettings) -> MixerStripStatus {
+        if let error = track.error {
+            return MixerStripStatus(text: "Couldn't take over: \(error)", color: .red)
+        }
+        switch (settings.isTakenOver, track.isCapturing, track.isPlaying) {
+        case (true, true, _):
+            return MixerStripStatus(text: "Mixing", color: .accentColor)
+        case (true, false, _):
+            return MixerStripStatus(text: "Waiting for sound", color: .secondary)
+        case (false, _, true):
+            return MixerStripStatus(text: "Playing", color: .green)
+        case (false, _, false):
+            return MixerStripStatus(text: "Silent", color: .secondary)
+        }
+    }
+
+    private static func status(of tab: BrowserTab) -> MixerStripStatus {
+        switch tab.mode {
+        case .idle:
+            tab.isAudible
+                ? MixerStripStatus(text: "Playing", color: .green)
+                : MixerStripStatus(text: "Silent", color: .secondary)
+        case .waiting:
+            MixerStripStatus(text: "Waiting for sound", color: .secondary)
+        case .page:
+            MixerStripStatus(text: "Mixing", color: .accentColor)
+        case .blocked:
+            MixerStripStatus(
+                text: "Needs a tab capture",
+                color: .orange,
+                help: "This page's sound can't be mixed from inside it; capture the whole tab with the MuxShots button in Chrome's toolbar"
+            )
+        case .captured:
+            MixerStripStatus(text: "Mixing the whole tab", color: .accentColor)
+        }
+    }
 }
 
-/// One application's strip in the mixer.
+/// Which strip of the mixer, so one at a time can be open.
+enum MixerStripId: Hashable {
+    case application(String)
+    case tab(BrowserTabKey)
+}
+
+/// What a strip says it is doing, under its title.
+struct MixerStripStatus {
+    let text: String
+    let color: Color
+    /// More about the status, shown when the pointer rests on it.
+    var help: String?
+}
+
+/// What a strip shows as its picture.
+enum MixerStripIcon {
+    case application(bundleId: String)
+    case website(url: URL?)
+}
+
+/// One track's strip in the mixer: an application's or a browser tab's.
 private struct MixerStrip: View {
     private static let reverbRooms = ReverbRoom.allCases
 
-    let track: MixerTrackStatus
-    let mixer: MixerController
+    let title: String
+    let icon: MixerStripIcon
+    let status: MixerStripStatus
+    let settings: MixerTrackSettings
+    let levels: MixerLevels
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
-
-    private var settings: MixerTrackSettings {
-        mixer.settings(of: track.bundleId)
-    }
+    /// Change the track's settings.
+    let onUpdate: ((inout MixerTrackSettings) -> Void) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if settings.isTakenOver {
                 VStack(alignment: .leading, spacing: 8) {
-                    StereoMeter(levels: mixer.mapLevels[track.bundleId] ?? MixerLevels())
+                    StereoMeter(levels: levels)
                     labeledSlider(
                         symbol: volumeSymbol,
                         value: binding(\.volume),
@@ -136,49 +246,52 @@ private struct MixerStrip: View {
 
     private var header: some View {
         HStack(spacing: 9) {
-            ApplicationIconView(bundleId: track.bundleId, size: 24)
+            iconView
             VStack(alignment: .leading, spacing: 1) {
-                Text(track.name)
+                Text(title)
                     .font(.system(size: 12.5, weight: .semibold))
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(statusColor)
+                        .fill(status.color)
                         .frame(width: 5, height: 5)
-                    Text(statusText)
+                    Text(status.text)
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                .help(status.help ?? status.text)
             }
             Spacer(minLength: 4)
             MixerSwitch(
                 isOn: binding(\.isTakenOver),
-                help: settings.isTakenOver ? "Give the sound back to \(track.name)" : "Take over the sound of \(track.name)"
+                help: settings.isTakenOver ? "Give the sound back to \(title)" : "Take over the sound of \(title)"
             )
         }
     }
 
-    private var statusText: String {
-        if let error = track.error {
-            return "Couldn't take over: \(error)"
+    @ViewBuilder
+    private var iconView: some View {
+        switch icon {
+        case .application(let bundleId):
+            ApplicationIconView(bundleId: bundleId, size: 24)
+        case .website(let url):
+            AsyncImage(url: url) { image in
+                image
+                    .resizable()
+                    .interpolation(.high)
+            } placeholder: {
+                Image(systemName: "globe")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 16, height: 16)
+            .frame(width: 24, height: 24)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(StageColors.tile)
+            }
         }
-        switch (settings.isTakenOver, track.isCapturing, track.isPlaying) {
-        case (true, true, _): return "Mixing"
-        case (true, false, _): return "Waiting for sound"
-        case (false, _, true): return "Playing"
-        case (false, _, false): return "Silent"
-        }
-    }
-
-    private var statusColor: Color {
-        if track.error != nil {
-            return .red
-        }
-        if track.isCapturing {
-            return .accentColor
-        }
-        return track.isPlaying ? .green : Color.secondary.opacity(0.5)
     }
 
     private var volumeSymbol: String {
@@ -227,13 +340,13 @@ private struct MixerStrip: View {
                 )
                 HStack(spacing: 5) {
                     MixerChip(title: "Ø L", isOn: settings.isLeftInverted, help: "Invert the left channel's phase") {
-                        mixer.update(track.bundleId) { $0.isLeftInverted.toggle() }
+                        onUpdate { $0.isLeftInverted.toggle() }
                     }
                     MixerChip(title: "Ø R", isOn: settings.isRightInverted, help: "Invert the right channel's phase") {
-                        mixer.update(track.bundleId) { $0.isRightInverted.toggle() }
+                        onUpdate { $0.isRightInverted.toggle() }
                     }
                     MixerChip(title: "L ⇄ R", isOn: settings.isSwapped, help: "Swap the left and right channels") {
-                        mixer.update(track.bundleId) { $0.isSwapped.toggle() }
+                        onUpdate { $0.isSwapped.toggle() }
                     }
                 }
             }
@@ -244,7 +357,7 @@ private struct MixerStrip: View {
                 Menu {
                     ForEach(Self.reverbRooms, id: \.self) { room in
                         Button(room.title) {
-                            mixer.update(track.bundleId) { $0.reverbRoom = room }
+                            onUpdate { $0.reverbRoom = room }
                         }
                     }
                 } label: {
@@ -277,7 +390,7 @@ private struct MixerStrip: View {
         HStack(spacing: 8) {
             if settings.listEqualizerGains.contains(where: { $0 != 0 }) {
                 Button("Reset") {
-                    mixer.update(track.bundleId) { settings in
+                    onUpdate { settings in
                         settings.listEqualizerGains = MixerTrackSettings().listEqualizerGains
                     }
                 }
@@ -305,7 +418,7 @@ private struct MixerStrip: View {
                         EqualizerBandSlider(
                             gain: Binding(
                                 get: { settings.listEqualizerGains[index] },
-                                set: { gain in mixer.update(track.bundleId) { $0.listEqualizerGains[index] = gain } }
+                                set: { gain in onUpdate { $0.listEqualizerGains[index] = gain } }
                             ),
                             range: MixerTrackSettings.equalizerGainRange,
                             isEnabled: settings.isEqualizerEnabled
@@ -373,7 +486,7 @@ private struct MixerStrip: View {
     private func binding<Value>(_ keyPath: WritableKeyPath<MixerTrackSettings, Value>) -> Binding<Value> {
         Binding(
             get: { settings[keyPath: keyPath] },
-            set: { value in mixer.update(track.bundleId) { $0[keyPath: keyPath] = value } }
+            set: { value in onUpdate { $0[keyPath: keyPath] = value } }
         )
     }
 }

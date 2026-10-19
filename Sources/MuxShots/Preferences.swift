@@ -15,11 +15,13 @@ final class Preferences {
     private static let showAllHotkeyKey = "showAllHotkey"
     private static let switcherHotkeyKey = "switcherHotkey"
     private static let cycleHotkeyKey = "cycleHotkey"
+    private static let stageHotkeyKey = "stageHotkey"
 
     static let defaultGroupModifiers: NSEvent.ModifierFlags = [.control, .option]
     static let defaultShowAllHotkey = Hotkey(keyCode: kVK_ANSI_0, modifiers: [.control, .option])
     static let defaultSwitcherHotkey = Hotkey(keyCode: kVK_Tab, modifiers: [.option])
     static let defaultCycleHotkey = Hotkey(keyCode: kVK_ANSI_Grave, modifiers: [.control, .option])
+    static let defaultStageHotkey = Hotkey(keyCode: kVK_Return, modifiers: [.control, .option])
 
     @ObservationIgnored private let defaults: UserDefaults
     /// Called after any shortcut changes, so they can be registered again.
@@ -66,6 +68,13 @@ final class Preferences {
         }
     }
 
+    /// Opens or closes the stage.
+    var stageHotkey: Hotkey {
+        didSet {
+            store(stageHotkey, forKey: Self.stageHotkeyKey)
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         isDropTrayEnabled = defaults.object(forKey: Self.dropTrayKey) as? Bool ?? true
@@ -75,6 +84,7 @@ final class Preferences {
         showAllHotkey = Self.load(forKey: Self.showAllHotkeyKey, from: defaults) ?? Self.defaultShowAllHotkey
         switcherHotkey = Self.load(forKey: Self.switcherHotkeyKey, from: defaults) ?? Self.defaultSwitcherHotkey
         cycleHotkey = Self.load(forKey: Self.cycleHotkeyKey, from: defaults) ?? Self.defaultCycleHotkey
+        stageHotkey = Self.load(forKey: Self.stageHotkeyKey, from: defaults) ?? Self.defaultStageHotkey
     }
 
     /// Put every shortcut back to its default.
@@ -83,6 +93,7 @@ final class Preferences {
         showAllHotkey = Self.defaultShowAllHotkey
         switcherHotkey = Self.defaultSwitcherHotkey
         cycleHotkey = Self.defaultCycleHotkey
+        stageHotkey = Self.defaultStageHotkey
     }
 
     private func store(_ hotkey: Hotkey, forKey key: String) {

@@ -15,6 +15,8 @@ public enum ControlRequest: Codable, Sendable {
     case act(action: WindowAction, windowId: WindowId)
     /// Show a group, named or by 1-based position, hiding the others; nil shows every managed window.
     case switchGroup(nameOrPosition: String?)
+    /// Open or close the stage.
+    case stage(isOpen: Bool)
 }
 
 /// A message the running app sends back.

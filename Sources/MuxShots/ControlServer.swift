@@ -11,6 +11,7 @@ final class ControlServer: Sendable {
 
     private let tracker: WindowTracker
     private let workspaceController: WorkspaceController
+    private let stage: StageController
     private let listener: NWListener
     private let queue = DispatchQueue(label: "MuxShots.control.listener")
 
@@ -19,7 +20,8 @@ final class ControlServer: Sendable {
     /// - Parameters:
     ///   - tracker: the source of observed window state
     ///   - workspaceController: the owner of the groups
-    init(tracker: WindowTracker, workspaceController: WorkspaceController) throws {
+    ///   - stage: the stage to open and close
+    init(tracker: WindowTracker, workspaceController: WorkspaceController, stage: StageController) throws {
         let url = ControlSocket.url
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -33,14 +35,15 @@ final class ControlServer: Sendable {
         self.listener = try NWListener(using: parameters)
         self.tracker = tracker
         self.workspaceController = workspaceController
+        self.stage = stage
     }
 
     /// Start accepting connections.
     func start() {
-        listener.newConnectionHandler = { [tracker, workspaceController] connection in
+        listener.newConnectionHandler = { [tracker, workspaceController, stage] connection in
             let control = ControlConnection(accepted: connection)
             Task {
-                await Self.serve(control, tracker: tracker, workspaceController: workspaceController)
+                await Self.serve(control, tracker: tracker, workspaceController: workspaceController, stage: stage)
             }
         }
         listener.stateUpdateHandler = { state in
@@ -60,7 +63,8 @@ final class ControlServer: Sendable {
     private static func serve(
         _ connection: ControlConnection,
         tracker: WindowTracker,
-        workspaceController: WorkspaceController
+        workspaceController: WorkspaceController,
+        stage: StageController
     ) async {
         defer { connection.cancel() }
         do {
@@ -121,6 +125,13 @@ final class ControlServer: Sendable {
                     groupId = nil
                 }
                 await workspaceController.switchTo(groupId)
+                try await connection.send(ControlMessage.done)
+            case .stage(let isOpen):
+                await MainActor.run {
+                    if isOpen != stage.isOpen {
+                        stage.toggle()
+                    }
+                }
                 try await connection.send(ControlMessage.done)
             }
         } catch {

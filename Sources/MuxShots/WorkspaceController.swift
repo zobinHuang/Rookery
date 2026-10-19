@@ -3,8 +3,9 @@ import MuxShotsCore
 import MuxShotsPlatform
 import os
 
-/// Owns the workspace: turns drops on the tray and edits in the panel into managed windows and groups,
-/// keeps the tracker following exactly the managed windows, and persists the result.
+/// Owns the workspace: turns drops on the tray, the panel and the stage into managed windows and groups,
+/// keeps the tracker following exactly the managed windows, lays them out while the stage is open, and
+/// persists the result.
 @MainActor
 final class WorkspaceController: WindowDragMonitorDelegate {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "workspace")
@@ -20,6 +21,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let focusQuietPeriod = Duration.milliseconds(400)
 
     private(set) var workspace: Workspace
+    /// The area the front window fills while the stage is open, in window-server coordinates; nil while
+    /// the stage is closed.
+    private(set) var stageContentFrame: CGRect?
     private let tracker: WindowTracker
     private let dragMonitor = WindowDragMonitor()
     private let ghostAnimator = DropGhostAnimator()
@@ -29,8 +33,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// The panel, which receives dragged windows while it is open.
     weak var panel: WorkspacePanelController?
+    /// The stage, which receives dragged windows while it is open, in preference to the panel.
+    weak var stageSurface: DropSurface?
     private var changeTask: Task<Void, Never>?
-    /// The latest group switch; each switch waits for the one before it.
+    /// The latest layout change (a switch, or opening or closing the stage); each waits for the one before.
     private var switchTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
@@ -67,7 +73,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             for (windowId, application) in listRestored {
                 await tracker.manage(windowId, of: application)
             }
-            await showAllHidden()
+            await restoreAllWindows()
             for await change in await tracker.changes() {
                 handle(change)
             }
@@ -115,26 +121,88 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     ///   - windowId: the window
     ///   - processId: the process that owns the window
     ///   - groupId: the destination group, or nil for a new group
+    ///   - homeFrame: where the window belongs off the stage, when it is not where it is now, as for a window
+    ///     dragged onto the stage
     /// - Returns: the group the window joined, or nil if its application is gone
     @discardableResult
-    func adopt(_ windowId: WindowId, processId: pid_t, into groupId: GroupId?) -> GroupId? {
+    func adopt(_ windowId: WindowId, processId: pid_t, into groupId: GroupId?, homeFrame: CGRect? = nil) -> GroupId? {
+        let isNew = !workspace.isManaged(windowId)
+        let joinedGroupId: GroupId
+        let application: RunningApplication
         if let existing = workspace.listManagedWindows.first(where: { $0.windowId == windowId }) {
-            let joinedGroupId = workspace.adopt(existing, into: groupId)
-            didChange()
-            return joinedGroupId
+            joinedGroupId = workspace.adopt(existing, into: groupId)
+            application = existing.application
+        } else {
+            guard let running = ApplicationMonitor.application(processId: processId) else {
+                return nil
+            }
+            application = running
+            joinedGroupId = workspace.adopt(ManagedWindow(windowId: windowId, application: application, title: ""), into: groupId)
         }
-        guard let application = ApplicationMonitor.application(processId: processId) else {
-            return nil
+        if isStageOpen, let homeFrame {
+            workspace.markStaged(windowId, homeFrame: homeFrame)
         }
-        let joinedGroupId = workspace.adopt(
-            ManagedWindow(windowId: windowId, application: application, title: ""),
-            into: groupId
-        )
         didChange()
         Task { [tracker] in
-            await tracker.manage(windowId, of: application)
+            if isNew {
+                await tracker.manage(windowId, of: application)
+            }
+            guard self.isStageOpen else {
+                return
+            }
+            if let frame = await tracker.frame(of: windowId) {
+                self.workspace.markStaged(windowId, homeFrame: frame)
+            }
+            if self.workspace.isActive(joinedGroupId) || self.workspace.setActiveGroupIds.isEmpty {
+                await self.switchTo(joinedGroupId, bringingToFront: windowId)
+            } else {
+                await self.switchTo(self.frontmostActiveGroup()?.groupId)
+            }
         }
         return joinedGroupId
+    }
+
+    /// Whether the stage is open.
+    var isStageOpen: Bool {
+        stageContentFrame != nil
+    }
+
+    /// Open the stage: every managed window leaves its place, remembered as its home, and the front window
+    /// of the group the user was in fills the content area.
+    ///
+    /// - Parameter contentFrame: the content area, in window-server coordinates
+    func enterStage(contentFrame: CGRect) async {
+        await enqueue {
+            let isOpening = self.stageContentFrame == nil
+            self.stageContentFrame = contentFrame
+            let startGroupId = self.frontmostActiveGroup()?.groupId ?? self.workspace.listGroups.first?.groupId
+            if isOpening {
+                for window in self.workspace.listManagedWindows {
+                    if let frame = await self.currentOrRestoreFrame(of: window) {
+                        self.workspace.markStaged(window.windowId, homeFrame: frame)
+                    }
+                }
+                await withTaskGroup(of: Void.self) { taskGroup in
+                    for window in self.workspace.listManagedWindows {
+                        taskGroup.addTask {
+                            try? await self.leaveFullscreen(window.windowId)
+                        }
+                    }
+                }
+            }
+            await self.performSwitch(to: startGroupId, bringingToFront: nil)
+        }
+    }
+
+    /// Close the stage, putting every window back where it was before the stage took it over.
+    func exitStage() async {
+        await enqueue {
+            guard self.stageContentFrame != nil else {
+                return
+            }
+            self.stageContentFrame = nil
+            await self.restoreAllWindows()
+        }
     }
 
     /// Move a managed window to another group.
@@ -146,18 +214,24 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         didChange()
     }
 
-    /// Stop managing a window, first putting it back on screen if MuxShots hid it.
+    /// Stop managing a window, first putting it back where it belongs: its place before the stage, or
+    /// before MuxShots hid it.
     func release(_ windowId: WindowId) {
+        let homeFrame = workspace.markUnstaged(windowId)
         let restoreFrame = workspace.markShown(windowId)
+        let groupId = workspace.group(containing: windowId)?.groupId
         guard workspace.release(windowId) else {
             return
         }
         didChange()
         Task { [tracker] in
-            if let restoreFrame {
-                await tracker.applyFrame(restoreFrame, to: windowId)
+            if let frame = homeFrame ?? restoreFrame {
+                await tracker.applyFrame(frame, to: windowId)
             }
             await tracker.release(windowId)
+            if self.isStageOpen, let groupId, self.workspace.isActive(groupId) {
+                await self.switchTo(groupId)
+            }
         }
     }
 
@@ -168,11 +242,18 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     ///   - groupId: the group to show, or nil for every managed window
     ///   - frontWindowId: a member to put in front of the group's other windows
     func switchTo(_ groupId: GroupId?, bringingToFront frontWindowId: WindowId? = nil) async {
+        await enqueue {
+            await self.performSwitch(to: groupId, bringingToFront: frontWindowId)
+        }
+    }
+
+    /// Run a layout change after the ones already requested.
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) async {
         let previousTask = switchTask
         let task = Task {
             await previousTask?.value
             isSwitching = true
-            await performSwitch(to: groupId, bringingToFront: frontWindowId)
+            await work()
             isSwitching = false
             focusQuietUntil = ContinuousClock.now + Self.focusQuietPeriod
         }
@@ -197,10 +278,22 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Put every hidden window back and leave group mode, as MuxShots launches or quits.
-    func showAllHidden() async {
-        for window in workspace.listHiddenWindows {
-            try? await show(window.windowId)
+    /// Put every window back where it belongs (its place before the stage, or before MuxShots hid it) and
+    /// leave group mode, as the stage closes and as MuxShots launches or quits.
+    func restoreAllWindows() async {
+        stageContentFrame = nil
+        let listWindows = workspace.listManagedWindows.filter { $0.homeFrame != nil || $0.isHidden }
+        await withTaskGroup(of: Void.self) { taskGroup in
+            for window in listWindows {
+                let homeFrame = workspace.markUnstaged(window.windowId)
+                let restoreFrame = workspace.markShown(window.windowId)
+                guard let frame = homeFrame ?? restoreFrame else {
+                    continue
+                }
+                taskGroup.addTask { [tracker] in
+                    await tracker.applyFrame(frame, to: window.windowId)
+                }
+            }
         }
         workspace.deactivateAll()
         didChange()
@@ -209,6 +302,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func rename(_ groupId: GroupId, to name: String) {
         workspace.rename(groupId, to: name)
         didChange()
+    }
+
+    /// Make the stage, which shares the drop animation with the tray.
+    func makeStage() -> StageController {
+        let stage = StageController(workspaceController: self, ghostAnimator: ghostAnimator)
+        stageSurface = stage
+        return stage
     }
 
     /// Make a panel that shares the drop animation with the tray.
@@ -222,7 +322,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         guard preferences.isDropTrayEnabled else {
             return
         }
-        let surface: DropSurface = if let panel, panel.isShowing {
+        let surface: DropSurface = if isStageOpen, let stageSurface {
+            stageSurface
+        } else if let panel, panel.isShowing {
             panel
         } else {
             tray
@@ -247,15 +349,18 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         activeSurface = nil
         guard let target = surface.target(at: cursorLocation) else {
             surface.cancelWindowDrag()
+            snapBackToStage(drag)
             return
         }
+        let isStageDrop = isStageOpen && surface === stageSurface
         let droppedFrame = WindowServer.window(withId: drag.windowId).map { ScreenGeometry.appKitFrame(fromWindowServer: $0.frame) }
         let icon = NSRunningApplication(processIdentifier: drag.processId)?.icon
+        let homeFrame = isStageDrop ? drag.startFrame : nil
         let landedGroupId: GroupId? = switch target {
         case .group(let groupId):
-            adopt(drag.windowId, processId: drag.processId, into: groupId)
+            adopt(drag.windowId, processId: drag.processId, into: groupId, homeFrame: homeFrame)
         case .newGroup:
-            adopt(drag.windowId, processId: drag.processId, into: nil)
+            adopt(drag.windowId, processId: drag.processId, into: nil, homeFrame: homeFrame)
         case .release:
             nil
         }
@@ -266,15 +371,30 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             icon: icon,
             listGroups: workspace.listGroups
         )
-        let isReturning = preferences.isReturningDroppedWindows
+        let isReturning = preferences.isReturningDroppedWindows && !isStageDrop
         Task { [tracker] in
             try? await Task.sleep(for: Self.settleDelay)
-            if isReturning {
+            if isReturning || (target == .release && !isStageDrop) {
                 await tracker.applyFrame(drag.startFrame, to: drag.windowId)
             }
             if target == .release {
                 self.release(drag.windowId)
             }
+        }
+    }
+
+    /// Put the stage's front window back in the content area after the user dragged it off without
+    /// dropping it anywhere.
+    private func snapBackToStage(_ drag: WindowDrag) {
+        guard
+            let contentFrame = stageContentFrame,
+            workspace.listStagedWindows.contains(where: { $0.windowId == drag.windowId && !$0.isHidden })
+        else {
+            return
+        }
+        Task { [tracker] in
+            try? await Task.sleep(for: Self.settleDelay)
+            await tracker.applyFrame(contentFrame, to: drag.windowId)
         }
     }
 
@@ -293,6 +413,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// join order.
     func cycleActiveGroupWindow() async {
         guard let group = frontmostActiveGroup(), group.listMembers.count > 1 else {
+            return
+        }
+        if isStageOpen {
+            let frontId = group.listMembersFrontToBack.first?.windowId
+            let frontIndex = group.listMembers.firstIndex { $0.windowId == frontId } ?? -1
+            await switchTo(group.groupId, bringingToFront: group.listMembers[(frontIndex + 1) % group.listMembers.count].windowId)
             return
         }
         let listServerOrder = WindowServer.listWindows().map(\.windowId)
@@ -318,16 +444,22 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     private func performSwitch(to groupId: GroupId?, bringingToFront frontWindowId: WindowId?) async {
+        if let stageContentFrame {
+            guard let groupId else {
+                await restoreAllWindows()
+                return
+            }
+            await performStageSwitch(to: groupId, bringingToFront: frontWindowId, contentFrame: stageContentFrame)
+            return
+        }
         let startTime = ContinuousClock.now
-        let listServerWindows = WindowServer.listWindows()
-        let listServerOrder = listServerWindows.map(\.windowId)
-        let mapServerFrames = Dictionary(listServerWindows.map { ($0.windowId, $0.frame) }) { first, _ in first }
+        let listServerOrder = WindowServer.listWindows().map(\.windowId)
         for group in workspace.listActiveGroups {
             workspace.recordStack(of: group.groupId, frontToBack: listServerOrder)
         }
         let mapRecords = Dictionary(uniqueKeysWithValues: await tracker.listWindows().map { ($0.windowId, $0) })
         let displayIndex = { (window: ManagedWindow) -> Int? in
-            (window.restoreFrame ?? mapServerFrames[window.windowId]).flatMap(ScreenGeometry.displayIndex(containing:))
+            (window.restoreFrame ?? mapRecords[window.windowId]?.frame).flatMap(ScreenGeometry.displayIndex(containing:))
         }
 
         guard let targetGroup = groupId.flatMap({ groupId in workspace.listGroups.first { $0.groupId == groupId } }) else {
@@ -376,6 +508,44 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             """)
     }
 
+    /// Fill the stage's content area with one window of a group, its front tab unless another is asked for,
+    /// and hide every other managed window.
+    private func performStageSwitch(
+        to groupId: GroupId,
+        bringingToFront frontWindowId: WindowId?,
+        contentFrame: CGRect
+    ) async {
+        let startTime = ContinuousClock.now
+        guard let targetGroup = workspace.listGroups.first(where: { $0.groupId == groupId }) else {
+            return
+        }
+        let mapRecords = Dictionary(uniqueKeysWithValues: await tracker.listWindows().map { ($0.windowId, $0) })
+        let listCandidates = targetGroup.listMembersFrontToBack.filter { mapRecords[$0.windowId]?.isMinimized != true }
+        let selected = listCandidates.first { $0.windowId == frontWindowId } ?? listCandidates.first
+        let listToHide = workspace.listManagedWindows.filter { window in
+            window.windowId != selected?.windowId
+                && !window.isHidden
+                && mapRecords[window.windowId]?.isMinimized != true
+        }
+        await run(showing: [], hiding: listToHide)
+        if let selected {
+            workspace.markShown(selected.windowId)
+            workspace.bringToFront(selected.windowId)
+            await tracker.applyFrame(contentFrame, to: selected.windowId)
+            _ = await tracker.raise(selected.windowId)
+            if let processId = await tracker.processId(of: selected.windowId) {
+                NSRunningApplication(processIdentifier: processId)?.activate()
+            }
+        }
+        workspace.deactivateAll()
+        workspace.activate(targetGroup.groupId, displacing: [])
+        didChange()
+        Self.logger.info("""
+            staged \(targetGroup.name, privacy: .public): hid \(listToHide.count) in \
+            \(ContinuousClock.now - startTime, privacy: .public)
+            """)
+    }
+
     /// Show and hide windows concurrently, each application on its own tracker thread.
     private func run(showing listToShow: [ManagedWindow], hiding listToHide: [ManagedWindow]) async {
         await withTaskGroup(of: Void.self) { taskGroup in
@@ -413,7 +583,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         try await leaveFullscreen(windowId)
-        guard let frame = WindowServer.window(withId: windowId)?.frame else {
+        guard let frame = await tracker.frame(of: windowId) else {
             throw WindowActionError.noDisplay(windowId: windowId)
         }
         let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
@@ -452,7 +622,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
         try await leaveFullscreen(windowId)
         guard
-            let frame = WindowServer.window(withId: windowId)?.frame,
+            let frame = await tracker.frame(of: windowId),
             let visibleFrame = ScreenGeometry.visibleDisplayFrame(containing: frame)
         else {
             throw WindowActionError.noDisplay(windowId: windowId)
@@ -486,10 +656,24 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             workspace.updateTitle(of: window.windowId, to: window.title)
             onChange?()
         case .removed(let windowId):
+            let groupId = workspace.group(containing: windowId)?.groupId
             if workspace.release(windowId) {
                 didChange()
+                if isStageOpen, let groupId, workspace.isActive(groupId) {
+                    Task {
+                        await switchTo(groupId)
+                    }
+                }
             }
         }
+    }
+
+    /// Where a window belongs when it is shown: its place before MuxShots hid it, or where it is now.
+    private func currentOrRestoreFrame(of window: ManagedWindow) async -> CGRect? {
+        if let restoreFrame = window.restoreFrame {
+            return restoreFrame
+        }
+        return await tracker.frame(of: window.windowId)
     }
 
     /// The running application that owns a saved window, or nil if the window is gone or its identifier now

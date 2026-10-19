@@ -12,6 +12,7 @@ enum Muxctl {
                muxctl release <window-id>
                muxctl focus|hide|show|maximize <window-id>
                muxctl switch <group-name-or-position> | --all
+               muxctl stage on|off
         """
     private static let jsonFlag = "--json"
     private static let allFlag = "--all"
@@ -43,6 +44,11 @@ enum Muxctl {
                 exit(withMessage: usage)
             }
             request = .switchGroup(nameOrPosition: argument == allFlag ? nil : argument)
+        case "stage":
+            guard let state = listArguments.dropFirst().first, state == "on" || state == "off" else {
+                exit(withMessage: usage)
+            }
+            request = .stage(isOpen: state == "on")
         case let name where WindowAction(rawValue: name) != nil:
             guard
                 let action = WindowAction(rawValue: name),

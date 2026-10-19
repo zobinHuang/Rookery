@@ -54,6 +54,7 @@ struct SettingsView: View {
                             .tag(modifiers.rawValue)
                     }
                 }
+                recorderRow("Open or close the stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
                 recorderRow("Show all windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
                 recorderRow("Group switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
                 recorderRow("Next window in group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }

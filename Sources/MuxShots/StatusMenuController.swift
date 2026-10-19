@@ -12,10 +12,13 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     private let permissionItem = NSMenuItem()
     private let grantItem = NSMenuItem()
     private let showWorkspaceItem = NSMenuItem()
+    private let stageItem = NSMenuItem()
     private let settingsItem = NSMenuItem()
     private let onAccessGranted: @MainActor () -> Void
     private let onShowWorkspace: @MainActor () -> Void
     private let workspaceProvider: @MainActor () -> Workspace?
+    private let isStageOpenProvider: @MainActor () -> Bool
+    private let onToggleStage: @MainActor () -> Void
     private let onShowSettings: @MainActor () -> Void
     private let groupModifiersProvider: @MainActor () -> NSEvent.ModifierFlags
     private let onSwitch: @MainActor (GroupId?) -> Void
@@ -26,6 +29,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     ///   - onAccessGranted: called whenever the permission is found granted
     ///   - onShowWorkspace: called when the user asks to see the managed windows
     ///   - workspaceProvider: the groups to list, or nil before managing starts
+    ///   - isStageOpenProvider: whether the stage is open, which names the stage item
+    ///   - onToggleStage: called when the user opens or closes the stage
     ///   - onShowSettings: called when the user asks for the settings
     ///   - groupModifiersProvider: the modifiers of the group shortcuts, shown beside each group
     ///   - onSwitch: called with the group to show, or nil to show every window
@@ -33,6 +38,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         onAccessGranted: @escaping @MainActor () -> Void,
         onShowWorkspace: @escaping @MainActor () -> Void,
         workspaceProvider: @escaping @MainActor () -> Workspace?,
+        isStageOpenProvider: @escaping @MainActor () -> Bool,
+        onToggleStage: @escaping @MainActor () -> Void,
         onShowSettings: @escaping @MainActor () -> Void,
         groupModifiersProvider: @escaping @MainActor () -> NSEvent.ModifierFlags,
         onSwitch: @escaping @MainActor (GroupId?) -> Void
@@ -40,6 +47,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         self.onAccessGranted = onAccessGranted
         self.onShowWorkspace = onShowWorkspace
         self.workspaceProvider = workspaceProvider
+        self.isStageOpenProvider = isStageOpenProvider
+        self.onToggleStage = onToggleStage
         self.onShowSettings = onShowSettings
         self.groupModifiersProvider = groupModifiersProvider
         self.onSwitch = onSwitch
@@ -56,6 +65,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         grantItem.title = "Grant Accessibility Access…"
         grantItem.target = self
         grantItem.action = #selector(grantAccess)
+
+        stageItem.title = "Enter Stage"
+        stageItem.target = self
+        stageItem.action = #selector(toggleStage)
 
         showWorkspaceItem.title = "Show Managed Windows…"
         showWorkspaceItem.target = self
@@ -77,6 +90,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(permissionItem)
         menu.addItem(grantItem)
+        menu.addItem(.separator())
+        menu.addItem(stageItem)
         menu.addItem(.separator())
         menu.addItem(showWorkspaceItem)
         menu.addItem(settingsItem)
@@ -107,6 +122,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
             : "Accessibility access required"
         grantItem.isHidden = isPermissionGranted
         showWorkspaceItem.isEnabled = isPermissionGranted
+        stageItem.isEnabled = isPermissionGranted
         settingsItem.isEnabled = isPermissionGranted
         if isPermissionGranted {
             onAccessGranted()
@@ -115,6 +131,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Rebuild the group list each time the menu opens.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        stageItem.title = isStageOpenProvider() ? "Exit Stage" : "Enter Stage"
         for item in listGroupItems {
             menu.removeItem(item)
         }
@@ -153,6 +170,10 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     @objc private func showAllWindows() {
         onSwitch(nil)
+    }
+
+    @objc private func toggleStage() {
+        onToggleStage()
     }
 
     @objc private func showSettings() {

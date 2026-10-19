@@ -135,6 +135,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     @discardableResult
     func adopt(_ windowId: WindowId, processId: pid_t, into groupId: GroupId?, homeFrame: CGRect? = nil) -> GroupId? {
         let isNew = !workspace.isManaged(windowId)
+        let isNewGroup = groupId == nil
         let joinedGroupId: GroupId
         let application: RunningApplication
         if let existing = workspace.listManagedWindows.first(where: { $0.windowId == windowId }) {
@@ -161,7 +162,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             if let frame = await tracker.frame(of: windowId) {
                 self.workspace.markStaged(windowId, homeFrame: frame)
             }
-            if self.workspace.isActive(joinedGroupId) || self.workspace.setActiveGroupIds.isEmpty {
+            if isNewGroup || self.workspace.isActive(joinedGroupId) || self.workspace.setActiveGroupIds.isEmpty {
                 await self.switchTo(joinedGroupId, bringingToFront: windowId)
             } else {
                 await self.switchTo(self.frontmostActiveGroup()?.groupId)

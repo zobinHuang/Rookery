@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var workspaceController: WorkspaceController?
     private var workspacePanelController: WorkspacePanelController?
     private var controlServer: ControlServer?
+    private var shortcutController: ShortcutController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = StatusMenuController(
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenuController?.stop()
         applicationMonitor?.stop()
         workspaceController?.stop()
+        shortcutController?.stop()
         controlServer?.stop()
     }
 
@@ -83,6 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceController = workspace
         workspacePanelController = panel
         workspace.start()
+        let shortcuts = ShortcutController(workspaceController: workspace)
+        shortcutController = shortcuts
+        shortcuts.start()
 
         do {
             let server = try ControlServer(tracker: tracker, workspaceController: workspace)

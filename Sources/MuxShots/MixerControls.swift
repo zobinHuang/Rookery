@@ -274,14 +274,16 @@ struct MixerMuteButton: View {
 /// A capsule naming an equalizer preset, lit in the accent color while the equalizer is set to it.
 struct EqualizerPresetChip: View {
     let title: String
+    let symbol: String
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Text(title)
+            Label(title, systemImage: symbol)
                 .font(.system(size: 10.5, weight: .semibold))
+                .labelStyle(.titleAndIcon)
                 .lineLimit(1)
                 .fixedSize()
                 .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
@@ -296,6 +298,6 @@ struct EqualizerPresetChip: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.15), value: isSelected)
-        .help("Set the equalizer to \(title)")
+        .help(isSelected ? "Set the equalizer back to flat" : "Set the equalizer to \(title)")
     }
 }

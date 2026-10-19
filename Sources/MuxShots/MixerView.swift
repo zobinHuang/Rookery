@@ -470,43 +470,27 @@ private struct MixerStrip: View {
         )
     }
 
-    /// The ready-made curves, one click each, the current one lit.
+    /// The ready-made curves, one click each to set and again to go back to flat, the current one lit.
     private var equalizerPresets: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(EqualizerPreset.allCases, id: \.self) { preset in
-                        EqualizerPresetChip(
-                            title: preset.title,
-                            isSelected: settings.isEqualizerEnabled && settings.equalizerPreset == preset
-                        ) {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                                onUpdate { $0.applyEqualizerPreset(preset) }
-                                proxy.scrollTo(preset, anchor: .center)
-                            }
-                        }
-                        .id(preset)
+        HStack(spacing: 4) {
+            ForEach(EqualizerPreset.allCases, id: \.self) { preset in
+                EqualizerPresetChip(
+                    title: preset.title,
+                    symbol: Self.symbol(of: preset),
+                    isSelected: settings.isEqualizerEnabled && settings.equalizerPreset == preset
+                ) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        onUpdate { $0.toggleEqualizerPreset(preset) }
                     }
                 }
-                .padding(.trailing, 12)
             }
-            .onAppear {
-                if let preset = settings.equalizerPreset {
-                    proxy.scrollTo(preset, anchor: .center)
-                }
-            }
+            Spacer(minLength: 0)
         }
-        .mask {
-            LinearGradient(
-                stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: 0.05),
-                    .init(color: .black, location: 0.88),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
+    }
+
+    private static func symbol(of preset: EqualizerPreset) -> String {
+        switch preset {
+        case .walkieTalkie: "antenna.radiowaves.left.and.right"
         }
     }
 

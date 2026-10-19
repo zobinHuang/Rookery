@@ -374,6 +374,7 @@ private struct MixerStrip: View {
                 }
             }
             section("Equalizer", accessory: equalizerAccessory) {
+                equalizerPresets
                 equalizer
             }
             section("Reverb") {
@@ -410,20 +411,48 @@ private struct MixerStrip: View {
     }
 
     private var equalizerAccessory: some View {
-        HStack(spacing: 8) {
-            if settings.listEqualizerGains.contains(where: { $0 != 0 }) {
-                Button("Reset") {
-                    onUpdate { settings in
-                        settings.listEqualizerGains = MixerTrackSettings().listEqualizerGains
+        MixerSwitch(
+            isOn: binding(\.isEqualizerEnabled),
+            help: settings.isEqualizerEnabled ? "Bypass the equalizer" : "Turn the equalizer on"
+        )
+    }
+
+    /// The ready-made curves, one click each, the current one lit.
+    private var equalizerPresets: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(EqualizerPreset.allCases, id: \.self) { preset in
+                        EqualizerPresetChip(
+                            title: preset.title,
+                            isSelected: settings.isEqualizerEnabled && settings.equalizerPreset == preset
+                        ) {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                onUpdate { $0.applyEqualizerPreset(preset) }
+                                proxy.scrollTo(preset, anchor: .center)
+                            }
+                        }
+                        .id(preset)
                     }
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.secondary)
+                .padding(.trailing, 12)
             }
-            MixerSwitch(
-                isOn: binding(\.isEqualizerEnabled),
-                help: settings.isEqualizerEnabled ? "Bypass the equalizer" : "Turn the equalizer on"
+            .onAppear {
+                if let preset = settings.equalizerPreset {
+                    proxy.scrollTo(preset, anchor: .center)
+                }
+            }
+        }
+        .mask {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: 0.05),
+                    .init(color: .black, location: 0.88),
+                    .init(color: .clear, location: 1),
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
             )
         }
     }

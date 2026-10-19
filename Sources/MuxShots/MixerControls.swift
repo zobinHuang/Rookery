@@ -270,3 +270,32 @@ struct MixerMuteButton: View {
         .help(help)
     }
 }
+
+/// A capsule naming an equalizer preset, lit in the accent color while the equalizer is set to it.
+struct EqualizerPresetChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .lineLimit(1)
+                .fixedSize()
+                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .padding(.horizontal, 8)
+                .frame(height: 20)
+                .background {
+                    Capsule()
+                        .fill(isSelected ? AnyShapeStyle(Color.accentColor.gradient) : AnyShapeStyle(isHovered ? StageColors.hoveredRow : StageColors.groove.opacity(0.6)))
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.15), value: isSelected)
+        .help("Set the equalizer to \(title)")
+    }
+}

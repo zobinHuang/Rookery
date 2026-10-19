@@ -34,6 +34,17 @@ final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDeleg
             stats.forEach((report) => {
                 if (report.type === "codec") { post({ type: "codec", mimeType: report.mimeType }); }
             });
+            setTimeout(async () => {
+                (await connection.getStats()).forEach((report) => {
+                    if (report.type === "inbound-rtp") {
+                        post({
+                            type: "stats",
+                            text: `packets ${report.packetsReceived} frames ${report.framesReceived} decoded ${report.framesDecoded} `
+                                + `dropped ${report.framesDropped} decoder ${report.decoderImplementation} size ${report.frameWidth}x${report.frameHeight}`,
+                        });
+                    }
+                });
+            }, 3000);
         });
         async function answer(offer) {
             connection?.close();
@@ -129,6 +140,8 @@ final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDeleg
             }
         case "playing":
             onPlaying?()
+        case "stats":
+            Self.logger.info("video \(body["text"] as? String ?? "?", privacy: .public)")
         case "codec":
             Self.logger.info("video codec \(body["mimeType"] as? String ?? "?", privacy: .public)")
         case "connection":

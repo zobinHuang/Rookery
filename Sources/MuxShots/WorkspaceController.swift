@@ -65,20 +65,26 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     ///   - windowId: the window
     ///   - processId: the process that owns the window
     ///   - groupId: the destination group, or nil for a new group
-    func adopt(_ windowId: WindowId, processId: pid_t, into groupId: GroupId?) {
+    /// - Returns: the group the window joined, or nil if its application is gone
+    @discardableResult
+    func adopt(_ windowId: WindowId, processId: pid_t, into groupId: GroupId?) -> GroupId? {
         if let existing = workspace.listManagedWindows.first(where: { $0.windowId == windowId }) {
-            workspace.adopt(existing, into: groupId)
+            let joinedGroupId = workspace.adopt(existing, into: groupId)
             didChange()
-            return
+            return joinedGroupId
         }
         guard let application = ApplicationMonitor.application(processId: processId) else {
-            return
+            return nil
         }
-        workspace.adopt(ManagedWindow(windowId: windowId, application: application, title: ""), into: groupId)
+        let joinedGroupId = workspace.adopt(
+            ManagedWindow(windowId: windowId, application: application, title: ""),
+            into: groupId
+        )
         didChange()
         Task { [tracker] in
             await tracker.manage(windowId, of: application)
         }
+        return joinedGroupId
     }
 
     /// Move a managed window to another group.
@@ -109,35 +115,42 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func windowDragBegan(_ drag: WindowDrag, at cursorLocation: CGPoint) {
         tray.show(
             listGroups: workspace.listGroups,
-            currentGroupId: workspace.group(containing: drag.windowId)?.groupId,
+            currentGroup: workspace.group(containing: drag.windowId),
+            draggedWindowId: drag.windowId,
             near: cursorLocation
         )
-        tray.highlight(at: cursorLocation)
     }
 
     func windowDragMoved(_ drag: WindowDrag, to cursorLocation: CGPoint) {
-        tray.highlight(at: cursorLocation)
+        tray.update(cursorLocation: cursorLocation)
     }
 
     func windowDragEnded(_ drag: WindowDrag, at cursorLocation: CGPoint) {
-        let target = tray.target(at: cursorLocation)
-        tray.hide()
-        guard let target else {
+        guard let target = tray.target(at: cursorLocation) else {
+            tray.dismiss()
             return
         }
-        switch target {
+        let droppedFrame = WindowServer.window(withId: drag.windowId).map { Self.appKitFrame(fromWindowServer: $0.frame) }
+        let icon = NSRunningApplication(processIdentifier: drag.processId)?.icon
+        let landedGroupId: GroupId? = switch target {
         case .group(let groupId):
             adopt(drag.windowId, processId: drag.processId, into: groupId)
         case .newGroup:
             adopt(drag.windowId, processId: drag.processId, into: nil)
         case .release:
-            break
+            nil
         }
-        let isRelease = target == .release
+        tray.land(
+            on: target,
+            landedGroupId: landedGroupId,
+            windowFrame: droppedFrame,
+            icon: icon,
+            listGroups: workspace.listGroups
+        )
         Task { [tracker] in
             try? await Task.sleep(for: Self.settleDelay)
             await tracker.applyFrame(drag.startFrame, to: drag.windowId)
-            if isRelease {
+            if target == .release {
                 self.release(drag.windowId)
             }
         }
@@ -166,6 +179,17 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return nil
         }
         return application
+    }
+
+    /// Convert a frame from the window server's top-left origin to AppKit's bottom-left origin.
+    private static func appKitFrame(fromWindowServer frame: CGRect) -> CGRect {
+        let mainDisplayHeight = NSScreen.screens.first?.frame.height ?? 0
+        return CGRect(
+            x: frame.minX,
+            y: mainDisplayHeight - frame.maxY,
+            width: frame.width,
+            height: frame.height
+        )
     }
 
     private func didChange() {

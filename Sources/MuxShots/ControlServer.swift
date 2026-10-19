@@ -189,8 +189,12 @@ final class ControlServer: Sendable {
     ) async {
         let decoder = BrowserWire.makeDecoder()
         do {
-            while let event = try await connection.receive(BrowserEvent.self, decoder: decoder) {
-                await browserTabs.receive(event, in: sessionId)
+            while let line = try await connection.receiveLine() {
+                do {
+                    await browserTabs.receive(try decoder.decode(BrowserEvent.self, from: line), in: sessionId)
+                } catch let error as DecodingError {
+                    logger.error("skipping a browser message the app cannot read: \(error)")
+                }
             }
         } catch {
             logger.info("browser session ended: \(error)")

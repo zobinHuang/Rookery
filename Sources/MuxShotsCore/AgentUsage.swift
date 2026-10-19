@@ -10,6 +10,32 @@ public enum AgentHarness: String, Codable, CaseIterable, Sendable {
         case .claudeCode: "Claude Code"
         }
     }
+
+    /// The shell command that signs an account in, for the user to paste into a terminal.
+    ///
+    /// - Parameter configDirectory: the account's configuration directory; nil for the harness's default
+    /// - Returns: the command, with the directory quoted for the shell
+    public func signInCommand(configDirectory: String?) -> String {
+        switch self {
+        case .claudeCode:
+            guard let configDirectory else {
+                return "claude auth login"
+            }
+            return "CLAUDE_CONFIG_DIR=\(Self.shellQuoted(configDirectory)) claude auth login"
+        }
+    }
+
+    /// A path quoted for the shell, a leading "~/" kept working as the home directory.
+    private static func shellQuoted(_ path: String) -> String {
+        let homePrefix = "~/"
+        let isInHome = path.hasPrefix(homePrefix)
+        let rest = isInHome ? String(path.dropFirst(homePrefix.count)) : path
+        let escaped = rest.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "`", with: "\\`")
+        return isInHome ? "\"$HOME/\(escaped)\"" : "\"\(escaped)\""
+    }
 }
 
 /// An account of a code agent harness, as the user set it up: the harness, the directory it keeps the

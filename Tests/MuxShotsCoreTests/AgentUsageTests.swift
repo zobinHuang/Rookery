@@ -43,4 +43,19 @@ struct AgentUsageTests {
             try ClaudeCodeUsageDecoder.decode(Data(answer.utf8), fetchedAt: Date())
         }
     }
+
+    @Test func signsTheDefaultAccountInPlainly() {
+        #expect(AgentHarness.claudeCode.signInCommand(configDirectory: nil) == "claude auth login")
+    }
+
+    @Test func signsAnotherAccountInThroughItsDirectory() {
+        #expect(
+            AgentHarness.claudeCode.signInCommand(configDirectory: "~/.claude work")
+                == #"CLAUDE_CONFIG_DIR="$HOME/.claude work" claude auth login"#
+        )
+        #expect(
+            AgentHarness.claudeCode.signInCommand(configDirectory: "/tmp/a$b")
+                == #"CLAUDE_CONFIG_DIR="/tmp/a\$b" claude auth login"#
+        )
+    }
 }

@@ -131,12 +131,16 @@ MuxShots 只管理用户主动交给它的窗口，其余 app 一概不碰。
 - **组 tile 内容**：显示组内窗口的 app 图标叠放，而不是"N windows"文字。
 - **面板**：侧栏材质背景、透明标题栏、组行显示图标叠放和成员数、窗口行两行（标题 / app）、空状态提示。为了拖放可靠，列表仍用 `NSOutlineView`，只有空状态用 SwiftUI。
 
-### M3 动作：可靠地控制托管窗口（1 周）
+### M3 动作：可靠地控制托管窗口（已完成）
 
-- `focus`（含跨 App、跨 Space 兼容模式）、`set_frame`（已有）、`hide`（移出屏幕）、`show`（恢复记录的 frame）。
-- 最小尺寸、拒绝移动等异常 App 的降级。
-- 原生全屏 → 托管最大化 的转换。
-- **退出标准**：`muxctl focus/hide/show` 对 Chrome、VSCode、Finder、Terminal 均可靠，连续 100 次操作无错位；单次切换耗时有测量数据。
+- `muxctl focus|hide|show|maximize <id>`，内部走 `WorkspaceController.perform(_:on:)`。
+- **focus**：取消最小化 → `AXMain` + `AXRaise` → `NSRunningApplication.activate()`；后台的 MuxShots 用公开 API 即可把别的 app 切到前台。
+- **hide**：移到所在显示器右下角外（右下挨着其他显示器时改用左下），只留 1 个点在屏幕上；移动后读回实际 frame 校验。原 frame 存进 `workspace.json`（`restoreFrame`）。
+- **show**：放回 `restoreFrame`。
+- **maximize**：原生全屏的窗口先退出全屏（轮询 `AXFullScreen`，最多 3 秒，再等 0.4 秒动画），然后铺满显示器可用区域。
+- **崩溃恢复**：启动时把所有 `restoreFrame` 不为空的窗口放回原位；正常退出前也先放回（`applicationShouldTerminate` → `.terminateLater`）。
+- **实测**（TextEdit 测试窗口）：30 轮 hide/show 零漂移，单次中位数约 31 ms（含 muxctl 进程启动）；`kill -9` 后重启与正常退出都能恢复窗口；聚焦能从 Chrome 切到 TextEdit。
+- **未实测**：从原生全屏最大化（会在你屏幕上切 Space），以及对 Chrome、VSCode 真实窗口的 `AXEnhancedUserInterface` 处理；留到 M4 用真实窗口验证。
 
 ### M4 虚拟工作区（1–1.5 周）
 

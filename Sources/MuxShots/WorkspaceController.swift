@@ -16,6 +16,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let fullscreenSettleDelay = Duration.milliseconds(400)
     /// A hidden window may keep at most this share of itself on screen.
     private static let hiddenVisibleShareLimit: CGFloat = 0.02
+    /// Focus changes this soon after a switch are the switch's own and do not trigger another.
+    private static let focusQuietPeriod = Duration.milliseconds(400)
 
     private(set) var workspace: Workspace
     private let tracker: WindowTracker
@@ -30,6 +32,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var changeTask: Task<Void, Never>?
     /// The latest group switch; each switch waits for the one before it.
     private var switchTask: Task<Void, Never>?
+    private var focusTask: Task<Void, Never>?
+    private var activationObserver: NSObjectProtocol?
+    private var isSwitching = false
+    private var focusQuietUntil = ContinuousClock.now
 
     /// Called after every change to the workspace, including title updates.
     var onChange: (() -> Void)?
@@ -63,6 +69,28 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 handle(change)
             }
         }
+        focusTask = Task { [tracker] in
+            for await windowId in tracker.focusedWindows {
+                handleFocus(of: windowId)
+            }
+        }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self, tracker] notification in
+            guard
+                let running = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else {
+                return
+            }
+            let processId = running.processIdentifier
+            Task { @MainActor in
+                if let windowId = await tracker.focusedWindowId(ofProcess: processId) {
+                    self?.handleFocus(of: windowId)
+                }
+            }
+        }
         dragMonitor.delegate = self
         dragMonitor.start()
     }
@@ -71,6 +99,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func stop() {
         dragMonitor.stop()
         changeTask?.cancel()
+        focusTask?.cancel()
+        if let activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        }
         save()
     }
 
@@ -128,11 +160,18 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Show one group and hide every other group's windows, or with nil show every managed window and leave
     /// group mode. Switches run one after another in the order requested.
-    func switchTo(_ groupId: GroupId?) async {
+    ///
+    /// - Parameters:
+    ///   - groupId: the group to show, or nil for every managed window
+    ///   - frontWindowId: a member to put in front of the group's other windows
+    func switchTo(_ groupId: GroupId?, bringingToFront frontWindowId: WindowId? = nil) async {
         let previousTask = switchTask
         let task = Task {
             await previousTask?.value
-            await performSwitch(to: groupId)
+            isSwitching = true
+            await performSwitch(to: groupId, bringingToFront: frontWindowId)
+            isSwitching = false
+            focusQuietUntil = ContinuousClock.now + Self.focusQuietPeriod
         }
         switchTask = task
         await task.value
@@ -230,7 +269,36 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    private func performSwitch(to groupId: GroupId?) async {
+    /// Bring the next window of the active group to the front, cycling through its members in join order.
+    func cycleActiveGroupWindow() async {
+        guard let activeGroup = workspace.activeGroup, activeGroup.listMembers.count > 1 else {
+            return
+        }
+        let listServerOrder = WindowServer.listWindows().map(\.windowId)
+        let setMemberIds = Set(activeGroup.listMembers.map(\.windowId))
+        let frontId = listServerOrder.first { setMemberIds.contains($0) }
+        let frontIndex = activeGroup.listMembers.firstIndex { $0.windowId == frontId } ?? -1
+        let nextWindow = activeGroup.listMembers[(frontIndex + 1) % activeGroup.listMembers.count]
+        try? await focus(nextWindow.windowId)
+    }
+
+    /// Follow the user to a hidden window they focused, through Cmd-Tab, the Dock or a notification, by
+    /// switching to its group.
+    private func handleFocus(of windowId: WindowId) {
+        guard
+            !isSwitching,
+            ContinuousClock.now >= focusQuietUntil,
+            workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }),
+            let group = workspace.group(containing: windowId)
+        else {
+            return
+        }
+        Task {
+            await switchTo(group.groupId, bringingToFront: windowId)
+        }
+    }
+
+    private func performSwitch(to groupId: GroupId?, bringingToFront frontWindowId: WindowId?) async {
         let startTime = ContinuousClock.now
         let listServerOrder = WindowServer.listWindows().map(\.windowId)
         if let activeGroupId = workspace.activeGroupId {
@@ -265,7 +333,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
 
         if let targetGroup {
-            let listVisible = targetGroup.listMembersFrontToBack.filter { mapRecords[$0.windowId]?.isMinimized != true }
+            var listVisible = targetGroup.listMembersFrontToBack.filter { mapRecords[$0.windowId]?.isMinimized != true }
+            if let frontIndex = listVisible.firstIndex(where: { $0.windowId == frontWindowId }) {
+                listVisible.insert(listVisible.remove(at: frontIndex), at: 0)
+            }
             for window in listVisible.reversed() {
                 _ = await tracker.raise(window.windowId)
             }

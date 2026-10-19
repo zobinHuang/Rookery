@@ -88,6 +88,15 @@ public struct MixerTrackSettings: Codable, Equatable, Sendable {
         isEqualizerEnabled = true
     }
 
+    /// Set the equalizer to a preset, or back to flat when it is set to that preset already.
+    public mutating func toggleEqualizerPreset(_ preset: EqualizerPreset) {
+        if isEqualizerEnabled && equalizerPreset == preset {
+            listEqualizerGains = MixerTrackSettings().listEqualizerGains
+        } else {
+            applyEqualizerPreset(preset)
+        }
+    }
+
     /// Whether the sound has to be captured: to be treated, or to be silenced.
     public var isCaptureNeeded: Bool {
         isTakenOver || isMuted

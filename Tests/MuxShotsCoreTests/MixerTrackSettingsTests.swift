@@ -71,11 +71,21 @@ struct MixerTrackSettingsTests {
         var settings = MixerTrackSettings()
         settings.isEqualizerEnabled = false
 
-        settings.applyEqualizerPreset(.voice)
+        settings.applyEqualizerPreset(.walkieTalkie)
 
         #expect(settings.isEqualizerEnabled)
-        #expect(settings.equalizerPreset == .voice)
+        #expect(settings.equalizerPreset == .walkieTalkie)
         settings.listEqualizerGains[0] += 1
+        #expect(settings.equalizerPreset == nil)
+    }
+
+    @Test func togglingTheCurrentPresetFlattensTheEqualizer() {
+        var settings = MixerTrackSettings()
+
+        settings.toggleEqualizerPreset(.walkieTalkie)
+        settings.toggleEqualizerPreset(.walkieTalkie)
+
+        #expect(settings.listEqualizerGains.allSatisfy { $0 == 0 })
         #expect(settings.equalizerPreset == nil)
     }
 }

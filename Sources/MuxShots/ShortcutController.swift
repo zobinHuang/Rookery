@@ -18,7 +18,10 @@ final class ShortcutController {
     private let preferences: Preferences
     private let hotkeyCenter = HotkeyCenter()
     private let stage: StageController
-    private lazy var switcher = SwitcherController(workspaceController: workspaceController, hotkeyCenter: hotkeyCenter)
+    private lazy var switcher = SwitcherController(hotkeyCenter: hotkeyCenter)
+    private lazy var keyInterceptor = KeyInterceptor { [weak self] keyCode, modifiers in
+        self?.interceptWindowSwitch(keyCode: keyCode, modifiers: modifiers) ?? false
+    }
     private var isSuspended = false
 
     init(workspaceController: WorkspaceController, preferences: Preferences, stage: StageController) {
@@ -30,6 +33,9 @@ final class ShortcutController {
     /// Register every shortcut, and register them again whenever the preferences change.
     func start() {
         hotkeyCenter.start()
+        if !keyInterceptor.start() {
+            Self.logger.error("cannot take over ⌘⇥: the key event tap was refused")
+        }
         preferences.onShortcutsChange = { [weak self] in
             self?.registerAll()
         }
@@ -38,6 +44,7 @@ final class ShortcutController {
 
     func stop() {
         hotkeyCenter.stop()
+        keyInterceptor.stop()
     }
 
     /// Release every shortcut while the user records a new one, so pressing a taken combination records it
@@ -85,14 +92,40 @@ final class ShortcutController {
         let switcherHotkey = preferences.switcherHotkey
         let holdModifiers = switcherHotkey.modifiers.subtracting(.shift)
         bind(switcherHotkey, name: "switcher") { [weak self] in
-            self?.switcher.advance(by: 1, holding: holdModifiers)
+            self?.advanceGroupSwitcher(by: 1, holding: holdModifiers)
         }
         let backwardHotkey = Hotkey(keyCode: Int(switcherHotkey.keyCode), modifiers: switcherHotkey.modifiers.union(.shift))
         if backwardHotkey != switcherHotkey {
             bind(backwardHotkey, name: "switcher backwards") { [weak self] in
-                self?.switcher.advance(by: -1, holding: holdModifiers)
+                self?.advanceGroupSwitcher(by: -1, holding: holdModifiers)
             }
         }
+    }
+
+    private func advanceGroupSwitcher(by step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
+        switcher.advance(by: step, holding: holdModifiers) { [workspaceController] in
+            workspaceController.groupSwitcherRequest()
+        }
+    }
+
+    /// Take ⌘⇥ over while the user works on the stage, switching between recently used windows across
+    /// groups; elsewhere it stays the system's application switcher.
+    ///
+    /// - Returns: whether the key press was taken
+    private func interceptWindowSwitch(keyCode: Int, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard
+            !isSuspended,
+            keyCode == kVK_Tab,
+            modifiers.contains(.command),
+            modifiers.isDisjoint(with: [.control, .option]),
+            switcher.isShowing || workspaceController.isStageFocused && workspaceController.windowSwitcherRequest() != nil
+        else {
+            return false
+        }
+        switcher.advance(by: modifiers.contains(.shift) ? -1 : 1, holding: [.command]) { [workspaceController] in
+            workspaceController.windowSwitcherRequest()
+        }
+        return true
     }
 
     private func bind(_ hotkey: Hotkey, name: String, action: @escaping @MainActor () -> Void) {

@@ -43,6 +43,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var focusTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
     private var isSwitching = false
+    /// Managed windows the user has used, most recent first.
+    private var listRecentWindowIds: [WindowId] = []
     private var focusQuietUntil = ContinuousClock.now
 
     /// Called after every change to the workspace, including title updates.
@@ -451,6 +453,96 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
+    /// Whether the user is working on the stage: it is open and in front is either MuxShots or the
+    /// application of the stage's front window.
+    var isStageFocused: Bool {
+        guard
+            isStageOpen,
+            let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        else {
+            return false
+        }
+        let stageProcessId = workspace.listActiveGroups.first?.listMembersFrontToBack.first?.application.processId
+        return frontmostProcessId == ProcessInfo.processInfo.processIdentifier || frontmostProcessId == stageProcessId
+    }
+
+    /// Every managed window, the most recently used first.
+    var listRecentWindows: [ManagedWindow] {
+        let listWindows = workspace.listManagedWindows
+        let mapWindows = Dictionary(listWindows.map { ($0.windowId, $0) }) { first, _ in first }
+        let listRecent = listRecentWindowIds.compactMap { mapWindows[$0] }
+        let setRecentIds = Set(listRecent.map(\.windowId))
+        return listRecent + listWindows.filter { !setRecentIds.contains($0.windowId) }
+    }
+
+    /// The group switcher's offer: every group, then every window shown at once.
+    func groupSwitcherRequest() -> SwitcherRequest? {
+        guard !workspace.listGroups.isEmpty else {
+            return nil
+        }
+        let currentGroupId = frontmostActiveGroup()?.groupId
+        let listEntries = workspace.listGroups.map { group in
+            SwitcherEntry(
+                id: group.groupId.rawValue,
+                title: group.name,
+                subtitle: group.listMembers.count == 1 ? "1 window" : "\(group.listMembers.count) windows",
+                listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
+                symbolName: nil,
+                isActive: workspace.isActive(group.groupId)
+            )
+        } + [SwitcherEntry(
+            id: "all",
+            title: "All Windows",
+            subtitle: isStageOpen ? "leave the stage" : "show everything",
+            listBundleIds: [],
+            symbolName: "square.grid.2x2",
+            isActive: false
+        )]
+        let currentIndex = listEntries.firstIndex { $0.id == currentGroupId?.rawValue } ?? listEntries.count - 1
+        return SwitcherRequest(listEntries: listEntries, currentIndex: currentIndex) { [weak self] entry in
+            let groupId = entry.id == "all" ? nil : GroupId(rawValue: entry.id)
+            Task {
+                await self?.switchTo(groupId)
+            }
+        }
+    }
+
+    /// The window switcher's offer: every managed window across groups, the most recently used first, as
+    /// Cmd-Tab offers applications.
+    func windowSwitcherRequest() -> SwitcherRequest? {
+        let listWindows = listRecentWindows
+        guard listWindows.count > 1 else {
+            return nil
+        }
+        let listEntries = listWindows.map { window in
+            SwitcherEntry(
+                id: String(window.windowId.rawValue),
+                title: window.displayName,
+                subtitle: workspace.group(containing: window.windowId)?.name ?? "",
+                listBundleIds: [window.application.bundleId],
+                symbolName: nil,
+                isActive: false
+            )
+        }
+        return SwitcherRequest(listEntries: listEntries, currentIndex: 0) { [weak self] entry in
+            guard
+                let self,
+                let rawId = UInt32(entry.id),
+                let groupId = workspace.group(containing: WindowId(rawValue: rawId))?.groupId
+            else {
+                return
+            }
+            Task {
+                await self.switchTo(groupId, bringingToFront: WindowId(rawValue: rawId))
+            }
+        }
+    }
+
+    private func noteRecentlyUsed(_ windowId: WindowId) {
+        listRecentWindowIds.removeAll { $0 == windowId }
+        listRecentWindowIds.insert(windowId, at: 0)
+    }
+
     /// The active group holding the frontmost managed window, which is where the user is working.
     func frontmostActiveGroup() -> WindowGroup? {
         let listActiveGroups = workspace.listActiveGroups
@@ -483,6 +575,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Follow the user to a hidden window they focused, through Cmd-Tab, the Dock or a notification, by
     /// switching to its group.
     private func handleFocus(of windowId: WindowId) {
+        if workspace.isManaged(windowId) && !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
+            noteRecentlyUsed(windowId)
+        }
         guard
             !isSwitching,
             ContinuousClock.now >= focusQuietUntil,
@@ -582,6 +677,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
         await run(showing: [], hiding: listToHide)
         if let selected {
+            noteRecentlyUsed(selected.windowId)
             workspace.markShown(selected.windowId)
             workspace.bringToFront(selected.windowId)
             await tracker.applyFrame(contentFrame, to: selected.windowId)

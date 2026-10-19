@@ -1,18 +1,23 @@
-import MuxShotsCore
 import Observation
 
-/// One choice in the group switcher: a group, or every window.
+/// One choice in a switcher: a group, a window, or every window.
 struct SwitcherEntry: Identifiable {
-    /// The group, or nil for the entry that shows every managed window.
-    let groupId: GroupId?
+    let id: String
     let title: String
-    /// The bundle identifiers of the group's members, front to back.
+    let subtitle: String
+    /// The applications to show, front to back.
     let listBundleIds: [String?]
+    /// A symbol shown in place of application icons.
+    let symbolName: String?
     let isActive: Bool
+}
 
-    var id: String {
-        groupId?.rawValue ?? "all"
-    }
+/// What one opening of a switcher offers, and what choosing does.
+struct SwitcherRequest {
+    let listEntries: [SwitcherEntry]
+    /// The entry the user is on now; the switcher opens on the one after it.
+    let currentIndex: Int
+    let onCommit: @MainActor (SwitcherEntry) -> Void
 }
 
 /// The state the switcher view renders.
@@ -22,4 +27,6 @@ final class SwitcherModel {
     var isVisible = false
     var listEntries: [SwitcherEntry] = []
     var selectedIndex = 0
+    /// The modifiers to release to choose, as symbols.
+    var holdSymbols = "⌥"
 }

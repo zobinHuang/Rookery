@@ -3,25 +3,24 @@ import Carbon.HIToolbox
 import MuxShotsCore
 import MuxShotsPlatform
 
-/// The hold-to-choose group switcher: its shortcut opens it on the next group, further presses move the
-/// selection, releasing the held modifiers switches and esc cancels. A quick tap switches without showing
-/// anything, like Cmd-Tab.
+/// A hold-to-choose switcher, for groups or windows: its shortcut opens it on the next entry, further presses
+/// move the selection, releasing the held modifiers chooses and esc cancels. A quick tap chooses without
+/// showing anything, like Cmd-Tab.
 @MainActor
 final class SwitcherController {
     private static let revealDelay = Duration.milliseconds(140)
     private static let fadeOutDelay = Duration.milliseconds(200)
     private static let panelSize = CGSize(width: 1100, height: 320)
 
-    private let workspaceController: WorkspaceController
     private let hotkeyCenter: HotkeyCenter
     private let model = SwitcherModel()
     private let panel: NSPanel
     private var isOpen = false
     private var listCancelHotkeys: [Hotkey] = []
+    private var onCommit: (@MainActor (SwitcherEntry) -> Void)?
     private var revealTask: Task<Void, Never>?
 
-    init(workspaceController: WorkspaceController, hotkeyCenter: HotkeyCenter) {
-        self.workspaceController = workspaceController
+    init(hotkeyCenter: HotkeyCenter) {
         self.hotkeyCenter = hotkeyCenter
         panel = NSPanel(
             contentRect: CGRect(origin: .zero, size: Self.panelSize),
@@ -38,37 +37,35 @@ final class SwitcherController {
         panel.contentView = SwitcherView.makeHostingView(model: model)
     }
 
-    /// Open the switcher on the group after the current one, or move the selection while it is open.
+    /// Open the switcher on the entry after the current one, or move the selection while it is open.
     ///
     /// - Parameters:
     ///   - step: 1 for the next entry, -1 for the previous one
     ///   - holdModifiers: the modifiers whose release chooses the selection
-    func advance(by step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
+    ///   - request: what to offer, asked for only when the switcher opens; nil to stay closed
+    func advance(by step: Int, holding holdModifiers: NSEvent.ModifierFlags, request: () -> SwitcherRequest?) {
         guard isOpen else {
-            open(step: step, holding: holdModifiers)
+            guard let request = request(), !request.listEntries.isEmpty else {
+                return
+            }
+            open(request, step: step, holding: holdModifiers)
             return
         }
         let count = model.listEntries.count
         model.selectedIndex = ((model.selectedIndex + step) % count + count) % count
     }
 
-    private func open(step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
-        let workspace = workspaceController.workspace
-        guard !workspace.listGroups.isEmpty else {
-            return
-        }
-        let currentGroupId = workspaceController.frontmostActiveGroup()?.groupId
-        model.listEntries = workspace.listGroups.map { group in
-            SwitcherEntry(
-                groupId: group.groupId,
-                title: group.name,
-                listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
-                isActive: workspace.isActive(group.groupId)
-            )
-        } + [SwitcherEntry(groupId: nil, title: "All Windows", listBundleIds: [], isActive: false)]
-        let activeIndex = model.listEntries.firstIndex { $0.groupId == currentGroupId } ?? model.listEntries.count - 1
-        let count = model.listEntries.count
-        model.selectedIndex = ((activeIndex + step) % count + count) % count
+    /// Whether the switcher is open.
+    var isShowing: Bool {
+        isOpen
+    }
+
+    private func open(_ request: SwitcherRequest, step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
+        model.listEntries = request.listEntries
+        model.holdSymbols = Hotkey.symbols(for: holdModifiers)
+        let count = request.listEntries.count
+        model.selectedIndex = ((request.currentIndex + step) % count + count) % count
+        onCommit = request.onCommit
         isOpen = true
 
         listCancelHotkeys = [
@@ -112,15 +109,13 @@ final class SwitcherController {
     }
 
     private func commit() {
-        guard isOpen, model.listEntries.indices.contains(model.selectedIndex) else {
+        guard isOpen, model.listEntries.indices.contains(model.selectedIndex), let onCommit else {
             close()
             return
         }
-        let groupId = model.listEntries[model.selectedIndex].groupId
+        let entry = model.listEntries[model.selectedIndex]
         close()
-        Task { [workspaceController] in
-            await workspaceController.switchTo(groupId)
-        }
+        onCommit(entry)
     }
 
     private func close() {
@@ -128,6 +123,7 @@ final class SwitcherController {
             return
         }
         isOpen = false
+        onCommit = nil
         revealTask?.cancel()
         hotkeyCenter.stopWatchingModifiers()
         for hotkey in listCancelHotkeys {

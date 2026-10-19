@@ -29,7 +29,7 @@ struct SwitcherView: View {
                 }
             }
             .animation(Self.selectionAnimation, value: model.selectedIndex)
-            Text("⇥ next   ⇧⇥ previous   release ⌥ to switch   esc to cancel")
+            Text("⇥ next   ⇧⇥ previous   release \(model.holdSymbols) to switch   esc to cancel")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
         }
@@ -67,7 +67,7 @@ struct SwitcherCardView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                 }
-                Text(subtitle)
+                Text(entry.subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
             }
@@ -79,17 +79,11 @@ struct SwitcherCardView: View {
         .scaleEffect(isSelected ? 1.04 : 1)
     }
 
-    private var subtitle: String {
-        guard entry.groupId != nil else {
-            return "show everything"
-        }
-        return entry.listBundleIds.count == 1 ? "1 window" : "\(entry.listBundleIds.count) windows"
-    }
 
     @ViewBuilder
     private var artwork: some View {
-        if entry.groupId == nil {
-            Image(systemName: "square.grid.2x2")
+        if let symbolName = entry.symbolName {
+            Image(systemName: symbolName)
                 .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         } else {

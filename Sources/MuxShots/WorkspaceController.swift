@@ -174,7 +174,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Open the stage: every managed window leaves its place, remembered as its home, and the front window
-    /// of the group the user was in fills the content area.
+    /// of the group the user was in fills the content area. With no groups yet, the stage opens empty.
     ///
     /// - Parameter contentFrame: the content area, in window-server coordinates
     func enterStage(contentFrame: CGRect) async {
@@ -195,6 +195,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                         }
                     }
                 }
+            }
+            guard let startGroupId else {
+                self.didChange()
+                return
             }
             await self.performSwitch(to: startGroupId, bringingToFront: nil)
         }

@@ -16,6 +16,34 @@ enum StageZone: Hashable {
     case newGroupRow
 }
 
+/// What is being dragged inside the stage, as the text its drag carries.
+enum StagePayload {
+    case window(WindowId)
+    case group(GroupId)
+
+    private static let windowPrefix = "window:"
+    private static let groupPrefix = "group:"
+
+    init?(_ text: String) {
+        if text.hasPrefix(Self.windowPrefix), let rawId = UInt32(text.dropFirst(Self.windowPrefix.count)) {
+            self = .window(WindowId(rawValue: rawId))
+        } else if text.hasPrefix(Self.groupPrefix) {
+            self = .group(GroupId(rawValue: String(text.dropFirst(Self.groupPrefix.count))))
+        } else {
+            return nil
+        }
+    }
+
+    var text: String {
+        switch self {
+        case .window(let windowId):
+            Self.windowPrefix + String(windowId.rawValue)
+        case .group(let groupId):
+            Self.groupPrefix + groupId.rawValue
+        }
+    }
+}
+
 /// One tab: a member of the active group.
 struct StageTab: Identifiable {
     let windowId: WindowId
@@ -75,6 +103,28 @@ final class StageModel {
     var isTabOverSidebar = false
     /// Whether a tab is being dragged, which reveals the "New Group" zone.
     var isDraggingTab = false
+    /// The group being dragged to reorder the sidebar.
+    var draggingGroupId: GroupId?
+    /// The tab a dragged tab would be placed before.
+    var tabInsertBeforeId: WindowId?
+    /// Whether a dragged tab is over the empty end of the tab bar, which places it last.
+    var isTabOverTabBarEnd = false
+    /// The group a dragged group would be placed before.
+    var groupInsertBeforeId: GroupId?
+    /// Whether a dragged group is over the sidebar's empty space, which places it last.
+    var isGroupOverSidebarEnd = false
+
+    /// Forget every drag of a tab or a group, as when it drops or the mouse is released elsewhere.
+    func clearDragState() {
+        isDraggingTab = false
+        draggingGroupId = nil
+        tabDropGroupId = nil
+        isTabOverSidebar = false
+        tabInsertBeforeId = nil
+        isTabOverTabBarEnd = false
+        groupInsertBeforeId = nil
+        isGroupOverSidebarEnd = false
+    }
 
     /// The sidebar's width as laid out now.
     var sidebarWidth: CGFloat {

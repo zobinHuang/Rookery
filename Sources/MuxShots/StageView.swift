@@ -17,6 +17,11 @@ protocol StageActions: AnyObject {
     /// Give keyboard input back to the stage's front window.
     func endEditing()
     func tabDragBegan()
+    func groupDragBegan(_ groupId: GroupId)
+    /// Move a group to just before another, or to the end with nil.
+    func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?)
+    /// Move a tab to just before another tab, or to the end with nil.
+    func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?)
     func toggleSidebar()
     func exitStage()
     /// The user is dragging the stage by its sidebar header, towards another display.
@@ -58,6 +63,8 @@ struct StageView: View {
         .animation(.easeOut(duration: 0.22), value: model.isVisible)
         .animation(Self.zoneAnimation, value: model.highlightedZone)
         .animation(Self.zoneAnimation, value: showsDropZones)
+        .animation(Self.zoneAnimation, value: model.tabInsertBeforeId)
+        .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
         .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
     }
 
@@ -78,6 +85,9 @@ struct StageView: View {
                     if model.highlightedZone == .newGroup && !model.isSidebarCollapsed {
                         newGroupPlaceholder
                             .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    if model.isGroupOverSidebarEnd {
+                        InsertionMark(isVertical: false)
                     }
                 }
                 .padding(.horizontal, 8)
@@ -103,10 +113,21 @@ struct StageView: View {
         .frame(maxHeight: .infinity)
         .background(.thinMaterial)
         .contentShape(Rectangle())
-        .dropDestination(for: String.self) { listPayloads, _ in
-            dropTab(listPayloads, into: nil)
+        .dropDestination(for: String.self) { listTexts, _ in
+            switch Self.payload(from: listTexts) {
+            case .window(let windowId):
+                return dropWindow(windowId, into: nil)
+            case .group(let groupId):
+                return dropGroup(groupId, before: nil)
+            case nil:
+                return false
+            }
         } isTargeted: { isTargeted in
-            model.isTabOverSidebar = isTargeted
+            if model.draggingGroupId != nil {
+                model.isGroupOverSidebarEnd = isTargeted
+            } else {
+                model.isTabOverSidebar = isTargeted
+            }
         }
         .modifier(ZoneFrameReporter(zone: .sidebar, model: model))
     }
@@ -163,9 +184,20 @@ struct StageView: View {
         } label: {
             Group {
                 if model.isSidebarCollapsed {
-                    IconStack(listBundleIds: row.listBundleIds, iconSize: 26, overlap: -18)
+                    IconStack(listBundleIds: Array(row.listBundleIds.prefix(1)), iconSize: 30, overlap: 0)
+                        .overlay(alignment: .bottomTrailing) {
+                            if row.listBundleIds.count > 1 {
+                                Text("\(row.listBundleIds.count)")
+                                    .font(.system(size: 9, weight: .bold).monospacedDigit())
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.secondary, in: .capsule)
+                                    .offset(x: 6, y: 4)
+                            }
+                        }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 7)
                 } else {
                     HStack(spacing: 10) {
                         IconStack(listBundleIds: row.listBundleIds, iconSize: 22, overlap: -9)
@@ -215,10 +247,42 @@ struct StageView: View {
                 beginRenaming(group: row.groupId)
             }
         }
-        .dropDestination(for: String.self) { listPayloads, _ in
-            dropTab(listPayloads, into: row.groupId)
+        .overlay(alignment: .top) {
+            if model.groupInsertBeforeId == row.groupId {
+                InsertionMark(isVertical: false)
+                    .offset(y: -3)
+            }
+        }
+        .onDrag {
+            actions.groupDragBegan(row.groupId)
+            return NSItemProvider(object: StagePayload.group(row.groupId).text as NSString)
+        } preview: {
+            HStack(spacing: 8) {
+                IconStack(listBundleIds: row.listBundleIds, iconSize: 20, overlap: -8)
+                Text(row.name)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.regularMaterial, in: .rect(cornerRadius: 10))
+        }
+        .dropDestination(for: String.self) { listTexts, _ in
+            switch Self.payload(from: listTexts) {
+            case .window(let windowId):
+                return dropWindow(windowId, into: row.groupId)
+            case .group(let groupId):
+                return dropGroup(groupId, before: row.groupId)
+            case nil:
+                return false
+            }
         } isTargeted: { isTargeted in
-            if isTargeted {
+            if model.draggingGroupId != nil {
+                if isTargeted {
+                    model.groupInsertBeforeId = row.groupId
+                } else if model.groupInsertBeforeId == row.groupId {
+                    model.groupInsertBeforeId = nil
+                }
+            } else if isTargeted {
                 model.tabDropGroupId = row.groupId
             } else if model.tabDropGroupId == row.groupId {
                 model.tabDropGroupId = nil
@@ -283,14 +347,14 @@ struct StageView: View {
         }
         .scaleEffect(isHovered ? 1.03 : 1)
         .help(title)
-        .dropDestination(for: String.self) { listPayloads, _ in
-            guard zone == .release else {
-                return dropTab(listPayloads, into: nil)
-            }
-            model.isDraggingTab = false
-            guard let windowId = Self.windowId(from: listPayloads) else {
+        .dropDestination(for: String.self) { listTexts, _ in
+            guard case .window(let windowId) = Self.payload(from: listTexts) else {
                 return false
             }
+            guard zone == .release else {
+                return dropWindow(windowId, into: nil)
+            }
+            clearDragState()
             actions.releaseWindow(windowId)
             return true
         }
@@ -304,7 +368,22 @@ struct StageView: View {
             ForEach(model.listTabs) { tab in
                 tabButton(tab)
             }
-            Spacer(minLength: 0)
+            if model.isTabOverTabBarEnd {
+                InsertionMark(isVertical: true)
+            }
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .dropDestination(for: String.self) { listTexts, _ in
+                    guard case .window(let windowId) = Self.payload(from: listTexts) else {
+                        return false
+                    }
+                    clearDragState()
+                    actions.moveTab(windowId, before: nil)
+                    return true
+                } isTargeted: { isTargeted in
+                    model.isTabOverTabBarEnd = isTargeted
+                }
         }
         .padding(.horizontal, 6)
         .padding(.top, 6)
@@ -366,7 +445,7 @@ struct StageView: View {
         })
         .onDrag {
             actions.tabDragBegan()
-            return NSItemProvider(object: String(tab.windowId.rawValue) as NSString)
+            return NSItemProvider(object: StagePayload.window(tab.windowId).text as NSString)
         } preview: {
             HStack(spacing: 7) {
                 if let icon = ApplicationIcon.icon(forBundleId: tab.bundleId) {
@@ -381,6 +460,26 @@ struct StageView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(.regularMaterial, in: .rect(cornerRadius: 9))
+        }
+        .overlay(alignment: .leading) {
+            if model.tabInsertBeforeId == tab.windowId {
+                InsertionMark(isVertical: true)
+                    .offset(x: -4)
+            }
+        }
+        .dropDestination(for: String.self) { listTexts, _ in
+            guard case .window(let windowId) = Self.payload(from: listTexts) else {
+                return false
+            }
+            clearDragState()
+            actions.moveTab(windowId, before: tab.windowId)
+            return true
+        } isTargeted: { isTargeted in
+            if isTargeted {
+                model.tabInsertBeforeId = tab.windowId
+            } else if model.tabInsertBeforeId == tab.windowId {
+                model.tabInsertBeforeId = nil
+            }
         }
         .contextMenu {
             Button("Rename Tab…") {
@@ -455,19 +554,39 @@ struct StageView: View {
     }
 
     /// Move a dragged tab's window into a group, or into a new group with nil.
-    private func dropTab(_ listPayloads: [String], into groupId: GroupId?) -> Bool {
-        model.isDraggingTab = false
-        model.tabDropGroupId = nil
-        model.isTabOverSidebar = false
-        guard let windowId = Self.windowId(from: listPayloads) else {
-            return false
-        }
+    private func dropWindow(_ windowId: WindowId, into groupId: GroupId?) -> Bool {
+        clearDragState()
         actions.moveWindow(windowId, to: groupId)
         return true
     }
 
-    private static func windowId(from listPayloads: [String]) -> WindowId? {
-        listPayloads.first.flatMap(UInt32.init).map { WindowId(rawValue: $0) }
+    /// Move a dragged group to just before another, or to the end with nil.
+    private func dropGroup(_ groupId: GroupId, before targetGroupId: GroupId?) -> Bool {
+        clearDragState()
+        actions.moveGroup(groupId, before: targetGroupId)
+        return true
+    }
+
+    private func clearDragState() {
+        model.clearDragState()
+    }
+
+    private static func payload(from listTexts: [String]) -> StagePayload? {
+        listTexts.first.flatMap(StagePayload.init)
+    }
+}
+
+/// The accent line that marks where a dragged tab or group would land.
+struct InsertionMark: View {
+    let isVertical: Bool
+
+    var body: some View {
+        Capsule()
+            .fill(Color.accentColor)
+            .frame(width: isVertical ? 3 : nil, height: isVertical ? 24 : 3)
+            .frame(maxWidth: isVertical ? nil : .infinity)
+            .shadow(color: .accentColor.opacity(0.6), radius: 3)
+            .transition(.opacity)
     }
 }
 

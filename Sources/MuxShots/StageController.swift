@@ -204,14 +204,30 @@ final class StageController: DropSurface, StageActions {
 
     func tabDragBegan() {
         model.isDraggingTab = true
+        clearDragStateOnMouseUp()
+    }
+
+    func groupDragBegan(_ groupId: GroupId) {
+        model.draggingGroupId = groupId
+        clearDragStateOnMouseUp()
+    }
+
+    func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {
+        workspaceController.moveGroup(groupId, before: targetGroupId)
+    }
+
+    func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?) {
+        workspaceController.moveTab(windowId, before: targetWindowId)
+    }
+
+    /// Clear the drag feedback once the mouse is released, wherever the drag ended.
+    private func clearDragStateOnMouseUp() {
         tabDragTask?.cancel()
         tabDragTask = Task { [weak self] in
             while !Task.isCancelled, NSEvent.pressedMouseButtons != 0 {
                 try? await Task.sleep(for: Self.mouseReleasePollInterval)
             }
-            self?.model.isDraggingTab = false
-            self?.model.tabDropGroupId = nil
-            self?.model.isTabOverSidebar = false
+            self?.model.clearDragState()
         }
     }
 

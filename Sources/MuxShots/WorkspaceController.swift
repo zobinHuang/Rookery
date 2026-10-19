@@ -349,6 +349,18 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         adopt(windowId, processId: window.application.processId, into: groupId)
     }
 
+    /// Move a group to just before another, or to the end with nil.
+    func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {
+        workspace.moveGroup(groupId, before: targetGroupId)
+        didChange()
+    }
+
+    /// Move a tab to just before another tab of its group, or to the end with nil.
+    func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?) {
+        workspace.moveMember(windowId, before: targetWindowId)
+        didChange()
+    }
+
     /// Give keyboard focus back to the stage's front window, as after editing a name on the stage.
     func focusStageFront() {
         guard isStageOpen, let windowId = workspace.listActiveGroups.first?.listMembersFrontToBack.first?.windowId else {

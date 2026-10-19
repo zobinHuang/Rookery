@@ -92,6 +92,13 @@ final class ControlServer: Sendable {
             case .release(let windowId):
                 await workspaceController.release(windowId)
                 try await connection.send(ControlMessage.done)
+            case .act(let action, let windowId):
+                do {
+                    try await workspaceController.perform(action, on: windowId)
+                    try await connection.send(ControlMessage.done)
+                } catch let error as WindowActionError {
+                    try await connection.send(ControlMessage.failure(message: error.description))
+                }
             }
         } catch {
             logger.info("control session ended: \(error)")

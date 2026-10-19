@@ -10,6 +10,7 @@ enum Muxctl {
                muxctl watch
                muxctl manage <window-id>
                muxctl release <window-id>
+               muxctl focus|hide|show|maximize <window-id>
         """
     private static let jsonFlag = "--json"
     private static let titleWidth = 60
@@ -32,6 +33,14 @@ enum Muxctl {
             }
             let windowId = WindowId(rawValue: rawId)
             request = command == "manage" ? .manage(windowId: windowId) : .release(windowId: windowId)
+        case let name where WindowAction(rawValue: name) != nil:
+            guard
+                let action = WindowAction(rawValue: name),
+                let rawId = listArguments.dropFirst().first.flatMap(UInt32.init)
+            else {
+                exit(withMessage: usage)
+            }
+            request = .act(action: action, windowId: WindowId(rawValue: rawId))
         default:
             exit(withMessage: usage)
         }
@@ -62,14 +71,15 @@ enum Muxctl {
             for group in listGroups {
                 Swift.print("\(group.name) (\(group.listMembers.count))")
                 for member in group.listMembers {
-                    Swift.print("  " + (mapWindows[member.windowId].map(row(for:)) ?? row(for: member)))
+                    let observedRow = mapWindows[member.windowId].map { row(for: $0, isHidden: member.isHidden) }
+                    Swift.print("  " + (observedRow ?? row(for: member)))
                 }
             }
             Swift.print("\(listGroups.count) groups, \(listGroups.map(\.listMembers.count).reduce(0, +)) windows")
         case .change(.added(let window)):
-            Swift.print("+ \(row(for: window))")
+            Swift.print("+ \(row(for: window, isHidden: false))")
         case .change(.updated(let window)):
-            Swift.print("~ \(row(for: window))")
+            Swift.print("~ \(row(for: window, isHidden: false))")
         case .change(.removed(let windowId)):
             Swift.print("- \(windowId)")
         case .done:
@@ -79,12 +89,13 @@ enum Muxctl {
         }
     }
 
-    /// One table row: id, flags (Fullscreen, Minimized, On screen), application, frame, title.
-    private static func row(for window: WindowRecord) -> String {
+    /// One table row: id, flags (Fullscreen, Minimized, On screen, Hidden by MuxShots), application, frame, title.
+    private static func row(for window: WindowRecord, isHidden: Bool) -> String {
         let flags = [
             window.isFullscreen ? "F" : "-",
             window.isMinimized ? "M" : "-",
             window.isOnScreen ? "O" : "-",
+            isHidden ? "H" : "-",
         ].joined()
         let frame = window.frame
         let frameText = "\(Int(frame.minX)),\(Int(frame.minY)) \(Int(frame.width))x\(Int(frame.height))"
@@ -101,7 +112,7 @@ enum Muxctl {
     private static func row(for member: ManagedWindow) -> String {
         [
             String(describing: member.windowId).padding(toLength: 8, withPad: " ", startingAt: 0),
-            "???",
+            member.isHidden ? "???H" : "????",
             member.application.name.padding(toLength: 20, withPad: " ", startingAt: 0),
             "".padding(toLength: 22, withPad: " ", startingAt: 0),
             String(member.title.prefix(titleWidth)),

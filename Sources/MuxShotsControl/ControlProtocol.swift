@@ -11,6 +11,8 @@ public enum ControlRequest: Codable, Sendable {
     case manage(windowId: WindowId)
     /// Stop managing a window.
     case release(windowId: WindowId)
+    /// Act on a managed window.
+    case act(action: WindowAction, windowId: WindowId)
 }
 
 /// A message the running app sends back.

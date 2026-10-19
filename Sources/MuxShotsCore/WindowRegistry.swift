@@ -1,4 +1,4 @@
-/// The table of every tracked window, the single source of truth that policy and UI read.
+/// The table of every tracked window, the single source of truth for their observed state.
 public struct WindowRegistry: Sendable {
     private var mapWindows: [WindowId: WindowRecord] = [:]
 
@@ -22,19 +22,16 @@ public struct WindowRegistry: Sendable {
         mapWindows[windowId]
     }
 
-    /// Replace everything known about one application with a fresh snapshot of it.
+    /// Record what an application tracker observed. A window missing from the snapshot keeps its last
+    /// state, since a tracker can lose sight of a window that still exists; only closed windows are removed.
     ///
-    /// - Parameter snapshot: the application's complete current window set
+    /// - Parameter snapshot: the observed windows and the closed ones
     /// - Returns: the changes, removals first
     public mutating func apply(_ snapshot: ApplicationSnapshot) -> [WindowChange] {
         var listChanges: [WindowChange] = []
-        let setSnapshotIds = Set(snapshot.listWindows.map(\.windowId))
-
-        for windowId in windowIds(ofProcess: snapshot.application.processId) where !setSnapshotIds.contains(windowId) {
-            mapWindows[windowId] = nil
+        for windowId in snapshot.listClosedIds.sorted() where mapWindows.removeValue(forKey: windowId) != nil {
             listChanges.append(.removed(windowId: windowId))
         }
-
         for window in snapshot.listWindows {
             switch mapWindows[window.windowId] {
             case nil:
@@ -47,6 +44,13 @@ public struct WindowRegistry: Sendable {
             mapWindows[window.windowId] = window
         }
         return listChanges
+    }
+
+    /// Forget one window, as when MuxShots stops managing it.
+    ///
+    /// - Returns: the removal, or nothing if the window was not tracked
+    public mutating func remove(_ windowId: WindowId) -> [WindowChange] {
+        mapWindows.removeValue(forKey: windowId) == nil ? [] : [.removed(windowId: windowId)]
     }
 
     /// Forget every window of an application that has quit.

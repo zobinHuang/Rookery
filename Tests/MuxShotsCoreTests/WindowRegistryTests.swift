@@ -41,7 +41,8 @@ struct WindowRegistryTests {
 
         let listChanges = registry.apply(ApplicationSnapshot(
             application: Self.chrome,
-            listWindows: [Self.window(2, of: Self.chrome, title: "Inbox"), Self.window(3, of: Self.chrome)]
+            listWindows: [Self.window(2, of: Self.chrome, title: "Inbox"), Self.window(3, of: Self.chrome)],
+            listClosedIds: [WindowId(rawValue: 1)]
         ))
 
         #expect(listChanges == [
@@ -51,15 +52,37 @@ struct WindowRegistryTests {
         ])
     }
 
-    @Test func snapshotLeavesOtherApplicationsAlone() {
+    @Test func windowMissingFromASnapshotKeepsItsLastState() {
         var registry = WindowRegistry()
         _ = registry.apply(ApplicationSnapshot(application: Self.chrome, listWindows: [Self.window(1, of: Self.chrome)]))
-        _ = registry.apply(ApplicationSnapshot(application: Self.code, listWindows: [Self.window(2, of: Self.code)]))
 
         let listChanges = registry.apply(ApplicationSnapshot(application: Self.chrome, listWindows: []))
 
-        #expect(listChanges == [.removed(windowId: WindowId(rawValue: 1))])
-        #expect(registry.window(withId: WindowId(rawValue: 2)) != nil)
+        #expect(listChanges.isEmpty)
+        #expect(registry.window(withId: WindowId(rawValue: 1)) != nil)
+    }
+
+    @Test func closingAnUnknownWindowChangesNothing() {
+        var registry = WindowRegistry()
+
+        let listChanges = registry.apply(ApplicationSnapshot(
+            application: Self.chrome,
+            listWindows: [],
+            listClosedIds: [WindowId(rawValue: 9)]
+        ))
+
+        #expect(listChanges.isEmpty)
+    }
+
+    @Test func removingAWindowReportsItOnce() {
+        var registry = WindowRegistry()
+        _ = registry.apply(ApplicationSnapshot(application: Self.code, listWindows: [Self.window(2, of: Self.code)]))
+
+        let listFirstChanges = registry.remove(WindowId(rawValue: 2))
+        let listSecondChanges = registry.remove(WindowId(rawValue: 2))
+
+        #expect(listFirstChanges == [.removed(windowId: WindowId(rawValue: 2))])
+        #expect(listSecondChanges.isEmpty)
     }
 
     @Test func removingAnApplicationRemovesItsWindows() {

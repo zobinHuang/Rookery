@@ -89,29 +89,76 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         }
     }
 
-    /// Move and resize a managed window.
+    /// Move and resize a managed window, then read back where it ended up, since applications may
+    /// constrain the frame.
     ///
     /// - Parameters:
-    ///   - windowId: the window
     ///   - frame: the frame in global screen coordinates, origin at the top-left of the main display
-    func applyFrame(_ frame: CGRect, to windowId: WindowId) {
-        thread.perform { [self] in
+    ///   - windowId: the window
+    /// - Returns: the frame after the move, or nil if the window could not be moved
+    func applyFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
+        let result = await thread.run { [self] () -> CGRect? in
             guard let element = mapElements[windowId] else {
-                return
+                return nil
             }
             let isEnhanced = (try? root.isEnhancedUserInterface()) == true
             if isEnhanced {
                 try? root.applyEnhancedUserInterface(false)
             }
+            defer {
+                if isEnhanced {
+                    try? root.applyEnhancedUserInterface(true)
+                }
+            }
             do {
                 try element.applyFrame(frame)
+                return try element.frame()
             } catch {
                 Self.logger.error("cannot move window \(windowId.rawValue): \(error, privacy: .public)")
-            }
-            if isEnhanced {
-                try? root.applyEnhancedUserInterface(true)
+                return nil
             }
         }
+        return result ?? nil
+    }
+
+    /// Bring a managed window to the front of its application, restoring it from the Dock first.
+    ///
+    /// - Returns: whether the window was raised
+    func raise(_ windowId: WindowId) async -> Bool {
+        await thread.run { [self] () -> Bool in
+            guard let element = mapElements[windowId] else {
+                return false
+            }
+            do {
+                if try element.isMinimized() {
+                    try element.applyMinimized(false)
+                }
+                try element.raise()
+                return true
+            } catch {
+                Self.logger.error("cannot raise window \(windowId.rawValue): \(error, privacy: .public)")
+                return false
+            }
+        } ?? false
+    }
+
+    /// Whether a managed window is in native full screen.
+    func isFullscreen(_ windowId: WindowId) async -> Bool {
+        await thread.run { [self] in
+            (try? mapElements[windowId]?.isFullscreen()) == true
+        } ?? false
+    }
+
+    /// Ask a managed window to leave native full screen; the transition finishes asynchronously.
+    ///
+    /// - Returns: whether the request was accepted
+    func requestExitFullscreen(_ windowId: WindowId) async -> Bool {
+        await thread.run { [self] in
+            guard let element = mapElements[windowId] else {
+                return false
+            }
+            return (try? element.applyFullscreen(false)) != nil
+        } ?? false
     }
 
     /// Refresh against the window server's current list of this application's windows.

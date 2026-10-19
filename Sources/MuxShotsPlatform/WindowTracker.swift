@@ -74,11 +74,46 @@ public actor WindowTracker {
     /// Move and resize a managed window.
     ///
     /// - Parameter frame: the frame in global screen coordinates, origin at the top-left of the main display
-    public func applyFrame(_ frame: CGRect, to windowId: WindowId) {
-        guard let processId = mapManagedProcessIds[windowId] else {
-            return
+    /// - Returns: the frame after the move, or nil if the window is not managed or could not be moved
+    @discardableResult
+    public func applyFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
+        guard let tracker = tracker(of: windowId) else {
+            return nil
         }
-        mapTrackers[processId]?.applyFrame(frame, to: windowId)
+        return await tracker.applyFrame(frame, to: windowId)
+    }
+
+    /// Bring a managed window to the front of its application; activating the application is the caller's.
+    ///
+    /// - Returns: whether the window was raised
+    public func raise(_ windowId: WindowId) async -> Bool {
+        guard let tracker = tracker(of: windowId) else {
+            return false
+        }
+        return await tracker.raise(windowId)
+    }
+
+    /// Whether a managed window is in native full screen.
+    public func isFullscreen(_ windowId: WindowId) async -> Bool {
+        guard let tracker = tracker(of: windowId) else {
+            return false
+        }
+        return await tracker.isFullscreen(windowId)
+    }
+
+    /// Ask a managed window to leave native full screen; the transition finishes asynchronously.
+    ///
+    /// - Returns: whether the request was accepted
+    public func requestExitFullscreen(_ windowId: WindowId) async -> Bool {
+        guard let tracker = tracker(of: windowId) else {
+            return false
+        }
+        return await tracker.requestExitFullscreen(windowId)
+    }
+
+    /// The process that owns a managed window.
+    public func processId(of windowId: WindowId) -> pid_t? {
+        mapManagedProcessIds[windowId]
     }
 
     /// Drop the windows of an application that has quit.
@@ -119,6 +154,10 @@ public actor WindowTracker {
         }
         mapSubscribers[subscriberId] = continuation
         return stream
+    }
+
+    private func tracker(of windowId: WindowId) -> ApplicationWindowTracker? {
+        mapManagedProcessIds[windowId].flatMap { mapTrackers[$0] }
     }
 
     private func startTracker(for application: RunningApplication) -> ApplicationWindowTracker {

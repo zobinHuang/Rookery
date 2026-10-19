@@ -18,12 +18,30 @@ final class RunLoopThread: Thread, @unchecked Sendable {
     }
 
     /// Run work on the thread.
-    func perform(_ work: @escaping @Sendable () -> Void) {
-        guard let runLoop else {
-            return
+    ///
+    /// - Returns: whether the work was accepted, which it is not once the thread is shutting down
+    @discardableResult
+    func perform(_ work: @escaping @Sendable () -> Void) -> Bool {
+        guard let runLoop, !isCancelled else {
+            return false
         }
         CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue, work)
         CFRunLoopWakeUp(runLoop)
+        return true
+    }
+
+    /// Run work on the thread and wait for its result.
+    ///
+    /// - Returns: the result, or nil if the thread is shutting down
+    func run<Result: Sendable>(_ work: @escaping @Sendable () -> Result) async -> Result? {
+        await withCheckedContinuation { continuation in
+            let isAccepted = perform {
+                continuation.resume(returning: work())
+            }
+            if !isAccepted {
+                continuation.resume(returning: nil)
+            }
+        }
     }
 
     /// Run work on the thread after a delay.
@@ -45,10 +63,14 @@ final class RunLoopThread: Thread, @unchecked Sendable {
 
     /// Finish the work already submitted, then exit the thread.
     func shutdown() {
+        guard let runLoop else {
+            return
+        }
         cancel()
-        perform {
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.defaultMode.rawValue) {
             CFRunLoopStop(CFRunLoopGetCurrent())
         }
+        CFRunLoopWakeUp(runLoop)
     }
 
     override func main() {

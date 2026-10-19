@@ -117,6 +117,20 @@ struct AccessibilityElement {
         try write(kAXSizeAttribute, value: sizeValue)
     }
 
+    /// Bring this window to the front of its application and make it the main window.
+    func raise() throws {
+        try write(kAXMainAttribute, value: kCFBooleanTrue)
+        try Self.check(AXUIElementPerformAction(element, kAXRaiseAction as CFString), operation: kAXRaiseAction)
+    }
+
+    func applyMinimized(_ isMinimized: Bool) throws {
+        try write(kAXMinimizedAttribute, value: isMinimized as CFBoolean)
+    }
+
+    func applyFullscreen(_ isFullscreen: Bool) throws {
+        try write(Self.fullscreenAttribute, value: isFullscreen as CFBoolean)
+    }
+
     /// Whether this application runs its enhanced interface for assistive clients, which makes Chromium and
     /// Electron applications animate and lag when their windows are moved.
     func isEnhancedUserInterface() throws -> Bool {

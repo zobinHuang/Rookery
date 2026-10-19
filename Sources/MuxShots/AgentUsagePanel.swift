@@ -7,6 +7,10 @@ import SwiftUI
 struct AgentUsagePanel: View {
     private static let digitHeight: CGFloat = 9
     private static let rowHeight: CGFloat = 14
+    /// Below this much left, under half a percent, a limit counts as used up.
+    private static let exhaustedFraction = 0.005
+    /// How faint a used-up limit's name, gauge and share left grow, its countdown kept clear.
+    private static let exhaustedOpacity = 0.4
     /// How strongly a running-out limit's row is washed red.
     private static let criticalWashOpacity = 0.16
     /// How far the red wash reaches past the row, so it frames the row without moving it.
@@ -125,17 +129,22 @@ struct AgentUsagePanel: View {
         let isReset = limit.resetsAt.map { $0 <= date } ?? false
         let remainingFraction = isReset ? 1 : limit.remainingFraction
         let isCritical = !isReset && PropellantGauge.isCritical(remainingFraction: remainingFraction, severity: limit.severity)
+        let isExhausted = !isReset && remainingFraction <= Self.exhaustedFraction
+        let spentOpacity = isExhausted ? Self.exhaustedOpacity : 1
         return HStack(spacing: 6) {
             Text(limit.title)
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(width: 34, alignment: .leading)
+                .opacity(spentOpacity)
             PropellantGauge(remainingFraction: remainingFraction, severity: isReset ? .normal : limit.severity)
+                .opacity(spentOpacity)
             Text("\(Int((remainingFraction * 100).rounded()))%")
                 .font(.system(size: 10.5, weight: .medium).monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: Self.percentWidth, alignment: .trailing)
+                .opacity(spentOpacity)
             SevenSegmentDisplay(
                 text: Self.countdownText(until: isReset ? nil : limit.resetsAt, from: date),
                 digitHeight: Self.digitHeight,
@@ -151,6 +160,7 @@ struct AgentUsagePanel: View {
                 .padding(.vertical, -2)
         }
         .animation(.easeInOut(duration: 0.3), value: isCritical)
+        .animation(.easeInOut(duration: 0.3), value: isExhausted)
         .help("\(limit.title): \(Int(limit.remainingFraction * 100))% left" + (limit.resetsAt.map { ", resets \($0.formatted(date: .abbreviated, time: .shortened))" } ?? ""))
     }
 

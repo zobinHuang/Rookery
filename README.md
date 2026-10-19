@@ -13,4 +13,8 @@ Grant Accessibility access when prompted. MuxShots then opens its stage; open it
 
 The sidebar's Mixer takes over the sound of the apps you switch on there, after you allow MuxShots to record system audio, and adjusts each one's volume, pan, stereo width, channel phase, ten-band equalizer and reverb. The settings are remembered per app; switching an app off gives its sound back untouched. The same controls are on the command line: `muxctl audio`, `muxctl audio take <bundle-id>`, `muxctl audio set <bundle-id> volume=0.8 eq3=4 mix=20`.
 
+To mix Chrome tabs one by one, build the extension and load it unpacked from `extensions/chrome/dist` in `chrome://extensions` with Developer mode on; its tabs then appear under Browser Tabs in the mixer. For a tab whose sound the page cannot hand over, click the MuxShots button in Chrome's toolbar to capture the whole tab.
+
+    make chrome-extension
+
 See [docs/development-plan.md](docs/development-plan.md) for the roadmap.

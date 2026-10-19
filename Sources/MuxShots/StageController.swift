@@ -75,10 +75,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         panel.collectionBehavior = [.fullScreenNone]
         model.isSidebarCollapsed = preferences.isStageSidebarCollapsed
 
-        let background = NSVisualEffectView()
-        background.material = .underWindowBackground
-        background.blendingMode = .behindWindow
-        background.state = .active
+        let background = NSView()
         background.wantsLayer = true
         background.layer?.cornerRadius = Self.cornerRadius
         background.layer?.cornerCurve = .continuous
@@ -139,6 +136,28 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             self?.isEntering = false
             self?.coordinator?.refresh()
         }
+    }
+
+    /// Cover the stage with a picture of how it looks now, so a change of theme can fade in beneath it.
+    ///
+    /// - Returns: the cover, to fade out and remove, or nil if the stage is not showing
+    func coverForCrossfade() -> NSView? {
+        guard
+            panel.isVisible,
+            let contentView = panel.contentView,
+            let bitmap = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)
+        else {
+            return nil
+        }
+        contentView.cacheDisplay(in: contentView.bounds, to: bitmap)
+        let image = NSImage(size: contentView.bounds.size)
+        image.addRepresentation(bitmap)
+        let cover = NSImageView(frame: contentView.bounds)
+        cover.image = image
+        cover.imageScaling = .scaleAxesIndependently
+        cover.autoresizingMask = [.width, .height]
+        contentView.addSubview(cover)
+        return cover
     }
 
     /// Keep the stage just beneath a window, as its front window comes forward.

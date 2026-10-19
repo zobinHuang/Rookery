@@ -11,6 +11,7 @@ final class StageCoordinator: DropSurface {
     private static let newStageShare: CGFloat = 0.72
     /// How far each further new stage is offset from the last, so they do not cover each other exactly.
     private static let cascadeOffset: CGFloat = 28
+    private static let themeFadeDuration: TimeInterval = 0.35
 
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
@@ -120,6 +121,28 @@ final class StageCoordinator: DropSurface {
     /// Keep a stage just beneath its front window, as after that window comes forward.
     func keepStage(_ stageId: StageId, beneath windowId: WindowId) {
         listStages.first { $0.stageId == stageId }?.keep(beneath: windowId)
+    }
+
+    /// Make a change of theme fade in smoothly on every open stage instead of flipping at once.
+    ///
+    /// - Parameter change: what changes the theme
+    func crossfadeTheme(_ change: () -> Void) {
+        let listCovers = listStages.compactMap { $0.coverForCrossfade() }
+        change()
+        refresh()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.themeFadeDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            for cover in listCovers {
+                cover.animator().alphaValue = 0
+            }
+        } completionHandler: {
+            MainActor.assumeIsolated {
+                for cover in listCovers {
+                    cover.removeFromSuperview()
+                }
+            }
+        }
     }
 
     /// Redisplay every stage, and forget the ones that have closed.

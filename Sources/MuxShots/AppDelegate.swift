@@ -92,9 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlServer?.stop()
     }
 
-    /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen.
+    /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen, fading the
+    /// stages from one to the other.
     private func applyTheme() {
-        NSApplication.shared.appearance = switch preferences.theme {
+        let appearance: NSAppearance? = switch preferences.theme {
         case .light:
             NSAppearance(named: .aqua)
         case .dark:
@@ -102,7 +103,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case nil:
             nil
         }
-        stageCoordinator?.refresh()
+        guard let stageCoordinator else {
+            NSApplication.shared.appearance = appearance
+            return
+        }
+        stageCoordinator.crossfadeTheme {
+            NSApplication.shared.appearance = appearance
+        }
     }
 
     /// The menu bar MuxShots shows while it is the active application.

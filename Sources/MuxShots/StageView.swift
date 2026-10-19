@@ -63,6 +63,7 @@ struct StageView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StageColors.window)
         .opacity(model.isVisible ? 1 : 0)
         .animation(.easeOut(duration: 0.22), value: model.isVisible)
         .animation(Self.zoneAnimation, value: model.highlightedZone)
@@ -116,7 +117,12 @@ struct StageView: View {
             sidebarToolbar
         }
         .frame(maxHeight: .infinity)
-        .background(.thinMaterial)
+        .background(StageColors.sidebar)
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(width: 1)
+        }
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { listTexts, _ in
             switch Self.payload(from: listTexts) {
@@ -191,7 +197,7 @@ struct StageView: View {
         .frame(height: 38)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color.primary.opacity(0.08))
+                .fill(StageColors.separator)
                 .frame(height: 1)
         }
     }
@@ -458,12 +464,12 @@ struct StageView: View {
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(.regularMaterial)
+                        .fill(StageColors.selectedTab)
                         .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
                         .matchedGeometryEffect(id: "selectedTab", in: tabNamespace)
                 } else {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.primary.opacity(0.05))
+                        .fill(StageColors.idleTab)
                 }
             }
             .contentShape(Rectangle())
@@ -527,7 +533,7 @@ struct StageView: View {
         let isHovered = model.highlightedZone == .content
         return ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.04))
+                .fill(StageColors.content)
             if model.selectedWindowId == nil || isHovered {
                 VStack(spacing: 10) {
                     Image(systemName: isHovered ? "arrow.down.to.line" : "macwindow.badge.plus")

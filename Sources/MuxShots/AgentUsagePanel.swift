@@ -20,8 +20,8 @@ struct AgentUsagePanel: View {
         TimelineView(.everyMinute) { context in
             VStack(alignment: .leading, spacing: 9) {
                 header(at: context.date)
-                ForEach(monitor.listShownAccounts) { account in
-                    accountBlock(account, at: context.date)
+                ForEach(monitor.listAccountGroups) { group in
+                    accountBlock(group, at: context.date)
                 }
             }
         }
@@ -57,23 +57,32 @@ struct AgentUsagePanel: View {
         }
     }
 
-    private func accountBlock(_ account: AgentAccount, at date: Date) -> some View {
-        let usage = monitor.mapUsage[account.id]
-        let error = monitor.mapErrors[account.id]
+    private func accountBlock(_ group: AgentAccountGroup, at date: Date) -> some View {
+        let usage = group.usage
+        let error = group.error
+        let isDefaultMarked = group.includesDefault && monitor.listShownAccounts.count > 1
         let isStale = usage.map { date.timeIntervalSince($0.fetchedAt) > Self.staleAge } ?? false
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .top, spacing: 5) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(([account.label] + [usage?.plan?.capitalized].compactMap { $0 }).joined(separator: " · "))
+                    Text(([group.harness.title] + [usage?.plan?.capitalized].compactMap { $0 }).joined(separator: " · "))
                         .font(.system(size: 11, weight: .semibold))
                         .lineLimit(1)
-                    if let signedInAs = usage?.signedInAs {
-                        Text(signedInAs)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    HStack(spacing: 4) {
+                        if let signedInAs = usage?.signedInAs {
+                            Text(signedInAs)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        if isDefaultMarked {
+                            Image(systemName: "arrowtriangle.right.fill")
+                                .font(.system(size: 6))
+                            Text("default")
+                        }
                     }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .help(group.listAccounts.map { $0.configDirectory ?? "Default directory" }.joined(separator: ", "))
                 }
                 Spacer(minLength: 4)
                 statusBadge(hasUsage: usage != nil, isStale: isStale, error: error)

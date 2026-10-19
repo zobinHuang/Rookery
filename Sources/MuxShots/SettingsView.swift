@@ -124,14 +124,8 @@ struct SettingsView: View {
                         preferences.listAgentAccounts.removeAll { $0.id == account.id }
                     }
                 }
-                Menu("Add Account") {
-                    ForEach(AgentHarness.allCases, id: \.self) { harness in
-                        Button("\(harness.title) Account…") {
-                            addAgentAccount(of: harness)
-                        }
-                    }
-                }
-                .fixedSize()
+                Button("Add Account…", action: addAgentAccount)
+                    .fixedSize()
             } header: {
                 Text("Code Agent Usage")
             } footer: {
@@ -192,26 +186,54 @@ struct SettingsView: View {
         }
     }
 
-    /// Add an account of a harness, from the configuration directory the user picks.
-    private func addAgentAccount(of harness: AgentHarness) {
+    /// Add an account from the configuration directory the user picks, telling its code agent from what
+    /// the directory holds; an empty directory is taken for a new Claude Code account to sign in to.
+    private func addAgentAccount() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.showsHiddenFiles = true
         panel.directoryURL = URL.homeDirectory
-        panel.message = "Choose the \(harness.title) configuration directory for the account, or make a new one to sign a new account in to"
+        panel.message = "Choose a code agent's configuration directory, or make a new one to sign a new account in to"
         panel.prompt = "Add Account"
         guard panel.runModal() == .OK, let url = panel.url else {
             return
         }
         let path = url.path.replacingOccurrences(of: URL.homeDirectory.path, with: "~")
+        let harness: AgentHarness
+        switch AgentDirectoryContents.inspect(path) {
+        case .harness(let detected):
+            harness = detected
+        case .empty:
+            harness = .claudeCode
+        case .unsupported(let name):
+            showAccountAlert("MuxShots can't read \(name)'s limits yet", detail: "\(path) belongs to \(name).")
+            return
+        case .unknown:
+            showAccountAlert(
+                "This isn't a code agent's configuration directory",
+                detail: "MuxShots reads \(AgentHarness.allCases.map(\.title).joined(separator: ", ")); \(path) holds none of them."
+            )
+            return
+        }
         let isDefault = path == "~/.claude"
+        let configDirectory = isDefault ? nil : path
+        guard !preferences.listAgentAccounts.contains(where: { $0.harness == harness && $0.configDirectory == configDirectory }) else {
+            return
+        }
         preferences.listAgentAccounts.append(AgentAccount(
             harness: harness,
-            label: isDefault ? harness.title : url.lastPathComponent,
-            configDirectory: isDefault ? nil : path
+            label: harness.title,
+            configDirectory: configDirectory
         ))
+    }
+
+    private func showAccountAlert(_ message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.runModal()
     }
 
     private var groupModifiersBinding: Binding<UInt> {
@@ -266,14 +288,21 @@ private struct AgentAccountRow: View {
                 .labelsHidden()
                 .help(account.isShown ? "Hide this account from the sidebar" : "Show this account in the sidebar")
             VStack(alignment: .leading, spacing: 4) {
-                TextField("Name", text: $account.label)
-                    .textFieldStyle(.plain)
-                Text("\(account.harness.title) · \(account.configDirectory ?? "default account")")
+                Text(account.harness.title)
+                Text(account.configDirectory ?? "Default directory")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 status
+                if let sameLogin = monitor.listSameLoginAccounts(as: account).first {
+                    Label(
+                        "Same account as \(sameLogin.configDirectory ?? "the default"), shown once in the sidebar",
+                        systemImage: "link"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
                 signInCommand
             }
             Spacer(minLength: 0)
@@ -282,7 +311,7 @@ private struct AgentAccountRow: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
-            .help("Remove \(account.label)")
+            .help("Remove this account")
         }
     }
 

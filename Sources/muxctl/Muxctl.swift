@@ -17,7 +17,8 @@ enum Muxctl {
                muxctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
                muxctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
                  settings: mute=on|off volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
-                           eq=on|off eq<1-10>=-12...12 (\(bandList)) reverb=<room> mix=0...100
+                           eq=on|off eq<1-10>=-12...12 (\(bandList)) preset=<preset> reverb=<room> mix=0...100
+                 presets: \(EqualizerPreset.allCases.map(\.rawValue).joined(separator: " "))
                  rooms: \(ReverbRoom.allCases.map(\.rawValue).joined(separator: " "))
         """
     private static let bandList = MixerTrackSettings.listEqualizerFrequencies
@@ -251,6 +252,9 @@ enum Muxctl {
         case "eq":
             guard value == "on" || value == "off" else { return false }
             settings.isEqualizerEnabled = value == "on"
+        case "preset":
+            guard let preset = EqualizerPreset(rawValue: value) else { return false }
+            settings.applyEqualizerPreset(preset)
         case "reverb":
             guard let room = ReverbRoom(rawValue: value) else { return false }
             settings.reverbRoom = room
@@ -284,7 +288,7 @@ enum Muxctl {
             String(format: "width %.2f", settings.width),
             "invert \(invert)",
             "swap \(settings.isSwapped ? "on" : "off")",
-            "eq \(settings.isEqualizerEnabled ? listGains : "off")",
+            "eq \(settings.isEqualizerEnabled ? settings.equalizerPreset?.rawValue ?? listGains : "off")",
             String(format: "reverb %@ %.0f%%", settings.reverbRoom.rawValue, settings.reverbMix),
         ].joined(separator: " · ")
     }

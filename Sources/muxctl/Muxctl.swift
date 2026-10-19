@@ -8,6 +8,8 @@ enum Muxctl {
     private static let usage = """
         usage: muxctl list [--json]
                muxctl watch
+               muxctl manage <window-id>
+               muxctl release <window-id>
         """
     private static let jsonFlag = "--json"
     private static let titleWidth = 60
@@ -24,6 +26,12 @@ enum Muxctl {
             request = .list
         case "watch":
             request = .watch
+        case "manage", "release":
+            guard let rawId = listArguments.dropFirst().first.flatMap(UInt32.init) else {
+                exit(withMessage: usage)
+            }
+            let windowId = WindowId(rawValue: rawId)
+            request = command == "manage" ? .manage(windowId: windowId) : .release(windowId: windowId)
         default:
             exit(withMessage: usage)
         }
@@ -64,6 +72,8 @@ enum Muxctl {
             Swift.print("~ \(row(for: window))")
         case .change(.removed(let windowId)):
             Swift.print("- \(windowId)")
+        case .done:
+            break
         case .failure(let failure):
             exit(withMessage: "muxctl: \(failure)")
         }

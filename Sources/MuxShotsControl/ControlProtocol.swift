@@ -7,12 +7,17 @@ public enum ControlRequest: Codable, Sendable {
     case list
     /// Reply with the groups and their windows, then stream every window change until the client disconnects.
     case watch
+    /// Manage a window in a new group, as dropping it on the tray's "New Group" does.
+    case manage(windowId: WindowId)
+    /// Stop managing a window.
+    case release(windowId: WindowId)
 }
 
 /// A message the running app sends back.
 public enum ControlMessage: Codable, Sendable {
     case workspace(listGroups: [WindowGroup], listWindows: [WindowRecord])
     case change(WindowChange)
+    case done
     case failure(message: String)
 }
 

@@ -82,6 +82,16 @@ final class ControlServer: Sendable {
                 for await change in changes {
                     try await connection.send(ControlMessage.change(change))
                 }
+            case .manage(let windowId):
+                guard let window = WindowServer.window(withId: windowId) else {
+                    try await connection.send(ControlMessage.failure(message: "no window \(windowId)"))
+                    return
+                }
+                await workspaceController.adopt(windowId, processId: window.processId, into: nil)
+                try await connection.send(ControlMessage.done)
+            case .release(let windowId):
+                await workspaceController.release(windowId)
+                try await connection.send(ControlMessage.done)
             }
         } catch {
             logger.info("control session ended: \(error)")

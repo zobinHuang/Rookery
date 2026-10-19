@@ -22,7 +22,7 @@ struct SevenSegmentDisplay: View, Animatable {
         "9": [.top, .topRight, .bottomRight, .bottom, .topLeft, .middle],
     ]
     private static let widthRatio: CGFloat = 0.58
-    private static let thicknessRatio: CGFloat = 0.17
+    private static let thicknessRatio: CGFloat = 0.115
     private static let digitSpacingRatio: CGFloat = 0.2
     private static let colonWidthRatio: CGFloat = 0.26
     /// How far the display leans, as a share of its height, like the slanted digits of a real display.
@@ -133,7 +133,7 @@ struct SevenSegmentDisplay: View, Animatable {
 
     /// A segment as a long hexagon with pointed ends, the shape of a real display's segment.
     private func segmentPath(_ segment: Segment, originX: CGFloat) -> Path {
-        let gap = thickness * 0.18
+        let gap = thickness * 0.3
         let half = thickness / 2
         let left = originX + half
         let right = originX + digitWidth - half

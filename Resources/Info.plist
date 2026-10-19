@@ -24,6 +24,8 @@
 	<string>public.app-category.productivity</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.2</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>MuxShots takes over the sound of the applications you choose, so its mixer can adjust their volume, stereo, equalizer and reverb.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

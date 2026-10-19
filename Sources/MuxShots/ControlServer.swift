@@ -12,6 +12,7 @@ final class ControlServer: Sendable {
     private let tracker: WindowTracker
     private let workspaceController: WorkspaceController
     private let stages: StageCoordinator
+    private let mixerController: MixerController
     private let listener: NWListener
     private let queue = DispatchQueue(label: "MuxShots.control.listener")
 
@@ -21,7 +22,13 @@ final class ControlServer: Sendable {
     ///   - tracker: the source of observed window state
     ///   - workspaceController: the owner of the groups
     ///   - stages: the stages to open and close
-    init(tracker: WindowTracker, workspaceController: WorkspaceController, stages: StageCoordinator) throws {
+    ///   - mixerController: the mixer to report and adjust
+    init(
+        tracker: WindowTracker,
+        workspaceController: WorkspaceController,
+        stages: StageCoordinator,
+        mixerController: MixerController
+    ) throws {
         let url = ControlSocket.url
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(),
@@ -36,14 +43,21 @@ final class ControlServer: Sendable {
         self.tracker = tracker
         self.workspaceController = workspaceController
         self.stages = stages
+        self.mixerController = mixerController
     }
 
     /// Start accepting connections.
     func start() {
-        listener.newConnectionHandler = { [tracker, workspaceController, stages] connection in
+        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController] connection in
             let control = ControlConnection(accepted: connection)
             Task {
-                await Self.serve(control, tracker: tracker, workspaceController: workspaceController, stages: stages)
+                await Self.serve(
+                    control,
+                    tracker: tracker,
+                    workspaceController: workspaceController,
+                    stages: stages,
+                    mixerController: mixerController
+                )
             }
         }
         listener.stateUpdateHandler = { state in
@@ -64,7 +78,8 @@ final class ControlServer: Sendable {
         _ connection: ControlConnection,
         tracker: WindowTracker,
         workspaceController: WorkspaceController,
-        stages: StageCoordinator
+        stages: StageCoordinator,
+        mixerController: MixerController
     ) async {
         defer { connection.cancel() }
         do {
@@ -135,9 +150,24 @@ final class ControlServer: Sendable {
                     }
                 }
                 try await connection.send(ControlMessage.done)
+            case .mixer:
+                try await connection.send(await mixerMessage(mixerController))
+            case .mixerApply(let bundleId, let settings):
+                await mixerController.apply(settings, to: bundleId)
+                try await connection.send(await mixerMessage(mixerController))
             }
         } catch {
             logger.info("control session ended: \(error)")
         }
+    }
+
+    @MainActor
+    private static func mixerMessage(_ mixerController: MixerController) -> ControlMessage {
+        let listTracks = mixerController.listTracks
+        let mapLevels = Dictionary(uniqueKeysWithValues: listTracks.filter(\.isCapturing).map { track in
+            let levels = mixerController.takeLevels(of: track.bundleId)
+            return (track.bundleId, max(levels.left, levels.right))
+        })
+        return .mixer(listTracks: listTracks, mapLevels: mapLevels)
     }
 }

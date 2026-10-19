@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let tracker = WindowTracker()
     private let preferences = Preferences()
+    private let mixerController = MixerController()
     private var settingsWindowController: SettingsWindowController?
     private var statusMenuController: StatusMenuController?
     private var applicationMonitor: ApplicationMonitor?
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenuController = controller
         controller.start()
         NSApplication.shared.mainMenu = makeMainMenu()
+        mixerController.start()
         if !AccessibilityPermission.isGranted {
             AccessibilityPermission.requestAccess()
         }
@@ -93,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceController?.stop()
         shortcutController?.stop()
         controlServer?.stop()
+        mixerController.stop()
     }
 
     /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen, fading the
@@ -207,7 +210,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stages.openOnCursorDisplay()
 
         do {
-            let server = try ControlServer(tracker: tracker, workspaceController: workspace, stages: stages)
+            let server = try ControlServer(
+                tracker: tracker,
+                workspaceController: workspace,
+                stages: stages,
+                mixerController: mixerController
+            )
             controlServer = server
             server.start()
         } catch {

@@ -17,12 +17,41 @@ public enum ControlRequest: Codable, Sendable {
     case switchGroup(nameOrPosition: String?)
     /// Open or close the stage.
     case stage(isOpen: Bool)
+    /// Reply with the mixer's tracks.
+    case mixer
+    /// Change how the mixer treats an application's sound, taking it over or giving it back as the settings
+    /// say, then reply with the mixer's tracks.
+    case mixerApply(bundleId: String, settings: MixerTrackSettings)
+}
+
+/// An application's sound as the mixer sees it.
+public struct MixerTrackStatus: Codable, Equatable, Sendable {
+    public let bundleId: String
+    public let name: String
+    /// Whether the application, or a helper of it, is playing sound.
+    public let isPlaying: Bool
+    /// Whether MuxShots is capturing the sound right now, rather than waiting for it to play.
+    public let isCapturing: Bool
+    /// Why taking the sound over last failed.
+    public let error: String?
+    public let settings: MixerTrackSettings
+
+    public init(bundleId: String, name: String, isPlaying: Bool, isCapturing: Bool, error: String?, settings: MixerTrackSettings) {
+        self.bundleId = bundleId
+        self.name = name
+        self.isPlaying = isPlaying
+        self.isCapturing = isCapturing
+        self.error = error
+        self.settings = settings
+    }
 }
 
 /// A message the running app sends back.
 public enum ControlMessage: Codable, Sendable {
     case workspace(listGroups: [WindowGroup], setActiveGroupIds: Set<GroupId>, listWindows: [WindowRecord])
     case change(WindowChange)
+    /// The mixer's tracks, with how loud each captured one has been since last asked, 0 to 1, by bundle id.
+    case mixer(listTracks: [MixerTrackStatus], mapLevels: [String: Float])
     case done
     case failure(message: String)
 }

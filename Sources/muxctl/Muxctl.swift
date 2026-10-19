@@ -13,7 +13,16 @@ enum Muxctl {
                muxctl focus|hide|show|maximize <window-id>
                muxctl switch <group-name-or-position> | --all
                muxctl stage on|off
+               muxctl audio [--json]
+               muxctl audio take|release <bundle-id>
+               muxctl audio set <bundle-id> <setting>=<value>...
+                 settings: volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
+                           eq=on|off eq<1-10>=-12...12 (\(bandList)) reverb=<room> mix=0...100
+                 rooms: \(ReverbRoom.allCases.map(\.rawValue).joined(separator: " "))
         """
+    private static let bandList = MixerTrackSettings.listEqualizerFrequencies
+        .map { $0 >= 1_000 ? "\(Int($0 / 1_000))k" : "\(Int($0))" }
+        .joined(separator: " ")
     private static let jsonFlag = "--json"
     private static let allFlag = "--all"
     private static let titleWidth = 60
@@ -49,6 +58,8 @@ enum Muxctl {
                 exit(withMessage: usage)
             }
             request = .stage(isOpen: state == "on")
+        case "audio":
+            request = await audioRequest(Array(listArguments.dropFirst()))
         case let name where WindowAction(rawValue: name) != nil:
             guard
                 let action = WindowAction(rawValue: name),
@@ -99,6 +110,20 @@ enum Muxctl {
             Swift.print("~ \(row(for: window, isHidden: false))")
         case .change(.removed(let windowId)):
             Swift.print("- \(windowId)")
+        case .mixer(let listTracks, let mapLevels):
+            for track in listTracks {
+                let marker = track.isCapturing ? "* " : track.settings.isTakenOver ? "~ " : "  "
+                let state = track.isPlaying ? "playing" : "silent "
+                let level = mapLevels[track.bundleId].map { String(format: " level %.3f", $0) } ?? ""
+                Swift.print("\(marker)\(state) \(track.name.padding(toLength: 20, withPad: " ", startingAt: 0)) \(track.bundleId)\(level)")
+                if track.settings.isTakenOver {
+                    Swift.print("    \(summary(of: track.settings))")
+                }
+                if let error = track.error {
+                    Swift.print("    error: \(error)")
+                }
+            }
+            Swift.print("\(listTracks.count) tracks, \(listTracks.filter(\.isCapturing).count) captured")
         case .done:
             break
         case .failure(let failure):
@@ -134,6 +159,113 @@ enum Muxctl {
             "".padding(toLength: 22, withPad: " ", startingAt: 0),
             String(member.displayName.prefix(titleWidth)),
         ].joined(separator: " ")
+    }
+
+    // MARK: - Audio
+
+    /// The request for an `audio` command; changing settings first reads the current ones from the app.
+    private static func audioRequest(_ listArguments: [String]) async -> ControlRequest {
+        guard let subcommand = listArguments.first, subcommand != jsonFlag else {
+            return .mixer
+        }
+        guard let bundleId = listArguments.dropFirst().first else {
+            exit(withMessage: usage)
+        }
+        var settings = await currentSettings(of: bundleId)
+        switch subcommand {
+        case "take":
+            settings.isTakenOver = true
+        case "release":
+            settings.isTakenOver = false
+        case "set":
+            settings.isTakenOver = true
+            for assignment in listArguments.dropFirst(2) where assignment != jsonFlag {
+                let parts = assignment.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2, apply(parts[1], to: parts[0], in: &settings) else {
+                    exit(withMessage: "muxctl: bad setting \(assignment)\n\(usage)")
+                }
+            }
+        default:
+            exit(withMessage: usage)
+        }
+        return .mixerApply(bundleId: bundleId, settings: settings)
+    }
+
+    private static func currentSettings(of bundleId: String) async -> MixerTrackSettings {
+        do {
+            let connection = try await ControlConnection.connect(to: ControlSocket.url)
+            defer { connection.cancel() }
+            try await connection.send(ControlRequest.mixer)
+            guard case .mixer(let listTracks, _) = try await connection.receive(ControlMessage.self) else {
+                return MixerTrackSettings()
+            }
+            return listTracks.first { $0.bundleId == bundleId }?.settings ?? MixerTrackSettings()
+        } catch {
+            exit(withMessage: "muxctl: \(error)")
+        }
+    }
+
+    /// Set one setting from its text, reporting whether the text made sense.
+    private static func apply(_ value: String, to key: String, in settings: inout MixerTrackSettings) -> Bool {
+        let number = Float(value)
+        switch key {
+        case "volume":
+            guard let number else { return false }
+            settings.volume = number
+        case "pan":
+            guard let number else { return false }
+            settings.pan = number
+        case "width":
+            guard let number else { return false }
+            settings.width = number
+        case "mix":
+            guard let number else { return false }
+            settings.reverbMix = number
+        case "invert":
+            guard ["none", "left", "right", "both"].contains(value) else { return false }
+            settings.isLeftInverted = value == "left" || value == "both"
+            settings.isRightInverted = value == "right" || value == "both"
+        case "swap":
+            guard value == "on" || value == "off" else { return false }
+            settings.isSwapped = value == "on"
+        case "eq":
+            guard value == "on" || value == "off" else { return false }
+            settings.isEqualizerEnabled = value == "on"
+        case "reverb":
+            guard let room = ReverbRoom(rawValue: value) else { return false }
+            settings.reverbRoom = room
+        case let band where band.hasPrefix("eq"):
+            guard
+                let number,
+                let index = Int(band.dropFirst(2)),
+                settings.listEqualizerGains.indices.contains(index - 1)
+            else {
+                return false
+            }
+            settings.listEqualizerGains[index - 1] = number
+        default:
+            return false
+        }
+        return true
+    }
+
+    private static func summary(of settings: MixerTrackSettings) -> String {
+        let invert = switch (settings.isLeftInverted, settings.isRightInverted) {
+        case (true, true): "both"
+        case (true, false): "left"
+        case (false, true): "right"
+        case (false, false): "none"
+        }
+        let listGains = settings.listEqualizerGains.map { String(format: "%+.0f", $0) }.joined(separator: " ")
+        return [
+            String(format: "volume %.2f", settings.volume),
+            String(format: "pan %+.2f", settings.pan),
+            String(format: "width %.2f", settings.width),
+            "invert \(invert)",
+            "swap \(settings.isSwapped ? "on" : "off")",
+            "eq \(settings.isEqualizerEnabled ? listGains : "off")",
+            String(format: "reverb %@ %.0f%%", settings.reverbRoom.rawValue, settings.reverbMix),
+        ].joined(separator: " · ")
     }
 
     private static func exit(withMessage message: String) -> Never {

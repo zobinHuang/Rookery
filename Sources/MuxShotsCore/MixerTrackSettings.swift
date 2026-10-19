@@ -77,6 +77,17 @@ public struct MixerTrackSettings: Codable, Equatable, Sendable {
         reverbMix = try container.decodeIfPresent(Float.self, forKey: .reverbMix) ?? defaults.reverbMix
     }
 
+    /// The preset the equalizer is set to, if its gains are exactly one.
+    public var equalizerPreset: EqualizerPreset? {
+        EqualizerPreset.allCases.first { $0.listGains == listEqualizerGains }
+    }
+
+    /// Set the equalizer to a preset, turning it on.
+    public mutating func applyEqualizerPreset(_ preset: EqualizerPreset) {
+        listEqualizerGains = preset.listGains
+        isEqualizerEnabled = true
+    }
+
     /// Whether the sound has to be captured: to be treated, or to be silenced.
     public var isCaptureNeeded: Bool {
         isTakenOver || isMuted

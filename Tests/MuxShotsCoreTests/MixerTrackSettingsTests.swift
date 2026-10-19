@@ -59,4 +59,23 @@ struct MixerTrackSettingsTests {
         #expect(settings.effective.isMuted)
         #expect(settings.effective.volume == 1)
     }
+
+    @Test func everyPresetFitsTheEqualizer() {
+        for preset in EqualizerPreset.allCases {
+            #expect(preset.listGains.count == MixerTrackSettings.listEqualizerFrequencies.count)
+            #expect(preset.listGains.allSatisfy { MixerTrackSettings.equalizerGainRange.contains($0) })
+        }
+    }
+
+    @Test func applyingAPresetTurnsTheEqualizerOnAndIsRecognized() {
+        var settings = MixerTrackSettings()
+        settings.isEqualizerEnabled = false
+
+        settings.applyEqualizerPreset(.voice)
+
+        #expect(settings.isEqualizerEnabled)
+        #expect(settings.equalizerPreset == .voice)
+        settings.listEqualizerGains[0] += 1
+        #expect(settings.equalizerPreset == nil)
+    }
 }

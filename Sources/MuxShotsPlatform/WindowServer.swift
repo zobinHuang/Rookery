@@ -20,13 +20,24 @@ public enum WindowServer {
     private static let transparentAlpha = 0.0
 
     /// Every visible normal-layer window of every application, on any Space.
-    public static func listWindows() -> [WindowServerWindow] {
-        windows(options: [.optionAll, .excludeDesktopElements], relativeTo: kCGNullWindowID)
+    ///
+    /// Only windows whose order matters to discovery should be checked against the window server one by
+    /// one. That query is an IPC, so doing it for every unrelated window is needlessly expensive.
+    public static func listWindows(orderedWindowIds: Set<WindowId> = []) -> [WindowServerWindow] {
+        windows(
+            options: [.optionAll, .excludeDesktopElements],
+            relativeTo: kCGNullWindowID,
+            orderedWindowIds: orderedWindowIds
+        )
     }
 
     /// One window, if it still exists.
     public static func window(withId windowId: WindowId) -> WindowServerWindow? {
-        windows(options: [.optionIncludingWindow], relativeTo: windowId.rawValue).first
+        windows(
+            options: [.optionIncludingWindow],
+            relativeTo: windowId.rawValue,
+            orderedWindowIds: [windowId]
+        ).first
     }
 
     /// The frontmost on-screen normal window under a point, ignoring windows of one process.
@@ -40,11 +51,15 @@ public enum WindowServer {
     }
 
     /// Normal-layer, non-transparent windows in front-to-back order.
-    private static func windows(options: CGWindowListOption, relativeTo windowId: CGWindowID) -> [WindowServerWindow] {
+    private static func windows(
+        options: CGWindowListOption,
+        relativeTo windowId: CGWindowID,
+        orderedWindowIds: Set<WindowId> = []
+    ) -> [WindowServerWindow] {
         guard let listInfo = CGWindowListCopyWindowInfo(options, windowId) as? [[String: Any]] else {
             return []
         }
-        let connectionId = cgsMainConnectionId()
+        let connectionId = orderedWindowIds.isEmpty ? nil : cgsMainConnectionId()
         return listInfo.compactMap { info in
             guard
                 let rawId = info[kCGWindowNumber as String] as? UInt32,
@@ -58,7 +73,9 @@ public enum WindowServer {
                 return nil
             }
             var isOrderedIn = false
-            _ = cgsWindowIsOrderedIn(connectionId, rawId, &isOrderedIn)
+            if orderedWindowIds.contains(WindowId(rawValue: rawId)), let connectionId {
+                _ = cgsWindowIsOrderedIn(connectionId, rawId, &isOrderedIn)
+            }
             return WindowServerWindow(
                 windowId: WindowId(rawValue: rawId),
                 processId: processId,

@@ -7,7 +7,8 @@ import os
 final class ApplicationWindowTracker: @unchecked Sendable {
     // Every mutable property is touched only on `thread`.
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "tracker")
-    private static let refreshDebounce: TimeInterval = 0.05
+    /// Coalesce bursts such as terminals changing their titles while output streams in.
+    private static let refreshDebounce: TimeInterval = 0.25
     private static let discoveryRetryInterval = Duration.seconds(30)
     private static let discoverySliceSize: UInt64 = 10_000
     private static let frameTolerance: CGFloat = 2
@@ -34,6 +35,13 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         kAXWindowCreatedNotification,
         kAXUIElementDestroyedNotification,
     ]
+    private static let setWindowStateNotifications: Set<String> = [
+        kAXWindowMovedNotification,
+        kAXWindowResizedNotification,
+        kAXTitleChangedNotification,
+        kAXWindowMiniaturizedNotification,
+        kAXWindowDeminiaturizedNotification,
+    ]
 
     let application: RunningApplication
     private let thread: RunLoopThread
@@ -43,9 +51,11 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private var observer: AXObserver?
     private var isApplicationObserved = false
     private var isRefreshScheduled = false
+    private var isWindowRefreshScheduled = false
     private var isServerListStale = true
     private var setManagedIds: Set<WindowId> = []
     private var mapElements: [WindowId: AccessibilityElement] = [:]
+    private var mapPendingWindowElements: [WindowId: AccessibilityElement] = [:]
     private var setObservedIds: Set<WindowId> = []
     private var mapServerWindows: [WindowId: WindowServerWindow] = [:]
     private var mapLastProbeTimes: [WindowId: ContinuousClock.Instant] = [:]
@@ -210,13 +220,13 @@ final class ApplicationWindowTracker: @unchecked Sendable {
 
     private func createObserver() {
         var created: AXObserver?
-        let error = AXObserverCreate(application.processId, { _, _, notification, context in
+        let error = AXObserverCreate(application.processId, { _, element, notification, context in
             guard let context else {
                 return
             }
             Unmanaged<ApplicationWindowTracker>.fromOpaque(context)
                 .takeUnretainedValue()
-                .handle(notification: notification as String)
+                .handle(notification: notification as String, element: element)
         }, &created)
         guard error == .success, let created else {
             return
@@ -277,13 +287,42 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         return windowId
     }
 
-    private func handle(notification: String) {
+    private func handle(notification: String, element: AXUIElement) {
         if Self.setFocusNotifications.contains(notification), let windowId = focusedManagedWindowId() {
             onFocus(windowId)
+            return
         }
         if Self.setServerListChangingNotifications.contains(notification) {
             isServerListStale = true
+            scheduleRefresh()
+            return
         }
+        if notification == kAXApplicationHiddenNotification as String
+            || notification == kAXApplicationShownNotification as String {
+            isServerListStale = true
+            scheduleRefresh()
+            return
+        }
+        guard Self.setWindowStateNotifications.contains(notification) else {
+            return
+        }
+        let windowElement = AccessibilityElement(element: element)
+        guard let windowId = try? windowElement.windowId(), setManagedIds.contains(windowId) else {
+            return
+        }
+        mapElements[windowId] = windowElement
+        mapPendingWindowElements[windowId] = windowElement
+        guard !isWindowRefreshScheduled else {
+            return
+        }
+        isWindowRefreshScheduled = true
+        thread.perform(after: Self.refreshDebounce) { [self] in
+            isWindowRefreshScheduled = false
+            refreshPendingWindows()
+        }
+    }
+
+    private func scheduleRefresh() {
         guard !isRefreshScheduled else {
             return
         }
@@ -292,6 +331,27 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             isRefreshScheduled = false
             refresh()
         }
+    }
+
+    /// Publish only windows whose own Accessibility observers reported a state change.
+    private func refreshPendingWindows() {
+        let mapElements = mapPendingWindowElements
+        mapPendingWindowElements.removeAll(keepingCapacity: true)
+        var listWindows: [WindowRecord] = []
+        for (windowId, element) in mapElements where setManagedIds.contains(windowId) {
+            do {
+                listWindows.append(try record(windowId: windowId, element: element))
+            } catch let error as AccessibilityError where error.isInvalidElement {
+                self.mapElements[windowId] = nil
+                setObservedIds.remove(windowId)
+            } catch {
+                continue
+            }
+        }
+        guard !listWindows.isEmpty else {
+            return
+        }
+        onSnapshot(ApplicationSnapshot(application: application, listWindows: listWindows))
     }
 
     private func updateServerWindows(_ listServerWindows: [WindowServerWindow]) {
@@ -304,7 +364,10 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             return
         }
         if isServerListStale {
-            updateServerWindows(WindowServer.listWindows().filter { $0.processId == application.processId })
+            updateServerWindows(
+                WindowServer.listWindows(orderedWindowIds: setManagedIds)
+                    .filter { $0.processId == application.processId }
+            )
         }
         if !isApplicationObserved {
             isApplicationObserved = observe(root, notifications: Self.listApplicationNotifications)

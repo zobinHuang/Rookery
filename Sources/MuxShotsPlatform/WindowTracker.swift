@@ -4,7 +4,8 @@ import MuxShotsCore
 /// Keeps the window registry in step with the managed windows, from Accessibility events plus a periodic
 /// reconciliation against the window server. Applications without managed windows are not touched.
 public actor WindowTracker {
-    private static let reconcileInterval = Duration.seconds(2)
+    /// Accessibility notifications handle normal changes; this is only a fallback for missed events.
+    private static let reconcileInterval = Duration.seconds(10)
     private static let messagingTimeoutSeconds: Float = 1
 
     private var registry = WindowRegistry()
@@ -155,7 +156,10 @@ public actor WindowTracker {
         guard !mapTrackers.isEmpty else {
             return
         }
-        let mapServerWindows = Dictionary(grouping: WindowServer.listWindows(), by: \.processId)
+        let mapServerWindows = Dictionary(
+            grouping: WindowServer.listWindows(orderedWindowIds: Set(mapManagedProcessIds.keys)),
+            by: \.processId
+        )
         for (processId, tracker) in mapTrackers {
             tracker.reconcile(listServerWindows: mapServerWindows[processId] ?? [])
         }

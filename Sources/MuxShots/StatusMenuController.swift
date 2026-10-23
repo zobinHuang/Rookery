@@ -100,6 +100,9 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         statusItem.menu = menu
 
         refreshPermission()
+        guard !AccessibilityPermission.isGranted else {
+            return
+        }
         permissionPollTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.permissionPollInterval)
@@ -125,12 +128,15 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         stageItem.isEnabled = isPermissionGranted
         settingsItem.isEnabled = isPermissionGranted
         if isPermissionGranted {
+            permissionPollTask?.cancel()
+            permissionPollTask = nil
             onAccessGranted()
         }
     }
 
     /// Rebuild the group list each time the menu opens.
     func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshPermission()
         stageItem.title = isStageOpenProvider() ? "Exit Stage" : "Enter Stage"
         for item in listGroupItems {
             menu.removeItem(item)

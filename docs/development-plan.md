@@ -98,7 +98,7 @@ macOS 的窗口模型有三层：App → Window → Space。原生全屏会给�
 
 要点：
 
-- **单一事实来源**：`WindowRegistry` 由事件流增量更新，再由周期对账（例如每 2 秒对一次 `CGWindowList`）纠正丢失的事件。AX 通知会丢，这是常态。
+- **单一事实来源**：`WindowRegistry` 由事件流增量更新，再由每 10 秒一次的低频周期对账纠正丢失的事件。AX 通知会丢，这是常态；通常变化仍由 AX 通知即时反映。
 - **Platform 层协议化**：上层只依赖协议，测试时用假实现，Model/Policy 可在无权限、无窗口的环境下单元测试。
 - **Action 是"期望状态"**：执行后读回实际 frame 校验，不一致则重试一次并记日志；部分 App 会拒绝或修正尺寸。
 - **`muxctl` 从第一个里程碑就有**：`muxctl list`、`muxctl focus <id>`、`muxctl group ...`。它既是调试手段，也让代码代理能在不点 UI 的情况下验证行为，也为以后的脚本化留口子。
@@ -129,8 +129,8 @@ MuxShots 只管理用户主动交给它的窗口，其余 app 一概不碰。
 ### M1 观察：看见所有窗口（已完成）
 
 - 每个 App 一个 run-loop 线程（`ApplicationWindowTracker`），AX 全局消息超时 1 秒；`_AXUIElementGetWindow` 取 `CGWindowID`。
-- 订阅窗口创建/销毁/移动/缩放/标题/最小化与 App 聚焦/隐藏，50 ms 去抖后重读该 App 的完整快照；`WindowRegistry` 按 App 做差分。
-- 每 2 秒、以及每次 Space 切换时，与 `CGWindowList` 对账；其他 Space 的窗口用 remote token 暴力枚举（找齐即停，每个窗口 ID 只探测一次）。
+- 订阅窗口创建/销毁/移动/缩放/标题/最小化与 App 聚焦/隐藏；窗口级事件经 250 ms 合并后只重读对应窗口，结构变化和兜底对账才读取该 App 的完整快照；`WindowRegistry` 按 App 做差分。
+- 每 10 秒、以及每次 Space 切换时，与 `CGWindowList` 对账；仅对托管窗口查询 WindowServer 顺序状态。其他 Space 的窗口用 remote token 暴力枚举（找齐即停，每个窗口 ID 只探测一次）。
 - `muxctl list [--json]` / `muxctl watch`，走 `~/Library/Application Support/MuxShots/control.sock`。
 - **实测结果**：5 个原生全屏 VSCode 窗口、2 个全屏 Chrome 窗口、其他 Space 上的 iTerm2 窗口全部列出，ID 稳定；改标题 0.3 秒、关窗 0.3 秒、新建窗口约 0.6 秒内反映；空闲 CPU 约 1%。
 - **遗留问题**：单个窗口找不到时，暴力枚举要扫满 50 万个 ID（单核约 13 秒），只在启动或切 Space 后出现新的不可识别窗口时发生；以后可以改成分片、低优先级扫描。

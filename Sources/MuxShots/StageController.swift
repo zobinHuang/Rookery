@@ -264,6 +264,42 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         model.selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
     }
 
+    /// Update a tab title and its group's front-window label without rebuilding stage contents.
+    func refreshWindowTitle(_ windowId: WindowId) {
+        guard model.isVisible,
+              let window = workspaceController.workspace.listManagedWindows.first(where: { $0.windowId == windowId }) else {
+            return
+        }
+
+        if let tabIndex = model.listTabs.firstIndex(where: { $0.windowId == windowId }) {
+            var tabs = model.listTabs
+            let tab = tabs[tabIndex]
+            tabs[tabIndex] = StageTab(
+                windowId: tab.windowId,
+                title: window.displayName,
+                bundleId: tab.bundleId,
+                hasCustomName: tab.hasCustomName
+            )
+            model.listTabs = tabs
+        }
+
+        guard let group = workspaceController.workspace.group(containing: windowId),
+              group.listMembersFrontToBack.first?.windowId == windowId,
+              let rowIndex = model.listGroups.firstIndex(where: { $0.groupId == group.groupId }) else {
+            return
+        }
+        var groups = model.listGroups
+        let row = groups[rowIndex]
+        groups[rowIndex] = StageGroupRow(
+            groupId: row.groupId,
+            name: row.name,
+            listBundleIds: row.listBundleIds,
+            frontWindowName: window.displayName,
+            isActive: row.isActive
+        )
+        model.listGroups = groups
+    }
+
     // MARK: - Stage actions
 
     func selectGroup(_ groupId: GroupId) {

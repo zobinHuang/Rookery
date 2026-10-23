@@ -207,6 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel?.reload()
             stages?.refresh()
         }
+        workspace.onWindowTitleChange = { [weak panel, weak stages] windowId in
+            panel?.updateTitle(of: windowId)
+            stages?.refreshWindowTitle(windowId)
+        }
         workspaceController = workspace
         workspacePanelController = panel
         workspace.start()

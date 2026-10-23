@@ -202,19 +202,34 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
 
     /// Show the panel in front of other windows.
     func show() {
-        reload()
         NSApplication.shared.activate()
         panel.makeKeyAndOrderFront(nil)
+        reload()
     }
 
     /// Redisplay the workspace, unless a row or a window is being dragged.
     func reload() {
-        guard draggedWindowId == nil, !isReceivingWindow else {
+        guard panel.isVisible, draggedWindowId == nil, !isReceivingWindow else {
             return
         }
         outlineView.reloadData()
         outlineView.expandItem(nil, expandChildren: true)
         emptyStateView.isHidden = !controller.workspace.listGroups.isEmpty
+    }
+
+    /// Refresh a changed window title without rebuilding the rest of the list.
+    func updateTitle(of windowId: WindowId) {
+        guard panel.isVisible, draggedWindowId == nil, !isReceivingWindow else {
+            return
+        }
+        let row = outlineView.row(forItem: NSNumber(value: windowId.rawValue))
+        guard row >= 0 else {
+            return
+        }
+        outlineView.reloadData(
+            forRowIndexes: IndexSet(integer: row),
+            columnIndexes: IndexSet(integer: 0)
+        )
     }
 
     // Items are group identifiers as `NSString` and window identifiers as `NSNumber`.

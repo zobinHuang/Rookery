@@ -167,6 +167,13 @@ final class StageCoordinator: DropSurface {
         listStages.removeAll { $0.isClosed }
     }
 
+    /// Update only the title-bearing rows affected by a window title change.
+    func refreshWindowTitle(_ windowId: WindowId) {
+        for stage in listStages where !stage.isClosed {
+            stage.refreshWindowTitle(windowId)
+        }
+    }
+
     /// A stage's frame, in AppKit screen coordinates, while it is open.
     func frame(ofStage stageId: StageId) -> CGRect? {
         listStages.first { $0.stageId == stageId && $0.isShowing }?.frame

@@ -53,8 +53,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var listRecentWindowIds: [WindowId] = []
     private var focusQuietUntil = ContinuousClock.now
 
-    /// Called after every change to the workspace, including title updates.
+    /// Called after a structural or user initiated workspace change.
     var onChange: (() -> Void)?
+    /// Called when a managed window's displayed title changes, without changing workspace structure.
+    var onWindowTitleChange: ((WindowId) -> Void)?
 
     private let preferences: Preferences
 
@@ -1044,9 +1046,14 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     private func handle(_ change: WindowChange) {
         switch change {
-        case .added(let window), .updated(let window):
-            workspace.updateTitle(of: window.windowId, to: window.title)
-            onChange?()
+        case .added(let window):
+            if workspace.updateTitle(of: window.windowId, to: window.title) {
+                onWindowTitleChange?(window.windowId)
+            }
+        case .updated(let window):
+            if workspace.updateTitle(of: window.windowId, to: window.title) {
+                onWindowTitleChange?(window.windowId)
+            }
         case .removed(let windowId):
             let groupId = workspace.group(containing: windowId)?.groupId
             let stageId = groupId.flatMap(stage(showing:))

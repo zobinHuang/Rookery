@@ -127,8 +127,15 @@ public struct Workspace: Codable, Equatable, Sendable {
     }
 
     /// Record a managed window's latest title.
-    public mutating func updateTitle(of windowId: WindowId, to title: String) {
-        modifyMember(windowId) { $0.title = title }
+    @discardableResult
+    public mutating func updateTitle(of windowId: WindowId, to title: String) -> Bool {
+        guard let groupIndex = listGroups.firstIndex(where: { group in
+            group.listMembers.contains { $0.windowId == windowId && $0.title != title }
+        }), let memberIndex = listGroups[groupIndex].listMembers.firstIndex(where: { $0.windowId == windowId }) else {
+            return false
+        }
+        listGroups[groupIndex].listMembers[memberIndex].title = title
+        return true
     }
 
     /// The managed windows MuxShots has moved off screen.

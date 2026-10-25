@@ -269,4 +269,18 @@ struct WorkspaceTests {
 
         #expect(decoded == workspace)
     }
+
+    @Test func updatingATitleReportsWhetherItChanged() {
+        var workspace = Workspace()
+        workspace.adopt(Self.window(1, title: "Draft"), into: nil)
+
+        let isSameTitleChanged = workspace.updateTitle(of: WindowId(rawValue: 1), to: "Draft")
+        let isNewTitleChanged = workspace.updateTitle(of: WindowId(rawValue: 1), to: "Final")
+        let isUnmanagedChanged = workspace.updateTitle(of: WindowId(rawValue: 2), to: "Elsewhere")
+
+        #expect(!isSameTitleChanged)
+        #expect(isNewTitleChanged)
+        #expect(workspace.listManagedWindows.first?.title == "Final")
+        #expect(!isUnmanagedChanged)
+    }
 }

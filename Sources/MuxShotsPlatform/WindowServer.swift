@@ -31,6 +31,17 @@ public enum WindowServer {
         )
     }
 
+    /// The windows of some processes that are shown on some Space, which excludes minimized windows,
+    /// windows of hidden applications and windows an application has closed but keeps alive.
+    ///
+    /// - Parameter setProcessIds: the processes whose windows to list
+    public static func listShownWindows(ofProcesses setProcessIds: Set<pid_t>) -> [WindowServerWindow] {
+        let setWindowIds = Set(listWindows().filter { setProcessIds.contains($0.processId) }.map(\.windowId))
+        return listWindows(orderedWindowIds: setWindowIds).filter { window in
+            setWindowIds.contains(window.windowId) && window.isOrderedIn
+        }
+    }
+
     /// One window, if it still exists.
     public static func window(withId windowId: WindowId) -> WindowServerWindow? {
         windows(

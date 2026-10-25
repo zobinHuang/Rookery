@@ -88,6 +88,31 @@ struct WorkspaceTests {
         #expect(workspace.listHiddenWindows.isEmpty)
     }
 
+    @Test func onlyApplicationsWithEveryShownWindowHiddenCanBeHidden() {
+        let terminal = RunningApplication(processId: 300, bundleId: "com.googlecode.iterm2", name: "iTerm2")
+        var workspace = Workspace()
+        let groupId = workspace.adopt(Self.window(1), into: nil)
+        workspace.adopt(Self.window(2), into: groupId)
+        workspace.adopt(ManagedWindow(windowId: WindowId(rawValue: 3), application: terminal, title: ""), into: groupId)
+        let frame = CGRect(x: 0, y: 0, width: 100, height: 100)
+        for rawId: UInt32 in [1, 2, 3] {
+            workspace.markHidden(WindowId(rawValue: rawId), restoreFrame: frame)
+        }
+        let mapShown: [WindowId: Int32] = [
+            WindowId(rawValue: 1): 200,
+            WindowId(rawValue: 2): 200,
+            WindowId(rawValue: 3): 300,
+            WindowId(rawValue: 4): 300,
+        ]
+
+        let setAllHidden = workspace.processIdsShowingOnlyHiddenWindows(among: mapShown)
+        workspace.markShown(WindowId(rawValue: 2))
+        let setOneShown = workspace.processIdsShowingOnlyHiddenWindows(among: mapShown)
+
+        #expect(setAllHidden == [200])
+        #expect(setOneShown.isEmpty)
+    }
+
     @Test func movingAHiddenWindowKeepsItsRestoreFrame() {
         var workspace = Workspace()
         workspace.adopt(Self.window(1), into: nil)

@@ -144,6 +144,23 @@ public struct Workspace: Codable, Equatable, Sendable {
         listManagedWindows.filter(\.isHidden)
     }
 
+    /// The applications that have hidden windows and no window shown on any Space besides them. A hidden
+    /// window keeps a sliver on screen, so its application goes on drawing it; such an application can be
+    /// hidden whole instead, and then stops.
+    ///
+    /// - Parameter mapShownProcessIds: every window shown on some Space of the applications with hidden
+    ///   windows, with the process that owns it
+    /// - Returns: the processes of those applications
+    public func processIdsShowingOnlyHiddenWindows(among mapShownProcessIds: [WindowId: Int32]) -> Set<Int32> {
+        let listHidden = listHiddenWindows
+        let setHiddenIds = Set(listHidden.map(\.windowId))
+        var setProcessIds = Set(listHidden.map(\.application.processId))
+        for (windowId, processId) in mapShownProcessIds where !setHiddenIds.contains(windowId) {
+            setProcessIds.remove(processId)
+        }
+        return setProcessIds
+    }
+
     /// Remember where a window was before hiding it.
     ///
     /// - Parameters:

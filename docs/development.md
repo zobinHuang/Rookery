@@ -30,7 +30,7 @@ How to build, test and install MuxShots, and how to check each part works withou
 
   Add `--debug` for debug-level messages. Use `/usr/bin/log`: in zsh, `log` is a builtin.
 - **Crashes** land in `~/Library/Logs/DiagnosticReports/MuxShots-*.ips` (JSON after the first line; the triggered thread's frames say where).
-- **CPU**: `top -l 10 -s 4 -stats pid,cpu -pid $(pgrep -x MuxShots)` for an average, `sample $(pgrep -x MuxShots) 5` for where the time goes. WebKit processes started right after a sidebar video opens belong to MuxShots.
+- **CPU**: `top -l 10 -s 4 -stats pid,cpu -pid $(pgrep -x MuxShots)` for an average, `sample $(pgrep -x MuxShots) 5` for where the time goes. WebKit processes started right after a sidebar video opens belong to MuxShots. Heat while MuxShots itself is idle usually comes from other applications drawing windows nobody sees; a page's `requestAnimationFrame` rate and `document.visibilityState` in the test Chrome show whether a window counts as visible.
 
 ## Verifying UI without the screen
 

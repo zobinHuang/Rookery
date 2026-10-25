@@ -19,6 +19,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let hiddenVisibleShareLimit: CGFloat = 0.02
     /// Focus changes this soon after a switch are the switch's own and do not trigger another.
     private static let focusQuietPeriod = Duration.milliseconds(400)
+    /// Applications left with only hidden windows are hidden this long after the last layout change, once
+    /// the application being switched to has taken over activation.
+    private static let applicationHidingDelay = Duration.milliseconds(500)
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
@@ -47,6 +50,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// The latest layout change (a switch, or opening or closing the stage); each waits for the one before.
     private var switchTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
+    private var applicationHidingTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
     private var isSwitching = false
     /// Managed windows the user has used, most recent first.
@@ -125,6 +129,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         dragMonitor.stop()
         changeTask?.cancel()
         focusTask?.cancel()
+        applicationHidingTask?.cancel()
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
         }
@@ -410,6 +415,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private func enqueue(_ work: @escaping @MainActor () async -> Void) async {
         let previousTask = switchTask
         let startupTask = startupTask
+        applicationHidingTask?.cancel()
         let task = Task {
             await startupTask?.value
             await previousTask?.value
@@ -417,6 +423,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             await work()
             isSwitching = false
             focusQuietUntil = ContinuousClock.now + Self.focusQuietPeriod
+            scheduleApplicationHiding()
         }
         switchTask = task
         await task.value
@@ -432,6 +439,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             try await focus(windowId)
         case .hide:
             try await hide(windowId)
+            scheduleApplicationHiding()
         case .show:
             try await show(windowId)
         case .maximize:
@@ -459,6 +467,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 guard let frame = homeFrame ?? restoreFrame else {
                     continue
                 }
+                revealApplication(of: window.windowId)
                 taskGroup.addTask { [tracker] in
                     await tracker.applyFrame(frame, to: window.windowId)
                 }
@@ -912,6 +921,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
         await run(showing: [], hiding: listToHide)
         for (windowId, contentFrame) in mapShownFrames {
+            revealApplication(of: windowId)
             workspace.markShown(windowId)
             await tracker.applyFrame(contentFrame, to: windowId)
         }
@@ -997,6 +1007,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     private func show(_ windowId: WindowId) async throws {
+        revealApplication(of: windowId)
         guard let restoreFrame = workspace.markShown(windowId) else {
             throw WindowActionError.notHidden(windowId: windowId)
         }
@@ -1008,6 +1019,57 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             showed \(windowId.rawValue) at \(String(describing: restoreFrame), privacy: .public), \
             landed at \(String(describing: landedFrame), privacy: .public)
             """)
+    }
+
+    /// Hide the applications left with only hidden windows once layout settles; a later layout change
+    /// cancels the wait.
+    private func scheduleApplicationHiding() {
+        applicationHidingTask?.cancel()
+        applicationHidingTask = Task {
+            do {
+                try await Task.sleep(for: Self.applicationHidingDelay)
+            } catch {
+                return
+            }
+            hideApplicationsShowingOnlyHiddenWindows()
+        }
+    }
+
+    /// Hide whole every application whose every window shown on some Space is one MuxShots hid, so it stops
+    /// drawing windows nobody sees. The active application is left alone, as hiding it would hand
+    /// activation to another.
+    private func hideApplicationsShowingOnlyHiddenWindows() {
+        let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
+        guard !setCandidateIds.isEmpty else {
+            return
+        }
+        let mapShownProcessIds = Dictionary(
+            uniqueKeysWithValues: WindowServer.listShownWindows(ofProcesses: setCandidateIds).map { ($0.windowId, $0.processId) }
+        )
+        for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
+            guard
+                let running = NSRunningApplication(processIdentifier: processId),
+                !running.isHidden,
+                !running.isActive
+            else {
+                continue
+            }
+            if running.hide() {
+                Self.logger.info("hid \(running.localizedName ?? "", privacy: .public), whose windows are all hidden")
+            }
+        }
+    }
+
+    /// Bring back the application of a window about to be shown, if it is hidden.
+    private func revealApplication(of windowId: WindowId) {
+        guard
+            let window = workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId }),
+            let running = NSRunningApplication(processIdentifier: window.application.processId),
+            running.isHidden
+        else {
+            return
+        }
+        running.unhide()
     }
 
     private func maximize(_ windowId: WindowId) async throws {

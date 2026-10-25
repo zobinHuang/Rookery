@@ -393,7 +393,7 @@ struct StageView: View {
                                     .foregroundStyle(row.isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.primary))
                                     .lineLimit(1)
                             }
-                            Text(Self.subtitle(of: row))
+                            GroupSubtitleText(model: model, row: row)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -501,16 +501,6 @@ struct StageView: View {
             return AnyShapeStyle(Color.accentColor.opacity(isHovered ? 0.2 : 0.15))
         }
         return isHovered ? AnyShapeStyle(StageColors.hoveredRow) : AnyShapeStyle(.clear)
-    }
-
-    /// The group's front window and how many windows it holds, as its row's second line.
-    private static func subtitle(of row: StageGroupRow) -> String {
-        let count = row.listBundleIds.count
-        let countText = count == 1 ? "1 window" : "\(count) windows"
-        guard let frontWindowName = row.frontWindowName, !frontWindowName.isEmpty, count > 1 else {
-            return row.frontWindowName ?? countText
-        }
-        return "\(frontWindowName) · \(countText)"
     }
 
     /// The "⋯" button a hovered group row shows, with what can be done to the group.
@@ -637,9 +627,10 @@ struct StageView: View {
                         .frame(width: 18, height: 18)
                 }
                 if model.editingWindowId == tab.windowId {
+                    let name = model.mapWindowNames[tab.windowId] ?? ""
                     InlineRenameField(
-                        initialText: tab.hasCustomName ? tab.title : "",
-                        placeholder: tab.title
+                        initialText: tab.hasCustomName ? name : "",
+                        placeholder: name
                     ) { name in
                         finishEditing()
                         actions.renameWindow(tab.windowId, to: name)
@@ -649,7 +640,7 @@ struct StageView: View {
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 180)
                 } else {
-                    Text(tab.title)
+                    WindowNameText(model: model, windowId: tab.windowId)
                         .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -687,7 +678,7 @@ struct StageView: View {
                         .resizable()
                         .frame(width: 18, height: 18)
                 }
-                Text(tab.title)
+                WindowNameText(model: model, windowId: tab.windowId)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
             }
@@ -837,6 +828,35 @@ struct CloseButton: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help("Close this MuxShots window")
+    }
+}
+
+/// A window's name as the stage shows it, read on its own so that a window retitling itself redraws only
+/// this text.
+struct WindowNameText: View {
+    let model: StageModel
+    let windowId: WindowId
+
+    var body: some View {
+        Text(model.mapWindowNames[windowId] ?? "")
+    }
+}
+
+/// A group's front window and how many windows it holds, as its row's second line, read on its own like
+/// `WindowNameText`.
+struct GroupSubtitleText: View {
+    let model: StageModel
+    let row: StageGroupRow
+
+    var body: some View {
+        let count = row.listBundleIds.count
+        let countText = count == 1 ? "1 window" : "\(count) windows"
+        let frontWindowName = row.frontWindowId.flatMap { model.mapWindowNames[$0] }
+        if let frontWindowName, !frontWindowName.isEmpty, count > 1 {
+            Text("\(frontWindowName) · \(countText)")
+        } else {
+            Text(frontWindowName ?? countText)
+        }
     }
 }
 

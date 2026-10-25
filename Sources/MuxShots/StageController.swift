@@ -240,32 +240,52 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             dismiss()
             return
         }
-        model.isDarkTheme = NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        model.listClockCities = preferences.listClockCities
+        let isDarkTheme = NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let activeGroup = workspaceController.group(onStage: stageId)
-        model.listGroups = workspaceController.groups(ofStage: stageId).map { group in
+        let listStageGroups = workspaceController.groups(ofStage: stageId)
+        let listGroups = listStageGroups.map { group in
             Self.makeGroupRow(group, isActive: group.groupId == activeGroup?.groupId)
         }
-        model.activeGroupName = activeGroup?.name
-        model.listTabs = activeGroup?.listMembers.map(Self.makeTab) ?? []
-        model.selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
+        let listTabs = activeGroup?.listMembers.map(Self.makeTab) ?? []
+        var mapWindowNames: [WindowId: String] = [:]
+        for window in (activeGroup?.listMembers ?? []) + listStageGroups.compactMap(\.listMembersFrontToBack.first) {
+            mapWindowNames[window.windowId] = window.displayName
+        }
+        let selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
+        if model.isDarkTheme != isDarkTheme {
+            model.isDarkTheme = isDarkTheme
+        }
+        if model.listClockCities != preferences.listClockCities {
+            model.listClockCities = preferences.listClockCities
+        }
+        if model.listGroups != listGroups {
+            model.listGroups = listGroups
+        }
+        if model.activeGroupName != activeGroup?.name {
+            model.activeGroupName = activeGroup?.name
+        }
+        if model.listTabs != listTabs {
+            model.listTabs = listTabs
+        }
+        if model.mapWindowNames != mapWindowNames {
+            model.mapWindowNames = mapWindowNames
+        }
+        if model.selectedWindowId != selectedWindowId {
+            model.selectedWindowId = selectedWindowId
+        }
     }
 
     /// Show a window's new title in its tab and its group's row, without rebuilding the rest of the stage.
     func refreshWindowTitle(_ windowId: WindowId) {
         guard
             model.isVisible,
-            let group = workspaceController.workspace.group(containing: windowId),
-            let window = group.listMembers.first(where: { $0.windowId == windowId })
+            let shownName = model.mapWindowNames[windowId],
+            let window = workspaceController.workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId }),
+            window.displayName != shownName
         else {
             return
         }
-        if let tabIndex = model.listTabs.firstIndex(where: { $0.windowId == windowId }) {
-            model.listTabs[tabIndex] = Self.makeTab(window)
-        }
-        if let rowIndex = model.listGroups.firstIndex(where: { $0.groupId == group.groupId }) {
-            model.listGroups[rowIndex] = Self.makeGroupRow(group, isActive: model.listGroups[rowIndex].isActive)
-        }
+        model.mapWindowNames[windowId] = window.displayName
     }
 
     private static func makeGroupRow(_ group: WindowGroup, isActive: Bool) -> StageGroupRow {
@@ -273,7 +293,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             groupId: group.groupId,
             name: group.name,
             listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
-            frontWindowName: group.listMembersFrontToBack.first?.displayName,
+            frontWindowId: group.listMembersFrontToBack.first?.windowId,
             isActive: isActive
         )
     }
@@ -281,7 +301,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private static func makeTab(_ window: ManagedWindow) -> StageTab {
         StageTab(
             windowId: window.windowId,
-            title: window.displayName,
             bundleId: window.application.bundleId,
             hasCustomName: window.customName != nil
         )

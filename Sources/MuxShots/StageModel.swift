@@ -44,11 +44,10 @@ enum StagePayload {
     }
 }
 
-/// One tab: a member of the active group.
-struct StageTab: Identifiable {
+/// One tab: a member of the active group. Its name is in `StageModel.mapWindowNames`, so a new title
+/// redraws only the text showing it.
+struct StageTab: Identifiable, Equatable {
     let windowId: WindowId
-    /// The window's name: the user's, else its title, else its application's.
-    let title: String
     let bundleId: String?
     /// Whether the user named the tab, so editing starts from that name rather than an empty field.
     let hasCustomName: Bool
@@ -59,12 +58,13 @@ struct StageTab: Identifiable {
 }
 
 /// One group in the sidebar.
-struct StageGroupRow: Identifiable {
+struct StageGroupRow: Identifiable, Equatable {
     let groupId: GroupId
     let name: String
     /// The applications of the group's windows, front to back.
     let listBundleIds: [String?]
-    let frontWindowName: String?
+    /// The group's front window, whose name is in `StageModel.mapWindowNames`.
+    let frontWindowId: WindowId?
     let isActive: Bool
 
     var id: GroupId {
@@ -105,6 +105,10 @@ final class StageModel {
     var isVisible = false
     var listGroups: [StageGroupRow] = []
     var listTabs: [StageTab] = []
+    /// The names of the windows the tabs and the groups' rows show: the user's, else the title, else the
+    /// application's. Kept apart from the tabs and rows, and read only by the texts showing a name, so a
+    /// window retitling itself does not rebuild the stage.
+    var mapWindowNames: [WindowId: String] = [:]
     var selectedWindowId: WindowId?
     var activeGroupName: String?
     /// Whether a window drag is over the stage, which reveals the drop zones.

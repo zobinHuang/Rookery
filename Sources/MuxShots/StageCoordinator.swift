@@ -21,7 +21,9 @@ final class StageCoordinator: DropSurface {
     private var listStages: [StageController] = []
     /// Opens the settings window, for the stages' settings button.
     var onShowSettings: (() -> Void)?
-    private var mouseDownMonitor: Any?
+    private var mouseMonitor: Any?
+    /// The stage the left mouse button went down on, which brings its front window forward when it goes up.
+    private weak var pressedStage: StageController?
     /// The stage a window drag is over, which shows the drop feedback.
     private var dropStage: StageController?
     private var currentDragGroup: WindowGroup?
@@ -43,13 +45,25 @@ final class StageCoordinator: DropSurface {
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
         self.ghostAnimator = ghostAnimator
-        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
             let window = event.window
+            let isDown = event.type == .leftMouseDown
             MainActor.assumeIsolated {
-                self?.listStages.first { $0.owns(window) }?.bringContentToFront()
+                self?.handleClick(in: window, isDown: isDown)
             }
             return event
         }
+    }
+
+    /// Bring a clicked stage's front window forward once the click is over, so a click that switches groups
+    /// or tabs is not undone by focusing the window it switches away from.
+    private func handleClick(in window: NSWindow?, isDown: Bool) {
+        guard isDown else {
+            pressedStage?.bringContentToFront()
+            pressedStage = nil
+            return
+        }
+        pressedStage = listStages.first { $0.owns(window) }
     }
 
     /// Whether any stage is open.

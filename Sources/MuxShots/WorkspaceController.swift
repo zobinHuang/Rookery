@@ -22,6 +22,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Applications left with only hidden windows are hidden this long after the last layout change, once
     /// the application being switched to has taken over activation.
     private static let applicationHidingDelay = Duration.milliseconds(500)
+    /// How long bringing a stage's front window forward waits for the click that asked for it to start a
+    /// switch of its own.
+    private static let clickActionDelay = Duration.milliseconds(50)
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
@@ -53,6 +56,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var applicationHidingTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
     private var isSwitching = false
+    /// How many switches have been asked for, which tells whether one was asked for in the meantime.
+    private var switchRequestCount = 0
     /// Whether the workspace changed during the running layout change, which tells the views once when it
     /// ends rather than once for every window it moves.
     private var isChangePending = false
@@ -409,6 +414,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     ///   - stageId: with stages open, the stage to show the group on; by default the one already showing
     ///     it, else the one under the cursor
     func switchTo(_ groupId: GroupId?, bringingToFront frontWindowId: WindowId? = nil, onStage stageId: StageId? = nil) async {
+        switchRequestCount += 1
         await enqueue {
             await self.performSwitch(to: groupId, bringingToFront: frontWindowId, onStage: stageId)
         }
@@ -522,10 +528,20 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Bring a stage's front window forward with keyboard focus, keeping the stage just beneath it. This runs
-    /// in turn with layout changes, so a click that also switches groups focuses the window it switches to.
+    /// Bring a stage's front window forward with keyboard focus, keeping the stage just beneath it. A switch
+    /// asked for meanwhile, as by the click that called this, focuses the window it switches to instead:
+    /// focusing the one it switches away from too leaves some applications focusing that one.
     func focusFront(ofStage stageId: StageId) {
+        let requestCount = switchRequestCount
         Task {
+            do {
+                try await Task.sleep(for: Self.clickActionDelay)
+            } catch {
+                return
+            }
+            guard switchRequestCount == requestCount else {
+                return
+            }
             await enqueue {
                 guard let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
                     return

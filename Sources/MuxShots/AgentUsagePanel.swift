@@ -47,13 +47,12 @@ struct AgentUsagePanel: View {
                 .frame(height: 1)
             Button(action: monitor.requestRefresh) {
                 HStack(spacing: 3) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 8, weight: .bold))
-                        .rotationEffect(.degrees(monitor.isRefreshing ? 360 : 0))
-                        .animation(
-                            monitor.isRefreshing ? .linear(duration: 1).repeatForever(autoreverses: false) : .default,
-                            value: monitor.isRefreshing
-                        )
+                    SpinningSymbol(
+                        systemName: "arrow.clockwise",
+                        pointSize: 8,
+                        weight: .bold,
+                        isSpinning: monitor.isRefreshing
+                    )
                     Text(Self.nextRefreshText(monitor.nextRefreshAt, isRefreshing: monitor.isRefreshing, at: date))
                         .font(.system(size: 9.5, weight: .medium).monospacedDigit())
                 }

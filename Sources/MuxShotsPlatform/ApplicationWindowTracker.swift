@@ -34,6 +34,8 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private static let setServerListChangingNotifications: Set<String> = [
         kAXWindowCreatedNotification,
         kAXUIElementDestroyedNotification,
+        kAXApplicationHiddenNotification,
+        kAXApplicationShownNotification,
     ]
     private static let setWindowStateNotifications: Set<String> = [
         kAXWindowMovedNotification,
@@ -55,7 +57,8 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private var isServerListStale = true
     private var setManagedIds: Set<WindowId> = []
     private var mapElements: [WindowId: AccessibilityElement] = [:]
-    private var mapPendingWindowElements: [WindowId: AccessibilityElement] = [:]
+    /// The managed windows whose own notifications reported a change since they were last read.
+    private var setPendingWindowIds: Set<WindowId> = []
     private var setObservedIds: Set<WindowId> = []
     private var mapServerWindows: [WindowId: WindowServerWindow] = [:]
     private var mapLastProbeTimes: [WindowId: ContinuousClock.Instant] = [:]
@@ -297,21 +300,19 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             scheduleRefresh()
             return
         }
-        if notification == kAXApplicationHiddenNotification as String
-            || notification == kAXApplicationShownNotification as String {
-            isServerListStale = true
+        guard
+            Self.setWindowStateNotifications.contains(notification),
+            let windowId = try? AccessibilityElement(element: element).windowId(),
+            setManagedIds.contains(windowId)
+        else {
+            return
+        }
+        // A notification can come from an element inside the window, so the window is read through its own element.
+        guard mapElements[windowId] != nil else {
             scheduleRefresh()
             return
         }
-        guard Self.setWindowStateNotifications.contains(notification) else {
-            return
-        }
-        let windowElement = AccessibilityElement(element: element)
-        guard let windowId = try? windowElement.windowId(), setManagedIds.contains(windowId) else {
-            return
-        }
-        mapElements[windowId] = windowElement
-        mapPendingWindowElements[windowId] = windowElement
+        setPendingWindowIds.insert(windowId)
         guard !isWindowRefreshScheduled else {
             return
         }
@@ -333,16 +334,19 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         }
     }
 
-    /// Publish only windows whose own Accessibility observers reported a state change.
+    /// Publish only the windows whose own notifications reported a change.
     private func refreshPendingWindows() {
-        let mapElements = mapPendingWindowElements
-        mapPendingWindowElements.removeAll(keepingCapacity: true)
+        let setWindowIds = setPendingWindowIds
+        setPendingWindowIds.removeAll(keepingCapacity: true)
         var listWindows: [WindowRecord] = []
-        for (windowId, element) in mapElements where setManagedIds.contains(windowId) {
+        for windowId in setWindowIds where setManagedIds.contains(windowId) {
+            guard let element = mapElements[windowId] else {
+                continue
+            }
             do {
                 listWindows.append(try record(windowId: windowId, element: element))
             } catch let error as AccessibilityError where error.isInvalidElement {
-                self.mapElements[windowId] = nil
+                mapElements[windowId] = nil
                 setObservedIds.remove(windowId)
             } catch {
                 continue

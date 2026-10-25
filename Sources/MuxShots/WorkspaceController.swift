@@ -522,14 +522,17 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Bring a stage's front window forward with keyboard focus, keeping the stage just beneath it.
+    /// Bring a stage's front window forward with keyboard focus, keeping the stage just beneath it. This runs
+    /// in turn with layout changes, so a click that also switches groups focuses the window it switches to.
     func focusFront(ofStage stageId: StageId) {
-        guard let windowId = group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
-            return
-        }
         Task {
-            try? await focus(windowId)
-            stageCoordinator?.keepStage(stageId, beneath: windowId)
+            await enqueue {
+                guard let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
+                    return
+                }
+                try? await self.focus(windowId)
+                self.stageCoordinator?.keepStage(stageId, beneath: windowId)
+            }
         }
     }
 
@@ -797,7 +800,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Follow the user to a hidden window they focused, through Cmd-Tab, the Dock or a notification, by
-    /// switching to its group.
+    /// switching to its group. Applications can report a focus change late, after a switch has hidden the
+    /// window, so the switch waits until the application confirms the window still has focus.
     private func handleFocus(of windowId: WindowId) {
         if workspace.isManaged(windowId) && !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
             noteRecentlyUsed(windowId)
@@ -814,6 +818,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         Task {
+            guard
+                let processId = await tracker.processId(of: windowId),
+                await tracker.focusedWindowId(ofProcess: processId) == windowId,
+                !isSwitching
+            else {
+                return
+            }
             await switchTo(group.groupId, bringingToFront: windowId)
         }
     }

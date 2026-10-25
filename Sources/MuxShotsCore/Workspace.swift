@@ -127,15 +127,16 @@ public struct Workspace: Codable, Equatable, Sendable {
     }
 
     /// Record a managed window's latest title.
+    ///
+    /// - Returns: whether the title changed, so what shows it needs redrawing
     @discardableResult
     public mutating func updateTitle(of windowId: WindowId, to title: String) -> Bool {
-        guard let groupIndex = listGroups.firstIndex(where: { group in
-            group.listMembers.contains { $0.windowId == windowId && $0.title != title }
-        }), let memberIndex = listGroups[groupIndex].listMembers.firstIndex(where: { $0.windowId == windowId }) else {
-            return false
+        var isChanged = false
+        modifyMember(windowId) { member in
+            isChanged = isChanged || member.title != title
+            member.title = title
         }
-        listGroups[groupIndex].listMembers[memberIndex].title = title
-        return true
+        return isChanged
     }
 
     /// The managed windows MuxShots has moved off screen.

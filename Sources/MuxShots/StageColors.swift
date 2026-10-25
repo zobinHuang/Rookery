@@ -9,7 +9,9 @@ enum StageColors {
     static let sidebar = color(light: NSColor(white: 0.935, alpha: 1), dark: NSColor(white: 0.06, alpha: 1))
     /// The empty content area, before a window covers it.
     static let content = color(light: NSColor(white: 0.9, alpha: 1), dark: NSColor(white: 0.08, alpha: 1))
-    static let selectedTab = color(light: .white, dark: NSColor(white: 0.13, alpha: 1))
+    static let selectedTab = Color(nsColor: selectedTabFill)
+    /// The selected tab's background, for the layer that draws it.
+    static let selectedTabFill = dynamicColor(light: .white, dark: NSColor(white: 0.13, alpha: 1))
     static let idleTab = color(light: NSColor(white: 0, alpha: 0.05), dark: NSColor(white: 1, alpha: 0.05))
     static let separator = color(light: NSColor(white: 0, alpha: 0.08), dark: NSColor(white: 1, alpha: 0.07))
     /// The chosen segment of a segmented switch.
@@ -30,8 +32,12 @@ enum StageColors {
     static let groove = color(light: NSColor(white: 0, alpha: 0.1), dark: NSColor(white: 1, alpha: 0.1))
 
     private static func color(light: NSColor, dark: NSColor) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
+        Color(nsColor: dynamicColor(light: light, dark: dark))
+    }
+
+    private static func dynamicColor(light: NSColor, dark: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-        })
+        }
     }
 }

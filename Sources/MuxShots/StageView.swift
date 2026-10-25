@@ -49,7 +49,6 @@ struct StageView: View {
     let mixer: MixerController
     let agentUsage: AgentUsageMonitor
     unowned let actions: any StageActions
-    @Namespace private var tabNamespace
     @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
     @State private var sidebarHeight: CGFloat = 0
@@ -609,10 +608,12 @@ struct StageView: View {
                     model.isTabOverTabBarEnd = isTargeted
                 }
         }
+        .backgroundPreferenceValue(TabBoundsKey.self) { mapTabBounds in
+            TabBackgrounds(model: model, mapTabBounds: mapTabBounds)
+        }
         .padding(.horizontal, 6)
         .padding(.top, 6)
         .padding(.trailing, StageModel.contentInset)
-        .animation(.spring(response: 0.26, dampingFraction: 0.85), value: model.selectedWindowId)
     }
 
     private func tabButton(_ tab: StageTab) -> some View {
@@ -650,17 +651,7 @@ struct StageView: View {
             .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(StageColors.selectedTab)
-                        .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
-                        .matchedGeometryEffect(id: "selectedTab", in: tabNamespace)
-                } else {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(StageColors.idleTab)
-                }
-            }
+            .anchorPreference(key: TabBoundsKey.self, value: .bounds) { [tab.windowId: $0] }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -828,6 +819,42 @@ struct CloseButton: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .help("Close this MuxShots window")
+    }
+}
+
+/// Where each tab lies in the tab bar, for drawing the tabs' backgrounds beneath them.
+struct TabBoundsKey: PreferenceKey {
+    static let defaultValue: [WindowId: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [WindowId: Anchor<CGRect>], nextValue: () -> [WindowId: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, next in next }
+    }
+}
+
+/// The tabs' backgrounds: a faint one behind each tab, and the selected tab's raised one, which slides to
+/// the tab selected next.
+struct TabBackgrounds: View {
+    private static let cornerRadius: CGFloat = 9
+
+    let model: StageModel
+    let mapTabBounds: [WindowId: Anchor<CGRect>]
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                ForEach(model.listTabs) { tab in
+                    if let anchor = mapTabBounds[tab.windowId] {
+                        let bounds = proxy[anchor]
+                        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                            .fill(StageColors.idleTab)
+                            .frame(width: bounds.width, height: bounds.height)
+                            .offset(x: bounds.minX, y: bounds.minY)
+                    }
+                }
+                TabHighlight(frame: model.selectedWindowId.flatMap { mapTabBounds[$0] }.map { proxy[$0] })
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+        }
     }
 }
 

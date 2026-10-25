@@ -244,60 +244,47 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         model.listClockCities = preferences.listClockCities
         let activeGroup = workspaceController.group(onStage: stageId)
         model.listGroups = workspaceController.groups(ofStage: stageId).map { group in
-            StageGroupRow(
-                groupId: group.groupId,
-                name: group.name,
-                listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
-                frontWindowName: group.listMembersFrontToBack.first?.displayName,
-                isActive: group.groupId == activeGroup?.groupId
-            )
+            Self.makeGroupRow(group, isActive: group.groupId == activeGroup?.groupId)
         }
         model.activeGroupName = activeGroup?.name
-        model.listTabs = activeGroup?.listMembers.map { window in
-            StageTab(
-                windowId: window.windowId,
-                title: window.displayName,
-                bundleId: window.application.bundleId,
-                hasCustomName: window.customName != nil
-            )
-        } ?? []
+        model.listTabs = activeGroup?.listMembers.map(Self.makeTab) ?? []
         model.selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
     }
 
-    /// Update a tab title and its group's front-window label without rebuilding stage contents.
+    /// Show a window's new title in its tab and its group's row, without rebuilding the rest of the stage.
     func refreshWindowTitle(_ windowId: WindowId) {
-        guard model.isVisible,
-              let window = workspaceController.workspace.listManagedWindows.first(where: { $0.windowId == windowId }) else {
+        guard
+            model.isVisible,
+            let group = workspaceController.workspace.group(containing: windowId),
+            let window = group.listMembers.first(where: { $0.windowId == windowId })
+        else {
             return
         }
-
         if let tabIndex = model.listTabs.firstIndex(where: { $0.windowId == windowId }) {
-            var tabs = model.listTabs
-            let tab = tabs[tabIndex]
-            tabs[tabIndex] = StageTab(
-                windowId: tab.windowId,
-                title: window.displayName,
-                bundleId: tab.bundleId,
-                hasCustomName: tab.hasCustomName
-            )
-            model.listTabs = tabs
+            model.listTabs[tabIndex] = Self.makeTab(window)
         }
+        if let rowIndex = model.listGroups.firstIndex(where: { $0.groupId == group.groupId }) {
+            model.listGroups[rowIndex] = Self.makeGroupRow(group, isActive: model.listGroups[rowIndex].isActive)
+        }
+    }
 
-        guard let group = workspaceController.workspace.group(containing: windowId),
-              group.listMembersFrontToBack.first?.windowId == windowId,
-              let rowIndex = model.listGroups.firstIndex(where: { $0.groupId == group.groupId }) else {
-            return
-        }
-        var groups = model.listGroups
-        let row = groups[rowIndex]
-        groups[rowIndex] = StageGroupRow(
-            groupId: row.groupId,
-            name: row.name,
-            listBundleIds: row.listBundleIds,
-            frontWindowName: window.displayName,
-            isActive: row.isActive
+    private static func makeGroupRow(_ group: WindowGroup, isActive: Bool) -> StageGroupRow {
+        StageGroupRow(
+            groupId: group.groupId,
+            name: group.name,
+            listBundleIds: group.listMembersFrontToBack.map(\.application.bundleId),
+            frontWindowName: group.listMembersFrontToBack.first?.displayName,
+            isActive: isActive
         )
-        model.listGroups = groups
+    }
+
+    private static func makeTab(_ window: ManagedWindow) -> StageTab {
+        StageTab(
+            windowId: window.windowId,
+            title: window.displayName,
+            bundleId: window.application.bundleId,
+            hasCustomName: window.customName != nil
+        )
     }
 
     // MARK: - Stage actions

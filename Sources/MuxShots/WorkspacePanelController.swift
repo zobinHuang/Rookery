@@ -209,7 +209,11 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
 
     /// Redisplay the workspace, unless a row or a window is being dragged.
     func reload() {
-        guard panel.isVisible, draggedWindowId == nil, !isReceivingWindow else {
+        guard
+            panel.isVisible,
+            draggedWindowId == nil,
+            !isReceivingWindow
+        else {
             return
         }
         outlineView.reloadData()
@@ -219,7 +223,11 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
 
     /// Refresh a changed window title without rebuilding the rest of the list.
     func updateTitle(of windowId: WindowId) {
-        guard panel.isVisible, draggedWindowId == nil, !isReceivingWindow else {
+        guard
+            panel.isVisible,
+            draggedWindowId == nil,
+            !isReceivingWindow
+        else {
             return
         }
         let row = outlineView.row(forItem: NSNumber(value: windowId.rawValue))

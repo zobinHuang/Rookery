@@ -1046,11 +1046,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     private func handle(_ change: WindowChange) {
         switch change {
-        case .added(let window):
-            if workspace.updateTitle(of: window.windowId, to: window.title) {
-                onWindowTitleChange?(window.windowId)
-            }
-        case .updated(let window):
+        case .added(let window), .updated(let window):
             if workspace.updateTitle(of: window.windowId, to: window.title) {
                 onWindowTitleChange?(window.windowId)
             }

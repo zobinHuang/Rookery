@@ -63,11 +63,12 @@ private struct BlinkingColons: NSViewRepresentable {
     }
 
     /// Fade in over the start of each even second, stay lit, fade out over the start of the odd one, stay
-    /// dark; started on an even second of the wall clock so the blink keeps time with it.
+    /// dark; started on an even second of the wall clock so the blink keeps time with it. The window server
+    /// draws a frame only while the opacity changes, so the fades are kept short.
     private static func makeAnimation() -> CAKeyframeAnimation {
         let animation = CAKeyframeAnimation(keyPath: "opacity")
         animation.values = [0, 1, 1, 0, 0]
-        animation.keyTimes = [0, 0.15, 0.5, 0.65, 1]
+        animation.keyTimes = [0, 0.04, 0.5, 0.54, 1]
         animation.duration = periodSeconds
         animation.repeatCount = .infinity
         animation.isRemovedOnCompletion = false

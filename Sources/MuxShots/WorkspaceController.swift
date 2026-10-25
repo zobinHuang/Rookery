@@ -53,6 +53,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var applicationHidingTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
     private var isSwitching = false
+    /// Whether the workspace changed during the running layout change, which tells the views once when it
+    /// ends rather than once for every window it moves.
+    private var isChangePending = false
     /// Managed windows the user has used, most recent first.
     private var listRecentWindowIds: [WindowId] = []
     private var focusQuietUntil = ContinuousClock.now
@@ -422,6 +425,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             isSwitching = true
             await work()
             isSwitching = false
+            if isChangePending {
+                isChangePending = false
+                onChange?()
+            }
             focusQuietUntil = ContinuousClock.now + Self.focusQuietPeriod
             scheduleApplicationHiding()
         }
@@ -1149,6 +1156,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     private func didChange() {
         save()
+        guard !isSwitching else {
+            isChangePending = true
+            return
+        }
         onChange?()
     }
 

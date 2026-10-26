@@ -95,4 +95,54 @@ struct QuickNoteTests {
         let decoded = try JSONDecoder().decode(QuickNoteList.self, from: JSONEncoder().encode(notes))
         #expect(decoded == notes)
     }
+
+    static let link = NoteLink(
+        windowId: WindowId(rawValue: 42),
+        groupId: GroupId(rawValue: "work"),
+        name: "Inbox",
+        bundleId: "com.apple.mail"
+    )
+
+    @Test func linkingANoteRecordsTheTab() {
+        var notes = QuickNoteList()
+        let noteId = notes.add(text: "reply", at: Self.start)
+
+        let isChanged = notes.link(noteId, to: Self.link, at: Self.later)
+        let isChangedAgain = notes.link(noteId, to: Self.link, at: Self.later)
+
+        #expect(isChanged)
+        #expect(!isChangedAgain)
+        #expect(notes.listNotes[0].link == Self.link)
+        #expect(notes.listNotes[0].modifiedAt == Self.later)
+    }
+
+    @Test func aLinkedNoteSurvivesBlankText() {
+        var notes = QuickNoteList()
+        let noteId = notes.add(text: "", link: Self.link, at: Self.start)
+
+        notes.update(noteId, text: " ", at: Self.later)
+
+        #expect(notes.listNotes.map(\.text) == [""])
+    }
+
+    @Test func unlinkingABlankNoteDeletesIt() {
+        var notes = QuickNoteList()
+        let blankId = notes.add(text: "", link: Self.link, at: Self.start)
+        let textId = notes.add(text: "keep", link: Self.link, at: Self.start)
+
+        notes.link(blankId, to: nil, at: Self.later)
+        notes.link(textId, to: nil, at: Self.later)
+
+        #expect(notes.listNotes.map(\.noteId) == [textId])
+        #expect(notes.listNotes[0].link == nil)
+    }
+
+    @Test func notesSavedBeforeLinksStillLoad() throws {
+        let json = #"{"listNotes":[{"noteId":"a","text":"old","modifiedAt":0}]}"#
+
+        let decoded = try JSONDecoder().decode(QuickNoteList.self, from: Data(json.utf8))
+
+        #expect(decoded.listNotes.map(\.text) == ["old"])
+        #expect(decoded.listNotes[0].link == nil)
+    }
 }

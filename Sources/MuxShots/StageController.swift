@@ -281,6 +281,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         for window in (activeGroup?.listMembers ?? []) + listStageGroups.compactMap(\.listMembersFrontToBack.first) {
             mapWindowNames[window.windowId] = window.displayName
         }
+        let setLinkedIds = Set(quickNotes.listNotes.compactMap(\.link?.windowId))
+        var mapLinkedWindowNames: [WindowId: String] = [:]
+        for window in workspaceController.workspace.listManagedWindows where setLinkedIds.contains(window.windowId) {
+            mapLinkedWindowNames[window.windowId] = window.displayName
+        }
         let selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
         if model.isDarkTheme != isDarkTheme {
             model.isDarkTheme = isDarkTheme
@@ -300,22 +305,30 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         if model.mapWindowNames != mapWindowNames {
             model.mapWindowNames = mapWindowNames
         }
+        if model.mapLinkedWindowNames != mapLinkedWindowNames {
+            model.mapLinkedWindowNames = mapLinkedWindowNames
+        }
         if model.selectedWindowId != selectedWindowId {
             model.selectedWindowId = selectedWindowId
         }
     }
 
-    /// Show a window's new title in its tab and its group's row, without rebuilding the rest of the stage.
+    /// Show a window's new title in its tab, its group's row and the notes linked to it, without rebuilding
+    /// the rest of the stage.
     func refreshWindowTitle(_ windowId: WindowId) {
         guard
             model.isVisible,
-            let shownName = model.mapWindowNames[windowId],
-            let window = workspaceController.workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId }),
-            window.displayName != shownName
+            model.mapWindowNames[windowId] != nil || model.mapLinkedWindowNames[windowId] != nil,
+            let window = workspaceController.workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId })
         else {
             return
         }
-        model.mapWindowNames[windowId] = window.displayName
+        if let shownName = model.mapWindowNames[windowId], shownName != window.displayName {
+            model.mapWindowNames[windowId] = window.displayName
+        }
+        if let linkedName = model.mapLinkedWindowNames[windowId], linkedName != window.displayName {
+            model.mapLinkedWindowNames[windowId] = window.displayName
+        }
     }
 
     private static func makeGroupRow(_ group: WindowGroup, isActive: Bool) -> StageGroupRow {
@@ -391,6 +404,39 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     func noteDragBegan(_ noteId: NoteId) {
         model.draggingNoteId = noteId
         clearDragStateOnMouseUp()
+    }
+
+    func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId? {
+        guard
+            let group = workspaceController.workspace.group(containing: windowId),
+            let window = group.listMembers.first(where: { $0.windowId == windowId })
+        else {
+            return nil
+        }
+        let link = NoteLink(
+            windowId: windowId,
+            groupId: group.groupId,
+            name: window.displayName,
+            bundleId: window.application.bundleId
+        )
+        let linkedNoteId: NoteId
+        if let noteId {
+            quickNotes.link(noteId, to: link)
+            linkedNoteId = noteId
+        } else {
+            linkedNoteId = quickNotes.add(linkedTo: link)
+        }
+        coordinator?.refresh()
+        return linkedNoteId
+    }
+
+    func openLink(_ link: NoteLink) {
+        let workspace = workspaceController.workspace
+        if workspace.isManaged(link.windowId) {
+            selectTab(link.windowId)
+        } else if workspace.listGroups.contains(where: { $0.groupId == link.groupId }) {
+            selectGroup(link.groupId)
+        }
     }
 
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {

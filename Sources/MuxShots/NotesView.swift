@@ -4,7 +4,8 @@ import SwiftUI
 
 /// The sidebar's quick notes: a button to start one, then the notes as cards in the user's order, which a
 /// drag rearranges. A click edits a note in place, the trash button or the context menu deletes it, and a
-/// note left blank goes away.
+/// note left blank goes away. A tab dropped on a note links the note to it, and on the button starts a
+/// note linked to it; a click on a linked note goes to the tab instead, and its pencil button edits it.
 struct NotesView: View {
     private static let listAnimation = Animation.spring(response: 0.3, dampingFraction: 0.86)
     private static let hoverAnimation = Animation.easeOut(duration: 0.12)
@@ -15,6 +16,12 @@ struct NotesView: View {
     private static let footerHeight: CGFloat = 20
     /// How faint a note being dragged stays in its old place.
     private static let draggedOpacity = 0.4
+    /// How faint a link to a tab that has closed is.
+    private static let closedLinkOpacity = 0.55
+    private static let linkHeight: CGFloat = 22
+    private static let linkIconSize: CGFloat = 14
+    /// How strongly a note or the button lights up while a tab is over it.
+    private static let tabTargetFillOpacity = 0.1
 
     let notes: QuickNotes
     let model: StageModel
@@ -27,8 +34,16 @@ struct NotesView: View {
     let onExpand: () -> Void
     /// A note started being dragged to reorder the notes.
     let onDragBegan: (NoteId) -> Void
+    /// Link a note to a dragged tab, or start a new note linked to it with nil.
+    let onLinkTab: (NoteId?, WindowId) -> NoteId?
+    /// Go to the tab a note leads to.
+    let onOpenLink: (NoteLink) -> Void
     @State private var hoveredNoteId: NoteId?
     @State private var isNewNoteHovered = false
+    /// The note a dragged tab is over, which it would link to.
+    @State private var tabTargetNoteId: NoteId?
+    /// Whether a dragged tab is over the button, which would start a note linked to it.
+    @State private var isTabOverNewNote = false
 
     var body: some View {
         Group {
@@ -81,22 +96,28 @@ struct NotesView: View {
     private var newNoteButton: some View {
         Button(action: startNewNote) {
             HStack(spacing: 7) {
-                Image(systemName: "square.and.pencil")
+                Image(systemName: isTabOverNewNote ? "link" : "square.and.pencil")
                     .font(.system(size: 11, weight: .semibold))
-                Text("New Note")
+                    .contentTransition(.symbolEffect(.replace))
+                Text(isTabOverNewNote ? "New Note for This Tab" : "New Note")
                     .font(.system(size: 12, weight: .medium))
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(isNewNoteHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .foregroundStyle(newNoteStyle)
             .padding(.horizontal, 10)
             .frame(height: 30)
             .background {
                 RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                    .fill(isNewNoteHovered ? StageColors.hoveredRow : Color.clear)
+                    .fill(newNoteFill)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                    .strokeBorder(StageColors.groove, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                if isTabOverNewNote {
+                    RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                        .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                } else {
+                    RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                        .strokeBorder(StageColors.groove, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                }
             }
             .contentShape(Rectangle())
         }
@@ -106,32 +127,78 @@ struct NotesView: View {
                 isNewNoteHovered = isHovered
             }
         }
-        .help("Write a new note")
+        .help("Write a new note, or drop a tab here for a note that leads to it")
+        .dropDestination(for: String.self) { listTexts, _ in
+            guard case .window(let windowId) = listTexts.first.flatMap(StagePayload.init) else {
+                return false
+            }
+            model.clearDragState()
+            if let noteId = onLinkTab(nil, windowId) {
+                onBeginEditing(noteId)
+            }
+            return true
+        } isTargeted: { isTargeted in
+            withAnimation(Self.hoverAnimation) {
+                isTabOverNewNote = isTargeted && model.isDraggingTab
+            }
+        }
+    }
+
+    private var newNoteStyle: AnyShapeStyle {
+        if isTabOverNewNote {
+            return AnyShapeStyle(Color.accentColor)
+        }
+        return isNewNoteHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
+    }
+
+    private var newNoteFill: Color {
+        if isTabOverNewNote {
+            return Color.accentColor.opacity(Self.tabTargetFillOpacity)
+        }
+        return isNewNoteHovered ? StageColors.hoveredRow : Color.clear
     }
 
     private func noteCard(_ note: QuickNote) -> some View {
         let isHovered = hoveredNoteId == note.noteId
-        return VStack(alignment: .leading, spacing: 3) {
-            Text(note.text)
-                .font(.system(size: 12))
-                .lineLimit(Self.previewLineLimit)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onBeginEditing(note.noteId)
-                }
+        let isTabTarget = tabTargetNoteId == note.noteId
+        return VStack(alignment: .leading, spacing: 5) {
+            if let link = note.link {
+                linkLabel(link)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        open(note)
+                    }
+            }
+            if !note.text.isEmpty {
+                Text(note.text)
+                    .font(.system(size: 12))
+                    .lineLimit(Self.previewLineLimit)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        open(note)
+                    }
+            }
             HStack(spacing: 2) {
-                Text(Self.modifiedText(note.modifiedAt))
+                Text(isTabTarget ? "Drop to link this note to the tab" : Self.modifiedText(note.modifiedAt))
                     .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(isTabTarget ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                    .lineLimit(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        onBeginEditing(note.noteId)
+                        open(note)
                     }
-                if isHovered {
-                    cardButton("doc.on.doc", help: "Copy the note") {
-                        copy(note)
+                if isHovered && !isTabTarget {
+                    if note.link != nil {
+                        cardButton("pencil", help: "Edit the note") {
+                            onBeginEditing(note.noteId)
+                        }
+                    }
+                    if !note.text.isEmpty {
+                        cardButton("doc.on.doc", help: "Copy the note") {
+                            copy(note)
+                        }
                     }
                     cardButton("trash", help: "Delete the note") {
                         notes.remove(note.noteId)
@@ -152,6 +219,15 @@ struct NotesView: View {
                 .fill(isHovered ? StageColors.hoveredRow : Color.clear)
                 .allowsHitTesting(false)
         }
+        .overlay {
+            if isTabTarget {
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    .fill(Color.accentColor.opacity(Self.tabTargetFillOpacity))
+                    .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
         .opacity(model.draggingNoteId == note.noteId ? Self.draggedOpacity : 1)
         .overlay(alignment: .top) {
             if model.noteInsertBeforeId == note.noteId && model.draggingNoteId != note.noteId {
@@ -168,12 +244,24 @@ struct NotesView: View {
                 }
             }
         }
+        .help(note.link.map(linkHelp) ?? "")
         .contextMenu {
+            if let link = note.link {
+                Button("Go to Tab") {
+                    onOpenLink(link)
+                }
+            }
             Button("Edit") {
                 onBeginEditing(note.noteId)
             }
             Button("Copy") {
                 copy(note)
+            }
+            .disabled(note.text.isEmpty)
+            if note.link != nil {
+                Button("Remove Link") {
+                    notes.link(note.noteId, to: nil)
+                }
             }
             Divider()
             Button("Delete", role: .destructive) {
@@ -184,7 +272,7 @@ struct NotesView: View {
             onDragBegan(note.noteId)
             return NSItemProvider(object: StagePayload.note(note.noteId).text as NSString)
         } preview: {
-            Text(note.text)
+            Text(note.text.isEmpty ? note.link?.name ?? "" : note.text)
                 .font(.system(size: 12))
                 .lineLimit(2)
                 .frame(width: StageModel.sidebarWidth - 40, alignment: .leading)
@@ -193,13 +281,28 @@ struct NotesView: View {
                 .background(.regularMaterial, in: .rect(cornerRadius: Self.cornerRadius))
         }
         .dropDestination(for: String.self) { listTexts, _ in
-            guard case .note(let draggedNoteId) = listTexts.first.flatMap(StagePayload.init) else {
+            switch listTexts.first.flatMap(StagePayload.init) {
+            case .note(let draggedNoteId):
+                model.clearDragState()
+                notes.move(draggedNoteId, before: note.noteId)
+                return true
+            case .window(let windowId):
+                model.clearDragState()
+                return onLinkTab(note.noteId, windowId) != nil
+            case .group, nil:
                 return false
             }
-            model.clearDragState()
-            notes.move(draggedNoteId, before: note.noteId)
-            return true
         } isTargeted: { isTargeted in
+            if model.isDraggingTab {
+                withAnimation(Self.hoverAnimation) {
+                    if isTargeted {
+                        tabTargetNoteId = note.noteId
+                    } else if tabTargetNoteId == note.noteId {
+                        tabTargetNoteId = nil
+                    }
+                }
+                return
+            }
             guard model.draggingNoteId != nil else {
                 return
             }
@@ -208,6 +311,58 @@ struct NotesView: View {
             } else if model.noteInsertBeforeId == note.noteId {
                 model.noteInsertBeforeId = nil
             }
+        }
+    }
+
+    /// The tab a note leads to: its application, its name now or, once it has closed, its name then.
+    private func linkLabel(_ link: NoteLink) -> some View {
+        let liveName = model.mapLinkedWindowNames[link.windowId]
+        return HStack(spacing: 6) {
+            linkIcon(link)
+                .frame(width: Self.linkIconSize, height: Self.linkIconSize)
+            Text(liveName ?? link.name)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .strikethrough(liveName == nil)
+            Spacer(minLength: 0)
+            Image(systemName: liveName == nil ? "xmark" : "arrow.up.forward")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.tertiary)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 6)
+        .frame(height: Self.linkHeight)
+        .background {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(StageColors.idleTab)
+        }
+        .opacity(liveName == nil ? Self.closedLinkOpacity : 1)
+    }
+
+    @ViewBuilder
+    private func linkIcon(_ link: NoteLink) -> some View {
+        if let icon = ApplicationIcon.icon(forBundleId: link.bundleId) {
+            Image(nsImage: icon)
+                .resizable()
+        } else {
+            Image(systemName: "macwindow")
+                .font(.system(size: 10))
+        }
+    }
+
+    private func linkHelp(_ link: NoteLink) -> String {
+        model.mapLinkedWindowNames[link.windowId] == nil
+            ? "The tab has closed; click to go to its group"
+            : "Click to go to the tab"
+    }
+
+    /// A click on a note: go to its tab, or edit a note that leads nowhere.
+    private func open(_ note: QuickNote) {
+        if let link = note.link {
+            onOpenLink(link)
+        } else {
+            onBeginEditing(note.noteId)
         }
     }
 
@@ -237,11 +392,16 @@ struct NotesView: View {
                 startNewNote()
             }
             ForEach(notes.listNotes) { note in
-                collapsedButton("note.text", help: note.text) {
-                    onExpand()
-                    onBeginEditing(note.noteId)
+                if let link = note.link {
+                    collapsedLinkButton(note, link: link)
+                        .transition(.opacity)
+                } else {
+                    collapsedButton("note.text", help: note.text) {
+                        onExpand()
+                        onBeginEditing(note.noteId)
+                    }
+                    .transition(.opacity)
                 }
-                .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity)
@@ -261,6 +421,26 @@ struct NotesView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+
+    /// In the collapsed sidebar, a linked note's button: its tab's application, going to the tab.
+    private func collapsedLinkButton(_ note: QuickNote, link: NoteLink) -> some View {
+        Button {
+            onOpenLink(link)
+        } label: {
+            linkIcon(link)
+                .frame(width: 18, height: 18)
+                .foregroundStyle(.secondary)
+                .opacity(model.mapLinkedWindowNames[link.windowId] == nil ? Self.closedLinkOpacity : 1)
+                .frame(width: 38, height: 30)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(StageColors.card)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(note.text.isEmpty ? model.mapLinkedWindowNames[link.windowId] ?? link.name : note.text)
     }
 
     private func startNewNote() {

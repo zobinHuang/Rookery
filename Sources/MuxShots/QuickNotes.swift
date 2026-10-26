@@ -43,16 +43,28 @@ final class QuickNotes {
         notes.listNotes
     }
 
-    /// Start a new, blank note at the top; it is deleted unless text is written into it.
+    /// Start a new, blank note at the top; it is deleted unless text is written into it or it leads to a tab.
     ///
+    /// - Parameter link: the tab the note leads to, if any
     /// - Returns: the new note's identifier
-    func add() -> NoteId {
-        notes.add(text: "", at: Date())
+    func add(linkedTo link: NoteLink? = nil) -> NoteId {
+        let noteId = notes.add(text: "", link: link, at: Date())
+        if link != nil {
+            save()
+        }
+        return noteId
     }
 
     /// Change a note's text, deleting the note when the text is blank.
     func update(_ noteId: NoteId, text: String) {
         if notes.update(noteId, text: text, at: Date()) {
+            save()
+        }
+    }
+
+    /// Make a note lead to a tab, or to none with nil.
+    func link(_ noteId: NoteId, to link: NoteLink?) {
+        if notes.link(noteId, to: link, at: Date()) {
             save()
         }
     }

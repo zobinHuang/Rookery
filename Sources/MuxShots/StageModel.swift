@@ -118,6 +118,8 @@ final class StageModel {
     /// application's. Kept apart from the tabs and rows, and read only by the texts showing a name, so a
     /// window retitling itself does not rebuild the stage.
     var mapWindowNames: [WindowId: String] = [:]
+    /// The names of the managed windows that notes link to; a linked window missing from it has closed.
+    var mapLinkedWindowNames: [WindowId: String] = [:]
     var selectedWindowId: WindowId?
     var activeGroupName: String?
     /// Whether a window drag is over the stage, which reveals the drop zones.

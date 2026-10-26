@@ -19,6 +19,12 @@ protocol StageActions: AnyObject {
     func tabDragBegan()
     func groupDragBegan(_ groupId: GroupId)
     func noteDragBegan(_ noteId: NoteId)
+    /// Make a note lead to a managed window's tab, or start a new note leading to it with nil.
+    ///
+    /// - Returns: the note, or nil if the window is not managed
+    func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId?
+    /// Switch to the tab a note leads to, or to its group once the tab has closed.
+    func openLink(_ link: NoteLink)
     /// Move a group to just before another, or to the end with nil.
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?)
     /// Move a tab to just before another tab, or to the end with nil.
@@ -119,9 +125,15 @@ struct StageView: View {
     }
 
     /// What the sidebar shows: the groups whenever a window or tab is being dragged, so it can be dropped
-    /// on one, else the chosen mode.
+    /// on one, else the chosen mode. A tab dragged while the notes show leaves them up, to be linked to one.
     private var sidebarMode: SidebarMode {
-        showsDropZones ? .groups : model.sidebarMode
+        guard
+            model.isReceivingWindow
+            || model.isDraggingTab && model.sidebarMode != .notes
+        else {
+            return model.sidebarMode
+        }
+        return .groups
     }
 
     private var sidebar: some View {
@@ -169,7 +181,9 @@ struct StageView: View {
                             onBeginEditing: beginEditing(note:),
                             onFinishEditing: finishEditing,
                             onExpand: expandSidebar,
-                            onDragBegan: actions.noteDragBegan
+                            onDragBegan: actions.noteDragBegan,
+                            onLinkTab: actions.linkNote,
+                            onOpenLink: actions.openLink
                         )
                         .padding(.vertical, 2)
                         .modifier(EmptySpaceTap(minHeight: listViewportHeight, action: finishEditingOnEmptySpace))

@@ -5,8 +5,26 @@ import MuxShotsPlatform
 /// The stage's window. It takes keyboard input only while a name is edited, and never activates MuxShots,
 /// so clicking the stage leaves its front window's application in front.
 final class StagePanel: NSPanel {
+    /// The window the stage shows, which a press on the stage must not cover: AppKit orders a pressed window
+    /// to the front, and the window would stay covered until it is brought forward again.
+    var hostedWindowId: (() -> WindowId?)?
+
     override var canBecomeKey: Bool {
         true
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        let coveredWindowId = event.type == .leftMouseDown ? hostedWindowId?().flatMap { isBeneath($0) ? $0 : nil } : nil
+        super.sendEvent(event)
+        if let coveredWindowId {
+            order(.below, relativeTo: Int(coveredWindowId.rawValue))
+        }
+    }
+
+    /// Whether a window is in front of the stage.
+    private func isBeneath(_ windowId: WindowId) -> Bool {
+        let listInfo = CGWindowListCopyWindowInfo(.optionOnScreenAboveWindow, CGWindowID(windowNumber)) as? [[String: Any]] ?? []
+        return listInfo.contains { ($0[kCGWindowNumber as String] as? UInt32) == windowId.rawValue }
     }
 
     /// Go wherever the stage is dragged, across displays: AppKit would otherwise hold a window that crosses
@@ -91,6 +109,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         background.layer?.masksToBounds = true
         panel.contentView = background
         super.init()
+        panel.hostedWindowId = { [weak self] in
+            self?.model.selectedWindowId
+        }
         let stageView = StageView.makeHostingView(
             model: model,
             mixer: mixerController,

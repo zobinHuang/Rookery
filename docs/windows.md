@@ -22,7 +22,7 @@ Nothing writes window-server state through private APIs; Spaces are never moved 
 
 ## Stages
 
-- A stage (`StageController`) is a borderless, non-activating, resizable panel at normal level. It is kept just beneath its front window (`order(.below, relativeTo:)`), so the managed window looks hosted inside it while staying a real window of its app.
+- A stage (`StageController`) is a borderless, non-activating, resizable panel at normal level. It is kept just beneath its front window (`order(.below, relativeTo:)`), so the managed window looks hosted inside it while staying a real window of its app. AppKit orders a pressed window to the front, so a press on the stage puts it straight back beneath that window (`StagePanel.sendEvent`) rather than covering it until the window is brought forward.
 - **Several stages**: each owns its own groups. A stage moves with its front window while that is dragged (coalesced relayout), and dragging the stage moves its windows.
 - **Displays**: `StagePanel` overrides `constrainFrameRect` so AppKit does not pin it to one display, and settles on the display under the cursor after a move.
 - Frames for layout come from Accessibility, not the window server: during Space animations the window server reports skewed frames.

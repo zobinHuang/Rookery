@@ -2,8 +2,9 @@ import AppKit
 import MuxShotsCore
 import SwiftUI
 
-/// The sidebar's quick notes: a button to start one, then the notes newest first as cards. A click edits a
-/// note in place, the trash button or the context menu deletes it, and a note left blank goes away.
+/// The sidebar's quick notes: a button to start one, then the notes as cards in the user's order, which a
+/// drag rearranges. A click edits a note in place, the trash button or the context menu deletes it, and a
+/// note left blank goes away.
 struct NotesView: View {
     private static let listAnimation = Animation.spring(response: 0.3, dampingFraction: 0.86)
     private static let hoverAnimation = Animation.easeOut(duration: 0.12)
@@ -12,6 +13,8 @@ struct NotesView: View {
     private static let previewLineLimit = 8
     /// The row under a note's text, holding when it changed and, under the pointer, its buttons.
     private static let footerHeight: CGFloat = 20
+    /// How faint a note being dragged stays in its old place.
+    private static let draggedOpacity = 0.4
 
     let notes: QuickNotes
     let model: StageModel
@@ -22,6 +25,8 @@ struct NotesView: View {
     let onFinishEditing: () -> Void
     /// Widen the collapsed sidebar, so a note can be read or edited.
     let onExpand: () -> Void
+    /// A note started being dragged to reorder the notes.
+    let onDragBegan: (NoteId) -> Void
     @State private var hoveredNoteId: NoteId?
     @State private var isNewNoteHovered = false
 
@@ -54,6 +59,9 @@ struct NotesView: View {
                     insertion: .move(edge: .top).combined(with: .opacity),
                     removal: .opacity.combined(with: .scale(scale: 0.96))
                 ))
+            }
+            if model.isNoteOverSidebarEnd {
+                InsertionMark(isVertical: false)
             }
             if notes.listNotes.isEmpty {
                 Text("Jot down anything you want at hand. Notes are kept until you delete them.")
@@ -144,6 +152,13 @@ struct NotesView: View {
                 .fill(isHovered ? StageColors.hoveredRow : Color.clear)
                 .allowsHitTesting(false)
         }
+        .opacity(model.draggingNoteId == note.noteId ? Self.draggedOpacity : 1)
+        .overlay(alignment: .top) {
+            if model.noteInsertBeforeId == note.noteId && model.draggingNoteId != note.noteId {
+                InsertionMark(isVertical: false)
+                    .offset(y: -4)
+            }
+        }
         .onHover { isNowHovered in
             withAnimation(Self.hoverAnimation) {
                 if isNowHovered {
@@ -163,6 +178,35 @@ struct NotesView: View {
             Divider()
             Button("Delete", role: .destructive) {
                 notes.remove(note.noteId)
+            }
+        }
+        .onDrag {
+            onDragBegan(note.noteId)
+            return NSItemProvider(object: StagePayload.note(note.noteId).text as NSString)
+        } preview: {
+            Text(note.text)
+                .font(.system(size: 12))
+                .lineLimit(2)
+                .frame(width: StageModel.sidebarWidth - 40, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.regularMaterial, in: .rect(cornerRadius: Self.cornerRadius))
+        }
+        .dropDestination(for: String.self) { listTexts, _ in
+            guard case .note(let draggedNoteId) = listTexts.first.flatMap(StagePayload.init) else {
+                return false
+            }
+            model.clearDragState()
+            notes.move(draggedNoteId, before: note.noteId)
+            return true
+        } isTargeted: { isTargeted in
+            guard model.draggingNoteId != nil else {
+                return
+            }
+            if isTargeted {
+                model.noteInsertBeforeId = note.noteId
+            } else if model.noteInsertBeforeId == note.noteId {
+                model.noteInsertBeforeId = nil
             }
         }
     }

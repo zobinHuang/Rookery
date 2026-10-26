@@ -20,15 +20,19 @@ enum StageZone: Hashable {
 enum StagePayload {
     case window(WindowId)
     case group(GroupId)
+    case note(NoteId)
 
     private static let windowPrefix = "window:"
     private static let groupPrefix = "group:"
+    private static let notePrefix = "note:"
 
     init?(_ text: String) {
         if text.hasPrefix(Self.windowPrefix), let rawId = UInt32(text.dropFirst(Self.windowPrefix.count)) {
             self = .window(WindowId(rawValue: rawId))
         } else if text.hasPrefix(Self.groupPrefix) {
             self = .group(GroupId(rawValue: String(text.dropFirst(Self.groupPrefix.count))))
+        } else if text.hasPrefix(Self.notePrefix) {
+            self = .note(NoteId(rawValue: String(text.dropFirst(Self.notePrefix.count))))
         } else {
             return nil
         }
@@ -40,6 +44,8 @@ enum StagePayload {
             Self.windowPrefix + String(windowId.rawValue)
         case .group(let groupId):
             Self.groupPrefix + groupId.rawValue
+        case .note(let noteId):
+            Self.notePrefix + noteId.rawValue
         }
     }
 }
@@ -149,8 +155,14 @@ final class StageModel {
     var groupInsertBeforeId: GroupId?
     /// Whether a dragged group is over the sidebar's empty space, which places it last.
     var isGroupOverSidebarEnd = false
+    /// The quick note being dragged to reorder the notes.
+    var draggingNoteId: NoteId?
+    /// The note a dragged note would be placed before.
+    var noteInsertBeforeId: NoteId?
+    /// Whether a dragged note is over the sidebar's empty space, which places it last.
+    var isNoteOverSidebarEnd = false
 
-    /// Forget every drag of a tab or a group, as when it drops or the mouse is released elsewhere.
+    /// Forget every drag of a tab, a group or a note, as when it drops or the mouse is released elsewhere.
     func clearDragState() {
         isDraggingTab = false
         draggingGroupId = nil
@@ -160,6 +172,9 @@ final class StageModel {
         isTabOverTabBarEnd = false
         groupInsertBeforeId = nil
         isGroupOverSidebarEnd = false
+        draggingNoteId = nil
+        noteInsertBeforeId = nil
+        isNoteOverSidebarEnd = false
     }
 
     /// The sidebar's width as laid out now.

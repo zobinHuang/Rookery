@@ -18,6 +18,7 @@ protocol StageActions: AnyObject {
     func endEditing()
     func tabDragBegan()
     func groupDragBegan(_ groupId: GroupId)
+    func noteDragBegan(_ noteId: NoteId)
     /// Move a group to just before another, or to the end with nil.
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?)
     /// Move a tab to just before another tab, or to the end with nil.
@@ -152,7 +153,8 @@ struct StageView: View {
                             isCollapsed: model.isSidebarCollapsed,
                             onBeginEditing: beginEditing(note:),
                             onFinishEditing: finishEditing,
-                            onExpand: expandSidebar
+                            onExpand: expandSidebar,
+                            onDragBegan: actions.noteDragBegan
                         )
                         .padding(.vertical, 2)
                     }
@@ -233,11 +235,17 @@ struct StageView: View {
                 return dropWindow(windowId, into: nil)
             case .group(let groupId):
                 return dropGroup(groupId, before: nil)
+            case .note(let noteId):
+                clearDragState()
+                notes.move(noteId, before: nil)
+                return true
             case nil:
                 return false
             }
         } isTargeted: { isTargeted in
-            if model.draggingGroupId != nil {
+            if model.draggingNoteId != nil {
+                model.isNoteOverSidebarEnd = isTargeted
+            } else if model.draggingGroupId != nil {
                 model.isGroupOverSidebarEnd = isTargeted
             } else {
                 model.isTabOverSidebar = isTargeted
@@ -497,7 +505,7 @@ struct StageView: View {
                 return dropWindow(windowId, into: row.groupId)
             case .group(let groupId):
                 return dropGroup(groupId, before: row.groupId)
-            case nil:
+            case .note, nil:
                 return false
             }
         } isTargeted: { isTargeted in

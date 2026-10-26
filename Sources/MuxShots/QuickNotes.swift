@@ -38,7 +38,7 @@ final class QuickNotes {
         }
     }
 
-    /// The notes, newest first.
+    /// The notes in the user's order.
     var listNotes: [QuickNote] {
         notes.listNotes
     }
@@ -53,6 +53,13 @@ final class QuickNotes {
     /// Change a note's text, deleting the note when the text is blank.
     func update(_ noteId: NoteId, text: String) {
         if notes.update(noteId, text: text, at: Date()) {
+            save()
+        }
+    }
+
+    /// Move a note to just before another, or to the end with nil.
+    func move(_ noteId: NoteId, before targetNoteId: NoteId?) {
+        if notes.move(noteId, before: targetNoteId) {
             save()
         }
     }

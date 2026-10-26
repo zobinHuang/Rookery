@@ -367,6 +367,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         clearDragStateOnMouseUp()
     }
 
+    func noteDragBegan(_ noteId: NoteId) {
+        model.draggingNoteId = noteId
+        clearDragStateOnMouseUp()
+    }
+
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {
         if workspaceController.stage(owning: groupId) == stageId {
             workspaceController.moveGroup(groupId, before: targetGroupId)

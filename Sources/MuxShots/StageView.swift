@@ -54,6 +54,8 @@ struct StageView: View {
     @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
     @State private var sidebarHeight: CGFloat = 0
+    /// The height of the area the groups, the mixer or the notes scroll in, which their empty space fills.
+    @State private var listViewportHeight: CGFloat = 0
 
     /// An AppKit view hosting the stage.
     static func makeHostingView(
@@ -131,6 +133,7 @@ struct StageView: View {
                         }
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
+                        .modifier(EmptySpaceTap(minHeight: listViewportHeight, action: finishEditingOnEmptySpace))
                     }
                     .transition(.asymmetric(
                         insertion: .move(edge: .leading).combined(with: .opacity),
@@ -157,6 +160,7 @@ struct StageView: View {
                             onDragBegan: actions.noteDragBegan
                         )
                         .padding(.vertical, 2)
+                        .modifier(EmptySpaceTap(minHeight: listViewportHeight, action: finishEditingOnEmptySpace))
                     }
                     .transition(.asymmetric(
                         insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -166,6 +170,11 @@ struct StageView: View {
             }
             .frame(maxHeight: .infinity, alignment: .top)
             .clipped()
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                listViewportHeight = height
+            }
             if showsDropZones {
                 VStack(spacing: 6) {
                     dropZone(.newGroup, title: "New Group", symbol: "plus", tint: .accentColor)
@@ -222,7 +231,10 @@ struct StageView: View {
         } action: { height in
             sidebarHeight = height
         }
-        .background(StageColors.sidebar)
+        .background {
+            StageColors.sidebar
+                .onTapGesture(perform: finishEditingOnEmptySpace)
+        }
         .overlay(alignment: .trailing) {
             Rectangle()
                 .fill(StageColors.separator)
@@ -811,6 +823,21 @@ struct StageView: View {
         actions.endEditing()
     }
 
+    /// Finish whatever name or note is being edited, keeping what was typed, as a click on the sidebar's
+    /// empty space does.
+    private func finishEditingOnEmptySpace() {
+        guard
+            model.editingGroupId != nil
+            || model.editingWindowId != nil
+            || model.editingNoteId != nil
+        else {
+            return
+        }
+        model.editingGroupId = nil
+        model.editingWindowId = nil
+        model.editingNoteId = nil
+    }
+
     private func expandSidebar() {
         if model.isSidebarCollapsed {
             actions.toggleSidebar()
@@ -949,7 +976,22 @@ struct InsertionMark: View {
     }
 }
 
-/// A text field that edits a name in place: return commits, escape cancels, and leaving it commits.
+/// Fill the rest of a scrolling list's height, so a click on the empty space below its rows reaches
+/// `action` rather than the scroll view.
+struct EmptySpaceTap: ViewModifier {
+    let minHeight: CGFloat
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .top)
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+    }
+}
+
+/// A text field that edits a name in place: return commits, escape cancels, and leaving it, or the field
+/// going away, commits.
 struct InlineRenameField: View {
     let initialText: String
     let placeholder: String
@@ -977,6 +1019,9 @@ struct InlineRenameField: View {
                 if !isNowFocused {
                     finish(isCommitted: true)
                 }
+            }
+            .onDisappear {
+                finish(isCommitted: true)
             }
     }
 

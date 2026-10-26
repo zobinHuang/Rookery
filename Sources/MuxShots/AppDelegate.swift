@@ -211,6 +211,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel?.updateTitle(of: windowId)
             stages?.refreshWindowTitle(windowId)
         }
+        workspace.pictureProcessIds = { [weak mixerController] in
+            mixerController?.browserTabs.setPictureProcessIds ?? []
+        }
+        mixerController.browserTabs.pictures.onChange = { [weak workspace] in
+            workspace?.picturesDidChange()
+        }
         workspaceController = workspace
         workspacePanelController = panel
         workspace.start()

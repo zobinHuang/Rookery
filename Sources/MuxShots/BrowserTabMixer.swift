@@ -37,6 +37,8 @@ final class BrowserTabMixer {
     private static let meterDecay: Float = 0.7
 
     @ObservationIgnored private var mapContinuations: [Int: AsyncStream<BrowserCommand>.Continuation] = [:]
+    /// The process of each connected browser.
+    @ObservationIgnored private var mapSessionProcessIds: [Int: pid_t] = [:]
     @ObservationIgnored private var nextSessionId = 1
     @ObservationIgnored private var mapSessionTabs: [Int: [BrowserTab]] = [:]
     private var mapSettings: [BrowserTabKey: MixerTrackSettings] = [:]
@@ -63,10 +65,18 @@ final class BrowserTabMixer {
         }
     }
 
+    /// The browsers playing a video in the sidebar, whose pages must go on drawing for it.
+    var setPictureProcessIds: Set<pid_t> {
+        Set(pictures.listPictures.compactMap { mapSessionProcessIds[$0.key.sessionId] })
+    }
+
     /// Register a newly connected extension.
-    func openSession() -> BrowserSession {
+    ///
+    /// - Parameter browserProcessId: the process of the browser it runs in
+    func openSession(browserProcessId: pid_t) -> BrowserSession {
         let sessionId = nextSessionId
         nextSessionId += 1
+        mapSessionProcessIds[sessionId] = browserProcessId
         let (commands, continuation) = AsyncStream.makeStream(of: BrowserCommand.self)
         continuation.yield(.hello)
         if isMeterWanted {
@@ -80,6 +90,7 @@ final class BrowserTabMixer {
     /// Forget an extension that disconnected, with its tabs and their settings.
     func closeSession(_ sessionId: Int) {
         mapContinuations.removeValue(forKey: sessionId)?.finish()
+        mapSessionProcessIds[sessionId] = nil
         mapSessionTabs[sessionId] = nil
         mapSettings = mapSettings.filter { $0.key.sessionId != sessionId }
         mapLevels = mapLevels.filter { $0.key.sessionId != sessionId }

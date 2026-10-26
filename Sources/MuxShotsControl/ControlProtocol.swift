@@ -27,8 +27,9 @@ public enum ControlRequest: Codable, Sendable {
     /// Reply with the code agent accounts the sidebar shows and their plan limits.
     case agentUsage
     /// Keep the connection open for the browser extension: `BrowserEvent`s come in and `BrowserCommand`s go
-    /// out, one JSON line each, spelled as `BrowserWire` says, until either side closes.
-    case browserSession
+    /// out, one JSON line each, spelled as `BrowserWire` says, until either side closes. The browser's
+    /// process is the one that started the native messaging host.
+    case browserSession(browserProcessId: Int32)
 }
 
 /// What a mixer track carries: an application's sound, or one browser tab's.

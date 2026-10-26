@@ -16,7 +16,7 @@ enum ChromeHost {
         let connection: ControlConnection
         do {
             connection = try await ControlConnection.connect(to: ControlSocket.url)
-            try await connection.send(ControlRequest.browserSession)
+            try await connection.send(ControlRequest.browserSession(browserProcessId: getppid()))
         } catch {
             exit(withMessage: "muxshots-chrome-host: \(error)")
         }

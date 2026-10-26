@@ -69,6 +69,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     var onChange: (() -> Void)?
     /// Called when a managed window's displayed title changes, without changing workspace structure.
     var onWindowTitleChange: ((WindowId) -> Void)?
+    /// The browsers playing a video in the sidebar, which are never hidden: a hidden browser stops drawing
+    /// the page the video streams from.
+    var pictureProcessIds: () -> Set<pid_t> = { [] }
 
     private let preferences: Preferences
 
@@ -1055,6 +1058,21 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             """)
     }
 
+    /// Bring back a browser hidden before it started playing a video in the sidebar, and hide one whose
+    /// last video closed if it has only hidden windows left.
+    func picturesDidChange() {
+        for processId in pictureProcessIds() {
+            guard
+                let running = NSRunningApplication(processIdentifier: processId),
+                running.isHidden
+            else {
+                continue
+            }
+            running.unhide()
+        }
+        scheduleApplicationHiding()
+    }
+
     /// Hide the applications left with only hidden windows once layout settles; a later layout change
     /// cancels the wait.
     private func scheduleApplicationHiding() {
@@ -1080,8 +1098,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         let mapShownProcessIds = Dictionary(
             uniqueKeysWithValues: WindowServer.listShownWindows(ofProcesses: setCandidateIds).map { ($0.windowId, $0.processId) }
         )
+        let setPictureProcessIds = pictureProcessIds()
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
             guard
+                !setPictureProcessIds.contains(processId),
                 let running = NSRunningApplication(processIdentifier: processId),
                 !running.isHidden,
                 !running.isActive

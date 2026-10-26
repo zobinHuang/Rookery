@@ -187,8 +187,8 @@ final class ControlServer: Sendable {
                     )
                 }
                 try await connection.send(message)
-            case .browserSession:
-                await serveBrowser(connection, browserTabs: mixerController.browserTabs)
+            case .browserSession(let browserProcessId):
+                await serveBrowser(connection, browserProcessId: browserProcessId, browserTabs: mixerController.browserTabs)
             }
         } catch {
             logger.info("control session ended: \(error)")
@@ -196,8 +196,12 @@ final class ControlServer: Sendable {
     }
 
     /// Pass a browser extension's reports to the tab mixer and its commands back, until it disconnects.
-    private static func serveBrowser(_ connection: ControlConnection, browserTabs: BrowserTabMixer) async {
-        let session = await browserTabs.openSession()
+    private static func serveBrowser(
+        _ connection: ControlConnection,
+        browserProcessId: pid_t,
+        browserTabs: BrowserTabMixer
+    ) async {
+        let session = await browserTabs.openSession(browserProcessId: browserProcessId)
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 await relayBrowserEvents(from: connection, to: browserTabs, sessionId: session.sessionId)

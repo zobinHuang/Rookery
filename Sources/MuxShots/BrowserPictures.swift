@@ -40,6 +40,8 @@ final class BrowserPictures {
     static let defaultAspectRatio: CGFloat = 16 / 9
 
     private(set) var listPictures: [BrowserPicture] = []
+    /// Called after a video is opened or closed.
+    @ObservationIgnored var onChange: (() -> Void)?
 
     func contains(_ key: BrowserTabKey) -> Bool {
         listPictures.contains { $0.key == key }
@@ -68,19 +70,29 @@ final class BrowserPictures {
         }
         picture.receiver.onFailure = onFailure
         listPictures.append(picture)
+        onChange?()
     }
 
     func close(_ key: BrowserTabKey) {
-        listPictures.first { $0.key == key }?.receiver.close()
+        guard let picture = picture(for: key) else {
+            return
+        }
+        picture.receiver.close()
         listPictures.removeAll { $0.key == key }
+        onChange?()
     }
 
     /// Forget every video of a browser that disconnected.
     func closeSession(_ sessionId: Int) {
-        for picture in listPictures where picture.key.sessionId == sessionId {
+        let listSessionPictures = listPictures.filter { $0.key.sessionId == sessionId }
+        guard !listSessionPictures.isEmpty else {
+            return
+        }
+        for picture in listSessionPictures {
             picture.receiver.close()
         }
         listPictures.removeAll { $0.key.sessionId == sessionId }
+        onChange?()
     }
 
     func markPaused(_ isPaused: Bool, for key: BrowserTabKey) {

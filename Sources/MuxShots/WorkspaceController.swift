@@ -1145,7 +1145,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Hide whole every application whose every window shown on some Space is one MuxShots hid, so it stops
-    /// drawing windows nobody sees. The active application is left alone, as hiding it would hand
+    /// drawing windows nobody sees. Windows off every display do not count, as Chrome's link bubble left
+    /// beside a parked window. The active application is left alone, as hiding it would hand
     /// activation to another.
     private func hideApplicationsShowingOnlyHiddenWindows() {
         let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
@@ -1153,7 +1154,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         let mapShownProcessIds = Dictionary(
-            uniqueKeysWithValues: WindowServer.listShownWindows(ofProcesses: setCandidateIds).map { ($0.windowId, $0.processId) }
+            uniqueKeysWithValues: WindowServer.listShownWindows(ofProcesses: setCandidateIds)
+                .filter { ScreenGeometry.visibleShare(of: $0.frame) > Self.hiddenVisibleShareLimit }
+                .map { ($0.windowId, $0.processId) }
         )
         let setPictureProcessIds = pictureProcessIds()
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {

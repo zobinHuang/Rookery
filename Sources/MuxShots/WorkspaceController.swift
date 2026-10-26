@@ -91,12 +91,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Resume managing the saved windows that still exist and start watching window drags.
     func start() {
-        for window in workspace.listManagedWindows where liveApplication(of: window) == nil {
+        let mapServerWindows = Dictionary(
+            WindowServer.listWindows().map { ($0.windowId, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for window in workspace.listManagedWindows where liveApplication(of: window, among: mapServerWindows) == nil {
             workspace.release(window.windowId)
         }
         save()
         let listRestored = workspace.listManagedWindows.compactMap { window in
-            liveApplication(of: window).map { (window.windowId, $0) }
+            liveApplication(of: window, among: mapServerWindows).map { (window.windowId, $0) }
         }
         let startupTask = Task { [tracker] in
             await tracker.start()
@@ -1237,10 +1241,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// The running application that owns a saved window, or nil if the window is gone or its identifier now
-    /// belongs to another application's window.
-    private func liveApplication(of window: ManagedWindow) -> RunningApplication? {
+    /// belongs to another application's window. A window its application ordered out is not gone.
+    private func liveApplication(
+        of window: ManagedWindow,
+        among mapServerWindows: [WindowId: WindowServerWindow]
+    ) -> RunningApplication? {
         guard
-            let serverWindow = WindowServer.window(withId: window.windowId),
+            let serverWindow = mapServerWindows[window.windowId],
             let application = ApplicationMonitor.application(processId: serverWindow.processId),
             application.bundleId == window.application.bundleId
         else {

@@ -128,7 +128,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Returns: the frame after the move, or nil if the window could not be moved
     func applyFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
         let result = await thread.run { [self] () -> CGRect? in
-            guard let element = mapElements[windowId] else {
+            guard let element = mapElements[windowId] ?? listedElement(of: windowId) else {
                 return nil
             }
             let isEnhanced = (try? root.isEnhancedUserInterface()) == true
@@ -148,6 +148,11 @@ final class ApplicationWindowTracker: @unchecked Sendable {
                     landedFrame = try element.frame()
                 }
                 return landedFrame
+            } catch let error as AccessibilityError where error.isInvalidElement {
+                mapElements[windowId] = nil
+                setObservedIds.remove(windowId)
+                Self.logger.info("window \(windowId.rawValue) is gone from Accessibility")
+                return nil
             } catch {
                 Self.logger.error("cannot move window \(windowId.rawValue): \(error, privacy: .public)")
                 return nil
@@ -164,6 +169,19 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         } ?? nil
     }
 
+    /// The element of a managed window the tracker has lost, if the application lists it again, as it does
+    /// once a window it ordered out comes back.
+    private func listedElement(of windowId: WindowId) -> AccessibilityElement? {
+        guard
+            setManagedIds.contains(windowId),
+            let element = ((try? root.windows()) ?? []).first(where: { (try? $0.windowId()) == windowId })
+        else {
+            return nil
+        }
+        mapElements[windowId] = element
+        return element
+    }
+
     /// Whether two frames match within the rounding applications apply.
     private static func isClose(_ lhs: CGRect, to rhs: CGRect) -> Bool {
         abs(lhs.minX - rhs.minX) <= frameTolerance
@@ -177,7 +195,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Returns: whether the window was raised
     func raise(_ windowId: WindowId) async -> Bool {
         await thread.run { [self] () -> Bool in
-            guard let element = mapElements[windowId] else {
+            guard let element = mapElements[windowId] ?? listedElement(of: windowId) else {
                 return false
             }
             do {

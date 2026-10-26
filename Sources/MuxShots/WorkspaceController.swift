@@ -25,6 +25,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// How long bringing a stage's front window forward waits for the click that asked for it to start a
     /// switch of its own.
     private static let clickActionDelay = Duration.milliseconds(50)
+    /// How often, and for how long, a window its application was asked to reopen is looked for again.
+    private static let reopenPollInterval = Duration.milliseconds(100)
+    private static let reopenTimeout = Duration.seconds(2)
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
@@ -959,8 +962,14 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         await run(showing: [], hiding: listToHide)
         for (windowId, contentFrame) in mapShownFrames {
             revealApplication(of: windowId)
-            workspace.markShown(windowId)
-            await tracker.applyFrame(contentFrame, to: windowId)
+            let restoreFrame = workspace.markShown(windowId)
+            guard await applyShownFrame(contentFrame, to: windowId) == nil else {
+                continue
+            }
+            Self.logger.error("cannot show \(windowId.rawValue) on its stage")
+            if let restoreFrame {
+                workspace.markHidden(windowId, restoreFrame: restoreFrame)
+            }
         }
 
         if let selected = group(onStage: stageId)?.listMembersFrontToBack.first(where: { mapShownFrames[$0.windowId] != nil }) {
@@ -1049,13 +1058,52 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             throw WindowActionError.notHidden(windowId: windowId)
         }
         didChange()
-        guard let landedFrame = await tracker.applyFrame(restoreFrame, to: windowId) else {
+        guard let landedFrame = await applyShownFrame(restoreFrame, to: windowId) else {
+            workspace.markHidden(windowId, restoreFrame: restoreFrame)
+            didChange()
             throw WindowActionError.cannotMove(windowId: windowId)
         }
         Self.logger.info("""
             showed \(windowId.rawValue) at \(String(describing: restoreFrame), privacy: .public), \
             landed at \(String(describing: landedFrame), privacy: .public)
             """)
+    }
+
+    /// Move a window being shown into place. An application that ordered the window out while it was parked,
+    /// as WeChat does, is asked to reopen, as a click on its Dock icon would, and the window is moved once it
+    /// is back.
+    ///
+    /// - Returns: where the window landed, or nil if it could not be moved
+    private func applyShownFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
+        if let landedFrame = await tracker.applyFrame(frame, to: windowId) {
+            return landedFrame
+        }
+        guard
+            WindowServer.window(withId: windowId)?.isOrderedIn != true,
+            let processId = await tracker.processId(of: windowId),
+            let bundleUrl = NSRunningApplication(processIdentifier: processId)?.bundleURL
+        else {
+            return nil
+        }
+        Self.logger.info("window \(windowId.rawValue) was ordered out by its application, which is asked to reopen")
+        do {
+            try await NSWorkspace.shared.openApplication(at: bundleUrl, configuration: NSWorkspace.OpenConfiguration())
+        } catch {
+            Self.logger.error("cannot reopen the application of window \(windowId.rawValue): \(error)")
+            return nil
+        }
+        let deadline = ContinuousClock.now + Self.reopenTimeout
+        while ContinuousClock.now < deadline {
+            do {
+                try await Task.sleep(for: Self.reopenPollInterval)
+            } catch {
+                return nil
+            }
+            if let landedFrame = await tracker.applyFrame(frame, to: windowId) {
+                return landedFrame
+            }
+        }
+        return nil
     }
 
     /// Bring back a browser hidden before it started playing a video in the sidebar, and hide one whose

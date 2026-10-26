@@ -45,6 +45,12 @@ struct StageView: View {
     /// The most of the sidebar's height the videos shown in it may take, leaving the rest to the groups or
     /// the mixer.
     private static let pictureHeightShare: CGFloat = 0.45
+    nonisolated private static let tabBarSpace = "tabBar"
+    /// How wide the fade is at an edge of the tabs with more beyond it, and how far they must reach past the
+    /// edge for it to show.
+    private static let tabFadeWidth: CGFloat = 28
+    nonisolated private static let tabFadeThreshold: CGFloat = 2
+    private static let tabScrollAnimation = Animation.easeOut(duration: 0.22)
 
     let model: StageModel
     let mixer: MixerController
@@ -56,6 +62,12 @@ struct StageView: View {
     @State private var sidebarHeight: CGFloat = 0
     /// The height of the area the groups, the mixer or the notes scroll in, which their empty space fills.
     @State private var listViewportHeight: CGFloat = 0
+    /// The width the tabs scroll in.
+    @State private var tabBarWidth: CGFloat = 0
+    /// Whether tabs lie beyond the leading or the trailing edge of the width they scroll in. Only these are
+    /// kept, not the scroll offset, so scrolling does not rebuild the stage.
+    @State private var hasTabsBefore = false
+    @State private var hasTabsAfter = false
 
     /// An AppKit view hosting the stage.
     static func makeHostingView(
@@ -630,16 +642,26 @@ struct StageView: View {
 
     // MARK: - Tabs
 
+    /// The tabs, scrolling sideways when they do not fit, faded at an edge with more beyond it, and kept
+    /// scrolled to the selected one. The strip's empty end takes a dragged tab to place it last.
     private var tabBar: some View {
-        HStack(spacing: 4) {
-            ForEach(model.listTabs) { tab in
-                tabButton(tab)
-            }
-            if model.isTabOverTabBarEnd {
-                InsertionMark(isVertical: true)
-            }
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(model.listTabs) { tab in
+                        tabButton(tab)
+                            .id(tab.windowId)
+                    }
+                    if model.isTabOverTabBarEnd {
+                        InsertionMark(isVertical: true)
+                    }
+                }
+                .backgroundPreferenceValue(TabBoundsKey.self) { mapTabBounds in
+                    TabBackgrounds(model: model, mapTabBounds: mapTabBounds)
+                }
+                .padding(.horizontal, 6)
+                .padding(.top, 6)
+                .frame(minWidth: tabBarWidth, maxHeight: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .dropDestination(for: String.self) { listTexts, _ in
                     guard case .window(let windowId) = Self.payload(from: listTexts) else {
@@ -651,12 +673,44 @@ struct StageView: View {
                 } isTargeted: { isTargeted in
                     model.isTabOverTabBarEnd = isTargeted
                 }
+                .onGeometryChange(for: Bool.self) { geometry in
+                    -geometry.frame(in: .named(Self.tabBarSpace)).minX > Self.tabFadeThreshold
+                } action: { hasMore in
+                    hasTabsBefore = hasMore
+                }
+                .onGeometryChange(for: Bool.self) { [tabBarWidth] geometry in
+                    geometry.frame(in: .named(Self.tabBarSpace)).maxX - tabBarWidth > Self.tabFadeThreshold
+                } action: { hasMore in
+                    hasTabsAfter = hasMore
+                }
+            }
+            .coordinateSpace(.named(Self.tabBarSpace))
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: hasTabsBefore ? Self.tabFadeWidth : 0)
+                    Color.black
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: hasTabsAfter ? Self.tabFadeWidth : 0)
+                }
+            }
+            .onGeometryChange(for: CGFloat.self) { geometry in
+                geometry.size.width
+            } action: { width in
+                tabBarWidth = width
+            }
+            .onChange(of: model.selectedWindowId) { _, selectedWindowId in
+                guard
+                    let selectedWindowId,
+                    hasTabsBefore || hasTabsAfter
+                else {
+                    return
+                }
+                withAnimation(Self.tabScrollAnimation) {
+                    proxy.scrollTo(selectedWindowId)
+                }
+            }
         }
-        .backgroundPreferenceValue(TabBoundsKey.self) { mapTabBounds in
-            TabBackgrounds(model: model, mapTabBounds: mapTabBounds)
-        }
-        .padding(.horizontal, 6)
-        .padding(.top, 6)
         .padding(.trailing, StageModel.contentInset)
     }
 
@@ -908,6 +962,9 @@ struct TabBoundsKey: PreferenceKey {
 
 /// The tabs' backgrounds: a faint one behind each tab, and the selected tab's raised one, which slides to
 /// the tab selected next.
+///
+/// The faint ones are keyed by position, not by window: the tabs themselves carry the windows' ids, and
+/// scrolling the tab bar to a window would otherwise find the background instead.
 struct TabBackgrounds: View {
     private static let cornerRadius: CGFloat = 9
 
@@ -917,8 +974,8 @@ struct TabBackgrounds: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
-                ForEach(model.listTabs) { tab in
-                    if let anchor = mapTabBounds[tab.windowId] {
+                ForEach(model.listTabs.indices, id: \.self) { tabIndex in
+                    if let anchor = mapTabBounds[model.listTabs[tabIndex].windowId] {
                         let bounds = proxy[anchor]
                         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                             .fill(StageColors.idleTab)

@@ -6,7 +6,7 @@ import SwiftUI
 /// drag rearranges. A click edits a note in place, the trash button or the context menu deletes it, and a
 /// note left blank goes away. A tab dropped on a note links the note to it too, and on the button starts a
 /// note linked to it. A click on one of a note's tabs goes to that tab, a click elsewhere on a linked note
-/// goes to its first, and its pencil button edits it.
+/// goes to its first, and a double-click or its pencil button edits it.
 struct NotesView: View {
     private static let listAnimation = Animation.spring(response: 0.3, dampingFraction: 0.86)
     private static let hoverAnimation = Animation.easeOut(duration: 0.12)
@@ -179,9 +179,9 @@ struct NotesView: View {
                     .lineLimit(Self.previewLineLimit)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture {
+                    .gesture(clickGesture(on: note) {
                         open(note)
-                    }
+                    })
             }
             HStack(spacing: 2) {
                 Text(isTabTarget ? "Drop to add the tab to this note" : Self.modifiedText(note.modifiedAt))
@@ -190,9 +190,9 @@ struct NotesView: View {
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture {
+                    .gesture(clickGesture(on: note) {
                         open(note)
-                    }
+                    })
                 if isHovered && !isTabTarget {
                     if !note.listLinks.isEmpty {
                         cardButton("pencil", help: "Edit the note") {
@@ -362,9 +362,9 @@ struct NotesView: View {
         }
         .opacity(liveName == nil && !isHovered ? Self.closedLinkOpacity : 1)
         .contentShape(Rectangle())
-        .onTapGesture {
+        .gesture(clickGesture(on: note) {
             onOpenLink(link)
-        }
+        })
         .onHover { isNowHovered in
             withAnimation(Self.hoverAnimation) {
                 if isNowHovered {
@@ -391,7 +391,19 @@ struct NotesView: View {
     private func linkHelp(_ link: NoteLink) -> String {
         model.mapLinkedWindowNames[link.windowId] == nil
             ? "The tab has closed; click to go to its group"
-            : "Click to go to the tab"
+            : "Click to go to the tab, double-click to edit the note"
+    }
+
+    /// A click on a note: a double-click edits it, and a single click runs an action, at once on a note that
+    /// leads nowhere and, on a linked note, once the click is known not to start a double-click.
+    private func clickGesture(on note: QuickNote, action: @escaping () -> Void) -> AnyGesture<Void> {
+        guard !note.listLinks.isEmpty else {
+            return AnyGesture(TapGesture().onEnded(action))
+        }
+        let editGesture = TapGesture(count: 2).onEnded {
+            onBeginEditing(note.noteId)
+        }
+        return AnyGesture(editGesture.exclusively(before: TapGesture().onEnded(action)).map { _ in () })
     }
 
     /// A click on a note: go to its first tab, or edit a note that leads nowhere.

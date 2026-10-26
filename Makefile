@@ -13,7 +13,7 @@ build:
 	swift build
 
 app:
-	scripts/bundle-app.sh debug
+	scripts/bundle-app.sh release
 
 run: app
 	open .build/MuxShots.app

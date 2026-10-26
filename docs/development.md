@@ -14,7 +14,7 @@ How to build, test and install MuxShots, and how to check each part works withou
 |---|---|
 | `swift build` | Builds every Swift target (debug). |
 | `make test` | Runs the Swift Testing suites. Plain `swift test` cannot find Swift Testing under the Command Line Tools; the Makefile adds the paths. |
-| `make app` | Builds and assembles a signed `.build/MuxShots.app` (with `muxshots-chrome-host` inside). |
+| `make app` | Builds an optimized release and assembles a signed `.build/MuxShots.app` (with `muxshots-chrome-host` inside). A debug build runs the audio processing and the views several times slower, which shows as heat. |
 | `make install` | `make app`, quits the running MuxShots, waits for it to exit, copies to `/Applications` and opens it. |
 | `make chrome-extension` | `npm ci`, `tsc --noEmit`, bundles into `extensions/chrome/dist`. During work, `cd extensions/chrome && npm run build` is enough. |
 | `make icon` | Regenerates `Resources/AppIcon.icns` from `scripts/make-icon.swift`. |

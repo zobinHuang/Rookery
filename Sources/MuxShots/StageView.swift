@@ -23,7 +23,8 @@ protocol StageActions: AnyObject {
     ///
     /// - Returns: the note, or nil if the window is not managed or the note leads to it already
     func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId?
-    /// Switch to the tab a note leads to, or to its group once the tab has closed.
+    /// Switch to the tab a note leads to, unless a stage shows it in front already, or to its group once the
+    /// tab has closed.
     func openLink(_ link: NoteLink)
     /// Move a group to just before another, or to the end with nil.
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?)

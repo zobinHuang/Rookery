@@ -437,10 +437,17 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     func openLink(_ link: NoteLink) {
         let workspace = workspaceController.workspace
-        if workspace.isManaged(link.windowId) {
+        guard let groupId = workspace.group(containing: link.windowId)?.groupId else {
+            if workspace.listGroups.contains(where: { $0.groupId == link.groupId }) {
+                selectGroup(link.groupId)
+            }
+            return
+        }
+        let isShownInFront = workspaceController.stage(showing: groupId).flatMap { shownStageId in
+            workspaceController.group(onStage: shownStageId)?.listMembersFrontToBack.first?.windowId
+        } == link.windowId
+        if !isShownInFront {
             selectTab(link.windowId)
-        } else if workspace.listGroups.contains(where: { $0.groupId == link.groupId }) {
-            selectGroup(link.groupId)
         }
     }
 

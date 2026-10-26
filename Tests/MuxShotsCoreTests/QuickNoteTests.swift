@@ -103,38 +103,58 @@ struct QuickNoteTests {
         bundleId: "com.apple.mail"
     )
 
-    @Test func linkingANoteRecordsTheTab() {
+    static let otherLink = NoteLink(
+        windowId: WindowId(rawValue: 43),
+        groupId: GroupId(rawValue: "work"),
+        name: "Terminal",
+        bundleId: "com.apple.Terminal"
+    )
+
+    @Test func linkingAddsTabsInOrderOnce() {
         var notes = QuickNoteList()
         let noteId = notes.add(text: "reply", at: Self.start)
 
-        let isChanged = notes.link(noteId, to: Self.link, at: Self.later)
-        let isChangedAgain = notes.link(noteId, to: Self.link, at: Self.later)
+        let isAdded = notes.addLink(Self.link, to: noteId, at: Self.later)
+        notes.addLink(Self.otherLink, to: noteId, at: Self.later)
+        let isAddedAgain = notes.addLink(Self.link, to: noteId, at: Self.later)
 
-        #expect(isChanged)
-        #expect(!isChangedAgain)
-        #expect(notes.listNotes[0].link == Self.link)
+        #expect(isAdded)
+        #expect(!isAddedAgain)
+        #expect(notes.listNotes[0].listLinks == [Self.link, Self.otherLink])
         #expect(notes.listNotes[0].modifiedAt == Self.later)
     }
 
     @Test func aLinkedNoteSurvivesBlankText() {
         var notes = QuickNoteList()
-        let noteId = notes.add(text: "", link: Self.link, at: Self.start)
+        let noteId = notes.add(text: "", listLinks: [Self.link], at: Self.start)
 
         notes.update(noteId, text: " ", at: Self.later)
 
         #expect(notes.listNotes.map(\.text) == [""])
     }
 
+    @Test func removingOneLinkKeepsTheOthers() {
+        var notes = QuickNoteList()
+        let noteId = notes.add(text: "", listLinks: [Self.link, Self.otherLink], at: Self.start)
+
+        let isRemoved = notes.removeLink(to: Self.link.windowId, from: noteId, at: Self.later)
+        let isRemovedAgain = notes.removeLink(to: Self.link.windowId, from: noteId, at: Self.later)
+
+        #expect(isRemoved)
+        #expect(!isRemovedAgain)
+        #expect(notes.listNotes[0].listLinks == [Self.otherLink])
+    }
+
     @Test func unlinkingABlankNoteDeletesIt() {
         var notes = QuickNoteList()
-        let blankId = notes.add(text: "", link: Self.link, at: Self.start)
-        let textId = notes.add(text: "keep", link: Self.link, at: Self.start)
+        let blankId = notes.add(text: "", listLinks: [Self.link, Self.otherLink], at: Self.start)
+        let textId = notes.add(text: "keep", listLinks: [Self.link], at: Self.start)
 
-        notes.link(blankId, to: nil, at: Self.later)
-        notes.link(textId, to: nil, at: Self.later)
+        notes.removeLink(to: nil, from: blankId, at: Self.later)
+        notes.removeLink(to: nil, from: textId, at: Self.later)
 
         #expect(notes.listNotes.map(\.noteId) == [textId])
-        #expect(notes.listNotes[0].link == nil)
+        #expect(notes.listNotes[0].listLinks.isEmpty)
     }
 
     @Test func notesSavedBeforeLinksStillLoad() throws {
@@ -143,6 +163,17 @@ struct QuickNoteTests {
         let decoded = try JSONDecoder().decode(QuickNoteList.self, from: Data(json.utf8))
 
         #expect(decoded.listNotes.map(\.text) == ["old"])
-        #expect(decoded.listNotes[0].link == nil)
+        #expect(decoded.listNotes[0].listLinks.isEmpty)
+    }
+
+    @Test func aNoteSavedWithOneLinkLoadsIt() throws {
+        let json = #"""
+            {"listNotes":[{"noteId":"a","text":"","modifiedAt":0,
+            "link":{"windowId":42,"groupId":"work","name":"Inbox","bundleId":"com.apple.mail"}}]}
+            """#
+
+        let decoded = try JSONDecoder().decode(QuickNoteList.self, from: Data(json.utf8))
+
+        #expect(decoded.listNotes[0].listLinks == [Self.link])
     }
 }

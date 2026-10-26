@@ -19,9 +19,9 @@ protocol StageActions: AnyObject {
     func tabDragBegan()
     func groupDragBegan(_ groupId: GroupId)
     func noteDragBegan(_ noteId: NoteId)
-    /// Make a note lead to a managed window's tab, or start a new note leading to it with nil.
+    /// Make a note lead to one more tab, a managed window's, or start a new note leading to it with nil.
     ///
-    /// - Returns: the note, or nil if the window is not managed
+    /// - Returns: the note, or nil if the window is not managed or the note leads to it already
     func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId?
     /// Switch to the tab a note leads to, or to its group once the tab has closed.
     func openLink(_ link: NoteLink)

@@ -45,11 +45,11 @@ final class QuickNotes {
 
     /// Start a new, blank note at the top; it is deleted unless text is written into it or it leads to a tab.
     ///
-    /// - Parameter link: the tab the note leads to, if any
+    /// - Parameter listLinks: the tabs the note leads to
     /// - Returns: the new note's identifier
-    func add(linkedTo link: NoteLink? = nil) -> NoteId {
-        let noteId = notes.add(text: "", link: link, at: Date())
-        if link != nil {
+    func add(listLinks: [NoteLink] = []) -> NoteId {
+        let noteId = notes.add(text: "", listLinks: listLinks, at: Date())
+        if !listLinks.isEmpty {
             save()
         }
         return noteId
@@ -62,9 +62,21 @@ final class QuickNotes {
         }
     }
 
-    /// Make a note lead to a tab, or to none with nil.
-    func link(_ noteId: NoteId, to link: NoteLink?) {
-        if notes.link(noteId, to: link, at: Date()) {
+    /// Make a note lead to one more tab.
+    ///
+    /// - Returns: whether the note did not lead to that tab already
+    @discardableResult
+    func addLink(_ link: NoteLink, to noteId: NoteId) -> Bool {
+        guard notes.addLink(link, to: noteId, at: Date()) else {
+            return false
+        }
+        save()
+        return true
+    }
+
+    /// Stop a note leading to a tab, or to every tab with nil.
+    func removeLink(to windowId: WindowId?, from noteId: NoteId) {
+        if notes.removeLink(to: windowId, from: noteId, at: Date()) {
             save()
         }
     }

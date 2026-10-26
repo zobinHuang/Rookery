@@ -281,7 +281,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         for window in (activeGroup?.listMembers ?? []) + listStageGroups.compactMap(\.listMembersFrontToBack.first) {
             mapWindowNames[window.windowId] = window.displayName
         }
-        let setLinkedIds = Set(quickNotes.listNotes.compactMap(\.link?.windowId))
+        let setLinkedIds = Set(quickNotes.listNotes.flatMap(\.listLinks).map(\.windowId))
         var mapLinkedWindowNames: [WindowId: String] = [:]
         for window in workspaceController.workspace.listManagedWindows where setLinkedIds.contains(window.windowId) {
             mapLinkedWindowNames[window.windowId] = window.displayName
@@ -421,10 +421,12 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         )
         let linkedNoteId: NoteId
         if let noteId {
-            quickNotes.link(noteId, to: link)
+            guard quickNotes.addLink(link, to: noteId) else {
+                return nil
+            }
             linkedNoteId = noteId
         } else {
-            linkedNoteId = quickNotes.add(linkedTo: link)
+            linkedNoteId = quickNotes.add(listLinks: [link])
         }
         coordinator?.refresh()
         return linkedNoteId

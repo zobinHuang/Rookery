@@ -968,7 +968,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                     && !window.isHidden
                     && mapRecords[window.windowId]?.isMinimized != true
             }
-        await run(showing: [], hiding: listToHide)
         for (windowId, contentFrame) in mapShownFrames {
             revealApplication(of: windowId)
             let restoreFrame = workspace.markShown(windowId)
@@ -989,6 +988,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
+        await run(showing: [], hiding: listToHide)
         activateShownGroups()
         didChange()
         Self.logger.info("""

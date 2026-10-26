@@ -27,6 +27,7 @@ Nothing writes window-server state through private APIs; Spaces are never moved 
 - **Displays**: `StagePanel` overrides `constrainFrameRect` so AppKit does not pin it to one display, and settles on the display under the cursor after a move.
 - Frames for layout come from Accessibility, not the window server: during Space animations the window server reports skewed frames.
 - **Switching**: ⌃⌥1–9 and the group switcher (⌥⇥) switch groups; ⌘⇥ is taken over by an event tap (`KeyInterceptor`) only while a stage is in front, offering windows most recently used first across groups. The switcher wraps its cards into rows that fit the stage it opens over.
+- **Show before hiding**: a stage switch moves the new front window into the content area and raises it before it moves the old one off screen, so the content area is never left empty for the frames in between, which flashed.
 
 ## Sidebar
 

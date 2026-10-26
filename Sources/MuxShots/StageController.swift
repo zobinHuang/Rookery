@@ -387,6 +387,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     }
 
     func endEditing() {
+        guard panel.isKeyWindow else {
+            return
+        }
         panel.resignKey()
         workspaceController.focusStageFront()
     }

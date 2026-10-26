@@ -505,10 +505,14 @@ struct NotesView: View {
     }
 }
 
-/// A note being written, the caret after its text: return saves, option-return starts a new line, escape puts the text back, and
-/// leaving the field, or the sidebar switching away from the notes, saves.
+/// A note being written, the caret after its text: return starts a new line, escape puts the text back, and
+/// a click anywhere else, including outside the stage, or the sidebar switching away from the notes, saves.
+/// It grows with the text up to a limit and scrolls beyond it.
 struct NoteEditor: View {
     private static let maxLineCount = 14
+    private static let fontSize: CGFloat = 12
+    /// How far the text view sets its text in from its leading edge.
+    private static let textInset: CGFloat = 5
 
     let initialText: String
     let onFinish: (String) -> Void
@@ -518,16 +522,34 @@ struct NoteEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            TextField("Note", text: $text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .lineLimit(1...Self.maxLineCount)
-                .focused($isFocused)
-            Text("↩ Save    ⌥↩ New line    ⎋ Cancel")
+            Text(text + " ")
+                .font(.system(size: Self.fontSize))
+                .lineLimit(Self.maxLineCount)
+                .padding(.horizontal, Self.textInset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .hidden()
+                .overlay {
+                    TextEditor(text: $text)
+                        .font(.system(size: Self.fontSize))
+                        .scrollContentBackground(.hidden)
+                        .scrollIndicators(.never)
+                        .focused($isFocused)
+                }
+                .overlay(alignment: .topLeading) {
+                    if text.isEmpty {
+                        Text("Note")
+                            .font(.system(size: Self.fontSize))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, Self.textInset)
+                            .allowsHitTesting(false)
+                    }
+                }
+            Text("Click outside to save    ⎋ Cancel")
                 .font(.system(size: 9.5))
                 .foregroundStyle(.tertiary)
+                .padding(.horizontal, Self.textInset)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 10 - Self.textInset)
         .padding(.vertical, 8)
         .background {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -546,9 +568,6 @@ struct NoteEditor: View {
                 }
             }
         }
-        .onSubmit {
-            finish(with: text)
-        }
         .onExitCommand {
             finish(with: initialText)
         }
@@ -557,8 +576,21 @@ struct NoteEditor: View {
                 finish(with: text)
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in
+            finishUnlessTyping()
+        }
         .onDisappear {
             finish(with: text)
+        }
+    }
+
+    /// Save once keyboard input has gone elsewhere, as a click outside the stage sends it; another stage
+    /// handing keyboard input to this one leaves it typing.
+    private func finishUnlessTyping() {
+        Task { @MainActor in
+            if !(NSApp.keyWindow?.firstResponder is NSTextView) {
+                finish(with: text)
+            }
         }
     }
 

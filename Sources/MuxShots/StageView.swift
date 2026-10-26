@@ -14,7 +14,7 @@ protocol StageActions: AnyObject {
     func renameWindow(_ windowId: WindowId, to name: String)
     /// Take keyboard input for a name being edited.
     func beginEditing()
-    /// Give keyboard input back to the stage's front window.
+    /// Give keyboard input back to the stage's front window, unless it has gone elsewhere already.
     func endEditing()
     func tabDragBegan()
     func groupDragBegan(_ groupId: GroupId)

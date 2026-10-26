@@ -563,12 +563,17 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Make the stages' coordinator, whose stages share the drop animation with the tray.
-    func makeStageCoordinator(mixerController: MixerController, agentUsageMonitor: AgentUsageMonitor) -> StageCoordinator {
+    func makeStageCoordinator(
+        mixerController: MixerController,
+        agentUsageMonitor: AgentUsageMonitor,
+        quickNotes: QuickNotes
+    ) -> StageCoordinator {
         let coordinator = StageCoordinator(
             workspaceController: self,
             preferences: preferences,
             mixerController: mixerController,
             agentUsageMonitor: agentUsageMonitor,
+            quickNotes: quickNotes,
             ghostAnimator: ghostAnimator
         )
         stageCoordinator = coordinator

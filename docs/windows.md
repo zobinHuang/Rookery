@@ -30,10 +30,12 @@ Nothing writes window-server state through private APIs; Spaces are never moved 
 
 ## Sidebar
 
-The sidebar is SwiftUI in the stage's hosting view: the Groups/Mixer switch, then the groups or the mixer, then sidebar videos, code agent limits, the world clock, and the toolbar. Colors are tokens in `StageColors` that follow the light and dark themes (dark is near black); theme changes crossfade through a snapshot of each stage.
+The sidebar is SwiftUI in the stage's hosting view: the Groups/Mixer/Notes switch, then the groups, the mixer or the quick notes, then sidebar videos, code agent limits, the world clock, and the toolbar. Colors are tokens in `StageColors` that follow the light and dark themes (dark is near black); theme changes crossfade through a snapshot of each stage.
 
 Every assignment to an `@Observable` property redraws the views reading it, equal value or not, so `StageController.refresh` assigns only what changed, and a layout change tells the views once when it ends rather than once for each window it moves. Window names live in `StageModel.mapWindowNames`, read only by the texts showing them (`WindowNameText`, `GroupSubtitleText`): pages such as Gmail retitle their window every few seconds, and that must not rebuild the stage.
 
 **No SwiftUI animation runs for long on the stage.** While any SwiftUI animation runs, every frame redraws the whole stage on the CPU, its text and icons included: the tab bar's sliding selection cost a third of a second per switch and the refresh symbol a full core while it turned. Motion that lasts is Core Animation on a layer of its own instead, which the render server runs while the stage draws nothing: the selected tab's background (`TabHighlight`), the refresh symbol (`SpinningSymbol`), the clock's colons.
+
+Quick notes (`QuickNotes`, `NotesView`) are shared by every stage and saved to `notes.json` beside the workspace whenever one changes. A click edits a note in place: the stage panel takes keyboard input as it does for renaming, return saves, option-return adds a line, escape puts the text back, and a note left blank is deleted.
 
 The world clock's digits are drawn as segment displays (`SevenSegmentDisplay`): seven segments for digits, fourteen for letters. A display redraws only when its text changes; colons blink in a Core Animation layer so a blink costs the app nothing. The window server draws only while a layer's opacity changes, so the colons' fades are kept to 80 ms. Cities come from the time zone database and Apple Maps (`WorldClockCitySearch`); zones by offset, abbreviation or name from `TimeZoneSearch`.

@@ -76,11 +76,13 @@ struct StageGroupRow: Identifiable, Equatable {
 enum SidebarMode: String, CaseIterable {
     case groups
     case mixer
+    case notes
 
     var title: String {
         switch self {
         case .groups: "Groups"
         case .mixer: "Mixer"
+        case .notes: "Notes"
         }
     }
 
@@ -88,6 +90,7 @@ enum SidebarMode: String, CaseIterable {
         switch self {
         case .groups: "square.grid.2x2"
         case .mixer: "slider.vertical.3"
+        case .notes: "note.text"
         }
     }
 }
@@ -128,6 +131,8 @@ final class StageModel {
     var editingGroupId: GroupId?
     /// The tab whose name is being edited.
     var editingWindowId: WindowId?
+    /// The quick note being edited.
+    var editingNoteId: NoteId?
     /// The group a dragged tab is over.
     var tabDropGroupId: GroupId?
     /// Whether a dragged tab is over the sidebar's empty space.

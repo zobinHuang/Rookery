@@ -34,6 +34,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let preferences: Preferences
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
+    private let quickNotes: QuickNotes
     private let ghostAnimator: DropGhostAnimator
     private let model = StageModel()
     private let panel: StagePanel
@@ -56,6 +57,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         preferences: Preferences,
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
+        quickNotes: QuickNotes,
         ghostAnimator: DropGhostAnimator,
         coordinator: StageCoordinator
     ) {
@@ -65,6 +67,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         self.preferences = preferences
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
+        self.quickNotes = quickNotes
         self.ghostAnimator = ghostAnimator
         panel = StagePanel(
             contentRect: .zero,
@@ -88,7 +91,13 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         background.layer?.masksToBounds = true
         panel.contentView = background
         super.init()
-        let stageView = StageView.makeHostingView(model: model, mixer: mixerController, agentUsage: agentUsageMonitor, actions: self)
+        let stageView = StageView.makeHostingView(
+            model: model,
+            mixer: mixerController,
+            agentUsage: agentUsageMonitor,
+            notes: quickNotes,
+            actions: self
+        )
         stageView.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(stageView)
         NSLayoutConstraint.activate([

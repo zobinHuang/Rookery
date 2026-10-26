@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences()
     private let mixerController = MixerController()
     private lazy var agentUsageMonitor = AgentUsageMonitor(preferences: preferences)
+    private let quickNotes = QuickNotes()
     private var settingsWindowController: SettingsWindowController?
     private var statusMenuController: StatusMenuController?
     private var applicationMonitor: ApplicationMonitor?
@@ -198,7 +199,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let workspace = WorkspaceController(tracker: tracker, preferences: preferences)
         let panel = workspace.makePanel()
-        let stages = workspace.makeStageCoordinator(mixerController: mixerController, agentUsageMonitor: agentUsageMonitor)
+        let stages = workspace.makeStageCoordinator(
+            mixerController: mixerController,
+            agentUsageMonitor: agentUsageMonitor,
+            quickNotes: quickNotes
+        )
         stageCoordinator = stages
         stages.onShowSettings = { [weak self] in
             self?.settingsWindowController?.show()

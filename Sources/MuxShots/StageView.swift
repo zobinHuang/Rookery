@@ -48,6 +48,7 @@ struct StageView: View {
     let model: StageModel
     let mixer: MixerController
     let agentUsage: AgentUsageMonitor
+    let notes: QuickNotes
     unowned let actions: any StageActions
     @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
@@ -58,9 +59,16 @@ struct StageView: View {
         model: StageModel,
         mixer: MixerController,
         agentUsage: AgentUsageMonitor,
+        notes: QuickNotes,
         actions: any StageActions
     ) -> NSView {
-        let view = NSHostingView(rootView: StageView(model: model, mixer: mixer, agentUsage: agentUsage, actions: actions))
+        let view = NSHostingView(rootView: StageView(
+            model: model,
+            mixer: mixer,
+            agentUsage: agentUsage,
+            notes: notes,
+            actions: actions
+        ))
         view.sizingOptions = []
         return view
     }
@@ -127,10 +135,26 @@ struct StageView: View {
                         insertion: .move(edge: .leading).combined(with: .opacity),
                         removal: .move(edge: .leading).combined(with: .opacity)
                     ))
-                } else {
+                } else if sidebarMode == .mixer {
                     ScrollView {
                         MixerView(mixer: mixer, isCollapsed: model.isSidebarCollapsed)
                             .padding(.vertical, 2)
+                    }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .trailing).combined(with: .opacity)
+                    ))
+                } else {
+                    ScrollView {
+                        NotesView(
+                            notes: notes,
+                            model: model,
+                            isCollapsed: model.isSidebarCollapsed,
+                            onBeginEditing: beginEditing(note:),
+                            onFinishEditing: finishEditing,
+                            onExpand: expandSidebar
+                        )
+                        .padding(.vertical, 2)
                     }
                     .transition(.asymmetric(
                         insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -754,19 +778,35 @@ struct StageView: View {
         }
         actions.beginEditing()
         model.editingWindowId = nil
+        model.editingNoteId = nil
         model.editingGroupId = groupId
     }
 
     private func beginRenaming(tab windowId: WindowId) {
         actions.beginEditing()
         model.editingGroupId = nil
+        model.editingNoteId = nil
         model.editingWindowId = windowId
+    }
+
+    private func beginEditing(note noteId: NoteId) {
+        actions.beginEditing()
+        model.editingGroupId = nil
+        model.editingWindowId = nil
+        model.editingNoteId = noteId
     }
 
     private func finishEditing() {
         model.editingGroupId = nil
         model.editingWindowId = nil
+        model.editingNoteId = nil
         actions.endEditing()
+    }
+
+    private func expandSidebar() {
+        if model.isSidebarCollapsed {
+            actions.toggleSidebar()
+        }
     }
 
     /// Move a dragged tab's window into a group, or into a new group with nil.

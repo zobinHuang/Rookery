@@ -58,6 +58,36 @@ struct QuickNoteTests {
         #expect(notes.listNotes.isEmpty)
     }
 
+    @Test func movingPlacesANoteBeforeTheTargetOrLast() {
+        var notes = QuickNoteList()
+        let cId = notes.add(text: "c", at: Self.start)
+        let bId = notes.add(text: "b", at: Self.start)
+        let aId = notes.add(text: "a", at: Self.start)
+
+        let isMovedDown = notes.move(aId, before: cId)
+        #expect(isMovedDown)
+        #expect(notes.listNotes.map(\.text) == ["b", "a", "c"])
+
+        let isMovedLast = notes.move(bId, before: nil)
+        #expect(isMovedLast)
+        #expect(notes.listNotes.map(\.text) == ["a", "c", "b"])
+    }
+
+    @Test func movingANoteOntoItsOwnPlaceChangesNothing() {
+        var notes = QuickNoteList()
+        let bId = notes.add(text: "b", at: Self.start)
+        let aId = notes.add(text: "a", at: Self.start)
+
+        let isMovedOntoItself = notes.move(aId, before: aId)
+        let isMovedBeforeNext = notes.move(aId, before: bId)
+        let isLastMovedLast = notes.move(bId, before: nil)
+
+        #expect(!isMovedOntoItself)
+        #expect(!isMovedBeforeNext)
+        #expect(!isLastMovedLast)
+        #expect(notes.listNotes.map(\.text) == ["a", "b"])
+    }
+
     @Test func notesSurviveEncoding() throws {
         var notes = QuickNoteList()
         notes.add(text: "milk\neggs", at: Self.start)

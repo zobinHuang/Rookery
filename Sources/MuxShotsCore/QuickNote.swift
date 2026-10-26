@@ -36,8 +36,8 @@ public struct QuickNote: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// The sidebar's quick notes, newest first. A note whose text is left blank is deleted, so there are never
-/// empty notes to tidy up.
+/// The sidebar's quick notes in the order the user keeps them, each new note at the top. A note whose text
+/// is left blank is deleted, so there are never empty notes to tidy up.
 public struct QuickNoteList: Codable, Equatable, Sendable {
     public private(set) var listNotes: [QuickNote]
 
@@ -81,6 +81,26 @@ public struct QuickNoteList: Codable, Equatable, Sendable {
         listNotes[noteIndex].text = trimmedText
         listNotes[noteIndex].modifiedAt = date
         return true
+    }
+
+    /// Move a note to just before another, or to the end with nil.
+    ///
+    /// - Returns: whether the order changed
+    @discardableResult
+    public mutating func move(_ noteId: NoteId, before targetNoteId: NoteId?) -> Bool {
+        guard
+            noteId != targetNoteId,
+            let sourceIndex = listNotes.firstIndex(where: { $0.noteId == noteId })
+        else {
+            return false
+        }
+        let listOldIds = listNotes.map(\.noteId)
+        let note = listNotes.remove(at: sourceIndex)
+        let targetIndex = targetNoteId.flatMap { targetNoteId in
+            listNotes.firstIndex { $0.noteId == targetNoteId }
+        } ?? listNotes.endIndex
+        listNotes.insert(note, at: targetIndex)
+        return listNotes.map(\.noteId) != listOldIds
     }
 
     /// Delete a note.

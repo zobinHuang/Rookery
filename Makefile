@@ -21,7 +21,7 @@ run: app
 # Install into /Applications, quitting a running copy first so the new build is the one that opens.
 install: app
 	-osascript -e 'quit app "MuxShots"'
-	while pgrep -f 'MuxShots.app/Contents/MacOS/MuxShots' > /dev/null; do sleep 0.2; done
+	while pgrep -x MuxShots > /dev/null; do sleep 0.2; done
 	rm -rf /Applications/MuxShots.app
 	cp -R .build/MuxShots.app /Applications/MuxShots.app
 	open /Applications/MuxShots.app

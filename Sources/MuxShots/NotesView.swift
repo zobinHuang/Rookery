@@ -108,11 +108,19 @@ struct NotesView: View {
                 .font(.system(size: 12))
                 .lineLimit(Self.previewLineLimit)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onBeginEditing(note.noteId)
+                }
             HStack(spacing: 2) {
                 Text(Self.modifiedText(note.modifiedAt))
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onBeginEditing(note.noteId)
+                    }
                 if isHovered {
                     cardButton("doc.on.doc", help: "Copy the note") {
                         copy(note)
@@ -134,10 +142,7 @@ struct NotesView: View {
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .fill(isHovered ? StageColors.hoveredRow : Color.clear)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
-        .onTapGesture {
-            onBeginEditing(note.noteId)
+                .allowsHitTesting(false)
         }
         .onHover { isNowHovered in
             withAnimation(Self.hoverAnimation) {

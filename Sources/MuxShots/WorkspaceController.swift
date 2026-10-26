@@ -491,8 +491,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                     continue
                 }
                 revealApplication(of: window.windowId)
-                taskGroup.addTask { [tracker] in
-                    await tracker.applyFrame(frame, to: window.windowId)
+                taskGroup.addTask {
+                    _ = await self.applyShownFrame(frame, to: window.windowId)
                 }
             }
         }

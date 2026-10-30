@@ -42,6 +42,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let restackDelay = Duration.milliseconds(300)
     /// How far a hidden window may be from where it belongs and still count as there.
     private static let placementTolerance: CGFloat = 2
+    /// How often putting back a displaced window checks whether the mouse is up and layout is idle.
+    private static let putBackPollInterval = Duration.milliseconds(100)
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
@@ -57,6 +59,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// stage would otherwise uncover them.
     private var setMovingStageIds: Set<StageId> = []
     private var mapRestackTasks: [StageId: Task<Void, Never>] = [:]
+    /// Managed windows something other than MuxShots moved or resized, to put back once the mouse is up.
+    private var setDisplacedIds: Set<WindowId> = []
+    private var putBackTask: Task<Void, Never>?
+    /// Where windows that cannot take their stage's content area landed instead, so that they are not
+    /// moved again and again.
+    private var mapUnfitFrames: [WindowId: CGRect] = [:]
+    private var isWindowDragActive = false
     private let tracker: WindowTracker
     private let dragMonitor = WindowDragMonitor()
     private let ghostAnimator = DropGhostAnimator()
@@ -690,6 +699,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     func windowDragBegan(_ drag: WindowDrag, at cursorLocation: CGPoint) {
+        isWindowDragActive = true
         if let stageId = stageShowing(windowId: drag.windowId) {
             stageCoordinator?.beginFollowing(stageId, windowDrag: drag, at: cursorLocation)
         }
@@ -718,6 +728,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     func windowDragEnded(_ drag: WindowDrag, at cursorLocation: CGPoint) {
+        isWindowDragActive = false
         guard let surface = activeSurface else {
             stageCoordinator?.endFollowing(isReturning: false)
             return
@@ -1470,6 +1481,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             if workspace.updateTitle(of: window.windowId, to: window.title) {
                 onWindowTitleChange?(window.windowId)
             }
+            noteIfDisplaced(window)
         case .removed(let windowId):
             let groupId = workspace.group(containing: windowId)?.groupId
             let stageId = groupId.flatMap(stage(showing:))
@@ -1485,6 +1497,92 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Where a window belongs when it is shown: its place before MuxShots hid it, or where it is now.
+    /// Note a managed window on a stage that is no longer where its stage keeps it, as when the user resizes
+    /// it or its application moves it, so it is put back: managed windows stay with their stage until
+    /// released.
+    private func noteIfDisplaced(_ record: WindowRecord) {
+        guard
+            !record.isMinimized,
+            !record.isFullscreen,
+            let group = workspace.group(containing: record.windowId),
+            let stageId = mapGroupStageIds[group.groupId],
+            let contentFrame = mapStageContentFrames[stageId],
+            !Self.isFrame(record.frame, closeTo: contentFrame),
+            mapUnfitFrames[record.windowId].map({ Self.isFrame(record.frame, closeTo: $0) }) != true
+        else {
+            return
+        }
+        let isHidden = workspace.listHiddenWindows.contains { $0.windowId == record.windowId }
+        if isHidden && ScreenGeometry.visibleShare(of: record.frame) <= Self.hiddenVisibleShareLimit {
+            return
+        }
+        if !isHidden && mapStageGroupIds[stageId] != group.groupId {
+            return
+        }
+        setDisplacedIds.insert(record.windowId)
+        guard putBackTask == nil else {
+            return
+        }
+        putBackTask = Task {
+            while
+                NSEvent.pressedMouseButtons != 0
+                || isWindowDragActive
+                || !setFollowingStageIds.isEmpty
+                || !setMovingStageIds.isEmpty
+            {
+                do {
+                    try await Task.sleep(for: Self.putBackPollInterval)
+                } catch {
+                    return
+                }
+            }
+            putBackTask = nil
+            let listWindowIds = Array(setDisplacedIds)
+            setDisplacedIds.removeAll()
+            await enqueue {
+                for windowId in listWindowIds {
+                    await self.putBack(windowId)
+                }
+            }
+        }
+    }
+
+    /// Put a displaced managed window back where its stage keeps it: in the content area if it is its
+    /// stage's front window, stacked beneath the stage or parked if it is hidden.
+    private func putBack(_ windowId: WindowId) async {
+        guard
+            let frame = await tracker.frame(of: windowId),
+            let group = workspace.group(containing: windowId),
+            let stageId = mapGroupStageIds[group.groupId],
+            let contentFrame = mapStageContentFrames[stageId]
+        else {
+            return
+        }
+        if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
+            await placeHidden(windowId, from: frame)
+            return
+        }
+        guard
+            mapStageGroupIds[stageId] == group.groupId,
+            !Self.isFrame(frame, closeTo: contentFrame),
+            await !tracker.isFullscreen(windowId)
+        else {
+            return
+        }
+        Self.logger.info("""
+            window \(windowId.rawValue) moved off its stage to \(String(describing: frame), privacy: .public); \
+            putting it back
+            """)
+        if
+            let landedFrame = await tracker.applyFrame(contentFrame, to: windowId),
+            !Self.isFrame(landedFrame, closeTo: contentFrame)
+        {
+            mapUnfitFrames[windowId] = landedFrame
+        } else {
+            mapUnfitFrames[windowId] = nil
+        }
+    }
+
     private func currentOrRestoreFrame(of window: ManagedWindow) async -> CGRect? {
         if let restoreFrame = window.restoreFrame {
             return restoreFrame

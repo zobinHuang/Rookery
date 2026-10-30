@@ -19,6 +19,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let hiddenVisibleShareLimit: CGFloat = 0.02
     /// Focus changes this soon after a switch are the switch's own and do not trigger another.
     private static let focusQuietPeriod = Duration.milliseconds(400)
+    /// How long after a switch the application of the window it brought forward may still settle its focus
+    /// on another of its windows, one hidden, which is then taken back rather than switched to.
+    private static let focusReclaimPeriod = Duration.milliseconds(1500)
+    /// How long a hidden window must keep focus before it counts as chosen: focus passes through other
+    /// windows while an application activates.
+    private static let focusSettleDelay = Duration.milliseconds(150)
     /// Applications left with only hidden windows are hidden this long after the last layout change, once
     /// the application being switched to has taken over activation.
     private static let applicationHidingDelay = Duration.milliseconds(500)
@@ -73,6 +79,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Managed windows the user has used, most recent first.
     private var listRecentWindowIds: [WindowId] = []
     private var focusQuietUntil = ContinuousClock.now
+    /// The window the latest layout change brought forward, whose application's focus is taken back to it
+    /// until `focusReclaimUntil`.
+    private var broughtForwardWindowId: WindowId?
+    private var focusReclaimUntil = ContinuousClock.now
 
     /// Called after a structural or user initiated workspace change.
     var onChange: (() -> Void)?
@@ -475,6 +485,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 onChange?()
             }
             focusQuietUntil = ContinuousClock.now + Self.focusQuietPeriod
+            focusReclaimUntil = ContinuousClock.now + Self.focusReclaimPeriod
             scheduleApplicationHiding()
         }
         switchTask = task
@@ -878,13 +889,32 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         Task {
+            do {
+                try await Task.sleep(for: Self.focusSettleDelay)
+            } catch {
+                return
+            }
             guard
                 let processId = await tracker.processId(of: windowId),
                 await tracker.focusedWindowId(ofProcess: processId) == windowId,
-                !isSwitching
+                !isSwitching,
+                workspace.listHiddenWindows.contains(where: { $0.windowId == windowId })
             else {
                 return
             }
+            if
+                let broughtForwardWindowId,
+                ContinuousClock.now < focusReclaimUntil,
+                await tracker.processId(of: broughtForwardWindowId) == processId
+            {
+                Self.logger.info("""
+                    focus went to hidden window \(windowId.rawValue) right after \(broughtForwardWindowId.rawValue) \
+                    of the same application came forward; taking it back
+                    """)
+                _ = await tracker.raise(broughtForwardWindowId)
+                return
+            }
+            Self.logger.info("hidden window \(windowId.rawValue) took focus; switching to it")
             await switchTo(group.groupId, bringingToFront: windowId)
         }
     }
@@ -949,6 +979,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         for window in listVisible.reversed() {
             _ = await tracker.raise(window.windowId)
         }
+        broughtForwardWindowId = listVisible.first?.windowId
         if let frontWindow = listVisible.first, let processId = await tracker.processId(of: frontWindow.windowId) {
             NSRunningApplication(processIdentifier: processId)?.activate()
         }
@@ -1011,6 +1042,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
         if let selected = group(onStage: stageId)?.listMembersFrontToBack.first(where: { mapShownFrames[$0.windowId] != nil }) {
             noteRecentlyUsed(selected.windowId)
+            broughtForwardWindowId = selected.windowId
             _ = await tracker.raise(selected.windowId)
             if let processId = await tracker.processId(of: selected.windowId) {
                 NSRunningApplication(processIdentifier: processId)?.activate()
@@ -1054,6 +1086,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
             try await show(windowId)
         }
+        broughtForwardWindowId = windowId
         guard await tracker.raise(windowId) else {
             throw WindowActionError.cannotRaise(windowId: windowId)
         }

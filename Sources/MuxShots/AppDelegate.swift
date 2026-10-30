@@ -219,6 +219,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspace.pictureProcessIds = { [weak mixerController] in
             mixerController?.browserTabs.setPictureProcessIds ?? []
         }
+        workspace.playingBundleIds = { [weak mixerController] in
+            Set(mixerController?.listTracks.filter(\.isPlaying).map(\.bundleId) ?? [])
+        }
         mixerController.browserTabs.pictures.onChange = { [weak workspace] in
             workspace?.picturesDidChange()
         }

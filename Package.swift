@@ -50,5 +50,10 @@ let package = Package(
             dependencies: ["MuxShotsCore", "MuxShotsControl"],
             swiftSettings: strictSettings
         ),
+        .testTarget(
+            name: "MuxShotsPlatformTests",
+            dependencies: ["MuxShotsPlatform"],
+            swiftSettings: strictSettings
+        ),
     ]
 )

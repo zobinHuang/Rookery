@@ -91,6 +91,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// The browsers playing a video in the sidebar, which are never hidden: a hidden browser stops drawing
     /// the page the video streams from.
     var pictureProcessIds: () -> Set<pid_t> = { [] }
+    /// The applications playing sound, which are hidden but never put in the background, where their sound
+    /// could stutter.
+    var playingBundleIds: () -> Set<String> = { [] }
+    private let throttle = ApplicationThrottle()
+    private var unhideObserver: NSObjectProtocol?
 
     private let preferences: Preferences
 
@@ -107,6 +112,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Resume managing the saved windows that still exist and start watching window drags.
     func start() {
+        throttle.releaseLeftovers()
         let mapServerWindows = Dictionary(
             WindowServer.listWindows().map { ($0.windowId, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -149,9 +155,25 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             let processId = running.processIdentifier
             Task { @MainActor in
+                self?.throttle.release(processId)
                 if let windowId = await tracker.focusedWindowId(ofProcess: processId) {
                     self?.handleFocus(of: windowId)
                 }
+            }
+        }
+        unhideObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didUnhideApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard
+                let running = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            else {
+                return
+            }
+            let processId = running.processIdentifier
+            MainActor.assumeIsolated {
+                self?.throttle.release(processId)
             }
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -184,9 +206,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
         }
+        if let unhideObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(unhideObserver)
+        }
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
         }
+        throttle.releaseAll()
         for observer in listWakeObservers {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
@@ -1227,6 +1253,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// last video closed if it has only hidden windows left.
     func picturesDidChange() {
         for processId in pictureProcessIds() {
+            throttle.release(processId)
             guard
                 let running = NSRunningApplication(processIdentifier: processId),
                 running.isHidden
@@ -1253,9 +1280,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Hide whole every application whose every window shown on some Space is one MuxShots hid, so it stops
-    /// drawing windows nobody sees. Windows off every display do not count, as Chrome's link bubble left
-    /// beside a parked window. The active application is left alone, as hiding it would hand
-    /// activation to another.
+    /// drawing windows nobody sees, and put it in the background, so what it goes on doing costs less power.
+    /// Windows off every display do not count, as Chrome's link bubble left beside a parked window. The
+    /// active application is left alone, as hiding it would hand activation to another.
     private func hideApplicationsShowingOnlyHiddenWindows() {
         let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
         guard !setCandidateIds.isEmpty else {
@@ -1267,25 +1294,36 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 .map { ($0.windowId, $0.processId) }
         )
         let setPictureProcessIds = pictureProcessIds()
+        let setPlayingBundleIds = playingBundleIds()
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
             guard
                 !setPictureProcessIds.contains(processId),
                 let running = NSRunningApplication(processIdentifier: processId),
-                !running.isHidden,
                 !running.isActive
             else {
                 continue
             }
-            if running.hide() {
+            if !running.isHidden {
+                guard running.hide() else {
+                    continue
+                }
                 Self.logger.info("hid \(running.localizedName ?? "", privacy: .public), whose windows are all hidden")
+            }
+            if !setPlayingBundleIds.contains(running.bundleIdentifier ?? "") {
+                throttle.throttle(processId)
             }
         }
     }
 
-    /// Bring back the application of a window about to be shown, if it is hidden.
+    /// Bring back the application of a window about to be shown, if it is hidden, and put it back to normal.
     private func revealApplication(of windowId: WindowId) {
         guard
-            let window = workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId }),
+            let window = workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId })
+        else {
+            return
+        }
+        throttle.release(window.application.processId)
+        guard
             let running = NSRunningApplication(processIdentifier: window.application.processId),
             running.isHidden
         else {

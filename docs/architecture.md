@@ -13,6 +13,7 @@ MuxShots is one SwiftPM package with a Dock app (with a menu bar item), a comman
 | `muxctl` | executable | The command-line client of the control socket. |
 | `MuxShotsChromeHost` | executable (`muxshots-chrome-host`) | Chrome's native messaging host; bundled inside the app. |
 | `MuxShotsCoreTests` | tests | Swift Testing suites for Core and the wire formats. |
+| `MuxShotsPlatformTests` | tests | Swift Testing suites for the Platform wrappers that need no permission, such as process priority. |
 | `extensions/chrome` | npm package | The Chrome extension: background service worker, content script, offscreen capture document. |
 
 Warnings are errors and the Swift 6 language mode is on everywhere; see `Package.swift`.

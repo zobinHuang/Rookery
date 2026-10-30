@@ -35,9 +35,11 @@ struct SwitcherView: View {
 
     private var cards: some View {
         let columns = model.grid.columns
-        let listRows = stride(from: 0, to: model.listEntries.count, by: columns).map { start in
-            Array(start..<min(start + columns, model.listEntries.count))
+        let listEntries = model.listEntries
+        let listRows = stride(from: 0, to: listEntries.count, by: columns).map { start in
+            Array(listEntries[start..<min(start + columns, listEntries.count)])
         }
+        let selectedId = listEntries.indices.contains(model.selectedIndex) ? listEntries[model.selectedIndex].id : nil
         let visibleHeight = CGFloat(model.grid.visibleRows) * SwitcherLayout.cardSize.height
             + CGFloat(model.grid.visibleRows - 1) * SwitcherLayout.spacing
             + SwitcherLayout.cardInset * 2
@@ -46,8 +48,8 @@ struct SwitcherView: View {
                 VStack(alignment: .leading, spacing: SwitcherLayout.spacing) {
                     ForEach(listRows.indices, id: \.self) { rowIndex in
                         HStack(spacing: SwitcherLayout.spacing) {
-                            ForEach(listRows[rowIndex], id: \.self) { index in
-                                card(at: index)
+                            ForEach(listRows[rowIndex]) { entry in
+                                card(for: entry, isSelected: entry.id == selectedId)
                             }
                         }
                         .id(rowIndex)
@@ -69,10 +71,10 @@ struct SwitcherView: View {
         .animation(Self.selectionAnimation, value: model.selectedIndex)
     }
 
-    private func card(at index: Int) -> some View {
-        SwitcherCardView(entry: model.listEntries[index], isSelected: index == model.selectedIndex)
+    private func card(for entry: SwitcherEntry, isSelected: Bool) -> some View {
+        SwitcherCardView(entry: entry, isSelected: isSelected)
             .background {
-                if index == model.selectedIndex {
+                if isSelected {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color.accentColor.opacity(0.9))
                         .matchedGeometryEffect(id: "selection", in: selectionNamespace)

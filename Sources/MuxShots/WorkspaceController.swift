@@ -28,6 +28,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// How often, and for how long, a window its application was asked to reopen is looked for again.
     private static let reopenPollInterval = Duration.milliseconds(100)
     private static let reopenTimeout = Duration.seconds(2)
+    /// When, after displays change or wake, to put the stages back on a display and park again the hidden
+    /// windows macOS moved on screen: macOS goes on moving windows for a few seconds after the change.
+    private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
@@ -58,6 +61,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var focusTask: Task<Void, Never>?
     private var applicationHidingTask: Task<Void, Never>?
     private var activationObserver: NSObjectProtocol?
+    private var screenObserver: NSObjectProtocol?
+    private var listWakeObservers: [NSObjectProtocol] = []
+    private var displayChangeTask: Task<Void, Never>?
     private var isSwitching = false
     /// How many switches have been asked for, which tells whether one was asked for in the meantime.
     private var switchRequestCount = 0
@@ -138,6 +144,22 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
             }
         }
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.displaysDidChange()
+            }
+        }
+        listWakeObservers = [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification].map { name in
+            NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.displaysDidChange()
+                }
+            }
+        }
         dragMonitor.delegate = self
         dragMonitor.start()
     }
@@ -148,8 +170,15 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         changeTask?.cancel()
         focusTask?.cancel()
         applicationHidingTask?.cancel()
+        displayChangeTask?.cancel()
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
+        }
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+        for observer in listWakeObservers {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         save()
     }
@@ -1113,6 +1142,52 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
         }
         return nil
+    }
+
+    /// Put the stages back on a display and park again the hidden windows macOS moved on screen, once the
+    /// displays have settled after a change: a display that comes, goes or wakes makes macOS move windows
+    /// by itself, parked ones included, and moves the origin the window server's coordinates count from.
+    private func displaysDidChange() {
+        displayChangeTask?.cancel()
+        displayChangeTask = Task {
+            for delay in Self.listDisplaySettleDelays {
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
+                stageCoordinator?.settleStagesOnDisplays()
+                await enqueue {
+                    await self.reparkStrayWindows()
+                }
+            }
+        }
+    }
+
+    /// Park again every hidden window that is back on screen.
+    private func reparkStrayWindows() async {
+        await withTaskGroup(of: Void.self) { taskGroup in
+            for window in workspace.listHiddenWindows {
+                taskGroup.addTask {
+                    await self.repark(window.windowId)
+                }
+            }
+        }
+    }
+
+    private func repark(_ windowId: WindowId) async {
+        guard
+            let frame = await tracker.frame(of: windowId),
+            ScreenGeometry.visibleShare(of: frame) > Self.hiddenVisibleShareLimit
+        else {
+            return
+        }
+        let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
+        let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId)
+        Self.logger.info("""
+            parked \(windowId.rawValue) again from \(String(describing: frame), privacy: .public), landed at \
+            \(String(describing: parkedFrame), privacy: .public)
+            """)
     }
 
     /// Bring back a browser hidden before it started playing a video in the sidebar, and hide one whose

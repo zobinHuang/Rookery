@@ -150,6 +150,14 @@ final class StageCoordinator: DropSurface {
         stage.place(on: listScreens[(index + 1) % listScreens.count])
     }
 
+    /// Fit every open stage back onto the display it is mostly on, or the main display if it is on none, and
+    /// refit its front window, as after displays change.
+    func settleStagesOnDisplays() {
+        for stage in listStages where stage.isShowing {
+            stage.settleOnItsDisplay()
+        }
+    }
+
     /// Keep a stage just beneath its front window, as after that window comes forward.
     func keepStage(_ stageId: StageId, beneath windowId: WindowId) {
         listStages.first { $0.stageId == stageId }?.keep(beneath: windowId)

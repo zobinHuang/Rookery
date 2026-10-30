@@ -529,6 +529,13 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         }
     }
 
+    /// Fit the stage wholly onto the display it is mostly on, or the main display if it is on none.
+    func settleOnItsDisplay() {
+        if let screen = panel.screen ?? NSScreen.main {
+            settle(on: screen)
+        }
+    }
+
     /// Fit the stage wholly onto a display, shrinking it if it is larger, and refit its front window.
     private func settle(on screen: NSScreen) {
         let visibleFrame = screen.visibleFrame

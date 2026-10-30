@@ -37,6 +37,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// When, after displays change or wake, to put the stages back on a display and park again the hidden
     /// windows macOS moved on screen: macOS goes on moving windows for a few seconds after the change.
     private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
+    /// How long a stage must stay put after moving or resizing before its hidden windows are stacked
+    /// beneath it again.
+    private static let restackDelay = Duration.milliseconds(300)
+    /// How far a hidden window may be from where it belongs and still count as there.
+    private static let placementTolerance: CGFloat = 2
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
@@ -48,6 +53,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Stages whose front window is being moved to follow them, and where it should end up next.
     private var mapPendingStageFrames: [StageId: CGRect] = [:]
     private var setFollowingStageIds: Set<StageId> = []
+    /// Stages being moved or resized, whose hidden windows are parked off screen until they stay put, as the
+    /// stage would otherwise uncover them.
+    private var setMovingStageIds: Set<StageId> = []
+    private var mapRestackTasks: [StageId: Task<Void, Never>] = [:]
     private let tracker: WindowTracker
     private let dragMonitor = WindowDragMonitor()
     private let ghostAnimator = DropGhostAnimator()
@@ -401,8 +410,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     ///   - stageId: the stage
     ///   - contentFrame: the new content area, in window-server coordinates
     func relayoutStage(_ stageId: StageId, contentFrame: CGRect) {
-        guard mapStageContentFrames[stageId] != nil else {
+        guard let previousFrame = mapStageContentFrames[stageId] else {
             return
+        }
+        if previousFrame != contentFrame {
+            stageDidMove(stageId)
         }
         mapStageContentFrames[stageId] = contentFrame
         mapPendingStageFrames[stageId] = contentFrame
@@ -418,6 +430,30 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 await self.tracker.applyFrame(frame, to: windowId)
             }
             self.setFollowingStageIds.remove(stageId)
+        }
+    }
+
+    /// Park a moving stage's hidden windows off screen, and stack them beneath it again once it stays put.
+    private func stageDidMove(_ stageId: StageId) {
+        if setMovingStageIds.insert(stageId).inserted {
+            Task {
+                await enqueue {
+                    await self.placeHiddenWindows(ofStage: stageId)
+                }
+            }
+        }
+        mapRestackTasks[stageId]?.cancel()
+        mapRestackTasks[stageId] = Task {
+            do {
+                try await Task.sleep(for: Self.restackDelay)
+            } catch {
+                return
+            }
+            mapRestackTasks[stageId] = nil
+            setMovingStageIds.remove(stageId)
+            await enqueue {
+                await self.placeHiddenWindows(ofStage: stageId)
+            }
         }
     }
 
@@ -1076,6 +1112,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
         await run(showing: [], hiding: listToHide)
+        await placeHiddenWindows(ofStage: stageId)
         activateShownGroups()
         didChange()
         Self.logger.info("""
@@ -1133,20 +1170,103 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         guard let frame = await tracker.frame(of: windowId) else {
             throw WindowActionError.noDisplay(windowId: windowId)
         }
-        let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
-        guard let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId) else {
-            throw WindowActionError.cannotMove(windowId: windowId)
-        }
-        Self.logger.info("""
-            hid \(windowId.rawValue) from \(String(describing: frame), privacy: .public) to \
-            \(String(describing: requestedFrame), privacy: .public), landed at \(String(describing: parkedFrame), privacy: .public)
-            """)
+        let placement = await placeHidden(windowId, from: frame)
         workspace.markHidden(windowId, restoreFrame: frame)
         didChange()
-        if ScreenGeometry.visibleShare(of: parkedFrame) > Self.hiddenVisibleShareLimit {
-            Self.logger.error("window \(windowId.rawValue) stayed visible at \(String(describing: parkedFrame))")
+        guard placement != nil else {
+            Self.logger.error("window \(windowId.rawValue) stayed visible")
             throw WindowActionError.cannotMove(windowId: windowId)
         }
+    }
+
+    /// Put a window being hidden, or one already hidden, where it belongs: stacked in its stage's content
+    /// area, where the stage covers it and macOS tells its application it is not seen, so the application
+    /// stops drawing it; or, where the stage cannot cover it, parked off screen.
+    ///
+    /// A window is parked rather than stacked when its group is on no stage, when its stage is moving, when
+    /// it is on another Space, when its application is a browser playing a video in the sidebar (a covered
+    /// page stops drawing, and the video would freeze), and when it does not fit inside the stage.
+    ///
+    /// - Parameters:
+    ///   - windowId: the window
+    ///   - frame: where the window is now
+    /// - Returns: where the window landed, or nil if it could not be moved out of sight
+    @discardableResult
+    private func placeHidden(_ windowId: WindowId, from frame: CGRect) async -> CGRect? {
+        if
+            let stageFrame = stackingStageFrame(for: windowId),
+            let contentFrame = workspace.group(containing: windowId).flatMap({ mapGroupStageIds[$0.groupId] })
+                .flatMap({ mapStageContentFrames[$0] })
+        {
+            if Self.isFrame(frame, closeTo: contentFrame) {
+                return frame
+            }
+            if
+                let stackedFrame = await tracker.applyFrame(contentFrame, to: windowId),
+                stageFrame.insetBy(dx: -Self.placementTolerance, dy: -Self.placementTolerance).contains(stackedFrame)
+            {
+                Self.logger.info("""
+                    stacked \(windowId.rawValue) from \(String(describing: frame), privacy: .public) beneath its stage at \
+                    \(String(describing: stackedFrame), privacy: .public)
+                    """)
+                return stackedFrame
+            }
+            Self.logger.info("window \(windowId.rawValue) does not fit beneath its stage; parking it")
+        }
+        guard let currentFrame = await tracker.frame(of: windowId) else {
+            return nil
+        }
+        if ScreenGeometry.visibleShare(of: currentFrame) <= Self.hiddenVisibleShareLimit {
+            return currentFrame
+        }
+        let requestedFrame = ScreenGeometry.offscreenFrame(for: currentFrame)
+        guard let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId) else {
+            return nil
+        }
+        Self.logger.info("""
+            parked \(windowId.rawValue) from \(String(describing: currentFrame), privacy: .public) at \
+            \(String(describing: requestedFrame), privacy: .public), landed at \(String(describing: parkedFrame), privacy: .public)
+            """)
+        return ScreenGeometry.visibleShare(of: parkedFrame) > Self.hiddenVisibleShareLimit ? nil : parkedFrame
+    }
+
+    /// The frame, in window-server coordinates, of the stage a hidden window can be stacked beneath, or nil
+    /// if it has to be parked off screen instead.
+    private func stackingStageFrame(for windowId: WindowId) -> CGRect? {
+        guard
+            let window = workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId }),
+            let stageId = workspace.group(containing: windowId).flatMap({ mapGroupStageIds[$0.groupId] }),
+            !setMovingStageIds.contains(stageId),
+            !pictureProcessIds().contains(window.application.processId),
+            WindowServer.window(withId: windowId)?.isOnScreen == true,
+            let stageFrame = stageCoordinator?.frame(ofStage: stageId)
+        else {
+            return nil
+        }
+        return ScreenGeometry.windowServerFrame(fromAppKit: stageFrame)
+    }
+
+    /// Put every hidden window of a stage's groups, or of every group, where it belongs (`placeHidden`).
+    private func placeHiddenWindows(ofStage stageId: StageId? = nil) async {
+        let listWindows = workspace.listHiddenWindows.filter { window in
+            stageId == nil || workspace.group(containing: window.windowId).flatMap({ mapGroupStageIds[$0.groupId] }) == stageId
+        }
+        await withTaskGroup(of: Void.self) { taskGroup in
+            for window in listWindows {
+                taskGroup.addTask {
+                    if let frame = await self.tracker.frame(of: window.windowId) {
+                        await self.placeHidden(window.windowId, from: frame)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func isFrame(_ lhs: CGRect, closeTo rhs: CGRect) -> Bool {
+        abs(lhs.minX - rhs.minX) <= placementTolerance
+            && abs(lhs.minY - rhs.minY) <= placementTolerance
+            && abs(lhs.width - rhs.width) <= placementTolerance
+            && abs(lhs.height - rhs.height) <= placementTolerance
     }
 
     private func show(_ windowId: WindowId) async throws {
@@ -1203,7 +1323,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         return nil
     }
 
-    /// Put the stages back on a display and park again the hidden windows macOS moved on screen, once the
+    /// Put the stages back on a display and the hidden windows macOS moved back where they belong, once the
     /// displays have settled after a change: a display that comes, goes or wakes makes macOS move windows
     /// by itself, parked ones included, and moves the origin the window server's coordinates count from.
     private func displaysDidChange() {
@@ -1217,36 +1337,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
                 stageCoordinator?.settleStagesOnDisplays()
                 await enqueue {
-                    await self.reparkStrayWindows()
+                    await self.placeHiddenWindows()
                 }
             }
         }
-    }
-
-    /// Park again every hidden window that is back on screen.
-    private func reparkStrayWindows() async {
-        await withTaskGroup(of: Void.self) { taskGroup in
-            for window in workspace.listHiddenWindows {
-                taskGroup.addTask {
-                    await self.repark(window.windowId)
-                }
-            }
-        }
-    }
-
-    private func repark(_ windowId: WindowId) async {
-        guard
-            let frame = await tracker.frame(of: windowId),
-            ScreenGeometry.visibleShare(of: frame) > Self.hiddenVisibleShareLimit
-        else {
-            return
-        }
-        let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
-        let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId)
-        Self.logger.info("""
-            parked \(windowId.rawValue) again from \(String(describing: frame), privacy: .public), landed at \
-            \(String(describing: parkedFrame), privacy: .public)
-            """)
     }
 
     /// Bring back a browser hidden before it started playing a video in the sidebar, and hide one whose
@@ -1262,7 +1356,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             running.unhide()
         }
-        scheduleApplicationHiding()
+        Task {
+            await enqueue {
+                await self.placeHiddenWindows()
+            }
+        }
     }
 
     /// Hide the applications left with only hidden windows once layout settles; a later layout change

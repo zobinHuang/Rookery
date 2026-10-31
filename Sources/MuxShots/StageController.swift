@@ -409,6 +409,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         clearDragStateOnMouseUp()
     }
 
+    func dragEntered() {
+        clearDragStateOnMouseUp()
+    }
+
     func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId? {
         guard
             let group = workspaceController.workspace.group(containing: windowId),

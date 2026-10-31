@@ -19,6 +19,9 @@ protocol StageActions: AnyObject {
     func tabDragBegan()
     func groupDragBegan(_ groupId: GroupId)
     func noteDragBegan(_ noteId: NoteId)
+    /// A drag came over a drop target on the stage, from this stage or any other: its feedback is cleared once
+    /// the mouse is released, wherever the drag ends.
+    func dragEntered()
     /// Make a note lead to one more tab, a managed window's, or start a new note leading to it with nil.
     ///
     /// - Returns: the note, or nil if the window is not managed or the note leads to it already
@@ -282,6 +285,9 @@ struct StageView: View {
                 return false
             }
         } isTargeted: { isTargeted in
+            if isTargeted {
+                actions.dragEntered()
+            }
             if model.draggingNoteId != nil {
                 model.isNoteOverSidebarEnd = isTargeted
             } else if model.draggingGroupId != nil {
@@ -548,6 +554,9 @@ struct StageView: View {
                 return false
             }
         } isTargeted: { isTargeted in
+            if isTargeted {
+                actions.dragEntered()
+            }
             if model.draggingGroupId != nil {
                 if isTargeted {
                     model.groupInsertBeforeId = row.groupId
@@ -686,6 +695,9 @@ struct StageView: View {
                     actions.moveTab(windowId, before: nil)
                     return true
                 } isTargeted: { isTargeted in
+                    if isTargeted {
+                        actions.dragEntered()
+                    }
                     model.isTabOverTabBarEnd = isTargeted
                 }
                 .onGeometryChange(for: Bool.self) { geometry in
@@ -805,6 +817,7 @@ struct StageView: View {
             return true
         } isTargeted: { isTargeted in
             if isTargeted {
+                actions.dragEntered()
                 model.tabInsertBeforeId = tab.windowId
             } else if model.tabInsertBeforeId == tab.windowId {
                 model.tabInsertBeforeId = nil

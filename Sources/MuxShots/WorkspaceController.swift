@@ -949,6 +949,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 return
             }
             if let broughtForwardWindowId, ContinuousClock.now < focusReclaimUntil {
+                guard windowId != broughtForwardWindowId else {
+                    return
+                }
                 Self.logger.info("""
                     hidden window \(windowId.rawValue) took focus right after a switch; taking it back to \
                     \(broughtForwardWindowId.rawValue)

@@ -34,6 +34,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// How often, and for how long, a window its application was asked to reopen is looked for again.
     private static let reopenPollInterval = Duration.milliseconds(100)
     private static let reopenTimeout = Duration.seconds(2)
+    /// How often, and for how long, an application asked to unhide is checked until it is shown.
+    private static let unhidePollInterval = Duration.milliseconds(10)
+    private static let unhideTimeout = Duration.milliseconds(500)
     /// When, after displays change or wake, to put the stages back on a display and park again the hidden
     /// windows macOS moved on screen: macOS goes on moving windows for a few seconds after the change.
     private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
@@ -567,8 +570,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 guard let frame = homeFrame ?? restoreFrame else {
                     continue
                 }
-                revealApplication(of: window.windowId)
                 taskGroup.addTask {
+                    await self.revealApplication(of: window.windowId)
                     _ = await self.applyShownFrame(frame, to: window.windowId)
                 }
             }
@@ -1068,7 +1071,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                     && mapRecords[window.windowId]?.isMinimized != true
             }
         for (windowId, contentFrame) in mapShownFrames {
-            revealApplication(of: windowId)
+            await revealApplication(of: windowId)
             let restoreFrame = workspace.markShown(windowId)
             guard await applyShownFrame(contentFrame, to: windowId) == nil else {
                 continue
@@ -1163,7 +1166,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     private func show(_ windowId: WindowId) async throws {
-        revealApplication(of: windowId)
+        await revealApplication(of: windowId)
         guard let restoreFrame = workspace.markShown(windowId) else {
             throw WindowActionError.notHidden(windowId: windowId)
         }
@@ -1329,7 +1332,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Bring back the application of a window about to be shown, if it is hidden, and put it back to normal.
-    private func revealApplication(of windowId: WindowId) {
+    /// Unhiding finishes later and puts the application's windows back in its own order, and a hidden
+    /// application's windows cannot be moved, so this waits until the application is shown.
+    private func revealApplication(of windowId: WindowId) async {
         guard
             let window = workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId })
         else {
@@ -1343,6 +1348,17 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         running.unhide()
+        let deadline = ContinuousClock.now + Self.unhideTimeout
+        while running.isHidden && ContinuousClock.now < deadline {
+            do {
+                try await Task.sleep(for: Self.unhidePollInterval)
+            } catch {
+                return
+            }
+        }
+        if running.isHidden {
+            Self.logger.error("\(running.localizedName ?? "", privacy: .public) is still hidden after asking it to unhide")
+        }
     }
 
     private func maximize(_ windowId: WindowId) async throws {

@@ -17,11 +17,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let fullscreenSettleDelay = Duration.milliseconds(400)
     /// A hidden window may keep at most this share of itself on screen.
     private static let hiddenVisibleShareLimit: CGFloat = 0.02
-    /// Focus changes this soon after a switch are the switch's own and do not trigger another.
-    private static let focusQuietPeriod = Duration.milliseconds(400)
-    /// How long after a switch the application of the window it brought forward may still settle its focus
-    /// on another of its windows, one hidden, which is then taken back rather than switched to.
+    /// How long after a switch a hidden window that takes focus is taken as the switch's leftover, the
+    /// application switched away from or the one switched to activating late, and focus is taken back to the
+    /// window the switch brought forward rather than followed.
     private static let focusReclaimPeriod = Duration.milliseconds(1500)
+    /// How long after a switch it checks that the application in front is not focusing a hidden window, as
+    /// focus changes during the switch are not followed.
+    private static let focusConfirmDelay = Duration.milliseconds(300)
     /// How long a hidden window must keep focus before it counts as chosen: focus passes through other
     /// windows while an application activates.
     private static let focusSettleDelay = Duration.milliseconds(150)
@@ -92,11 +94,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var isChangePending = false
     /// Managed windows the user has used, most recent first.
     private var listRecentWindowIds: [WindowId] = []
-    private var focusQuietUntil = ContinuousClock.now
-    /// The window the latest layout change brought forward, whose application's focus is taken back to it
-    /// until `focusReclaimUntil`.
+    /// The window the latest layout change brought forward, which focus a hidden window takes is given back
+    /// to until `focusReclaimUntil`.
     private var broughtForwardWindowId: WindowId?
     private var focusReclaimUntil = ContinuousClock.now
+    private var focusConfirmTask: Task<Void, Never>?
 
     /// Called after a structural or user initiated workspace change.
     var onChange: (() -> Void)?
@@ -212,6 +214,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Stop watching drags and save the latest titles.
     func stop() {
+        focusConfirmTask?.cancel()
         dragMonitor.stop()
         changeTask?.cancel()
         focusTask?.cancel()
@@ -524,8 +527,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 isChangePending = false
                 onChange?()
             }
-            focusQuietUntil = ContinuousClock.now + Self.focusQuietPeriod
             focusReclaimUntil = ContinuousClock.now + Self.focusReclaimPeriod
+            confirmFocusAfterSwitch()
             scheduleApplicationHiding()
         }
         switchTask = task
@@ -633,7 +636,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 return
             }
             await enqueue {
-                guard let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
+                guard
+                    self.switchRequestCount == requestCount,
+                    let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId
+                else {
                     return
                 }
                 try? await self.focus(windowId)
@@ -913,8 +919,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Follow the user to a hidden window they focused, through Cmd-Tab, the Dock or a notification, by
-    /// switching to its group. Applications can report a focus change late, after a switch has hidden the
-    /// window, so the switch waits until the application confirms the window still has focus.
+    /// switching to its group. Only the application in front counts: one behind it moving its own focus is
+    /// not the user's choice. Applications can report a focus change late, after a switch has hidden the
+    /// window, so the switch waits until the application confirms the window still has focus; within
+    /// `focusReclaimPeriod` of a switch, focus is taken back instead.
     private func handleFocus(of windowId: WindowId) {
         if workspace.isManaged(windowId) && !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
             noteRecentlyUsed(windowId)
@@ -923,8 +931,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
         }
         guard
-            !isSwitching,
-            ContinuousClock.now >= focusQuietUntil,
             workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }),
             let group = workspace.group(containing: windowId)
         else {
@@ -937,27 +943,72 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 return
             }
             guard
-                let processId = await tracker.processId(of: windowId),
-                await tracker.focusedWindowId(ofProcess: processId) == windowId,
                 !isSwitching,
-                workspace.listHiddenWindows.contains(where: { $0.windowId == windowId })
+                await isFocusedInFront(windowId)
             else {
                 return
             }
-            if
-                let broughtForwardWindowId,
-                ContinuousClock.now < focusReclaimUntil,
-                await tracker.processId(of: broughtForwardWindowId) == processId
-            {
+            if let broughtForwardWindowId, ContinuousClock.now < focusReclaimUntil {
                 Self.logger.info("""
-                    focus went to hidden window \(windowId.rawValue) right after \(broughtForwardWindowId.rawValue) \
-                    of the same application came forward; taking it back
+                    hidden window \(windowId.rawValue) took focus right after a switch; taking it back to \
+                    \(broughtForwardWindowId.rawValue)
                     """)
-                _ = await tracker.raise(broughtForwardWindowId)
+                await bringForward(broughtForwardWindowId)
                 return
             }
             Self.logger.info("hidden window \(windowId.rawValue) took focus; switching to it")
             await switchTo(group.groupId, bringingToFront: windowId)
+        }
+    }
+
+    /// Whether a window is hidden and is the focused window of the application in front.
+    private func isFocusedInFront(_ windowId: WindowId) async -> Bool {
+        guard
+            workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }),
+            let processId = await tracker.processId(of: windowId),
+            NSWorkspace.shared.frontmostApplication?.processIdentifier == processId
+        else {
+            return false
+        }
+        return await tracker.focusedWindowId(ofProcess: processId) == windowId
+    }
+
+    /// Once a switch has settled, take focus back to the window it brought forward if the application in
+    /// front is focusing a hidden window, as when the application switched away from activates after the
+    /// one switched to. Focus changes during a switch are not followed, so this is the only check of them.
+    private func confirmFocusAfterSwitch() {
+        let requestCount = switchRequestCount
+        focusConfirmTask?.cancel()
+        focusConfirmTask = Task {
+            do {
+                try await Task.sleep(for: Self.focusConfirmDelay)
+            } catch {
+                return
+            }
+            guard
+                switchRequestCount == requestCount,
+                !isSwitching,
+                let broughtForwardWindowId,
+                let frontProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                let focusedWindowId = await tracker.focusedWindowId(ofProcess: frontProcessId),
+                focusedWindowId != broughtForwardWindowId,
+                await isFocusedInFront(focusedWindowId)
+            else {
+                return
+            }
+            Self.logger.info("""
+                hidden window \(focusedWindowId.rawValue) has focus after a switch; taking it back to \
+                \(broughtForwardWindowId.rawValue)
+                """)
+            await bringForward(broughtForwardWindowId)
+        }
+    }
+
+    /// Raise a window and activate its application.
+    private func bringForward(_ windowId: WindowId) async {
+        _ = await tracker.raise(windowId)
+        if let processId = await tracker.processId(of: windowId) {
+            NSRunningApplication(processIdentifier: processId)?.activate()
         }
     }
 
@@ -1085,10 +1136,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         if let selected = group(onStage: stageId)?.listMembersFrontToBack.first(where: { mapShownFrames[$0.windowId] != nil }) {
             noteRecentlyUsed(selected.windowId)
             broughtForwardWindowId = selected.windowId
-            _ = await tracker.raise(selected.windowId)
-            if let processId = await tracker.processId(of: selected.windowId) {
-                NSRunningApplication(processIdentifier: processId)?.activate()
-            }
+            await bringForward(selected.windowId)
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
         await run(showing: [], hiding: listToHide)

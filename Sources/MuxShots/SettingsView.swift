@@ -4,7 +4,8 @@ import MuxShotsCore
 import MuxShotsPlatform
 import SwiftUI
 
-/// The settings window's content: general options, dragging and shortcuts.
+/// The settings: general options, dragging, the world clock, code agent accounts and shortcuts, as cards
+/// under a title. Shown in a stage's content area, or in a window of its own when no stage is open.
 struct SettingsView: View {
     /// The modifier sets offered for the group shortcuts.
     private static let listGroupModifierChoices: [NSEvent.ModifierFlags] = [
@@ -14,167 +15,147 @@ struct SettingsView: View {
         [.control, .option, .command],
         [.control, .shift],
     ]
+    private static let columnWidth: CGFloat = 620
+    /// The corner radius of a card of settings.
+    static let cardCornerRadius: CGFloat = 12
 
     @Bindable var preferences: Preferences
     let recorder: ShortcutRecorder
     let agentUsageMonitor: AgentUsageMonitor
+    /// Closes the settings, for the close button; nil in the settings window, which has its own.
+    var onClose: (() -> Void)?
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
     @State private var citySearch = WorldClockCitySearch()
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
 
-    /// An AppKit view hosting the settings.
+    /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
         preferences: Preferences,
         recorder: ShortcutRecorder,
         agentUsageMonitor: AgentUsageMonitor
     ) -> NSView {
-        NSHostingView(rootView: SettingsView(preferences: preferences, recorder: recorder, agentUsageMonitor: agentUsageMonitor))
+        NSHostingView(rootView: SettingsView(preferences: preferences, recorder: recorder, agentUsageMonitor: agentUsageMonitor)
+            .frame(width: 560, height: 680)
+            .background(StageColors.window))
     }
 
     var body: some View {
-        Form {
-            Section("General") {
-                Toggle("Open MuxShots at login", isOn: $isLaunchingAtLogin)
-                    .onChange(of: isLaunchingAtLogin) { _, isEnabled in
-                        applyLoginItem(isEnabled)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+                SettingsSection(title: "General", symbol: "gearshape.fill", tint: .gray) {
+                    SettingsRow(title: "Open at Login") {
+                        Toggle("", isOn: $isLaunchingAtLogin)
+                            .onChange(of: isLaunchingAtLogin) { _, isEnabled in
+                                applyLoginItem(isEnabled)
+                            }
                     }
-                if let loginItemError {
-                    Text(loginItemError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            }
-            Section {
-                Toggle("Offer groups while dragging a window", isOn: $preferences.isDropTrayEnabled)
-                Toggle("Return dropped windows to where the drag started", isOn: $preferences.isReturningDroppedWindows)
-                    .disabled(!preferences.isDropTrayEnabled)
-            } header: {
-                Text("Dragging")
-            } footer: {
-                Text("With the panel open, drop windows on it; otherwise a tray appears at the top of the screen.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                ForEach(preferences.listClockCities) { city in
-                    HStack {
-                        Text(city.name)
-                        Text(city.timeZoneId)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            preferences.listClockCities.removeAll { $0 == city }
-                        } label: {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Remove \(city.name)")
+                    if let loginItemError {
+                        SettingsMessage(text: loginItemError)
                     }
                 }
-                TextField("Add a city or time zone", text: $citySearch.query, prompt: Text("A city or a zone, e.g. Shenzhen, 深圳, UTC, UTC+8 or PST"))
-                ForEach(WorldClock.searchTimeZoneCities(matching: citySearch.query).filter {
-                    !preferences.listClockCities.contains($0)
-                }) { city in
-                    Button {
-                        addClockCity(city)
-                    } label: {
-                        HStack {
-                            Image(systemName: "plus.circle")
-                            Text(city.name)
-                            Text(city.timeZoneId)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                SettingsSection(title: "Dragging", symbol: "hand.point.up.left.fill", tint: .blue) {
+                    SettingsRow(title: "Show Groups While Dragging") {
+                        Toggle("", isOn: $preferences.isDropTrayEnabled)
+                    }
+                    SettingsRow(title: "Return Dropped Windows") {
+                        Toggle("", isOn: $preferences.isReturningDroppedWindows)
+                            .disabled(!preferences.isDropTrayEnabled)
+                    }
+                }
+                SettingsSection(title: "World Clock", symbol: "globe.asia.australia.fill", tint: .teal) {
+                    worldClock
+                }
+                SettingsSection(title: "Code Agents", symbol: "gauge.with.dots.needle.67percent", tint: .orange) {
+                    ForEach($preferences.listAgentAccounts) { $account in
+                        AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
+                            preferences.listAgentAccounts.removeAll { $0.id == account.id }
                         }
                     }
-                    .buttonStyle(.borderless)
+                    SettingsActionRow(title: "Add Account…", symbol: "plus", action: addAgentAccount)
                 }
-                ForEach(listTimeZoneResults) { city in
-                    Button {
-                        addClockCity(city)
-                    } label: {
-                        HStack {
-                            Image(systemName: "clock")
-                            Text(city.name)
-                            Text(city.timeZoneId)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                SettingsSection(title: "Shortcuts", symbol: "command", tint: .purple) {
+                    SettingsRow(title: "Switch to Group") {
+                        Picker("", selection: groupModifiersBinding) {
+                            ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
+                                Text("\(Hotkey.symbols(for: modifiers))1 … \(Hotkey.symbols(for: modifiers))9")
+                                    .tag(modifiers.rawValue)
+                            }
                         }
+                        .fixedSize()
                     }
-                    .buttonStyle(.borderless)
-                }
-                ForEach(Array(citySearch.listCompletions.enumerated()), id: \.offset) { _, completion in
-                    Button {
-                        addClockCity(from: completion)
-                    } label: {
-                        HStack {
-                            Image(systemName: "mappin.circle")
-                            Text(completion.title)
-                            Text(completion.subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                }
-                if let clockSearchError {
-                    Text(clockSearchError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            } header: {
-                Text("World Clock")
-            } footer: {
-                Text("Shown at the bottom of the stage's sidebar, from the system clock and time zones. Add a city, found through Apple Maps when it is not one time zones are named after, or a zone itself: UTC, an offset such as UTC+8, an abbreviation such as PST, or a name such as Pacific.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                ForEach($preferences.listAgentAccounts) { $account in
-                    AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
-                        preferences.listAgentAccounts.removeAll { $0.id == account.id }
-                    }
-                }
-                Button("Add Account…", action: addAgentAccount)
-                    .fixedSize()
-            } header: {
-                Text("Code Agent Usage")
-            } footer: {
-                Text("Shown in the sidebar as the plan's limits left, read from each harness itself. An account is a harness's configuration directory, as CLAUDE_CONFIG_DIR names it for Claude Code; leave the default for the one you sign in to normally.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section {
-                Picker("Show group 1–9", selection: groupModifiersBinding) {
-                    ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
-                        Text("\(Hotkey.symbols(for: modifiers))1 … \(Hotkey.symbols(for: modifiers))9")
-                            .tag(modifiers.rawValue)
-                    }
-                }
-                recorderRow("Open or close the stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
-                recorderRow("Show all windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
-                recorderRow("Group switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
-                recorderRow("Next window in group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
-                HStack {
-                    Spacer()
-                    Button("Restore Defaults") {
+                    recorderRow("Open or Close Stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
+                    recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
+                    recorderRow("Group Switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
+                    recorderRow("Next Window in Group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
+                    SettingsActionRow(title: "Restore Default Shortcuts", symbol: "arrow.uturn.backward") {
                         preferences.restoreDefaultShortcuts()
                     }
                 }
-            } header: {
-                Text("Shortcuts")
-            } footer: {
-                Text("Hold the switcher's modifiers to keep choosing; add ⇧ to go backwards.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            }
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .frame(maxWidth: Self.columnWidth)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 26)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollIndicators(.automatic)
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            Text("Settings")
+                .font(.system(size: 24, weight: .bold))
+            Spacer()
+            if let onClose {
+                SettingsCloseButton(action: onClose)
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 460)
-        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var worldClock: some View {
+        ForEach(preferences.listClockCities) { city in
+            SettingsRow(title: city.name, detail: city.timeZoneId) {
+                SettingsIconButton(symbol: "minus.circle.fill", help: "Remove \(city.name)") {
+                    preferences.listClockCities.removeAll { $0 == city }
+                }
+            }
+        }
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Add City or Time Zone", text: $citySearch.query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 40)
+        .modifier(SettingsSeparator())
+        ForEach(WorldClock.searchTimeZoneCities(matching: citySearch.query).filter {
+            !preferences.listClockCities.contains($0)
+        }) { city in
+            SettingsResultRow(title: city.name, detail: city.timeZoneId, symbol: "plus.circle.fill") {
+                addClockCity(city)
+            }
+        }
+        ForEach(listTimeZoneResults) { city in
+            SettingsResultRow(title: city.name, detail: city.timeZoneId, symbol: "clock.fill") {
+                addClockCity(city)
+            }
+        }
+        ForEach(Array(citySearch.listCompletions.enumerated()), id: \.offset) { _, completion in
+            SettingsResultRow(title: completion.title, detail: completion.subtitle, symbol: "mappin.circle.fill") {
+                addClockCity(from: completion)
+            }
+        }
+        if let clockSearchError {
+            SettingsMessage(text: clockSearchError)
+        }
     }
 
     /// Zones the query names as zones, rather than as cities, not on the clock already.
@@ -265,20 +246,21 @@ struct SettingsView: View {
     }
 
     private func recorderRow(_ title: String, hotkey: Hotkey, onCapture: @escaping (Hotkey) -> Void) -> some View {
-        LabeledContent(title) {
+        let isRecording = recorder.recordingName == title
+        return SettingsRow(title: title) {
             Button {
-                if recorder.recordingName == title {
+                if isRecording {
                     recorder.cancel()
                 } else {
                     recorder.record(title, onCapture: onCapture)
                 }
             } label: {
-                Text(recorder.recordingName == title ? "Type shortcut…" : hotkey.description)
+                Text(isRecording ? "Type Shortcut…" : hotkey.description)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .frame(minWidth: 96)
             }
             .buttonStyle(.bordered)
-            .tint(recorder.recordingName == title ? .accentColor : nil)
+            .tint(isRecording ? .accentColor : nil)
         }
     }
 
@@ -293,8 +275,207 @@ struct SettingsView: View {
     }
 }
 
-/// One code agent account in the settings: whether the sidebar shows it, its name, who it is signed in
-/// as, and the command that signs it in, to copy into a terminal.
+/// A titled card of settings rows, with a hairline between rows.
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    let symbol: String
+    let tint: Color
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(tint.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .padding(.leading, 4)
+            VStack(spacing: 0) {
+                content
+            }
+            .padding(.top, -SettingsSeparator.height)
+            .background(StageColors.tile)
+            .clipShape(RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous)
+                    .strokeBorder(StageColors.separator)
+            }
+        }
+    }
+}
+
+/// A setting's name, with an optional value beside it, and its control at the trailing edge. A hairline
+/// above it parts it from the row before; the card clips the first row's.
+private struct SettingsRow<Control: View>: View {
+    let title: String
+    var detail: String?
+    @ViewBuilder let control: Control
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: 13))
+                .lineLimit(1)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 12)
+            control
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 42)
+        .modifier(SettingsSeparator())
+    }
+}
+
+/// The hairline above a settings row.
+private struct SettingsSeparator: ViewModifier {
+    static let height: CGFloat = 1
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: Self.height)
+                .padding(.leading, 14)
+        }
+    }
+}
+
+/// A row that does something when clicked, in the accent color, lit while the pointer is over it.
+private struct SettingsActionRow: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 16)
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 40)
+            .background(isHovered ? StageColors.hoveredRow : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .modifier(SettingsSeparator())
+    }
+}
+
+/// A search result that adds itself when clicked, lit while the pointer is over it.
+private struct SettingsResultRow: View {
+    let title: String
+    let detail: String
+    let symbol: String
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 14))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(isHovered ? StageColors.hoveredRow : .clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .modifier(SettingsSeparator())
+    }
+}
+
+/// A borderless symbol button that darkens while the pointer is over it.
+private struct SettingsIconButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 14))
+                .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .help(help)
+    }
+}
+
+/// A failure to show under the setting it concerns.
+private struct SettingsMessage: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill")
+            .font(.system(size: 12))
+            .foregroundStyle(.orange)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .modifier(SettingsSeparator())
+    }
+}
+
+/// The button that closes the settings shown in a stage.
+private struct SettingsCloseButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .frame(width: 28, height: 28)
+                .background(isHovered ? StageColors.groove : StageColors.idleTab, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .keyboardShortcut(.cancelAction)
+        .help("Close Settings")
+    }
+}
+
+/// One code agent account: whether the sidebar shows it, its agent and directory, who it is signed in as,
+/// and the command that signs it in, to copy into a terminal.
 private struct AgentAccountRow: View {
     private static let copiedFeedbackDuration = Duration.seconds(1.5)
 
@@ -304,89 +485,78 @@ private struct AgentAccountRow: View {
     @State private var isCopied = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Toggle("", isOn: $account.isShown)
-                .labelsHidden()
-                .help(account.isShown ? "Hide this account from the sidebar" : "Show this account in the sidebar")
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Toggle("", isOn: $account.isShown)
+                    .help(account.isShown ? "Shown in the Sidebar" : "Hidden from the Sidebar")
                 Text(account.harness.title)
-                Text(account.configDirectory ?? "Default directory")
-                    .font(.caption)
+                    .font(.system(size: 13, weight: .medium))
+                Text(account.configDirectory ?? "~/.claude")
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                status
                 if let sameLogin = monitor.listSameLoginAccounts(as: account).first {
-                    Label(
-                        "Same account as \(sameLogin.configDirectory ?? "the default"), shown once in the sidebar",
-                        systemImage: "link"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Image(systemName: "link")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .help("Same Account as \(sameLogin.configDirectory ?? "~/.claude")")
                 }
-                signInCommand
+                Spacer(minLength: 8)
+                status
+                SettingsIconButton(symbol: "minus.circle.fill", help: "Remove Account", action: onRemove)
             }
-            Spacer(minLength: 0)
-            Button(action: onRemove) {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .help("Remove this account")
+            signInCommand
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .modifier(SettingsSeparator())
     }
 
     @ViewBuilder
     private var status: some View {
         if let signedInAs = monitor.mapUsage[account.id]?.signedInAs {
-            Label("Signed in as \(signedInAs)", systemImage: "checkmark.circle.fill")
-                .font(.caption)
+            Label(signedInAs, systemImage: "checkmark.circle.fill")
+                .font(.system(size: 12))
                 .foregroundStyle(.green)
+                .lineLimit(1)
         } else if let error = monitor.mapErrors[account.id] {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+            Label("Not Signed In", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 12))
                 .foregroundStyle(.orange)
-                .lineLimit(2)
+                .help(error)
         } else if account.isShown {
-            Label("Checking…", systemImage: "clock")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            ProgressView()
+                .controlSize(.mini)
         }
     }
 
     /// The command that signs the account in, with buttons to copy it and to check again once it ran.
     private var signInCommand: some View {
         let command = account.harness.signInCommand(configDirectory: account.configDirectory)
-        return HStack(spacing: 6) {
+        return HStack(spacing: 8) {
             Text(command)
                 .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            Button {
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(StageColors.idleTab, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            SettingsIconButton(symbol: isCopied ? "checkmark" : "doc.on.doc", help: "Copy Sign-In Command") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(command, forType: .string)
                 isCopied = true
-            } label: {
-                Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                    .contentTransition(.symbolEffect(.replace))
             }
-            .buttonStyle(.borderless)
-            .help("Copy the command, then run it in a terminal to sign this account in")
             .task(id: isCopied) {
                 guard isCopied, (try? await Task.sleep(for: Self.copiedFeedbackDuration)) != nil else {
                     return
                 }
                 isCopied = false
             }
-            Button(action: monitor.refreshNow) {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .help("Check this account again, as after signing in")
+            SettingsIconButton(symbol: "arrow.clockwise", help: "Check Again", action: monitor.refreshNow)
         }
     }
 }

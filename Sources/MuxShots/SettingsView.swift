@@ -5,7 +5,8 @@ import MuxShotsPlatform
 import SwiftUI
 
 /// The settings: general options, dragging, the world clock, code agent accounts and shortcuts, as cards
-/// under a title. Shown in a stage's content area, or in a window of its own when no stage is open.
+/// under a title, spread over as many columns as fill the page. Shown in a stage's content area, or in a
+/// window of its own when no stage is open.
 struct SettingsView: View {
     /// The modifier sets offered for the group shortcuts.
     private static let listGroupModifierChoices: [NSEvent.ModifierFlags] = [
@@ -15,7 +16,10 @@ struct SettingsView: View {
         [.control, .option, .command],
         [.control, .shift],
     ]
-    private static let columnWidth: CGFloat = 620
+    /// How narrow a column of cards may get before the page drops to fewer columns.
+    private static let columnMinimumWidth: CGFloat = 420
+    private static let columnSpacing: CGFloat = 24
+    private static let pagePadding: CGFloat = 36
     /// The corner radius of a card of settings.
     static let cardCornerRadius: CGFloat = 12
 
@@ -28,6 +32,7 @@ struct SettingsView: View {
     @State private var citySearch = WorldClockCitySearch()
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
+    @State private var pageWidth: CGFloat = 0
 
     /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
@@ -42,67 +47,135 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
-                SettingsSection(title: "General", symbol: "gearshape.fill", tint: .gray) {
-                    SettingsRow(title: "Open at Login") {
-                        Toggle("", isOn: $isLaunchingAtLogin)
-                            .onChange(of: isLaunchingAtLogin) { _, isEnabled in
-                                applyLoginItem(isEnabled)
-                            }
-                    }
-                    if let loginItemError {
-                        SettingsMessage(text: loginItemError)
-                    }
-                }
-                SettingsSection(title: "Dragging", symbol: "hand.point.up.left.fill", tint: .blue) {
-                    SettingsRow(title: "Show Groups While Dragging") {
-                        Toggle("", isOn: $preferences.isDropTrayEnabled)
-                    }
-                    SettingsRow(title: "Return Dropped Windows") {
-                        Toggle("", isOn: $preferences.isReturningDroppedWindows)
-                            .disabled(!preferences.isDropTrayEnabled)
-                    }
-                }
-                SettingsSection(title: "World Clock", symbol: "globe.asia.australia.fill", tint: .teal) {
-                    worldClock
-                }
-                SettingsSection(title: "Code Agents", symbol: "gauge.with.dots.needle.67percent", tint: .orange) {
-                    ForEach($preferences.listAgentAccounts) { $account in
-                        AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
-                            preferences.listAgentAccounts.removeAll { $0.id == account.id }
-                        }
-                    }
-                    SettingsActionRow(title: "Add Account…", symbol: "plus", action: addAgentAccount)
-                }
-                SettingsSection(title: "Shortcuts", symbol: "command", tint: .purple) {
-                    SettingsRow(title: "Switch to Group") {
-                        Picker("", selection: groupModifiersBinding) {
-                            ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
-                                Text("\(Hotkey.symbols(for: modifiers))1 … \(Hotkey.symbols(for: modifiers))9")
-                                    .tag(modifiers.rawValue)
-                            }
-                        }
-                        .fixedSize()
-                    }
-                    recorderRow("Open or Close Stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
-                    recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
-                    recorderRow("Group Switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
-                    recorderRow("Next Window in Group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
-                    SettingsActionRow(title: "Restore Default Shortcuts", symbol: "arrow.uturn.backward") {
-                        preferences.restoreDefaultShortcuts()
-                    }
-                }
+                columns
             }
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
-            .frame(maxWidth: Self.columnWidth)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, Self.pagePadding)
+            .padding(.vertical, 28)
         }
         .scrollIndicators(.automatic)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            pageWidth = width
+        }
+    }
+
+    /// The cards spread over as many columns as the page is wide enough for, each column filling its share.
+    @ViewBuilder
+    private var columns: some View {
+        let columnCount = max(1, min(3, Int((pageWidth - Self.pagePadding * 2) / Self.columnMinimumWidth)))
+        switch columnCount {
+        case 1:
+            column {
+                general
+                dragging
+                worldClock
+                codeAgents
+                shortcuts
+            }
+        case 2:
+            HStack(alignment: .top, spacing: Self.columnSpacing) {
+                column {
+                    general
+                    dragging
+                    shortcuts
+                }
+                column {
+                    worldClock
+                    codeAgents
+                }
+            }
+        default:
+            HStack(alignment: .top, spacing: Self.columnSpacing) {
+                column {
+                    general
+                    dragging
+                    shortcuts
+                }
+                column {
+                    worldClock
+                }
+                column {
+                    codeAgents
+                }
+            }
+        }
+    }
+
+    private func column<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private var general: some View {
+        SettingsSection(title: "General", symbol: "gearshape.fill", tint: .gray) {
+            SettingsRow(title: "Open at Login") {
+                Toggle("", isOn: $isLaunchingAtLogin)
+                    .onChange(of: isLaunchingAtLogin) { _, isEnabled in
+                        applyLoginItem(isEnabled)
+                    }
+            }
+            if let loginItemError {
+                SettingsMessage(text: loginItemError)
+            }
+        }
+    }
+
+    private var dragging: some View {
+        SettingsSection(title: "Dragging", symbol: "hand.point.up.left.fill", tint: .blue) {
+            SettingsRow(title: "Show Groups While Dragging") {
+                Toggle("", isOn: $preferences.isDropTrayEnabled)
+            }
+            SettingsRow(title: "Return Dropped Windows") {
+                Toggle("", isOn: $preferences.isReturningDroppedWindows)
+                    .disabled(!preferences.isDropTrayEnabled)
+            }
+        }
+    }
+
+    private var worldClock: some View {
+        SettingsSection(title: "World Clock", symbol: "globe.asia.australia.fill", tint: .teal) {
+            clockCities
+        }
+    }
+
+    private var codeAgents: some View {
+        SettingsSection(title: "Code Agents", symbol: "gauge.with.dots.needle.67percent", tint: .orange) {
+            ForEach($preferences.listAgentAccounts) { $account in
+                AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
+                    preferences.listAgentAccounts.removeAll { $0.id == account.id }
+                }
+            }
+            SettingsActionRow(title: "Add Account…", symbol: "plus", action: addAgentAccount)
+        }
+    }
+
+    private var shortcuts: some View {
+        SettingsSection(title: "Shortcuts", symbol: "command", tint: .purple) {
+            SettingsRow(title: "Switch to Group") {
+                Picker("", selection: groupModifiersBinding) {
+                    ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
+                        Text("\(Hotkey.symbols(for: modifiers))1 … \(Hotkey.symbols(for: modifiers))9")
+                            .tag(modifiers.rawValue)
+                    }
+                }
+                .fixedSize()
+            }
+            recorderRow("Open or Close Stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
+            recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
+            recorderRow("Group Switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
+            recorderRow("Next Window in Group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
+            SettingsActionRow(title: "Restore Default Shortcuts", symbol: "arrow.uturn.backward") {
+                preferences.restoreDefaultShortcuts()
+            }
+        }
     }
 
     private var header: some View {
@@ -118,7 +191,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private var worldClock: some View {
+    private var clockCities: some View {
         ForEach(preferences.listClockCities) { city in
             SettingsRow(title: city.name, detail: city.timeZoneId) {
                 SettingsIconButton(symbol: "minus.circle.fill", help: "Remove \(city.name)") {

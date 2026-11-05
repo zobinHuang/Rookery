@@ -30,6 +30,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Applications left with only hidden windows are hidden this long after the last layout change, once
     /// the application being switched to has taken over activation.
     private static let applicationHidingDelay = Duration.milliseconds(500)
+    /// How often the applications left with only hidden windows are looked for again, for those that show
+    /// themselves or close their last other window without any layout change.
+    private static let applicationSweepInterval = Duration.seconds(30)
     /// How long bringing a stage's front window forward waits for the click that asked for it to start a
     /// switch of its own.
     private static let clickActionDelay = Duration.milliseconds(50)
@@ -82,6 +85,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var switchTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
     private var applicationHidingTask: Task<Void, Never>?
+    private var applicationSweepTask: Task<Void, Never>?
+    /// The applications MuxShots hid, which tells one that showed itself again from one never hidden.
+    private var setHiddenProcessIds: Set<pid_t> = []
     private var activationObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
     private var listWakeObservers: [NSObjectProtocol] = []
@@ -112,6 +118,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     var playingBundleIds: () -> Set<String> = { [] }
     private let throttle = ApplicationThrottle()
     private var unhideObserver: NSObjectProtocol?
+    private var deactivationObserver: NSObjectProtocol?
 
     private let preferences: Preferences
 
@@ -190,6 +197,26 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             let processId = running.processIdentifier
             MainActor.assumeIsolated {
                 self?.throttle.release(processId)
+                self?.scheduleApplicationHiding()
+            }
+        }
+        deactivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didDeactivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.scheduleApplicationHiding()
+            }
+        }
+        applicationSweepTask = Task {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: Self.applicationSweepInterval)
+                } catch {
+                    return
+                }
+                hideApplicationsShowingOnlyHiddenWindows()
             }
         }
         screenObserver = NotificationCenter.default.addObserver(
@@ -219,12 +246,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         changeTask?.cancel()
         focusTask?.cancel()
         applicationHidingTask?.cancel()
+        applicationSweepTask?.cancel()
         displayChangeTask?.cancel()
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
         }
         if let unhideObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(unhideObserver)
+        }
+        if let deactivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(deactivationObserver)
         }
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
@@ -1321,6 +1352,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func picturesDidChange() {
         for processId in pictureProcessIds() {
             throttle.release(processId)
+            setHiddenProcessIds.remove(processId)
             guard
                 let running = NSRunningApplication(processIdentifier: processId),
                 running.isHidden
@@ -1352,7 +1384,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// active application is left alone, as hiding it would hand activation to another.
     private func hideApplicationsShowingOnlyHiddenWindows() {
         let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
-        guard !setCandidateIds.isEmpty else {
+        setHiddenProcessIds.formIntersection(setCandidateIds)
+        guard
+            !isSwitching,
+            !setCandidateIds.isEmpty
+        else {
             return
         }
         let mapShownProcessIds = Dictionary(
@@ -1374,8 +1410,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 guard running.hide() else {
                     continue
                 }
-                Self.logger.info("hid \(running.localizedName ?? "", privacy: .public), whose windows are all hidden")
+                if setHiddenProcessIds.contains(processId) {
+                    Self.logger.notice("""
+                        \(running.localizedName ?? "", privacy: .public) showed itself while its windows are all \
+                        hidden; hid it again
+                        """)
+                } else {
+                    Self.logger.info("hid \(running.localizedName ?? "", privacy: .public), whose windows are all hidden")
+                }
             }
+            setHiddenProcessIds.insert(processId)
             if !setPlayingBundleIds.contains(running.bundleIdentifier ?? "") {
                 throttle.throttle(processId)
             }
@@ -1392,6 +1436,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         throttle.release(window.application.processId)
+        setHiddenProcessIds.remove(window.application.processId)
         guard
             let running = NSRunningApplication(processIdentifier: window.application.processId),
             running.isHidden

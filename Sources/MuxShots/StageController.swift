@@ -145,6 +145,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         panel.frame
     }
 
+    /// The stage's window, as the window server knows it.
+    var windowId: WindowId {
+        WindowId(rawValue: UInt32(panel.windowNumber))
+    }
+
     /// The display the stage is on.
     var screen: NSScreen? {
         panel.screen

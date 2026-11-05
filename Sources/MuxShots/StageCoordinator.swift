@@ -200,6 +200,11 @@ final class StageCoordinator: DropSurface {
         }
     }
 
+    /// The windows of the open stages, as the window server knows them.
+    var setOpenStageWindowIds: Set<WindowId> {
+        Set(listStages.filter(\.isShowing).map(\.windowId))
+    }
+
     /// A stage's frame, in AppKit screen coordinates, while it is open.
     func frame(ofStage stageId: StageId) -> CGRect? {
         listStages.first { $0.stageId == stageId && $0.isShowing }?.frame

@@ -51,14 +51,19 @@ public enum WindowServer {
         ).first
     }
 
+    /// Every on-screen normal window of every application, front to back. The list of every window is not
+    /// in that order.
+    public static func listOnScreenWindows() -> [WindowServerWindow] {
+        windows(options: [.optionOnScreenOnly, .excludeDesktopElements], relativeTo: kCGNullWindowID)
+    }
+
     /// The frontmost on-screen normal window under a point, ignoring windows of one process.
     ///
     /// - Parameters:
     ///   - point: the point in global screen coordinates, origin at the top-left of the main display
     ///   - excludedProcessId: the process whose windows never match, typically MuxShots itself
     public static func frontmostWindow(at point: CGPoint, excluding excludedProcessId: pid_t) -> WindowServerWindow? {
-        windows(options: [.optionOnScreenOnly, .excludeDesktopElements], relativeTo: kCGNullWindowID)
-            .first { $0.processId != excludedProcessId && $0.frame.contains(point) }
+        listOnScreenWindows().first { $0.processId != excludedProcessId && $0.frame.contains(point) }
     }
 
     /// Normal-layer, non-transparent windows in front-to-back order.

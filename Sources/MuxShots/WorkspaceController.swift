@@ -1380,7 +1380,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Hide whole every application whose every window shown on some Space is one MuxShots hid, so it stops
     /// drawing windows nobody sees, and put it in the background, so what it goes on doing costs less power.
-    /// Windows off every display do not count, as Chrome's link bubble left beside a parked window. The
+    /// Windows off every display do not count, as Chrome's link bubble left beside a parked window, nor do
+    /// windows wholly beneath a stage, which nobody sees either, as a WeChat chat left under it. The
     /// active application is left alone, as hiding it would hand activation to another.
     private func hideApplicationsShowingOnlyHiddenWindows() {
         let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
@@ -1391,9 +1392,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         else {
             return
         }
+        let setBeneathStageIds = windowIdsBeneathStages()
         let mapShownProcessIds = Dictionary(
             uniqueKeysWithValues: WindowServer.listShownWindows(ofProcesses: setCandidateIds)
                 .filter { ScreenGeometry.visibleShare(of: $0.frame) > Self.hiddenVisibleShareLimit }
+                .filter { !setBeneathStageIds.contains($0.windowId) }
                 .map { ($0.windowId, $0.processId) }
         )
         let setPictureProcessIds = pictureProcessIds()
@@ -1424,6 +1427,21 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 throttle.throttle(processId)
             }
         }
+    }
+
+    /// The on-screen windows wholly beneath an open stage, which nobody sees.
+    private func windowIdsBeneathStages() -> Set<WindowId> {
+        let setStageWindowIds = stageCoordinator?.setOpenStageWindowIds ?? []
+        var listStageFramesAbove: [CGRect] = []
+        var setBeneathIds: Set<WindowId> = []
+        for onScreen in WindowServer.listOnScreenWindows() {
+            if setStageWindowIds.contains(onScreen.windowId) {
+                listStageFramesAbove.append(onScreen.frame)
+            } else if listStageFramesAbove.contains(where: { $0.contains(onScreen.frame) }) {
+                setBeneathIds.insert(onScreen.windowId)
+            }
+        }
+        return setBeneathIds
     }
 
     /// Bring back the application of a window about to be shown, if it is hidden, and put it back to normal.

@@ -13,6 +13,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var agentUsageMonitor = AgentUsageMonitor(preferences: preferences)
     private let quickNotes = QuickNotes()
     private var settingsWindowController: SettingsWindowController?
+    /// Records a new shortcut in the settings, wherever they show, with the shortcuts suspended meanwhile.
+    private lazy var shortcutRecorder = ShortcutRecorder(
+        onBegin: { [weak self] in
+            self?.shortcutController?.suspend()
+        },
+        onEnd: { [weak self] in
+            self?.shortcutController?.resume()
+        }
+    )
     private var statusMenuController: StatusMenuController?
     private var applicationMonitor: ApplicationMonitor?
     private var workspaceController: WorkspaceController?
@@ -46,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.stageCoordinator?.toggleOnCursorDisplay()
             },
             onShowSettings: { [weak self] in
-                self?.settingsWindowController?.show()
+                self?.showSettings()
             },
             groupModifiersProvider: { [weak self] in
                 self?.preferences.groupModifiers ?? Preferences.defaultGroupModifiers
@@ -164,7 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return mainMenu
     }
 
+    /// Show the settings in an open stage, or in their own window when no stage is open.
     @objc private func showSettings() {
+        guard stageCoordinator?.showSettings() != true else {
+            return
+        }
         settingsWindowController?.show()
     }
 
@@ -202,12 +215,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let stages = workspace.makeStageCoordinator(
             mixerController: mixerController,
             agentUsageMonitor: agentUsageMonitor,
-            quickNotes: quickNotes
+            quickNotes: quickNotes,
+            shortcutRecorder: shortcutRecorder
         )
         stageCoordinator = stages
-        stages.onShowSettings = { [weak self] in
-            self?.settingsWindowController?.show()
-        }
         workspace.onChange = { [weak panel, weak stages] in
             panel?.reload()
             stages?.refresh()
@@ -233,7 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.start()
         settingsWindowController = SettingsWindowController(
             preferences: preferences,
-            shortcutController: shortcuts,
+            recorder: shortcutRecorder,
             agentUsageMonitor: agentUsageMonitor
         )
         stages.openOnCursorDisplay()

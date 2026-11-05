@@ -1,6 +1,7 @@
 import AppKit
 import MuxShotsCore
 import MuxShotsPlatform
+import OSLog
 
 /// The stage's window. It takes keyboard input only while a name is edited, and never activates MuxShots,
 /// so clicking the stage leaves its front window's application in front.
@@ -39,6 +40,7 @@ final class StagePanel: NSPanel {
 /// that window. While it is open it is also where windows dragged over it are dropped.
 @MainActor
 final class StageController: NSObject, DropSurface, StageActions, NSWindowDelegate {
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "stage")
     private static let cornerRadius: CGFloat = 14
     private static let minimumSize = CGSize(width: 640, height: 420)
     private static let landedHold = Duration.milliseconds(260)
@@ -54,8 +56,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let agentUsageMonitor: AgentUsageMonitor
     private let quickNotes: QuickNotes
     private let ghostAnimator: DropGhostAnimator
+    private let shortcutRecorder: ShortcutRecorder
     private let model = StageModel()
     private let contentDropPill = ContentDropPill()
+    /// The front window set aside while the settings show in the content area, once it is hidden.
+    private var settingsWindowId: WindowId?
     private let panel: StagePanel
     private var hideTask: Task<Void, Never>?
     /// Whether the stage window is up while the workspace is still moving windows onto it.
@@ -78,6 +83,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         agentUsageMonitor: AgentUsageMonitor,
         quickNotes: QuickNotes,
         ghostAnimator: DropGhostAnimator,
+        shortcutRecorder: ShortcutRecorder,
         coordinator: StageCoordinator
     ) {
         self.stageId = stageId
@@ -88,6 +94,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         self.agentUsageMonitor = agentUsageMonitor
         self.quickNotes = quickNotes
         self.ghostAnimator = ghostAnimator
+        self.shortcutRecorder = shortcutRecorder
         panel = StagePanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel, .resizable],
@@ -111,10 +118,15 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         panel.contentView = background
         super.init()
         panel.hostedWindowId = { [weak self] in
-            self?.model.selectedWindowId
+            guard let self, !model.isShowingSettings else {
+                return nil
+            }
+            return model.selectedWindowId
         }
         let stageView = StageView.makeHostingView(
             model: model,
+            preferences: preferences,
+            shortcutRecorder: shortcutRecorder,
             mixer: mixerController,
             agentUsage: agentUsageMonitor,
             notes: quickNotes,
@@ -209,6 +221,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     /// Bring the stage's front window forward and give it keyboard focus, as when the stage is clicked.
     func bringContentToFront() {
+        guard !model.isShowingSettings else {
+            return
+        }
         workspaceController.focusFront(ofStage: stageId)
     }
 
@@ -314,6 +329,13 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         if model.selectedWindowId != selectedWindowId {
             model.selectedWindowId = selectedWindowId
         }
+        if
+            let settingsWindowId,
+            settingsWindowId != selectedWindowId
+            || !workspaceController.workspace.listHiddenWindows.contains(where: { $0.windowId == settingsWindowId })
+        {
+            leaveSettings()
+        }
     }
 
     /// Show a window's new title in its tab, its group's row and the notes linked to it, without rebuilding
@@ -355,6 +377,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     // MARK: - Stage actions
 
     func selectGroup(_ groupId: GroupId) {
+        leaveSettings()
         Task { [workspaceController, stageId] in
             await workspaceController.switchTo(groupId, onStage: stageId)
         }
@@ -364,6 +387,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         guard let groupId = workspaceController.workspace.group(containing: windowId)?.groupId else {
             return
         }
+        leaveSettings()
         Task { [workspaceController, stageId] in
             await workspaceController.switchTo(groupId, bringingToFront: windowId, onStage: stageId)
         }
@@ -390,7 +414,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     }
 
     func endEditing() {
-        guard panel.isKeyWindow else {
+        guard
+            !model.isShowingSettings,
+            panel.isKeyWindow
+        else {
             return
         }
         panel.resignKey()
@@ -502,7 +529,60 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     }
 
     func showSettings() {
-        coordinator?.onShowSettings?()
+        guard !model.isShowingSettings else {
+            closeSettings()
+            return
+        }
+        openSettings()
+    }
+
+    /// Show the settings in the content area, setting the front window aside, unless they show already.
+    func openSettings() {
+        guard !model.isShowingSettings else {
+            return
+        }
+        model.isShowingSettings = true
+        panel.makeKey()
+        guard let windowId = model.selectedWindowId else {
+            return
+        }
+        Task { [weak self, workspaceController] in
+            do {
+                try await workspaceController.perform(.hide, on: windowId)
+            } catch {
+                Self.logger.error("cannot set \(windowId.rawValue) aside for the settings: \(error, privacy: .public)")
+                return
+            }
+            if self?.model.isShowingSettings == true {
+                self?.settingsWindowId = windowId
+            }
+        }
+    }
+
+    func closeSettings() {
+        guard model.isShowingSettings else {
+            return
+        }
+        leaveSettings()
+        guard let groupId = workspaceController.group(onStage: stageId)?.groupId else {
+            return
+        }
+        Task { [workspaceController, stageId] in
+            await workspaceController.switchTo(groupId, onStage: stageId)
+        }
+    }
+
+    /// Take the settings out of the content area, leaving whatever brings a window forward next to do so.
+    private func leaveSettings() {
+        guard model.isShowingSettings else {
+            return
+        }
+        model.isShowingSettings = false
+        settingsWindowId = nil
+        shortcutRecorder.cancel()
+        if panel.isKeyWindow {
+            panel.resignKey()
+        }
     }
 
     func toggleTheme() {

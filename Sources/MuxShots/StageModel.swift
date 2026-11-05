@@ -131,6 +131,8 @@ final class StageModel {
     /// A zone that just received a window, which pulses once.
     var landedZone: StageZone?
     var isSidebarCollapsed = false
+    /// Whether the content area shows the settings, with the front window set aside.
+    var isShowingSettings = false
     var sidebarMode = SidebarMode.groups
     /// Whether MuxShots draws dark now, which picks the theme button's symbol.
     var isDarkTheme = false

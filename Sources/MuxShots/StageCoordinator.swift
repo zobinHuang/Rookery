@@ -19,9 +19,8 @@ final class StageCoordinator: DropSurface {
     private let agentUsageMonitor: AgentUsageMonitor
     private let quickNotes: QuickNotes
     private let ghostAnimator: DropGhostAnimator
+    private let shortcutRecorder: ShortcutRecorder
     private var listStages: [StageController] = []
-    /// Opens the settings window, for the stages' settings button.
-    var onShowSettings: (() -> Void)?
     private var mouseMonitor: Any?
     /// The stage the left mouse button went down on, which brings its front window forward when it goes up.
     private weak var pressedStage: StageController?
@@ -40,7 +39,8 @@ final class StageCoordinator: DropSurface {
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
         quickNotes: QuickNotes,
-        ghostAnimator: DropGhostAnimator
+        ghostAnimator: DropGhostAnimator,
+        shortcutRecorder: ShortcutRecorder
     ) {
         self.workspaceController = workspaceController
         self.preferences = preferences
@@ -48,6 +48,7 @@ final class StageCoordinator: DropSurface {
         self.agentUsageMonitor = agentUsageMonitor
         self.quickNotes = quickNotes
         self.ghostAnimator = ghostAnimator
+        self.shortcutRecorder = shortcutRecorder
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
             let window = event.window
             let isDown = event.type == .leftMouseDown
@@ -120,10 +121,22 @@ final class StageCoordinator: DropSurface {
             agentUsageMonitor: agentUsageMonitor,
             quickNotes: quickNotes,
             ghostAnimator: ghostAnimator,
+            shortcutRecorder: shortcutRecorder,
             coordinator: self
         )
         listStages.append(stage)
         stage.open(frame: frame)
+    }
+
+    /// Show the settings in the content area of the stage under the cursor, or of the first open stage.
+    ///
+    /// - Returns: whether a stage was open to show them
+    func showSettings() -> Bool {
+        guard let stage = stage(at: NSEvent.mouseLocation) ?? listStages.first(where: \.isShowing) else {
+            return false
+        }
+        stage.openSettings()
+        return true
     }
 
     /// Close every stage.

@@ -41,7 +41,10 @@ protocol StageActions: AnyObject {
     func exitStage()
     /// Open another MuxShots window.
     func newStage()
+    /// Show the settings in the content area, or close them if they show.
     func showSettings()
+    /// Close the settings shown in the content area and bring its front window back.
+    func closeSettings()
     /// The user is dragging the stage by its sidebar header, towards another display.
     func moveStageChanged()
     func moveStageEnded()
@@ -63,6 +66,8 @@ struct StageView: View {
     private static let tabScrollAnimation = Animation.easeOut(duration: 0.22)
 
     let model: StageModel
+    let preferences: Preferences
+    let shortcutRecorder: ShortcutRecorder
     let mixer: MixerController
     let agentUsage: AgentUsageMonitor
     let notes: QuickNotes
@@ -82,6 +87,8 @@ struct StageView: View {
     /// An AppKit view hosting the stage.
     static func makeHostingView(
         model: StageModel,
+        preferences: Preferences,
+        shortcutRecorder: ShortcutRecorder,
         mixer: MixerController,
         agentUsage: AgentUsageMonitor,
         notes: QuickNotes,
@@ -89,6 +96,8 @@ struct StageView: View {
     ) -> NSView {
         let view = NSHostingView(rootView: StageView(
             model: model,
+            preferences: preferences,
+            shortcutRecorder: shortcutRecorder,
             mixer: mixer,
             agentUsage: agentUsage,
             notes: notes,
@@ -839,7 +848,15 @@ struct StageView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(StageColors.content)
-            if model.selectedWindowId == nil {
+            if model.isShowingSettings {
+                SettingsView(
+                    preferences: preferences,
+                    recorder: shortcutRecorder,
+                    agentUsageMonitor: agentUsage,
+                    onClose: actions.closeSettings
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if model.selectedWindowId == nil {
                 VStack(spacing: 10) {
                     Image(systemName: "macwindow.badge.plus")
                         .font(.system(size: 40, weight: .regular))
@@ -854,6 +871,8 @@ struct StageView: View {
                 .transition(.opacity)
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .animation(Self.zoneAnimation, value: model.isShowingSettings)
         .modifier(ZoneFrameReporter(zone: .content, model: model))
     }
 

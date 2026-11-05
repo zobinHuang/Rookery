@@ -4,8 +4,10 @@ import Observation
 
 /// A part of the stage a dragged window can be dropped on.
 enum StageZone: Hashable {
-    /// The content area, which adds the window to the active group as its front tab.
+    /// The content area, which takes no window itself but drops down the pill that does.
     case content
+    /// The pill at the top of the content area, which adds the window to the active group as its front tab.
+    case contentPill
     /// A group in the sidebar.
     case group(GroupId)
     case newGroup
@@ -121,7 +123,6 @@ final class StageModel {
     /// The names of the managed windows that notes link to; a linked window missing from it has closed.
     var mapLinkedWindowNames: [WindowId: String] = [:]
     var selectedWindowId: WindowId?
-    var activeGroupName: String?
     /// Whether a window drag is over the stage, which reveals the drop zones.
     var isReceivingWindow = false
     /// Whether the dragged window is managed, which offers the release zone.

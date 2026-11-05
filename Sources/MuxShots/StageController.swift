@@ -55,6 +55,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let quickNotes: QuickNotes
     private let ghostAnimator: DropGhostAnimator
     private let model = StageModel()
+    private let contentDropPill = ContentDropPill()
     private let panel: StagePanel
     private var hideTask: Task<Void, Never>?
     /// Whether the stage window is up while the workspace is still moving windows onto it.
@@ -300,9 +301,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         }
         if model.listGroups != listGroups {
             model.listGroups = listGroups
-        }
-        if model.activeGroupName != activeGroup?.name {
-            model.activeGroupName = activeGroup?.name
         }
         if model.listTabs != listTabs {
             model.listTabs = listTabs
@@ -575,15 +573,27 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     func updateWindowDrag(at cursorLocation: CGPoint) {
         let zone = zone(at: cursorLocation)
-        if zone != model.hoveredZone, zone != nil {
+        if zone == .content || zone == .contentPill {
+            contentDropPill.show(
+                over: ScreenGeometry.appKitFrame(fromWindowServer: contentFrame()),
+                groupName: workspaceController.group(onStage: stageId)?.name
+            )
+            contentDropPill.isHovered = zone == .contentPill
+        } else {
+            contentDropPill.dismiss()
+        }
+        let hoveredZone = zone == .content ? nil : zone
+        if hoveredZone != model.hoveredZone, hoveredZone != nil, hoveredZone != .contentPill {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
-        model.hoveredZone = zone
+        model.hoveredZone = hoveredZone
     }
 
     func target(at cursorLocation: CGPoint) -> DropTarget? {
         switch zone(at: cursorLocation) {
         case .content:
+            nil
+        case .contentPill:
             workspaceController.group(onStage: stageId).map { .group($0.groupId) } ?? .newGroup
         case .group(let groupId):
             .group(groupId)
@@ -610,6 +620,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             }
             model.isReceivingWindow = false
             model.hoveredZone = nil
+            if zone == .contentPill {
+                contentDropPill.land()
+            } else {
+                contentDropPill.dismiss()
+            }
             refresh()
             model.landedZone = landedGroupId.map { .group($0) }
             NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
@@ -619,7 +634,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             }
         }
         let landingZone: StageZone? = switch zone {
-        case .group:
+        case .group, .contentPill:
             zone
         case .newGroup:
             model.mapZoneFrames[.newGroupRow] == nil ? .newGroup : .newGroupRow
@@ -641,6 +656,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     func cancelWindowDrag() {
         model.isReceivingWindow = false
         model.hoveredZone = nil
+        contentDropPill.dismiss()
     }
 
     // MARK: - Geometry
@@ -678,6 +694,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         guard panel.isVisible, panel.frame.contains(cursorLocation) else {
             return nil
         }
+        if contentDropPill.frame?.contains(cursorLocation) == true {
+            return .contentPill
+        }
         let listPriority: [StageZone] = [.release, .newGroup, .newGroupRow]
             + model.listGroups.map { .group($0.groupId) }
             + [.sidebar, .content]
@@ -693,6 +712,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     }
 
     private func screenFrame(of zone: StageZone) -> CGRect? {
+        if zone == .contentPill {
+            return contentDropPill.frame
+        }
         guard let frame = model.mapZoneFrames[zone] else {
             return nil
         }

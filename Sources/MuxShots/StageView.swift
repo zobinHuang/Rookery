@@ -836,40 +836,25 @@ struct StageView: View {
     // MARK: - Content
 
     private var content: some View {
-        let isHovered = model.highlightedZone == .content
-        return ZStack {
+        ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(StageColors.content)
-            if model.selectedWindowId == nil || isHovered {
+            if model.selectedWindowId == nil {
                 VStack(spacing: 10) {
-                    Image(systemName: isHovered ? "arrow.down.to.line" : "macwindow.badge.plus")
+                    Image(systemName: "macwindow.badge.plus")
                         .font(.system(size: 40, weight: .regular))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tint)
-                    Text(contentHint)
+                    Text("Drag a window here")
                         .font(.system(size: 15, weight: .semibold))
-                    if !isHovered {
-                        Text("Windows in a group open here as tabs.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
+                    Text("Drop it on the pill that appears above to open it here as a tab.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                 }
                 .transition(.opacity)
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.accentColor, lineWidth: isHovered ? 3 : 0)
-                .shadow(color: .accentColor.opacity(isHovered ? 0.8 : 0), radius: 10)
-        }
         .modifier(ZoneFrameReporter(zone: .content, model: model))
-    }
-
-    private var contentHint: String {
-        guard model.highlightedZone == .content else {
-            return "Drag a window here"
-        }
-        return model.activeGroupName.map { "Drop to add to \($0)" } ?? "Drop to start a group"
     }
 
     // MARK: - Editing and dropping

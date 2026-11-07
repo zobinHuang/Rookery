@@ -1386,6 +1386,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// windows wholly beneath a stage, which nobody sees either, as a WeChat chat left under it. The
     /// active application is left alone, as hiding it would hand activation to another.
     private func hideApplicationsShowingOnlyHiddenWindows() {
+        releaseShownApplications()
         let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
         setHiddenProcessIds.formIntersection(setCandidateIds)
         guard
@@ -1403,9 +1404,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         )
         let setPictureProcessIds = pictureProcessIds()
         let setPlayingBundleIds = playingBundleIds()
+        let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
             guard
                 !setPictureProcessIds.contains(processId),
+                processId != frontmostProcessId,
                 let running = NSRunningApplication(processIdentifier: processId),
                 !running.isActive
             else {
@@ -1428,6 +1431,24 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             if !setPlayingBundleIds.contains(running.bundleIdentifier ?? "") {
                 throttle.throttle(processId)
             }
+        }
+    }
+
+    /// Put back to normal every application in the background that is in front or shown again, whatever
+    /// missed it: an application in front left in the background makes everything typed into it lag.
+    private func releaseShownApplications() {
+        let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        for processId in throttle.setThrottledProcessIds {
+            let running = NSRunningApplication(processIdentifier: processId)
+            guard
+                processId == frontmostProcessId
+                || running?.isActive == true
+                || running?.isHidden == false
+            else {
+                continue
+            }
+            Self.logger.notice("\(running?.localizedName ?? String(processId), privacy: .public) was in the background while shown")
+            throttle.release(processId)
         }
     }
 

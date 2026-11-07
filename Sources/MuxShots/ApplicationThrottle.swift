@@ -18,6 +18,11 @@ final class ApplicationThrottle {
         setProcessIds = Set((defaults.array(forKey: Self.processIdsKey) as? [Int32]) ?? [])
     }
 
+    /// The applications MuxShots has put in the background.
+    var setThrottledProcessIds: Set<pid_t> {
+        setProcessIds
+    }
+
     /// Put back to normal the applications an earlier run left in the background and that still run.
     func releaseLeftovers() {
         for processId in setProcessIds {

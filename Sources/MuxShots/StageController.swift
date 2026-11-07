@@ -677,8 +677,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             workspaceController.group(onStage: stageId).map { .group($0.groupId) } ?? .newGroup
         case .group(let groupId):
             .group(groupId)
-        case .newGroup, .sidebar, .newGroupRow:
+        case .newGroup, .newGroupRow:
             .newGroup
+        case .sidebar:
+            nil
         case .release:
             .release
         case nil:
@@ -784,8 +786,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             screenFrame(of: zone)?.contains(cursorLocation) == true
         }
         switch zone {
-        case .sidebar, .newGroupRow:
+        case .newGroupRow:
             return .newGroup
+        case .sidebar:
+            return nil
         default:
             return zone
         }

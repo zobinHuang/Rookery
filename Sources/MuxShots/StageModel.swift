@@ -12,7 +12,7 @@ enum StageZone: Hashable {
     case group(GroupId)
     case newGroup
     case release
-    /// The whole sidebar; a drop on its empty space starts a new group.
+    /// The whole sidebar, whose empty space takes no window: only New Group starts a group.
     case sidebar
     /// The placeholder row that appears below the groups while a new group would be started.
     case newGroupRow
@@ -146,8 +146,8 @@ final class StageModel {
     var editingNoteId: NoteId?
     /// The group a dragged tab is over.
     var tabDropGroupId: GroupId?
-    /// Whether a dragged tab is over the sidebar's empty space.
-    var isTabOverSidebar = false
+    /// The drop-only zone a dragged tab is over, New Group or Release.
+    var tabDropZone: StageZone?
     /// Whether a tab is being dragged, which reveals the "New Group" zone.
     var isDraggingTab = false
     /// The group being dragged to reorder the sidebar.
@@ -172,7 +172,7 @@ final class StageModel {
         isDraggingTab = false
         draggingGroupId = nil
         tabDropGroupId = nil
-        isTabOverSidebar = false
+        tabDropZone = nil
         tabInsertBeforeId = nil
         isTabOverTabBarEnd = false
         groupInsertBeforeId = nil
@@ -195,7 +195,7 @@ final class StageModel {
         if let tabDropGroupId {
             return .group(tabDropGroupId)
         }
-        return isTabOverSidebar ? .newGroup : nil
+        return tabDropZone
     }
 
     /// Each zone's frame in the hosting view, origin at its top-left, as last laid out.

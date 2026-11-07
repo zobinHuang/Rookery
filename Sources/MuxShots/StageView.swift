@@ -225,7 +225,7 @@ struct StageView: View {
                 .padding(.bottom, 10)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             } else if sidebarMode == .groups && model.listGroups.isEmpty && !model.isSidebarCollapsed {
-                Text("Drag a window here to start a group.")
+                Text("Drop a window on New Group to start a group.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(14)
@@ -282,8 +282,8 @@ struct StageView: View {
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { listTexts, _ in
             switch Self.payload(from: listTexts) {
-            case .window(let windowId):
-                return dropWindow(windowId, into: nil)
+            case .window:
+                return false
             case .group(let groupId):
                 return dropGroup(groupId, before: nil)
             case .note(let noteId):
@@ -301,8 +301,6 @@ struct StageView: View {
                 model.isNoteOverSidebarEnd = isTargeted
             } else if model.draggingGroupId != nil {
                 model.isGroupOverSidebarEnd = isTargeted
-            } else {
-                model.isTabOverSidebar = isTargeted
             }
         }
         .modifier(ZoneFrameReporter(zone: .sidebar, model: model))
@@ -669,6 +667,13 @@ struct StageView: View {
             clearDragState()
             actions.releaseWindow(windowId)
             return true
+        } isTargeted: { isTargeted in
+            if isTargeted {
+                actions.dragEntered()
+                model.tabDropZone = zone
+            } else if model.tabDropZone == zone {
+                model.tabDropZone = nil
+            }
         }
         .modifier(ZoneFrameReporter(zone: zone, model: model))
     }

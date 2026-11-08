@@ -6,6 +6,7 @@ enum WindowActionError: Error, CustomStringConvertible {
     case notHidden(windowId: WindowId)
     case cannotMove(windowId: WindowId)
     case cannotRaise(windowId: WindowId)
+    case cannotMinimize(windowId: WindowId)
     case stuckInFullscreen(windowId: WindowId)
     case noDisplay(windowId: WindowId)
 
@@ -19,6 +20,8 @@ enum WindowActionError: Error, CustomStringConvertible {
             "window \(windowId) refused to move"
         case .cannotRaise(let windowId):
             "window \(windowId) could not be raised"
+        case .cannotMinimize(let windowId):
+            "window \(windowId) refused to minimize"
         case .stuckInFullscreen(let windowId):
             "window \(windowId) did not leave full screen"
         case .noDisplay(let windowId):

@@ -53,26 +53,6 @@ public enum ScreenGeometry {
         listDisplayFrames.max { overlapArea($0, frame) < overlapArea($1, frame) }
     }
 
-    /// Where to park a window so that it is out of sight: past a bottom corner of its display with a single
-    /// point still on screen, which keeps macOS from moving it back. The corner chosen is one that does not
-    /// border another display.
-    ///
-    /// - Parameter frame: the window's frame, in window-server coordinates
-    /// - Returns: the parked frame, in window-server coordinates
-    public static func offscreenFrame(for frame: CGRect) -> CGRect {
-        guard let display = displayFrame(containing: frame) else {
-            return frame
-        }
-        let listCandidates = [
-            CGRect(x: display.maxX - 1, y: display.maxY - 1, width: frame.width, height: frame.height),
-            CGRect(x: display.minX - frame.width + 1, y: display.maxY - 1, width: frame.width, height: frame.height),
-        ]
-        let listOtherDisplays = listDisplayFrames.filter { $0 != display }
-        return listCandidates.first { candidate in
-            !listOtherDisplays.contains { $0.intersects(candidate) }
-        } ?? listCandidates[0]
-    }
-
     /// The share of a frame that lies on some display, from 0 to 1.
     public static func visibleShare(of frame: CGRect) -> CGFloat {
         guard frame.width > 0, frame.height > 0 else {

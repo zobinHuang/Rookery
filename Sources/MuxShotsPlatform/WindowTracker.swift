@@ -118,6 +118,24 @@ public actor WindowTracker {
         return await tracker.raise(windowId)
     }
 
+    /// Minimize a managed window to the Dock, or restore it from there where it was last placed.
+    ///
+    /// - Returns: whether the window took the request
+    public func applyMinimized(_ isMinimized: Bool, to windowId: WindowId) async -> Bool {
+        guard let tracker = tracker(of: windowId) else {
+            return false
+        }
+        return await tracker.applyMinimized(isMinimized, to: windowId)
+    }
+
+    /// Whether a managed window is minimized to the Dock.
+    public func isMinimized(_ windowId: WindowId) async -> Bool {
+        guard let tracker = tracker(of: windowId) else {
+            return false
+        }
+        return await tracker.isMinimized(windowId)
+    }
+
     /// Whether a managed window is in native full screen.
     public func isFullscreen(_ windowId: WindowId) async -> Bool {
         guard let tracker = tracker(of: windowId) else {

@@ -212,6 +212,33 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         } ?? false
     }
 
+    /// Minimize a managed window to the Dock, or restore it from there where it was last placed.
+    ///
+    /// - Returns: whether the window took the request
+    func applyMinimized(_ isMinimized: Bool, to windowId: WindowId) async -> Bool {
+        await thread.run { [self] () -> Bool in
+            guard let element = mapElements[windowId] ?? listedElement(of: windowId) else {
+                return false
+            }
+            do {
+                if try element.isMinimized() != isMinimized {
+                    try element.applyMinimized(isMinimized)
+                }
+                return true
+            } catch {
+                Self.logger.error("cannot minimize window \(windowId.rawValue): \(error, privacy: .public)")
+                return false
+            }
+        } ?? false
+    }
+
+    /// Whether a managed window is minimized to the Dock.
+    func isMinimized(_ windowId: WindowId) async -> Bool {
+        await thread.run { [self] in
+            (try? mapElements[windowId]?.isMinimized()) == true
+        } ?? false
+    }
+
     /// Whether a managed window is in native full screen.
     func isFullscreen(_ windowId: WindowId) async -> Bool {
         await thread.run { [self] in

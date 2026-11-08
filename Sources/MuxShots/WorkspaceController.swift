@@ -42,8 +42,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// How often, and for how long, an application asked to unhide is checked until it is shown.
     private static let unhidePollInterval = Duration.milliseconds(10)
     private static let unhideTimeout = Duration.milliseconds(500)
-    /// When, after displays change or wake, to put the stages back on a display and park again the hidden
-    /// windows macOS moved on screen: macOS goes on moving windows for a few seconds after the change.
+    /// When, after displays change or wake, to put the stages back on a display and minimize again the
+    /// hidden windows: macOS goes on moving windows for a few seconds after the change.
     private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
     /// How far a managed window may be from where its stage keeps it and still count as there.
     private static let placementTolerance: CGFloat = 2
@@ -603,7 +603,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
                 taskGroup.addTask {
                     await self.revealApplication(of: window.windowId)
-                    _ = await self.applyShownFrame(frame, to: window.windowId)
+                    _ = await self.applyShownFrame(frame, to: window.windowId, isRestoring: window.isHidden)
                 }
             }
         }
@@ -1098,7 +1098,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }.map(\.groupId))
         await run(showing: listToShow, hiding: listToHide)
 
-        var listVisible = targetGroup.listMembersFrontToBack.filter { mapRecords[$0.windowId]?.isMinimized != true }
+        let setShownIds = Set(listToShow.map(\.windowId))
+        var listVisible = targetGroup.listMembersFrontToBack.filter { window in
+            setShownIds.contains(window.windowId) || mapRecords[window.windowId]?.isMinimized != true
+        }
         if let frontIndex = listVisible.firstIndex(where: { $0.windowId == frontWindowId }) {
             listVisible.insert(listVisible.remove(at: frontIndex), at: 0)
         }
@@ -1139,7 +1142,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             guard
                 let contentFrame = mapStageContentFrames[shownStageId],
                 let group = workspace.listGroups.first(where: { $0.groupId == shownGroupId }),
-                let front = group.listMembersFrontToBack.first(where: { mapRecords[$0.windowId]?.isMinimized != true })
+                let front = group.listMembersFrontToBack.first(where: { $0.isHidden || mapRecords[$0.windowId]?.isMinimized != true })
             else {
                 continue
             }
@@ -1157,7 +1160,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         for (windowId, contentFrame) in mapShownFrames {
             await revealApplication(of: windowId)
             let restoreFrame = workspace.markShown(windowId)
-            guard await applyShownFrame(contentFrame, to: windowId) == nil else {
+            guard await applyShownFrame(contentFrame, to: windowId, isRestoring: restoreFrame != nil) == nil else {
                 continue
             }
             Self.logger.error("cannot show \(windowId.rawValue) on its stage")
@@ -1230,20 +1233,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         guard let frame = await tracker.frame(of: windowId) else {
             throw WindowActionError.noDisplay(windowId: windowId)
         }
-        let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
-        guard let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId) else {
-            throw WindowActionError.cannotMove(windowId: windowId)
+        guard await tracker.applyMinimized(true, to: windowId) else {
+            throw WindowActionError.cannotMinimize(windowId: windowId)
         }
-        Self.logger.info("""
-            hid \(windowId.rawValue) from \(String(describing: frame), privacy: .public) to \
-            \(String(describing: requestedFrame), privacy: .public), landed at \(String(describing: parkedFrame), privacy: .public)
-            """)
+        Self.logger.info("hid \(windowId.rawValue) from \(String(describing: frame), privacy: .public)")
         workspace.markHidden(windowId, restoreFrame: frame)
         didChange()
-        if ScreenGeometry.visibleShare(of: parkedFrame) > Self.hiddenVisibleShareLimit {
-            Self.logger.error("window \(windowId.rawValue) stayed visible at \(String(describing: parkedFrame))")
-            throw WindowActionError.cannotMove(windowId: windowId)
-        }
     }
 
     private func show(_ windowId: WindowId) async throws {
@@ -1252,7 +1247,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             throw WindowActionError.notHidden(windowId: windowId)
         }
         didChange()
-        guard let landedFrame = await applyShownFrame(restoreFrame, to: windowId) else {
+        guard let landedFrame = await applyShownFrame(restoreFrame, to: windowId, isRestoring: true) else {
             workspace.markHidden(windowId, restoreFrame: restoreFrame)
             didChange()
             throw WindowActionError.cannotMove(windowId: windowId)
@@ -1263,13 +1258,22 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             """)
     }
 
-    /// Move a window being shown into place. An application that ordered the window out while it was parked,
-    /// as WeChat does, is asked to reopen, as a click on its Dock icon would, and the window is moved once it
-    /// is back.
+    /// Move a window being shown into place and, if MuxShots hid it, restore it from the Dock there: a
+    /// minimized window takes a new frame, so it opens straight into place. An application that ordered the
+    /// window out while it was hidden, as WeChat does, is asked to reopen, as a click on its Dock icon would,
+    /// and the window is moved once it is back.
     ///
+    /// - Parameters:
+    ///   - frame: where the window goes
+    ///   - windowId: the window
+    ///   - isRestoring: whether MuxShots hid the window, so it is restored from the Dock; a window the user
+    ///     minimized stays there
     /// - Returns: where the window landed, or nil if it could not be moved
-    private func applyShownFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
+    private func applyShownFrame(_ frame: CGRect, to windowId: WindowId, isRestoring: Bool) async -> CGRect? {
         if let landedFrame = await tracker.applyFrame(frame, to: windowId) {
+            if isRestoring, !(await tracker.applyMinimized(false, to: windowId)) {
+                Self.logger.error("cannot restore window \(windowId.rawValue) from the Dock")
+            }
             return landedFrame
         }
         guard
@@ -1294,15 +1298,18 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 return nil
             }
             if let landedFrame = await tracker.applyFrame(frame, to: windowId) {
+                if isRestoring {
+                    _ = await tracker.applyMinimized(false, to: windowId)
+                }
                 return landedFrame
             }
         }
         return nil
     }
 
-    /// Put the stages back on a display and park again the hidden windows macOS moved on screen, once the
+    /// Put the stages back on a display and minimize again any hidden window back from the Dock, once the
     /// displays have settled after a change: a display that comes, goes or wakes makes macOS move windows
-    /// by itself, parked ones included, and moves the origin the window server's coordinates count from.
+    /// by itself, and moves the origin the window server's coordinates count from.
     private func displaysDidChange() {
         displayChangeTask?.cancel()
         displayChangeTask = Task {
@@ -1314,36 +1321,29 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
                 stageCoordinator?.settleStagesOnDisplays()
                 await enqueue {
-                    await self.reparkStrayWindows()
+                    await self.minimizeStrayWindows()
                 }
             }
         }
     }
 
-    /// Park again every hidden window that is back on screen.
-    private func reparkStrayWindows() async {
+    /// Minimize again every hidden window that is back from the Dock.
+    private func minimizeStrayWindows() async {
         await withTaskGroup(of: Void.self) { taskGroup in
             for window in workspace.listHiddenWindows {
                 taskGroup.addTask {
-                    await self.repark(window.windowId)
+                    await self.minimizeAgain(window.windowId)
                 }
             }
         }
     }
 
-    private func repark(_ windowId: WindowId) async {
-        guard
-            let frame = await tracker.frame(of: windowId),
-            ScreenGeometry.visibleShare(of: frame) > Self.hiddenVisibleShareLimit
-        else {
+    private func minimizeAgain(_ windowId: WindowId) async {
+        guard !(await tracker.isMinimized(windowId)) else {
             return
         }
-        let requestedFrame = ScreenGeometry.offscreenFrame(for: frame)
-        let parkedFrame = await tracker.applyFrame(requestedFrame, to: windowId)
-        Self.logger.info("""
-            parked \(windowId.rawValue) again from \(String(describing: frame), privacy: .public), landed at \
-            \(String(describing: parkedFrame), privacy: .public)
-            """)
+        let isMinimized = await tracker.applyMinimized(true, to: windowId)
+        Self.logger.info("minimized hidden window \(windowId.rawValue) again: \(isMinimized, privacy: .public)")
     }
 
     /// Bring back a browser hidden before it started playing a video in the sidebar, and hide one whose
@@ -1377,12 +1377,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Hide whole every application whose every window shown on some Space is one MuxShots hid, so it stops
-    /// drawing windows nobody sees. It is not put in the background: its helpers starved there made the whole
-    /// machine lag.
-    /// Windows off every display do not count, as Chrome's link bubble left beside a parked window, nor do
-    /// windows wholly beneath a stage, which nobody sees either, as a WeChat chat left under it. The
-    /// active application is left alone, as hiding it would hand activation to another.
+    /// Hide whole every application with managed windows hidden whose other windows shown on some Space
+    /// nobody sees, so it stops drawing them: windows off every display, as Chrome's link bubble, and windows
+    /// wholly beneath a stage, as a WeChat chat left under it. An application whose windows are all minimized
+    /// draws nothing and is left as it is, so showing one of them does not wait for it to unhide. It is not
+    /// put in the background: its helpers starved there made the whole machine lag. The active application
+    /// is left alone, as hiding it would hand activation to another.
     private func hideApplicationsShowingOnlyHiddenWindows() {
         releaseShownApplications()
         let setCandidateIds = Set(workspace.listHiddenWindows.map(\.application.processId))
@@ -1394,8 +1394,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         let setBeneathStageIds = windowIdsBeneathStages()
+        let listShownWindows = WindowServer.listShownWindows(ofProcesses: setCandidateIds)
+        let setShowingProcessIds = Set(listShownWindows.map(\.processId))
         let mapShownProcessIds = Dictionary(
-            uniqueKeysWithValues: WindowServer.listShownWindows(ofProcesses: setCandidateIds)
+            uniqueKeysWithValues: listShownWindows
                 .filter { ScreenGeometry.visibleShare(of: $0.frame) > Self.hiddenVisibleShareLimit }
                 .filter { !setBeneathStageIds.contains($0.windowId) }
                 .map { ($0.windowId, $0.processId) }
@@ -1404,6 +1406,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
             guard
+                setShowingProcessIds.contains(processId),
                 !setPictureProcessIds.contains(processId),
                 processId != frontmostProcessId,
                 let running = NSRunningApplication(processIdentifier: processId),
@@ -1564,9 +1567,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         let isHidden = workspace.listHiddenWindows.contains { $0.windowId == record.windowId }
-        if isHidden && ScreenGeometry.visibleShare(of: record.frame) <= Self.hiddenVisibleShareLimit {
-            return
-        }
         if !isHidden && mapStageGroupIds[stageId] != group.groupId {
             return
         }
@@ -1598,10 +1598,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Put a displaced managed window back where its stage keeps it: in the content area if it is its
-    /// stage's front window, parked again if it is hidden.
+    /// stage's front window, minimized again if it is hidden.
     private func putBack(_ windowId: WindowId) async {
         if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
-            await repark(windowId)
+            await minimizeAgain(windowId)
             return
         }
         guard

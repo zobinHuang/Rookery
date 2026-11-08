@@ -113,9 +113,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// The browsers playing a video in the sidebar, which are never hidden: a hidden browser stops drawing
     /// the page the video streams from.
     var pictureProcessIds: () -> Set<pid_t> = { [] }
-    /// The applications playing sound, which are hidden but never put in the background, where their sound
-    /// could stutter.
-    var playingBundleIds: () -> Set<String> = { [] }
     private let throttle = ApplicationThrottle()
     private var unhideObserver: NSObjectProtocol?
     private var deactivationObserver: NSObjectProtocol?
@@ -1381,7 +1378,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Hide whole every application whose every window shown on some Space is one MuxShots hid, so it stops
-    /// drawing windows nobody sees, and put it in the background, so what it goes on doing costs less power.
+    /// drawing windows nobody sees. It is not put in the background: its helpers starved there made the whole
+    /// machine lag.
     /// Windows off every display do not count, as Chrome's link bubble left beside a parked window, nor do
     /// windows wholly beneath a stage, which nobody sees either, as a WeChat chat left under it. The
     /// active application is left alone, as hiding it would hand activation to another.
@@ -1403,7 +1401,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 .map { ($0.windowId, $0.processId) }
         )
         let setPictureProcessIds = pictureProcessIds()
-        let setPlayingBundleIds = playingBundleIds()
         let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
             guard
@@ -1428,9 +1425,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 }
             }
             setHiddenProcessIds.insert(processId)
-            if !setPlayingBundleIds.contains(running.bundleIdentifier ?? "") {
-                throttle.throttle(processId)
-            }
         }
     }
 

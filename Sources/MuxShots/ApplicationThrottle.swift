@@ -2,9 +2,9 @@ import AppKit
 import MuxShotsPlatform
 import os
 
-/// The applications MuxShots has put in the background (`ProcessPriority`) while all their windows are
-/// hidden, so that what they do unseen costs less power. They are remembered across launches, so that one a
-/// crash left in the background is put back to normal at the next launch.
+/// The applications an earlier build of MuxShots put in the background (`ProcessPriority`) while all their
+/// windows were hidden, which are put back to normal. MuxShots no longer puts any there: their helpers starved
+/// in the background band and made the whole machine lag.
 @MainActor
 final class ApplicationThrottle {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "throttle")
@@ -33,21 +33,6 @@ final class ApplicationThrottle {
             release(processId)
         }
         store()
-    }
-
-    /// Put an application and its helper processes in the background. Applying it again also covers helpers
-    /// started since.
-    func throttle(_ processId: pid_t) {
-        do {
-            try ProcessPriority.applyBackground(true, toTreeOf: processId)
-        } catch {
-            Self.logger.error("cannot put process \(processId) in the background: \(error, privacy: .public)")
-            return
-        }
-        if setProcessIds.insert(processId).inserted {
-            Self.logger.info("put \(Self.name(of: processId), privacy: .public) in the background")
-            store()
-        }
     }
 
     /// Put an application back to normal, if MuxShots put it in the background.

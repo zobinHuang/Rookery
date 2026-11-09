@@ -139,10 +139,21 @@ final class ShortcutController {
             !isSuspended,
             keyCode == kVK_Tab,
             modifiers.contains(.command),
-            modifiers.isDisjoint(with: [.control, .option]),
-            switcher.isShowing || workspaceController.isStageFocused && workspaceController.windowSwitcherRequest() != nil
+            modifiers.isDisjoint(with: [.control, .option])
         else {
             return false
+        }
+        if !switcher.isShowing {
+            guard workspaceController.isStageFocused else {
+                let frontmostName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "nothing"
+                Self.logger.info("⌘⇥ left to the system: \(frontmostName, privacy: .public) in front is not on the stage")
+                return false
+            }
+            guard workspaceController.windowSwitcherRequest() != nil else {
+                Self.logger.info("⌘⇥ left to the system: fewer than two managed windows")
+                return false
+            }
+            Self.logger.info("⌘⇥ opens the window switcher")
         }
         switcher.advance(by: modifiers.contains(.shift) ? -1 : 1, holding: [.command]) { [workspaceController] in
             workspaceController.windowSwitcherRequest()

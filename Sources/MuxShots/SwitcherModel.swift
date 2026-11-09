@@ -36,11 +36,46 @@ final class SwitcherModel {
     var grid = SwitcherGrid()
 }
 
+/// A way to move the switcher's selection with the arrow keys.
+enum SwitcherDirection {
+    case left
+    case right
+    case up
+    case down
+}
+
 /// How the switcher's cards are laid out: in rows, some of which show at once while the rest scroll.
 struct SwitcherGrid: Equatable {
     var columns = 1
     var rows = 1
     var visibleRows = 1
+
+    /// The card an arrow key moves the selection to, with the cards laid out row by row. Left and right
+    /// wrap around every card; up and down keep the column, landing on the last card when the row below
+    /// is short, and stay put at the top or bottom row.
+    ///
+    /// - Parameters:
+    ///   - index: the selected card
+    ///   - direction: the arrow pressed
+    ///   - count: how many cards there are
+    /// - Returns: the card to select
+    func index(after index: Int, moving direction: SwitcherDirection, count: Int) -> Int {
+        guard count > 0 else {
+            return index
+        }
+        let columns = max(columns, 1)
+        switch direction {
+        case .left:
+            return (index - 1 + count) % count
+        case .right:
+            return (index + 1) % count
+        case .up:
+            return index - columns >= 0 ? index - columns : index
+        case .down:
+            let isOnLastRow = index / columns == (count - 1) / columns
+            return isOnLastRow ? index : min(index + columns, count - 1)
+        }
+    }
 }
 
 /// The switcher's measurements, shared by its view and the panel sized around it.

@@ -18,7 +18,7 @@ struct SwitcherView: View {
     var body: some View {
         VStack(spacing: SwitcherLayout.hintSpacing) {
             cards
-            Text("⇥ next   ⇧⇥ previous   release \(model.holdSymbols) to switch   esc to cancel")
+            Text("⇥ or arrow keys to move   release \(model.holdSymbols) to switch   esc to cancel")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

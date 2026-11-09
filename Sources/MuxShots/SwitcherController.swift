@@ -5,7 +5,7 @@ import MuxShotsPlatform
 
 /// A hold-to-choose switcher, for groups or windows: its shortcut opens it on the next entry, further presses
 /// move the selection, releasing the held modifiers chooses and esc cancels. A quick tap chooses without
-/// showing anything, like Cmd-Tab.
+/// showing anything, like Cmd-Tab. The arrow keys move the selection across the cards too.
 @MainActor
 final class SwitcherController {
     private static let revealDelay = Duration.milliseconds(140)
@@ -54,6 +54,20 @@ final class SwitcherController {
         }
         let count = model.listEntries.count
         model.selectedIndex = ((model.selectedIndex + step) % count + count) % count
+    }
+
+    /// Move the selection of the open switcher with an arrow key.
+    ///
+    /// - Parameter direction: the arrow pressed
+    func move(_ direction: SwitcherDirection) {
+        guard isOpen else {
+            return
+        }
+        model.selectedIndex = model.grid.index(
+            after: model.selectedIndex,
+            moving: direction,
+            count: model.listEntries.count
+        )
     }
 
     /// Whether the switcher is open.

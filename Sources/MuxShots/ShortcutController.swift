@@ -14,13 +14,21 @@ final class ShortcutController {
         kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9,
     ]
 
+    /// The arrow keys that move an open switcher's selection.
+    private static let mapArrowDirections: [Int: SwitcherDirection] = [
+        kVK_LeftArrow: .left,
+        kVK_RightArrow: .right,
+        kVK_UpArrow: .up,
+        kVK_DownArrow: .down,
+    ]
+
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
     private let hotkeyCenter = HotkeyCenter()
     private let stages: StageCoordinator
     private lazy var switcher = SwitcherController(hotkeyCenter: hotkeyCenter)
     private lazy var keyInterceptor = KeyInterceptor { [weak self] keyCode, modifiers in
-        self?.interceptWindowSwitch(keyCode: keyCode, modifiers: modifiers) ?? false
+        self?.intercept(keyCode: keyCode, modifiers: modifiers) ?? false
     }
     private var isSuspended = false
 
@@ -106,6 +114,20 @@ final class ShortcutController {
         switcher.advance(by: step, holding: holdModifiers) { [workspaceController] in
             workspaceController.groupSwitcherRequest()
         }
+    }
+
+    /// Take the arrow keys while a switcher is open, and ⌘⇥ while the user works on the stage.
+    ///
+    /// - Returns: whether the key press was taken
+    private func intercept(keyCode: Int, modifiers: NSEvent.ModifierFlags) -> Bool {
+        if
+            switcher.isShowing,
+            let direction = Self.mapArrowDirections[keyCode]
+        {
+            switcher.move(direction)
+            return true
+        }
+        return interceptWindowSwitch(keyCode: keyCode, modifiers: modifiers)
     }
 
     /// Take ⌘⇥ over while the user works on the stage, switching between recently used windows across

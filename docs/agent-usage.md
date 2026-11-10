@@ -13,7 +13,7 @@ Each harness has an `AgentUsageProvider` (`MuxShotsPlatform`), which reads an ac
 
 with `CLAUDE_CONFIG_DIR` set for accounts other than the default, writes two control requests, `initialize` and `get_usage` with `skip_behaviors`, and closes its input. Claude Code answers and exits, in about a second. No prompt is sent, so no model is called; `--no-session-persistence` leaves no transcript; `--setting-sources ""` keeps the user's hooks from running. (`--bare` would not do: it never reads the OAuth sign-in.)
 
-- `initialize` answers with `account.email`, `account.organization` and `account.subscriptionType`.
+- `initialize` answers with `account.email`, `account.organization` and `account.subscriptionType`, the plan's full name ("Claude Max", "Claude Ultra"). The panel takes the plan from it, since `get_usage` says "max" for an Ultra plan too.
 - `get_usage` answers with `subscription_type`, `rate_limits_available` and `rate_limits.limits`: one entry per limit with `kind` (`session`, `weekly_all`, `weekly_scoped`), `group`, `percent` used (0–100), `resets_at`, `severity` and, for model-scoped ones, `scope.model.display_name`. `ClaudeCodeUsageDecoder` reads it.
 
 The provider reads output with a readability handler and kills the process on timeout or cancellation: a blocking read of a pipe cannot be cancelled, and Claude Code shuts down gracefully on SIGTERM, which left reads hanging.

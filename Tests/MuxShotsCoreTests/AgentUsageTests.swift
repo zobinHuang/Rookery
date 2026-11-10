@@ -36,6 +36,18 @@ struct AgentUsageTests {
         #expect(usage.signedInAs == "someone@example.com")
     }
 
+    @Test func takesThePlanFromTheInitializeAnswer() throws {
+        let initialize = #"{"account":{"subscriptionType":"Claude Ultra"}}"#
+
+        let usage = try ClaudeCodeUsageDecoder.decode(
+            Data(Self.answer.utf8),
+            initializeData: Data(initialize.utf8),
+            fetchedAt: Date()
+        )
+
+        #expect(usage.plan == "ultra")
+    }
+
     @Test func refusesAnAnswerWithoutPlanLimits() {
         let answer = #"{"subscription_type":null,"rate_limits_available":false,"rate_limits":null}"#
 

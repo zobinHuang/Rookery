@@ -94,7 +94,7 @@ public struct AgentLimit: Codable, Equatable, Identifiable, Sendable {
 public struct AgentUsage: Codable, Equatable, Sendable {
     /// Who the harness is signed in as, as an email address; nil when the harness does not say.
     public let signedInAs: String?
-    /// The plan, as "max" or "pro"; nil when the harness does not say.
+    /// The plan, as "max", "ultra" or "pro"; nil when the harness does not say.
     public let plan: String?
     public let listLimits: [AgentLimit]
     public let fetchedAt: Date
@@ -117,10 +117,11 @@ public enum ClaudeCodeUsageDecoder {
     }
 
     private static let titleSession = "5h"
+    private static let planNamePrefix = "Claude "
     private static let titleWeekly = "7d"
 
-    /// Read the body of a successful `get_usage` response, with who is signed in from the `initialize`
-    /// response's body when there is one.
+    /// Read the body of a successful `get_usage` response, with who is signed in and the plan from the
+    /// `initialize` response's body when there is one: `get_usage` calls an Ultra plan "max".
     ///
     /// - Parameters:
     ///   - data: the `get_usage` response body as JSON
@@ -147,17 +148,31 @@ public enum ClaudeCodeUsageDecoder {
                 severity: AgentLimitSeverity(rawValue: limit.severity ?? "") ?? .normal
             )
         }
-        let signedInAs = initializeData.flatMap { try? JSONDecoder().decode(Initialize.self, from: $0) }?.account?.email
-        return AgentUsage(signedInAs: signedInAs, plan: body.subscriptionType, listLimits: listLimits, fetchedAt: fetchedAt)
+        let account = initializeData.flatMap { try? JSONDecoder().decode(Initialize.self, from: $0) }?.account
+        return AgentUsage(
+            signedInAs: account?.email,
+            plan: account?.subscriptionType.map(planName) ?? body.subscriptionType,
+            listLimits: listLimits,
+            fetchedAt: fetchedAt
+        )
     }
 
-    /// The part of the `initialize` answer that says who is signed in.
+    /// The part of the `initialize` answer that says who is signed in and on which plan.
     private struct Initialize: Decodable {
         struct Account: Decodable {
             let email: String?
+            let subscriptionType: String?
         }
 
         let account: Account?
+    }
+
+    /// The plan as `initialize` names it, "Claude Ultra", in the short form `get_usage` uses, "ultra".
+    private static func planName(_ subscriptionType: String) -> String {
+        let name = subscriptionType.hasPrefix(planNamePrefix)
+            ? String(subscriptionType.dropFirst(planNamePrefix.count))
+            : subscriptionType
+        return name.lowercased()
     }
 
     private static func title(of limit: Body.Limit) -> String {

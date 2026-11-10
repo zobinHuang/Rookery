@@ -4,6 +4,7 @@ import MuxShotsCore
 import MuxShotsPlatform
 import Observation
 import os
+import SystemConfiguration
 
 /// The appearance MuxShots draws in.
 enum Theme: String {
@@ -25,6 +26,7 @@ final class Preferences {
     private static let stageHotkeyKey = "stageHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let themeKey = "theme"
+    private static let stageTitleKey = "stageTitle"
     /// Where the world clock's cities were kept when they were time zones alone, read once to carry them over.
     private static let legacyClockTimeZonesKey = "clockTimeZoneIds"
     private static let clockCitiesKey = "clockCities"
@@ -78,6 +80,24 @@ final class Preferences {
             defaults.set(theme?.rawValue, forKey: Self.themeKey)
             onThemeChange?()
         }
+    }
+
+    /// The name the stage's sidebar shows at its top, as the user typed it; empty for the Mac's host name.
+    var stageTitle: String {
+        didSet {
+            defaults.set(stageTitle, forKey: Self.stageTitleKey)
+        }
+    }
+
+    /// The name the stage's sidebar shows: the one the user chose, else the Mac's host name.
+    var shownStageTitle: String {
+        let title = stageTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? Self.hostName : title
+    }
+
+    /// The Mac's local host name, as Sharing settings show it without `.local`.
+    static var hostName: String {
+        SCDynamicStoreCopyLocalHostName(nil) as String? ?? ProcessInfo.processInfo.hostName
     }
 
     /// Whether dragging a window offers the drop tray or panel.
@@ -141,6 +161,7 @@ final class Preferences {
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
+        stageTitle = defaults.string(forKey: Self.stageTitleKey) ?? ""
         listClockCities = Self.loadClockCities(from: defaults)
         listAgentAccounts = Self.loadAgentAccounts(from: defaults)
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)

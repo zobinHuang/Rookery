@@ -35,7 +35,7 @@ Nothing writes window-server state through private APIs; Spaces are never moved 
 
 ## Sidebar
 
-The sidebar is SwiftUI in the stage's hosting view: the Groups/Mixer/Notes switch, then the groups, the mixer or the quick notes, then sidebar videos, code agent limits, the world clock, and the toolbar. Colors are tokens in `StageColors` that follow the light and dark themes (dark is near black); theme changes crossfade through a snapshot of each stage.
+The sidebar is SwiftUI in the stage's hosting view: a header with the title the user sets under General in the settings (the Mac's local host name while it is empty), the Groups/Mixer/Notes switch, then the groups, the mixer or the quick notes, then sidebar videos, code agent limits, the world clock, and the toolbar. Colors are tokens in `StageColors` that follow the light and dark themes (dark is near black); theme changes crossfade through a snapshot of each stage.
 
 Every assignment to an `@Observable` property redraws the views reading it, equal value or not, so `StageController.refresh` assigns only what changed, and a layout change tells the views once when it ends rather than once for each window it moves. Window names live in `StageModel.mapWindowNames`, read only by the texts showing them (`WindowNameText`, `GroupSubtitleText`): pages such as Gmail retitle their window every few seconds, and that must not rebuild the stage.
 

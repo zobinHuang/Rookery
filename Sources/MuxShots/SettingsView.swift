@@ -20,6 +20,7 @@ struct SettingsView: View {
     private static let columnMinimumWidth: CGFloat = 420
     private static let columnSpacing: CGFloat = 24
     private static let pagePadding: CGFloat = 36
+    private static let titleFieldWidth: CGFloat = 200
     /// The corner radius of a card of settings.
     static let cardCornerRadius: CGFloat = 12
 
@@ -124,6 +125,12 @@ struct SettingsView: View {
             }
             if let loginItemError {
                 SettingsMessage(text: loginItemError)
+            }
+            SettingsRow(title: "Sidebar Title") {
+                TextField(Preferences.hostName, text: $preferences.stageTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: Self.titleFieldWidth)
             }
         }
     }

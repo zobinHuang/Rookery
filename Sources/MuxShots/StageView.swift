@@ -65,6 +65,9 @@ struct StageView: View {
     nonisolated private static let tabFadeThreshold: CGFloat = 2
     private static let tabScrollAnimation = Animation.easeOut(duration: 0.22)
 
+    /// How far a long sidebar title, such as a host name, shrinks before it is cut short.
+    private static let titleMinimumScale: CGFloat = 0.7
+
     let model: StageModel
     let preferences: Preferences
     let shortcutRecorder: ShortcutRecorder
@@ -317,9 +320,12 @@ struct StageView: View {
             } else {
                 HStack(spacing: 10) {
                     CloseButton(action: actions.exitStage)
-                    Text("MuxShots")
+                    Text(preferences.shownStageTitle)
                         .font(.system(size: 15, weight: .bold))
-                    Spacer()
+                        .lineLimit(1)
+                        .minimumScaleFactor(Self.titleMinimumScale)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
                     headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
                 }
                 .padding(.horizontal, 14)

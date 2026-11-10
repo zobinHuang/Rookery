@@ -61,6 +61,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let contentDropPill = ContentDropPill()
     /// The front window set aside while a page shows in the content area, once it is hidden.
     private var asideWindowId: WindowId?
+    /// Closes the screen saver on any key press while it shows and the stage takes keyboard input.
+    private var screenSaverKeyMonitor: Any?
     private let panel: StagePanel
     private var hideTask: Task<Void, Never>?
     /// Whether the stage window is up while the workspace is still moving windows onto it.
@@ -540,9 +542,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     func open(_ page: StagePage) {
         guard model.shownPage == nil else {
             model.shownPage = page
+            refreshScreenSaverKeyMonitor()
             return
         }
         model.shownPage = page
+        refreshScreenSaverKeyMonitor()
         panel.makeKey()
         guard let windowId = model.selectedWindowId else {
             return
@@ -579,11 +583,40 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             return
         }
         model.shownPage = nil
+        refreshScreenSaverKeyMonitor()
         asideWindowId = nil
         shortcutRecorder.cancel()
         if panel.isKeyWindow {
             panel.resignKey()
         }
+    }
+
+    /// Watch for key presses exactly while the screen saver shows.
+    private func refreshScreenSaverKeyMonitor() {
+        let isShowingScreenSaver = model.shownPage == .screenSaver
+        if isShowingScreenSaver, screenSaverKeyMonitor == nil {
+            screenSaverKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, panel] event in
+                let isInStage = event.window === panel
+                let didClose = MainActor.assumeIsolated {
+                    isInStage && self?.closeScreenSaver() == true
+                }
+                return didClose ? nil : event
+            }
+        } else if !isShowingScreenSaver, let screenSaverKeyMonitor {
+            NSEvent.removeMonitor(screenSaverKeyMonitor)
+            self.screenSaverKeyMonitor = nil
+        }
+    }
+
+    /// Close the screen saver, on a key pressed in this stage.
+    ///
+    /// - Returns: whether it was showing
+    private func closeScreenSaver() -> Bool {
+        guard model.shownPage == .screenSaver else {
+            return false
+        }
+        closePage()
+        return true
     }
 
     func toggleTheme() {
@@ -820,6 +853,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     /// Take the stage's window down.
     func dismiss() {
+        if model.shownPage == .screenSaver {
+            leavePage()
+        }
         model.isVisible = false
         hideTask?.cancel()
         hideTask = Task { [weak self] in

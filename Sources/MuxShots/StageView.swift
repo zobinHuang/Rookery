@@ -426,6 +426,9 @@ struct StageView: View {
                 help: model.isDarkTheme ? "Switch to the light theme" : "Switch to the dark theme",
                 action: actions.toggleTheme
             )
+            headerButton("sparkles.tv", help: "Screen saver") {
+                actions.showPage(.screenSaver)
+            }
             headerButton("gearshape", help: "Settings") {
                 actions.showPage(.settings)
             }
@@ -869,6 +872,13 @@ struct StageView: View {
                     onClose: actions.closePage
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if model.shownPage == .screenSaver {
+                ScreenSaverView(
+                    text: preferences.shownScreenSaverText,
+                    textSize: preferences.screenSaverTextSize,
+                    onClose: actions.closePage
+                )
+                .transition(.opacity)
             } else if model.selectedWindowId == nil {
                 VStack(spacing: 10) {
                     Image(systemName: "macwindow.badge.plus")

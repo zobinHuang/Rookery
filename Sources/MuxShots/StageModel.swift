@@ -205,4 +205,6 @@ final class StageModel {
 /// A page the content area can show in place of the front window.
 enum StagePage {
     case settings
+    /// The user's text, large, until a click or a key press closes it.
+    case screenSaver
 }

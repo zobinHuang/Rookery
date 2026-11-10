@@ -74,6 +74,7 @@ struct SettingsView: View {
         case 1:
             column {
                 general
+                screenSaver
                 dragging
                 worldClock
                 codeAgents
@@ -89,6 +90,7 @@ struct SettingsView: View {
                 column {
                     worldClock
                     codeAgents
+                    screenSaver
                 }
             }
         default:
@@ -103,6 +105,7 @@ struct SettingsView: View {
                 }
                 column {
                     codeAgents
+                    screenSaver
                 }
             }
         }
@@ -130,6 +133,21 @@ struct SettingsView: View {
                 TextField(Preferences.hostName, text: $preferences.stageTitle)
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
+                    .frame(width: Self.titleFieldWidth)
+            }
+        }
+    }
+
+    private var screenSaver: some View {
+        SettingsSection(title: "Screen Saver", symbol: "sparkles.tv.fill", tint: .indigo) {
+            SettingsRow(title: "Text") {
+                TextField(Preferences.defaultScreenSaverText, text: $preferences.screenSaverText)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: Self.titleFieldWidth)
+            }
+            SettingsRow(title: "Text Size", detail: "\(Int(preferences.screenSaverTextSize)) pt") {
+                Slider(value: $preferences.screenSaverTextSize, in: Preferences.screenSaverTextSizeRange)
                     .frame(width: Self.titleFieldWidth)
             }
         }

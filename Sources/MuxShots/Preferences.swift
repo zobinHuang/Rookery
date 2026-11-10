@@ -27,6 +27,8 @@ final class Preferences {
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let themeKey = "theme"
     private static let stageTitleKey = "stageTitle"
+    private static let screenSaverTextKey = "screenSaverText"
+    private static let screenSaverTextSizeKey = "screenSaverTextSize"
     /// Where the world clock's cities were kept when they were time zones alone, read once to carry them over.
     private static let legacyClockTimeZonesKey = "clockTimeZoneIds"
     private static let clockCitiesKey = "clockCities"
@@ -39,6 +41,11 @@ final class Preferences {
     static let defaultSwitcherHotkey = Hotkey(keyCode: kVK_Tab, modifiers: [.option])
     static let defaultCycleHotkey = Hotkey(keyCode: kVK_ANSI_Grave, modifiers: [.control, .option])
     static let defaultStageHotkey = Hotkey(keyCode: kVK_Return, modifiers: [.control, .option])
+    /// What the screen saver says while the user has set nothing.
+    static let defaultScreenSaverText = "Be right back"
+    static let defaultScreenSaverTextSize: Double = 72
+    /// The sizes the screen saver's text can be set to, in points.
+    static let screenSaverTextSizeRange: ClosedRange<Double> = 24...200
 
     @ObservationIgnored private let defaults: UserDefaults
     /// Called after any shortcut changes, so they can be registered again.
@@ -98,6 +105,26 @@ final class Preferences {
     /// The Mac's local host name, as Sharing settings show it without `.local`.
     static var hostName: String {
         SCDynamicStoreCopyLocalHostName(nil) as String? ?? ProcessInfo.processInfo.hostName
+    }
+
+    /// The text the screen saver shows in the content area, as the user typed it; empty for the default.
+    var screenSaverText: String {
+        didSet {
+            defaults.set(screenSaverText, forKey: Self.screenSaverTextKey)
+        }
+    }
+
+    /// The text the screen saver shows: the user's, else the default.
+    var shownScreenSaverText: String {
+        let text = screenSaverText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? Self.defaultScreenSaverText : text
+    }
+
+    /// The screen saver's text size in points, within `screenSaverTextSizeRange`.
+    var screenSaverTextSize: Double {
+        didSet {
+            defaults.set(screenSaverTextSize, forKey: Self.screenSaverTextSizeKey)
+        }
     }
 
     /// Whether dragging a window offers the drop tray or panel.
@@ -162,6 +189,10 @@ final class Preferences {
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         stageTitle = defaults.string(forKey: Self.stageTitleKey) ?? ""
+        screenSaverText = defaults.string(forKey: Self.screenSaverTextKey) ?? ""
+        screenSaverTextSize = (defaults.object(forKey: Self.screenSaverTextSizeKey) as? Double)
+            .map { min(max($0, Self.screenSaverTextSizeRange.lowerBound), Self.screenSaverTextSizeRange.upperBound) }
+            ?? Self.defaultScreenSaverTextSize
         listClockCities = Self.loadClockCities(from: defaults)
         listAgentAccounts = Self.loadAgentAccounts(from: defaults)
         groupModifiers = (defaults.object(forKey: Self.groupModifiersKey) as? UInt)

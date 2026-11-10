@@ -59,8 +59,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let shortcutRecorder: ShortcutRecorder
     private let model = StageModel()
     private let contentDropPill = ContentDropPill()
-    /// The front window set aside while the settings show in the content area, once it is hidden.
-    private var settingsWindowId: WindowId?
+    /// The front window set aside while a page shows in the content area, once it is hidden.
+    private var asideWindowId: WindowId?
     private let panel: StagePanel
     private var hideTask: Task<Void, Never>?
     /// Whether the stage window is up while the workspace is still moving windows onto it.
@@ -118,7 +118,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         panel.contentView = background
         super.init()
         panel.hostedWindowId = { [weak self] in
-            guard let self, !model.isShowingSettings else {
+            guard let self, model.shownPage == nil else {
                 return nil
             }
             return model.selectedWindowId
@@ -221,7 +221,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     /// Bring the stage's front window forward and give it keyboard focus, as when the stage is clicked.
     func bringContentToFront() {
-        guard !model.isShowingSettings else {
+        guard model.shownPage == nil else {
             return
         }
         workspaceController.focusFront(ofStage: stageId)
@@ -330,11 +330,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             model.selectedWindowId = selectedWindowId
         }
         if
-            let settingsWindowId,
-            settingsWindowId != selectedWindowId
-            || !workspaceController.workspace.listHiddenWindows.contains(where: { $0.windowId == settingsWindowId })
+            let asideWindowId,
+            asideWindowId != selectedWindowId
+            || !workspaceController.workspace.listHiddenWindows.contains(where: { $0.windowId == asideWindowId })
         {
-            leaveSettings()
+            leavePage()
         }
     }
 
@@ -377,7 +377,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     // MARK: - Stage actions
 
     func selectGroup(_ groupId: GroupId) {
-        leaveSettings()
+        leavePage()
         Task { [workspaceController, stageId] in
             await workspaceController.switchTo(groupId, onStage: stageId)
         }
@@ -387,7 +387,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         guard let groupId = workspaceController.workspace.group(containing: windowId)?.groupId else {
             return
         }
-        leaveSettings()
+        leavePage()
         Task { [workspaceController, stageId] in
             await workspaceController.switchTo(groupId, bringingToFront: windowId, onStage: stageId)
         }
@@ -415,7 +415,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     func endEditing() {
         guard
-            !model.isShowingSettings,
+            model.shownPage == nil,
             panel.isKeyWindow
         else {
             return
@@ -528,20 +528,21 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         coordinator?.openStage()
     }
 
-    func showSettings() {
-        guard !model.isShowingSettings else {
-            closeSettings()
+    func showPage(_ page: StagePage) {
+        guard model.shownPage != page else {
+            closePage()
             return
         }
-        openSettings()
+        open(page)
     }
 
-    /// Show the settings in the content area, setting the front window aside, unless they show already.
-    func openSettings() {
-        guard !model.isShowingSettings else {
+    /// Show a page in the content area, setting the front window aside unless another page has already.
+    func open(_ page: StagePage) {
+        guard model.shownPage == nil else {
+            model.shownPage = page
             return
         }
-        model.isShowingSettings = true
+        model.shownPage = page
         panel.makeKey()
         guard let windowId = model.selectedWindowId else {
             return
@@ -550,20 +551,20 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             do {
                 try await workspaceController.perform(.hide, on: windowId)
             } catch {
-                Self.logger.error("cannot set \(windowId.rawValue) aside for the settings: \(error, privacy: .public)")
+                Self.logger.error("cannot set \(windowId.rawValue) aside for a page: \(error, privacy: .public)")
                 return
             }
-            if self?.model.isShowingSettings == true {
-                self?.settingsWindowId = windowId
+            if self?.model.shownPage != nil {
+                self?.asideWindowId = windowId
             }
         }
     }
 
-    func closeSettings() {
-        guard model.isShowingSettings else {
+    func closePage() {
+        guard model.shownPage != nil else {
             return
         }
-        leaveSettings()
+        leavePage()
         guard let groupId = workspaceController.group(onStage: stageId)?.groupId else {
             return
         }
@@ -572,13 +573,13 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         }
     }
 
-    /// Take the settings out of the content area, leaving whatever brings a window forward next to do so.
-    private func leaveSettings() {
-        guard model.isShowingSettings else {
+    /// Take the page out of the content area, leaving whatever brings a window forward next to do so.
+    private func leavePage() {
+        guard model.shownPage != nil else {
             return
         }
-        model.isShowingSettings = false
-        settingsWindowId = nil
+        model.shownPage = nil
+        asideWindowId = nil
         shortcutRecorder.cancel()
         if panel.isKeyWindow {
             panel.resignKey()

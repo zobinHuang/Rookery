@@ -131,8 +131,8 @@ final class StageModel {
     /// A zone that just received a window, which pulses once.
     var landedZone: StageZone?
     var isSidebarCollapsed = false
-    /// Whether the content area shows the settings, with the front window set aside.
-    var isShowingSettings = false
+    /// The page the content area shows with the front window set aside, or nil for the front window.
+    var shownPage: StagePage?
     var sidebarMode = SidebarMode.groups
     /// Whether MuxShots draws dark now, which picks the theme button's symbol.
     var isDarkTheme = false
@@ -200,4 +200,9 @@ final class StageModel {
 
     /// Each zone's frame in the hosting view, origin at its top-left, as last laid out.
     @ObservationIgnored var mapZoneFrames: [StageZone: CGRect] = [:]
+}
+
+/// A page the content area can show in place of the front window.
+enum StagePage {
+    case settings
 }

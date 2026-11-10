@@ -135,7 +135,7 @@ final class StageCoordinator: DropSurface {
         guard let stage = stage(at: NSEvent.mouseLocation) ?? listStages.first(where: \.isShowing) else {
             return false
         }
-        stage.openSettings()
+        stage.open(.settings)
         return true
     }
 

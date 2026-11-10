@@ -41,10 +41,10 @@ protocol StageActions: AnyObject {
     func exitStage()
     /// Open another MuxShots window.
     func newStage()
-    /// Show the settings in the content area, or close them if they show.
-    func showSettings()
-    /// Close the settings shown in the content area and bring its front window back.
-    func closeSettings()
+    /// Show a page in the content area, or close it if it shows.
+    func showPage(_ page: StagePage)
+    /// Close the page shown in the content area and bring its front window back.
+    func closePage()
     /// The user is dragging the stage by its sidebar header, towards another display.
     func moveStageChanged()
     func moveStageEnded()
@@ -426,7 +426,9 @@ struct StageView: View {
                 help: model.isDarkTheme ? "Switch to the light theme" : "Switch to the dark theme",
                 action: actions.toggleTheme
             )
-            headerButton("gearshape", help: "Settings", action: actions.showSettings)
+            headerButton("gearshape", help: "Settings") {
+                actions.showPage(.settings)
+            }
             if !model.isSidebarCollapsed {
                 Spacer(minLength: 0)
             }
@@ -859,12 +861,12 @@ struct StageView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(StageColors.content)
-            if model.isShowingSettings {
+            if model.shownPage == .settings {
                 SettingsView(
                     preferences: preferences,
                     recorder: shortcutRecorder,
                     agentUsageMonitor: agentUsage,
-                    onClose: actions.closeSettings
+                    onClose: actions.closePage
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.selectedWindowId == nil {
@@ -883,7 +885,7 @@ struct StageView: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .animation(Self.zoneAnimation, value: model.isShowingSettings)
+        .animation(Self.zoneAnimation, value: model.shownPage)
         .modifier(ZoneFrameReporter(zone: .content, model: model))
     }
 

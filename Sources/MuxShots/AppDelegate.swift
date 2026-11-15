@@ -72,7 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenuController = controller
         controller.start()
         NSApplication.shared.mainMenu = makeMainMenu()
-        mixerController.start()
+        applyMixerEnabled()
+        preferences.onMixerEnabledChange = { [weak self] in
+            self?.applyMixerEnabled()
+        }
         agentUsageMonitor.start()
         preferences.onAgentAccountsChange = { [weak self] in
             self?.agentUsageMonitor.accountsDidChange()
@@ -113,6 +116,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlServer?.stop()
         mixerController.stop()
         agentUsageMonitor.stop()
+    }
+
+    /// Run the mixer while the settings turn it on; stopping it gives every application its sound back.
+    private func applyMixerEnabled() {
+        if preferences.isMixerEnabled {
+            mixerController.start()
+        } else {
+            mixerController.stop()
+        }
     }
 
     /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen, fading the

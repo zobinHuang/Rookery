@@ -8,6 +8,7 @@ import os
 /// Serves `muxctl` requests on the control socket.
 final class ControlServer: Sendable {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "control")
+    private static let mixerOffMessage = "the mixer is off; turn it on under General in the settings"
 
     private let tracker: WindowTracker
     private let workspaceController: WorkspaceController
@@ -91,6 +92,15 @@ final class ControlServer: Sendable {
         do {
             guard let request = try await connection.receive(ControlRequest.self) else {
                 return
+            }
+            switch request {
+            case .mixer, .mixerApply, .mixerTogglePicture:
+                guard await mixerController.isRunning else {
+                    try await connection.send(ControlMessage.failure(message: Self.mixerOffMessage))
+                    return
+                }
+            default:
+                break
             }
             switch request {
             case .list:

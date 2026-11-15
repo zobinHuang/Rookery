@@ -149,9 +149,14 @@ struct StageView: View {
             model.isReceivingWindow
             || model.isDraggingTab && model.sidebarMode != .notes
         else {
-            return model.sidebarMode
+            return listShownModes.contains(model.sidebarMode) ? model.sidebarMode : .groups
         }
         return .groups
+    }
+
+    /// The modes the switch offers: the mixer only while the settings turn it on.
+    private var listShownModes: [SidebarMode] {
+        SidebarMode.allCases.filter { $0 != .mixer || preferences.isMixerEnabled }
     }
 
     private var sidebar: some View {
@@ -358,7 +363,7 @@ struct StageView: View {
         Group {
             if model.isSidebarCollapsed {
                 VStack(spacing: 4) {
-                    ForEach(SidebarMode.allCases, id: \.self) { mode in
+                    ForEach(listShownModes, id: \.self) { mode in
                         Button {
                             model.sidebarMode = mode
                         } label: {
@@ -382,7 +387,7 @@ struct StageView: View {
                 .frame(maxWidth: .infinity)
             } else {
                 HStack(spacing: 2) {
-                    ForEach(SidebarMode.allCases, id: \.self) { mode in
+                    ForEach(listShownModes, id: \.self) { mode in
                         Button {
                             model.sidebarMode = mode
                         } label: {

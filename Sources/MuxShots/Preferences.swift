@@ -70,6 +70,7 @@ final class Preferences {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "preferences")
     private static let dropTrayKey = "isDropTrayEnabled"
     private static let returnDroppedKey = "isReturningDroppedWindows"
+    private static let mixerEnabledKey = "isMixerEnabled"
     private static let groupModifiersKey = "groupModifiers"
     private static let showAllHotkeyKey = "showAllHotkey"
     private static let switcherHotkeyKey = "switcherHotkey"
@@ -101,6 +102,8 @@ final class Preferences {
     @ObservationIgnored private let defaults: UserDefaults
     /// Called after any shortcut changes, so they can be registered again.
     @ObservationIgnored var onShortcutsChange: (() -> Void)?
+    /// Called after the mixer is turned on or off, so it can start or give every application its sound back.
+    @ObservationIgnored var onMixerEnabledChange: (() -> Void)?
     /// Called after the theme changes, so it can be applied.
     @ObservationIgnored var onThemeChange: (() -> Void)?
     /// Called after the world clock's cities change, so the stages can show them.
@@ -185,6 +188,15 @@ final class Preferences {
         }
     }
 
+    /// Whether the mixer runs: off by default, when no application's sound is taken over and the sidebar
+    /// has no mixer.
+    var isMixerEnabled: Bool {
+        didSet {
+            defaults.set(isMixerEnabled, forKey: Self.mixerEnabledKey)
+            onMixerEnabledChange?()
+        }
+    }
+
     /// Whether a window dropped on MuxShots goes back to where its drag started.
     var isReturningDroppedWindows: Bool {
         didSet {
@@ -237,6 +249,7 @@ final class Preferences {
         self.defaults = defaults
         isDropTrayEnabled = defaults.object(forKey: Self.dropTrayKey) as? Bool ?? true
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
+        isMixerEnabled = defaults.bool(forKey: Self.mixerEnabledKey)
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         stageTitle = defaults.string(forKey: Self.stageTitleKey) ?? ""

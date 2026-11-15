@@ -140,6 +140,9 @@ struct SettingsView: View {
             .padding(.top, 11)
             .padding(.bottom, 8)
             .modifier(SettingsSeparator())
+            SettingsRow(title: "Mixer", detail: "Sound by application and by browser tab") {
+                Toggle("", isOn: $preferences.isMixerEnabled)
+            }
             SettingsRow(title: "Sidebar Title") {
                 TextField(Preferences.hostName, text: $preferences.stageTitle)
                     .textFieldStyle(.roundedBorder)

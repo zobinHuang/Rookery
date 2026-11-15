@@ -2,6 +2,8 @@
 
 How MuxShots takes over an app's sound and plays it back treated.
 
+The mixer is off unless Mixer is turned on under General in the settings (`Preferences.isMixerEnabled`). While it is off, `MixerController` is not started, so no app's sound is taken over and no process taps exist; the sidebar's switch has no Mixer, and `muxctl audio` answers that the mixer is off. Turning it off at run time stops the controller, which gives every app its sound back; turning it on starts it and takes over again the apps whose settings need it. The browser extension still connects, since sidebar videos come through it, and keeps treating tabs it was told to treat before; but the sidebar videos are opened from the mixer's tab list, so none can be opened while it is off.
+
 ## Capturing an app
 
 - **Processes**: `AudioProcessDirectory` lists Core Audio's process objects with their pids and bundle ids. An app's sound often comes from helpers (a browser's audio service), so a process belongs to an app when its bundle id is the app's or starts with it followed by a dot. Safari's sound comes from `com.apple.WebKit.GPU` and is not matched yet.

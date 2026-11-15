@@ -27,6 +27,8 @@ final class MixerController {
     @ObservationIgnored private var meterViewerCount = 0
     /// The settings of every application ever adjusted, by bundle id.
     private var mapSettings: [String: MixerTrackSettings]
+    /// Whether the mixer runs, between `start()` and `stop()`.
+    private(set) var isRunning = false
     /// The applications that can be mixed: those connected to the audio system, and those taken over.
     private(set) var listTracks: [MixerTrackStatus] = []
     /// How loud each captured track is now, for its meter, by bundle id.
@@ -40,6 +42,10 @@ final class MixerController {
 
     /// Take over the sound of the applications taken over before, and keep the track list current.
     func start() {
+        guard !isRunning else {
+            return
+        }
+        isRunning = true
         mixer.onChange = { [weak self] in
             self?.reloadTracks()
         }
@@ -62,6 +68,7 @@ final class MixerController {
 
     /// Give every application its sound back.
     func stop() {
+        isRunning = false
         meterTimer?.invalidate()
         meterTimer = nil
         mixer.releaseAll()

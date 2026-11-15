@@ -4,7 +4,6 @@ import Observation
 import os
 import RookeryCore
 import RookeryPlatform
-import SystemConfiguration
 
 /// The appearance Rookery draws in. The high-contrast ones, after the editor themes of the same name, draw
 /// on pure black or white and outline every panel, and the selected one in a second color.
@@ -78,7 +77,6 @@ final class Preferences {
     private static let stageHotkeyKey = "stageHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let themeKey = "theme"
-    private static let stageTitleKey = "stageTitle"
     private static let screenSaverTextKey = "screenSaverText"
     private static let screenSaverTextSizeKey = "screenSaverTextSize"
     /// Where the world clock's cities were kept when they were time zones alone, read once to carry them over.
@@ -141,24 +139,6 @@ final class Preferences {
             defaults.set(theme?.rawValue, forKey: Self.themeKey)
             onThemeChange?()
         }
-    }
-
-    /// The name the stage's sidebar shows at its top, as the user typed it; empty for the Mac's host name.
-    var stageTitle: String {
-        didSet {
-            defaults.set(stageTitle, forKey: Self.stageTitleKey)
-        }
-    }
-
-    /// The name the stage's sidebar shows: the one the user chose, else the Mac's host name.
-    var shownStageTitle: String {
-        let title = stageTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? Self.hostName : title
-    }
-
-    /// The Mac's local host name, as Sharing settings show it without `.local`.
-    static var hostName: String {
-        SCDynamicStoreCopyLocalHostName(nil) as String? ?? ProcessInfo.processInfo.hostName
     }
 
     /// The text the screen saver shows in the content area, as the user typed it; empty for the default.
@@ -252,7 +232,6 @@ final class Preferences {
         isMixerEnabled = defaults.bool(forKey: Self.mixerEnabledKey)
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
-        stageTitle = defaults.string(forKey: Self.stageTitleKey) ?? ""
         screenSaverText = defaults.string(forKey: Self.screenSaverTextKey) ?? ""
         screenSaverTextSize = (defaults.object(forKey: Self.screenSaverTextSizeKey) as? Double)
             .map { min(max($0, Self.screenSaverTextSizeRange.lowerBound), Self.screenSaverTextSizeRange.upperBound) }

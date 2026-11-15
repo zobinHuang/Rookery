@@ -20,7 +20,7 @@ struct SettingsView: View {
     private static let columnMinimumWidth: CGFloat = 420
     private static let columnSpacing: CGFloat = 24
     private static let pagePadding: CGFloat = 36
-    private static let titleFieldWidth: CGFloat = 200
+    private static let fieldWidth: CGFloat = 200
     /// The corner radius of a card of settings.
     static let cardCornerRadius: CGFloat = 12
 
@@ -143,12 +143,6 @@ struct SettingsView: View {
             SettingsRow(title: "Mixer", detail: "Sound by application and by browser tab") {
                 Toggle("", isOn: $preferences.isMixerEnabled)
             }
-            SettingsRow(title: "Sidebar Title") {
-                TextField(Preferences.hostName, text: $preferences.stageTitle)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: Self.titleFieldWidth)
-            }
         }
     }
 
@@ -158,11 +152,11 @@ struct SettingsView: View {
                 TextField(Preferences.defaultScreenSaverText, text: $preferences.screenSaverText)
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
-                    .frame(width: Self.titleFieldWidth)
+                    .frame(width: Self.fieldWidth)
             }
             SettingsRow(title: "Text Size", detail: "\(Int(preferences.screenSaverTextSize)) pt") {
                 Slider(value: $preferences.screenSaverTextSize, in: Preferences.screenSaverTextSizeRange)
-                    .frame(width: Self.titleFieldWidth)
+                    .frame(width: Self.fieldWidth)
             }
         }
     }

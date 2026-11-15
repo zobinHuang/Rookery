@@ -6,53 +6,53 @@ let strictSettings: [SwiftSetting] = [
 ]
 
 let package = Package(
-    name: "MuxShots",
+    name: "Rookery",
     platforms: [
         .macOS("14.2"),
     ],
     products: [
-        .executable(name: "MuxShots", targets: ["MuxShots"]),
+        .executable(name: "MuxShots", targets: ["Rookery"]),
         .executable(name: "muxctl", targets: ["muxctl"]),
-        .executable(name: "muxshots-chrome-host", targets: ["MuxShotsChromeHost"]),
+        .executable(name: "muxshots-chrome-host", targets: ["RookeryChromeHost"]),
     ],
     targets: [
         .target(
-            name: "MuxShotsCore",
+            name: "RookeryCore",
             swiftSettings: strictSettings
         ),
         .target(
-            name: "MuxShotsPlatform",
-            dependencies: ["MuxShotsCore"],
+            name: "RookeryPlatform",
+            dependencies: ["RookeryCore"],
             swiftSettings: strictSettings
         ),
         .target(
-            name: "MuxShotsControl",
-            dependencies: ["MuxShotsCore"],
+            name: "RookeryControl",
+            dependencies: ["RookeryCore"],
             swiftSettings: strictSettings
         ),
         .executableTarget(
-            name: "MuxShots",
-            dependencies: ["MuxShotsCore", "MuxShotsPlatform", "MuxShotsControl"],
+            name: "Rookery",
+            dependencies: ["RookeryCore", "RookeryPlatform", "RookeryControl"],
             swiftSettings: strictSettings
         ),
         .executableTarget(
             name: "muxctl",
-            dependencies: ["MuxShotsCore", "MuxShotsControl"],
+            dependencies: ["RookeryCore", "RookeryControl"],
             swiftSettings: strictSettings
         ),
         .executableTarget(
-            name: "MuxShotsChromeHost",
-            dependencies: ["MuxShotsControl"],
+            name: "RookeryChromeHost",
+            dependencies: ["RookeryControl"],
             swiftSettings: strictSettings
         ),
         .testTarget(
-            name: "MuxShotsCoreTests",
-            dependencies: ["MuxShotsCore", "MuxShotsControl"],
+            name: "RookeryCoreTests",
+            dependencies: ["RookeryCore", "RookeryControl"],
             swiftSettings: strictSettings
         ),
         .testTarget(
-            name: "MuxShotsPlatformTests",
-            dependencies: ["MuxShotsPlatform"],
+            name: "RookeryPlatformTests",
+            dependencies: ["RookeryPlatform"],
             swiftSettings: strictSettings
         ),
     ]

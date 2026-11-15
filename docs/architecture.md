@@ -6,14 +6,14 @@ MuxShots is one SwiftPM package with a Dock app (with a menu bar item), a comman
 
 | Target | Kind | Holds |
 |---|---|---|
-| `MuxShotsCore` | library | Pure models and logic with no system dependencies: windows, groups and the workspace; mixer track settings and equalizer presets; code agent accounts, limits and the Claude Code answer decoder; time zone search. Everything unit-tested lives here. |
-| `MuxShotsPlatform` | library | Everything that talks to macOS: Accessibility and the window server, hotkeys and the event tap, Core Audio process taps and the audio engine, and the code agent usage providers. |
-| `MuxShotsControl` | library | The wire formats shared by the processes: the control socket's requests and messages, and the browser extension's events and commands. |
+| `RookeryCore` | library | Pure models and logic with no system dependencies: windows, groups and the workspace; mixer track settings and equalizer presets; code agent accounts, limits and the Claude Code answer decoder; time zone search. Everything unit-tested lives here. |
+| `RookeryPlatform` | library | Everything that talks to macOS: Accessibility and the window server, hotkeys and the event tap, Core Audio process taps and the audio engine, and the code agent usage providers. |
+| `RookeryControl` | library | The wire formats shared by the processes: the control socket's requests and messages, and the browser extension's events and commands. |
 | `MuxShots` | executable | The app: AppKit controllers and SwiftUI views for the stage, sidebar, mixer, settings and switchers, and the control server. |
 | `muxctl` | executable | The command-line client of the control socket. |
-| `MuxShotsChromeHost` | executable (`muxshots-chrome-host`) | Chrome's native messaging host; bundled inside the app. |
-| `MuxShotsCoreTests` | tests | Swift Testing suites for Core and the wire formats. |
-| `MuxShotsPlatformTests` | tests | Swift Testing suites for the Platform wrappers that need no permission, such as process priority. |
+| `RookeryChromeHost` | executable (`muxshots-chrome-host`) | Chrome's native messaging host; bundled inside the app. |
+| `RookeryCoreTests` | tests | Swift Testing suites for Core and the wire formats. |
+| `RookeryPlatformTests` | tests | Swift Testing suites for the Platform wrappers that need no permission, such as process priority. |
 | `extensions/chrome` | npm package | The Chrome extension: background service worker, content script, offscreen capture document. |
 
 Warnings are errors and the Swift 6 language mode is on everywhere; see `Package.swift`.

@@ -1,6 +1,6 @@
 import Foundation
-import MuxShotsControl
-import MuxShotsCore
+import RookeryControl
+import RookeryCore
 
 /// Command-line client of the running MuxShots app.
 @main

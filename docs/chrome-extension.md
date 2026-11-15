@@ -40,4 +40,4 @@ The extension in `extensions/chrome` lets the mixer treat Chrome tabs one by one
 
 ## Wire format
 
-`BrowserEvent` and `BrowserCommand` in `MuxShotsControl/BrowserProtocol.swift`, mirrored by `messages.ts`, with snake_case keys. Decoding is lenient towards older extensions (missing new fields take defaults), and a message the app cannot read is skipped rather than ending the session.
+`BrowserEvent` and `BrowserCommand` in `RookeryControl/BrowserProtocol.swift`, mirrored by `messages.ts`, with snake_case keys. Decoding is lenient towards older extensions (missing new fields take defaults), and a message the app cannot read is skipped rather than ending the session.

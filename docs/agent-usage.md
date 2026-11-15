@@ -4,7 +4,7 @@ The sidebar's propellant panel shows how much of each code agent account's plan 
 
 ## Reading the limits
 
-Each harness has an `AgentUsageProvider` (`MuxShotsPlatform`), which reads an account's limits by asking the harness itself, so MuxShots never handles the account's credentials. Adding a harness means a case in `AgentHarness`, its markers in `AgentDirectoryContents`, its sign-in command, and a provider declaring its `minimumInterval`.
+Each harness has an `AgentUsageProvider` (`RookeryPlatform`), which reads an account's limits by asking the harness itself, so MuxShots never handles the account's credentials. Adding a harness means a case in `AgentHarness`, its markers in `AgentDirectoryContents`, its sign-in command, and a provider declaring its `minimumInterval`.
 
 **Claude Code** (`ClaudeCodeUsageProvider`) runs
 

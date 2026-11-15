@@ -323,11 +323,13 @@ struct StageView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                HStack(spacing: 10) {
-                    CloseButton(action: actions.exitStage)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        CloseButton(action: actions.exitStage)
+                        headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
+                        Spacer(minLength: 0)
+                    }
                     RookeryLogo()
-                    Spacer(minLength: 0)
-                    headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
                 }
                 .padding(.horizontal, 14)
             }

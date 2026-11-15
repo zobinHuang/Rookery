@@ -5,7 +5,7 @@ import RookeryControl
 import RookeryCore
 import RookeryPlatform
 
-/// Serves `muxctl` requests on the control socket.
+/// Serves `rookeryctl` requests on the control socket.
 final class ControlServer: Sendable {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "control")
     private static let mixerOffMessage = "the mixer is off; turn it on under General in the settings"

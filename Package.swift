@@ -12,7 +12,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "Rookery", targets: ["Rookery"]),
-        .executable(name: "muxctl", targets: ["muxctl"]),
+        .executable(name: "rookeryctl", targets: ["rookeryctl"]),
         .executable(name: "rookery-chrome-host", targets: ["RookeryChromeHost"]),
     ],
     targets: [
@@ -36,7 +36,7 @@ let package = Package(
             swiftSettings: strictSettings
         ),
         .executableTarget(
-            name: "muxctl",
+            name: "rookeryctl",
             dependencies: ["RookeryCore", "RookeryControl"],
             swiftSettings: strictSettings
         ),

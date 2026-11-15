@@ -1,7 +1,7 @@
 import Foundation
 import RookeryCore
 
-/// A request `muxctl` sends to the running app.
+/// A request `rookeryctl` sends to the running app.
 public enum ControlRequest: Codable, Sendable {
     /// Reply once with the groups and the observed state of their windows.
     case list

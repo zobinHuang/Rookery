@@ -4,20 +4,20 @@ import RookeryCore
 
 /// Command-line client of the running Rookery app.
 @main
-enum Muxctl {
+enum Rookeryctl {
     private static let usage = """
-        usage: muxctl list [--json]
-               muxctl watch
-               muxctl manage <window-id> [group-name-or-position]
-               muxctl release <window-id>
-               muxctl focus|hide|show|maximize <window-id>
-               muxctl switch <group-name-or-position> | --all
-               muxctl stage on|off
-               muxctl agents [--json]
-               muxctl audio [--json]
-               muxctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
-               muxctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
-               muxctl audio pip tab:<session>.<tab>
+        usage: rookeryctl list [--json]
+               rookeryctl watch
+               rookeryctl manage <window-id> [group-name-or-position]
+               rookeryctl release <window-id>
+               rookeryctl focus|hide|show|maximize <window-id>
+               rookeryctl switch <group-name-or-position> | --all
+               rookeryctl stage on|off
+               rookeryctl agents [--json]
+               rookeryctl audio [--json]
+               rookeryctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
+               rookeryctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
+               rookeryctl audio pip tab:<session>.<tab>
                  settings: mute=on|off volume=0...2 pan=-1...1 width=0...2 invert=none|left|right|both swap=on|off
                            eq=on|off eq<1-10>=-12...12 (\(bandList)) preset=<preset> reverb=<room> mix=0...100
                  presets: \(EqualizerPreset.allCases.map(\.rawValue).joined(separator: " "))
@@ -86,7 +86,7 @@ enum Muxctl {
                 try print(message, isJson: isJson)
             }
         } catch {
-            exit(withMessage: "muxctl: \(error)")
+            exit(withMessage: "rookeryctl: \(error)")
         }
     }
 
@@ -157,7 +157,7 @@ enum Muxctl {
         case .done:
             break
         case .failure(let failure):
-            exit(withMessage: "muxctl: \(failure)")
+            exit(withMessage: "rookeryctl: \(failure)")
         }
     }
 
@@ -221,7 +221,7 @@ enum Muxctl {
             for assignment in listArguments.dropFirst(2) where assignment != jsonFlag {
                 let parts = assignment.split(separator: "=", maxSplits: 1).map(String.init)
                 guard parts.count == 2, apply(parts[1], to: parts[0], in: &settings) else {
-                    exit(withMessage: "muxctl: bad setting \(assignment)\n\(usage)")
+                    exit(withMessage: "rookeryctl: bad setting \(assignment)\n\(usage)")
                 }
             }
         default:
@@ -245,7 +245,7 @@ enum Muxctl {
                 return listTabs.first { $0.sessionId == sessionId && $0.tab.tabId == tabId }?.settings ?? MixerTrackSettings()
             }
         } catch {
-            exit(withMessage: "muxctl: \(error)")
+            exit(withMessage: "rookeryctl: \(error)")
         }
     }
 

@@ -1,6 +1,6 @@
-# MuxShots
+# Rookery
 
-MuxShots is a macOS app that hosts your windows inside a stage of its own: windows you drag into it are grouped, shown one at a time in the stage's content area and switched as tabs and groups, instead of through native full-screen Spaces. Its sidebar also mixes each app's and each Chrome tab's sound, shows Chrome videos picture-in-picture, keeps a world clock, and shows how much of your code agents' plan limits is left. It is for people who keep many windows of the same apps open across several tasks.
+Rookery is a macOS app that hosts your windows inside a stage of its own: windows you drag into it are grouped, shown one at a time in the stage's content area and switched as tabs and groups, instead of through native full-screen Spaces. Its sidebar also mixes each app's and each Chrome tab's sound, shows Chrome videos picture-in-picture, keeps a world clock, and shows how much of your code agents' plan limits is left. It is for people who keep many windows of the same apps open across several tasks.
 
 ## Usage
 
@@ -15,6 +15,6 @@ To mix Chrome tabs one by one and show their videos in the sidebar, build the ex
 
     make chrome-extension
 
-`muxctl` drives the running app from a terminal, as `muxctl list`, `muxctl audio` or `muxctl agents`.
+`rookeryctl` drives the running app from a terminal, as `rookeryctl list`, `rookeryctl audio` or `rookeryctl agents`.
 
 See [docs/](docs/) for how it works and how to develop it.

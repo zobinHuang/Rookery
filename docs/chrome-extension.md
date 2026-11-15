@@ -1,6 +1,6 @@
 # Chrome extension
 
-The extension in `extensions/chrome` lets the mixer treat Chrome tabs one by one and shows tabs' videos in the sidebar. MuxShots cannot do either from outside: all of Chrome's tabs play through one audio service process, and a background tab's video is never on screen.
+The extension in `extensions/chrome` lets the mixer treat Chrome tabs one by one and shows tabs' videos in the sidebar. Rookery cannot do either from outside: all of Chrome's tabs play through one audio service process, and a background tab's video is never on screen.
 
 ## Parts
 
@@ -18,7 +18,7 @@ The extension in `extensions/chrome` lets the mixer treat Chrome tabs one by one
 ## How a tab is mixed
 
 1. The app's switch sends `apply` with the tab's settings. The background keeps them, mutes or unmutes the tab through Chrome's own tab mute, and passes them to every frame of the tab.
-2. The content script routes playing media elements into its `TrackGraph`, only once the tab is taken over, and only elements whose sound reaches Web Audio. Protected (EME) media and cross-site media without CORS would fall silent, so they are left alone and the tab reports `blocked`. A media element can be routed only once in its life, so the page's audio wiring lives in `globalThis.muxshots_page`, shared by every content script that has run in the page; a newer script, as after an extension update, takes it over and retires the old one.
+2. The content script routes playing media elements into its `TrackGraph`, only once the tab is taken over, and only elements whose sound reaches Web Audio. Protected (EME) media and cross-site media without CORS would fall silent, so they are left alone and the tab reports `blocked`. A media element can be routed only once in its life, so the page's audio wiring lives in `globalThis.rookery_page`, shared by every content script that has run in the page; a newer script, as after an extension update, takes it over and retires the old one.
 3. For a `blocked` tab, the user clicks the toolbar button: `chrome.tabCapture` (which needs that click) captures the whole tab into the offscreen document, and the page stops processing its own media.
 4. Levels are measured only while the app shows a mixer (`meter` command).
 
@@ -35,7 +35,7 @@ The extension in `extensions/chrome` lets the mixer treat Chrome tabs one by one
 ## Identity and installation
 
 - The manifest's `key` fixes the extension id to `lgpadonpeijgfofmlgpgncedeflfifdp`, which the native host's registration allows (`ChromeNativeHost.extensionId`). The private key is not kept; a store release would get a new id, to be set in both places.
-- The app writes the host registration into Chrome's per-user `NativeMessagingHosts` directory at launch, pointing at `muxshots-chrome-host` inside the installed app.
+- The app writes the host registration into Chrome's per-user `NativeMessagingHosts` directory at launch, pointing at `rookery-chrome-host` inside the installed app.
 - Users load `extensions/chrome/dist` unpacked; after a rebuild they press reload in `chrome://extensions`.
 
 ## Wire format

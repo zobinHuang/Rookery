@@ -16,6 +16,9 @@ class LogoBuild {
     /** The app's resources, where the sidebar's logo goes. */
     static readonly APP_RESOURCES_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Resources");
     static readonly SIDEBAR_LOGO_NAME = "SidebarLogo";
+    /** The still logo the repository's README shows, each pixel a block of this many. */
+    static readonly README_LOGO_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "images", "rookery-logo.png");
+    static readonly README_LOGO_SCALE = 2;
     /** The screen scales the sidebar's logo is written for, each pixel a block of that many. */
     static readonly LIST_SIDEBAR_SCALES: readonly number[] = [1, 2];
     /** The backing the logo uses: a yellow outline around the black. */
@@ -43,6 +46,19 @@ class LogoBuild {
         writeFileSync(path, LogoBuild._page(map_animations));
         console.log(path);
         LogoBuild._write_sidebar_logo();
+        LogoBuild._write_readme_logo();
+    }
+
+    /** The full-size horizontal mark's first frame, for the README. */
+    private static _write_readme_logo(): void {
+        const animation = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.FULL_SIZE, true);
+        const first = animation.list_frames[animation.list_sequence[0] ?? 0];
+        if (first === undefined) {
+            throw new Error("the mark has no frames");
+        }
+        mkdirSync(dirname(LogoBuild.README_LOGO_PATH), { recursive: true });
+        writeFileSync(LogoBuild.README_LOGO_PATH, PngWriter.encode(first.enlarged(LogoBuild.README_LOGO_SCALE)));
+        console.log(LogoBuild.README_LOGO_PATH, `${first.width * LogoBuild.README_LOGO_SCALE} × ${first.height * LogoBuild.README_LOGO_SCALE}`);
     }
 
     /**

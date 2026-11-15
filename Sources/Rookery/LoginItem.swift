@@ -1,6 +1,6 @@
 import ServiceManagement
 
-/// Whether MuxShots opens when the user logs in.
+/// Whether Rookery opens when the user logs in.
 @MainActor
 enum LoginItem {
     static var isEnabled: Bool {

@@ -135,7 +135,7 @@ public final class AudioMixer {
             return
         }
         do {
-            let tap = try ProcessTap(listProcessObjectIds: listWanted, name: "MuxShots \(track.bundleId)", ringBuffer: track.ringBuffer)
+            let tap = try ProcessTap(listProcessObjectIds: listWanted, name: "Rookery \(track.bundleId)", ringBuffer: track.ringBuffer)
             track.tap = tap
             track.listTappedObjectIds = listWanted
             try connect(track, sampleRate: tap.sampleRate)

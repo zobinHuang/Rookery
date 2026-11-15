@@ -1,4 +1,4 @@
-/// Something MuxShots can do to a managed window.
+/// Something Rookery can do to a managed window.
 public enum WindowAction: String, Codable, Sendable, CaseIterable {
     /// Bring the window to the front and give it keyboard focus.
     case focus

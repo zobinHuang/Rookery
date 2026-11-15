@@ -35,7 +35,7 @@ public enum ControlRequest: Codable, Sendable {
 /// What a mixer track carries: an application's sound, or one browser tab's.
 public enum MixerTarget: Codable, Equatable, Sendable, CustomStringConvertible {
     case application(bundleId: String)
-    /// A tab of a browser connected through the MuxShots extension.
+    /// A tab of a browser connected through the Rookery extension.
     case browserTab(sessionId: Int, tabId: Int)
 
     private static let tabPrefix = "tab:"
@@ -105,7 +105,7 @@ public struct MixerTrackStatus: Codable, Equatable, Sendable {
     public let name: String
     /// Whether the application, or a helper of it, is playing sound.
     public let isPlaying: Bool
-    /// Whether MuxShots is capturing the sound right now, rather than waiting for it to play.
+    /// Whether Rookery is capturing the sound right now, rather than waiting for it to play.
     public let isCapturing: Bool
     /// Why taking the sound over last failed.
     public let error: String?

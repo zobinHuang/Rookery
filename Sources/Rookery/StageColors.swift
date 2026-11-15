@@ -190,13 +190,13 @@ struct StageTextStyle: ShapeStyle {
 }
 
 extension EnvironmentValues {
-    /// The theme the user chose for MuxShots, set at the root of each of its views; nil to follow the system.
+    /// The theme the user chose for Rookery, set at the root of each of its views; nil to follow the system.
     var chosenTheme: Theme? {
         get { self[ChosenThemeKey.self] }
         set { self[ChosenThemeKey.self] = newValue }
     }
 
-    /// The theme MuxShots draws in here: the chosen one, else the system's light or dark, at increased
+    /// The theme Rookery draws in here: the chosen one, else the system's light or dark, at increased
     /// contrast when the system's accessibility setting asks for it.
     var stageTheme: Theme {
         if let chosenTheme {

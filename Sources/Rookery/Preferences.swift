@@ -6,7 +6,7 @@ import RookeryCore
 import RookeryPlatform
 import SystemConfiguration
 
-/// The appearance MuxShots draws in. The high-contrast ones, after the editor themes of the same name, draw
+/// The appearance Rookery draws in. The high-contrast ones, after the editor themes of the same name, draw
 /// on pure black or white and outline every panel, and the selected one in a second color.
 enum Theme: String, CaseIterable {
     case light
@@ -197,7 +197,7 @@ final class Preferences {
         }
     }
 
-    /// Whether a window dropped on MuxShots goes back to where its drag started.
+    /// Whether a window dropped on Rookery goes back to where its drag started.
     var isReturningDroppedWindows: Bool {
         didSet {
             defaults.set(isReturningDroppedWindows, forKey: Self.returnDroppedKey)

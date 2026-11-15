@@ -18,7 +18,7 @@ public struct GroupId: RawRepresentable, Hashable, Codable, Sendable, CustomStri
     }
 }
 
-/// A named set of managed windows that MuxShots shows, hides and switches as one.
+/// A named set of managed windows that Rookery shows, hides and switches as one.
 public struct WindowGroup: Codable, Equatable, Sendable {
     public let groupId: GroupId
     public var name: String

@@ -322,12 +322,12 @@ struct SettingsView: View {
         case .empty:
             harness = .claudeCode
         case .unsupported(let name):
-            showAccountAlert("MuxShots can't read \(name)'s limits yet", detail: "\(path) belongs to \(name).")
+            showAccountAlert("Rookery can't read \(name)'s limits yet", detail: "\(path) belongs to \(name).")
             return
         case .unknown:
             showAccountAlert(
                 "This isn't a code agent's configuration directory",
-                detail: "MuxShots reads \(AgentHarness.allCases.map(\.title).joined(separator: ", ")); \(path) holds none of them."
+                detail: "Rookery reads \(AgentHarness.allCases.map(\.title).joined(separator: ", ")); \(path) holds none of them."
             )
             return
         }

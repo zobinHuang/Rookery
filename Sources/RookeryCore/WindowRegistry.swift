@@ -46,7 +46,7 @@ public struct WindowRegistry: Sendable {
         return listChanges
     }
 
-    /// Forget one window, as when MuxShots stops managing it.
+    /// Forget one window, as when Rookery stops managing it.
     ///
     /// - Returns: the removal, or nothing if the window was not tracked
     public mutating func remove(_ windowId: WindowId) -> [WindowChange] {

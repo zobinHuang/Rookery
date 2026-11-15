@@ -8,7 +8,7 @@ import WebKit
 @MainActor
 final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "picture")
-    private static let messageHandlerName = "muxshots"
+    private static let messageHandlerName = "rookery"
     /// A secure origin for the page, which WebRTC requires; nothing is loaded from it.
     private static let pageBaseUrl = URL(string: "https://localhost/")
     private static let page = """
@@ -25,7 +25,7 @@ final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDeleg
         <video autoplay playsinline muted></video>
         <script>
         const video = document.querySelector("video");
-        const post = (message) => window.webkit.messageHandlers.muxshots.postMessage(message);
+        const post = (message) => window.webkit.messageHandlers.rookery.postMessage(message);
         let connection;
         video.addEventListener("resize", () => post({ type: "size", width: video.videoWidth, height: video.videoHeight }));
         video.addEventListener("playing", async () => {

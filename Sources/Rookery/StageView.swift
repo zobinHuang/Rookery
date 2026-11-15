@@ -39,7 +39,7 @@ protocol StageActions: AnyObject {
     /// Fill the display with the stage, or go back to its earlier frame.
     func toggleMaximize()
     func exitStage()
-    /// Open another MuxShots window.
+    /// Open another Rookery window.
     func newStage()
     /// Show a page in the content area, or close it if it shows.
     func showPage(_ page: StagePage)
@@ -431,7 +431,7 @@ struct StageView: View {
     private var sidebarToolbar: some View {
         let layout = model.isSidebarCollapsed ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 4))
         return layout {
-            headerButton("plus", help: "New MuxShots window", action: actions.newStage)
+            headerButton("plus", help: "New Rookery window", action: actions.newStage)
             headerButton(
                 model.shownTheme.isDark ? "sun.max" : "moon",
                 help: "Switch to the \(model.shownTheme.opposite.title) theme",
@@ -994,7 +994,7 @@ struct StageView: View {
     }
 }
 
-/// The red close button of a MuxShots window, showing its cross while the pointer is over it, as the
+/// The red close button of a Rookery window, showing its cross while the pointer is over it, as the
 /// close button of any macOS window does.
 struct CloseButton: View {
     private static let diameter: CGFloat = 13
@@ -1020,7 +1020,7 @@ struct CloseButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-        .help("Close this MuxShots window")
+        .help("Close this Rookery window")
     }
 }
 

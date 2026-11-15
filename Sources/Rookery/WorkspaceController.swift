@@ -60,7 +60,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Stages whose front window is being moved to follow them, and where it should end up next.
     private var mapPendingStageFrames: [StageId: CGRect] = [:]
     private var setFollowingStageIds: Set<StageId> = []
-    /// Managed windows something other than MuxShots moved or resized, to put back once the mouse is up.
+    /// Managed windows something other than Rookery moved or resized, to put back once the mouse is up.
     private var setDisplacedIds: Set<WindowId> = []
     private var putBackTask: Task<Void, Never>?
     /// Where windows that cannot take their stage's content area landed instead, so that they are not
@@ -86,7 +86,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var focusTask: Task<Void, Never>?
     private var applicationHidingTask: Task<Void, Never>?
     private var applicationSweepTask: Task<Void, Never>?
-    /// The applications MuxShots hid, which tells one that showed itself again from one never hidden.
+    /// The applications Rookery hid, which tells one that showed itself again from one never hidden.
     private var setHiddenProcessIds: Set<pid_t> = []
     private var activationObserver: NSObjectProtocol?
     private var screenObserver: NSObjectProtocol?
@@ -505,7 +505,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Stop managing a window, first putting it back where it belongs: its place before the stage, or
-    /// before MuxShots hid it.
+    /// before Rookery hid it.
     func release(_ windowId: WindowId) {
         let homeFrame = workspace.markUnstaged(windowId)
         let restoreFrame = workspace.markShown(windowId)
@@ -581,8 +581,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Put every window back where it belongs (its place before the stage, or before MuxShots hid it) and
-    /// leave group mode, as the stage closes and as MuxShots launches or quits.
+    /// Put every window back where it belongs (its place before the stage, or before Rookery hid it) and
+    /// leave group mode, as the stage closes and as Rookery launches or quits.
     func restoreAllWindows() async {
         mapStageContentFrames.removeAll()
         mapStageGroupIds.removeAll()
@@ -761,7 +761,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Hand a dropped window to MuxShots, or release it, and animate it into its target. A window not yet
+    /// Hand a dropped window to Rookery, or release it, and animate it into its target. A window not yet
     /// managed is only taken once it has outlived its drop, since an application may merge it away, as
     /// Chrome does with a tab dragged into another of its windows.
     private func completeDrop(
@@ -808,7 +808,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }?.key
     }
 
-    /// Whether the user is working on the stage: it is open and in front is either MuxShots or the
+    /// Whether the user is working on the stage: it is open and in front is either Rookery or the
     /// application of the stage's front window.
     var isStageFocused: Bool {
         guard
@@ -1258,7 +1258,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             """)
     }
 
-    /// Move a window being shown into place and, if MuxShots hid it, restore it from the Dock there: a
+    /// Move a window being shown into place and, if Rookery hid it, restore it from the Dock there: a
     /// minimized window takes a new frame, so it opens straight into place. An application that ordered the
     /// window out while it was hidden, as WeChat does, is asked to reopen, as a click on its Dock icon would,
     /// and the window is moved once it is back.
@@ -1266,7 +1266,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// - Parameters:
     ///   - frame: where the window goes
     ///   - windowId: the window
-    ///   - isRestoring: whether MuxShots hid the window, so it is restored from the Dock; a window the user
+    ///   - isRestoring: whether Rookery hid the window, so it is restored from the Dock; a window the user
     ///     minimized stays there
     /// - Returns: where the window landed, or nil if it could not be moved
     private func applyShownFrame(_ frame: CGRect, to windowId: WindowId, isRestoring: Bool) async -> CGRect? {
@@ -1550,7 +1550,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Where a window belongs when it is shown: its place before MuxShots hid it, or where it is now.
+    /// Where a window belongs when it is shown: its place before Rookery hid it, or where it is now.
     /// Note a managed window on a stage that is no longer where its stage keeps it, as when the user resizes
     /// it or its application moves it, so it is put back: managed windows stay with their stage until
     /// released.

@@ -22,7 +22,7 @@ public enum ReverbRoom: String, Codable, CaseIterable, Sendable {
     }
 }
 
-/// How the mixer treats one application's sound: whether MuxShots takes it over, and the stereo, equalizer
+/// How the mixer treats one application's sound: whether Rookery takes it over, and the stereo, equalizer
 /// and reverb settings applied while it does, and whether it is muted, which holds whether or not it is
 /// taken over.
 public struct MixerTrackSettings: Codable, Equatable, Sendable {
@@ -34,7 +34,7 @@ public struct MixerTrackSettings: Codable, Equatable, Sendable {
     public static let equalizerGainRange: ClosedRange<Float> = -12...12
     public static let reverbMixRange: ClosedRange<Float> = 0...100
 
-    /// Whether MuxShots takes the sound over; while it does not, the application plays as it always would.
+    /// Whether Rookery takes the sound over; while it does not, the application plays as it always would.
     public var isTakenOver = false
     /// Whether the sound is silenced, keeping every other setting for when it is unmuted.
     public var isMuted = false

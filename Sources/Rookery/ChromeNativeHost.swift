@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// The registration that lets Chrome start MuxShots' native messaging host for the MuxShots extension: a
+/// The registration that lets Chrome start Rookery's native messaging host for the Rookery extension: a
 /// manifest in Chrome's per-user host directory pointing at the host inside this app.
 enum ChromeNativeHost {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "chrome")
@@ -25,7 +25,7 @@ enum ChromeNativeHost {
         }
         let manifest: [String: Any] = [
             "name": hostName,
-            "description": "MuxShots mixer",
+            "description": "Rookery mixer",
             "path": executableUrl.path,
             "type": "stdio",
             "allowed_origins": ["chrome-extension://\(extensionId)/"],

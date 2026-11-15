@@ -15,7 +15,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             defer: true
         )
         super.init()
-        window.title = "MuxShots Settings"
+        window.title = "Rookery Settings"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
         window.delegate = self

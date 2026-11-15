@@ -2,7 +2,7 @@ import AppKit
 import RookeryCore
 import RookeryPlatform
 
-/// The menu bar item: shows whether MuxShots can manage windows and offers the way to grant access.
+/// The menu bar item: shows whether Rookery can manage windows and offers the way to grant access.
 @MainActor
 final class StatusMenuController: NSObject, NSMenuDelegate {
     private static let symbolName = "rectangle.stack"
@@ -58,7 +58,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
     func start() {
         statusItem.button?.image = NSImage(
             systemSymbolName: Self.symbolName,
-            accessibilityDescription: "MuxShots"
+            accessibilityDescription: "Rookery"
         )
 
         permissionItem.isEnabled = false
@@ -80,7 +80,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
         settingsItem.action = #selector(showSettings)
 
         let quitItem = NSMenuItem(
-            title: "Quit MuxShots",
+            title: "Quit Rookery",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )

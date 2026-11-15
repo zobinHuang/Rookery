@@ -61,7 +61,7 @@ struct AccessibilityElement {
         return mapFound
     }
 
-    /// Whether this element is a window MuxShots manages, as opposed to a sheet, popover or panel.
+    /// Whether this element is a window Rookery manages, as opposed to a sheet, popover or panel.
     var isWindow: Bool {
         get throws {
             guard let subrole = try string(kAXSubroleAttribute) else {

@@ -25,7 +25,7 @@ struct MixerBrowserTab: Identifiable, Equatable {
     }
 }
 
-/// The browser tabs the mixer can treat one by one, through the MuxShots browser extension: which tabs
+/// The browser tabs the mixer can treat one by one, through the Rookery browser extension: which tabs
 /// the connected extensions report, the settings of each, and their meters. The extension keeps each tab's
 /// settings across the app's restarts and hands them back on reconnecting. Here, settings last as long as the
 /// tab's browser stays connected; when it disconnects, the extension gives every tab its sound back.

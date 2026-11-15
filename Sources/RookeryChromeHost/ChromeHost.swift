@@ -1,7 +1,7 @@
 import Foundation
 import RookeryControl
 
-/// The native messaging host Chrome starts for the MuxShots extension: relays the extension's messages to
+/// The native messaging host Chrome starts for the Rookery extension: relays the extension's messages to
 /// the running app and the app's back, until either side goes away.
 ///
 /// Chrome frames each message as a 32-bit length in native byte order followed by that many bytes of JSON;

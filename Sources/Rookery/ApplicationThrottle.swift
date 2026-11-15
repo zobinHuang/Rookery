@@ -2,8 +2,8 @@ import AppKit
 import os
 import RookeryPlatform
 
-/// The applications an earlier build of MuxShots put in the background (`ProcessPriority`) while all their
-/// windows were hidden, which are put back to normal. MuxShots no longer puts any there: their helpers starved
+/// The applications an earlier build of Rookery put in the background (`ProcessPriority`) while all their
+/// windows were hidden, which are put back to normal. Rookery no longer puts any there: their helpers starved
 /// in the background band and made the whole machine lag.
 @MainActor
 final class ApplicationThrottle {
@@ -18,7 +18,7 @@ final class ApplicationThrottle {
         setProcessIds = Set((defaults.array(forKey: Self.processIdsKey) as? [Int32]) ?? [])
     }
 
-    /// The applications MuxShots has put in the background.
+    /// The applications Rookery has put in the background.
     var setThrottledProcessIds: Set<pid_t> {
         setProcessIds
     }
@@ -35,7 +35,7 @@ final class ApplicationThrottle {
         store()
     }
 
-    /// Put an application back to normal, if MuxShots put it in the background.
+    /// Put an application back to normal, if Rookery put it in the background.
     func release(_ processId: pid_t) {
         guard setProcessIds.remove(processId) != nil else {
             return
@@ -51,7 +51,7 @@ final class ApplicationThrottle {
         }
     }
 
-    /// Put every application MuxShots put in the background back to normal, as MuxShots quits.
+    /// Put every application Rookery put in the background back to normal, as Rookery quits.
     func releaseAll() {
         for processId in setProcessIds {
             release(processId)

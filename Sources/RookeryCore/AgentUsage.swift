@@ -1,6 +1,6 @@
 import Foundation
 
-/// A code agent harness whose plan limits MuxShots can show.
+/// A code agent harness whose plan limits Rookery can show.
 public enum AgentHarness: String, Codable, CaseIterable, Sendable {
     case claudeCode
 
@@ -246,9 +246,9 @@ public enum ClaudeCodeUsageDecoder {
 
 /// What a configuration directory holds, as far as the code agents it may belong to go.
 public enum AgentDirectoryContents: Equatable, Sendable {
-    /// A harness MuxShots reads the limits of keeps its configuration there.
+    /// A harness Rookery reads the limits of keeps its configuration there.
     case harness(AgentHarness)
-    /// A code agent MuxShots cannot read the limits of yet keeps its configuration there.
+    /// A code agent Rookery cannot read the limits of yet keeps its configuration there.
     case unsupported(name: String)
     /// Nothing is there yet, as for a directory made for a new account to sign in to.
     case empty

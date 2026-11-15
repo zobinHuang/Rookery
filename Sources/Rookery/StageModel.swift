@@ -134,7 +134,7 @@ final class StageModel {
     /// The page the content area shows with the front window set aside, or nil for the front window.
     var shownPage: StagePage?
     var sidebarMode = SidebarMode.groups
-    /// The theme MuxShots draws in now, chosen or the system's, which picks the theme button's symbol.
+    /// The theme Rookery draws in now, chosen or the system's, which picks the theme button's symbol.
     var shownTheme = Theme.light
     /// The cities the world clock shows.
     var listClockCities: [WorldClockCity] = []

@@ -61,7 +61,7 @@ public enum WindowServer {
     ///
     /// - Parameters:
     ///   - point: the point in global screen coordinates, origin at the top-left of the main display
-    ///   - excludedProcessId: the process whose windows never match, typically MuxShots itself
+    ///   - excludedProcessId: the process whose windows never match, typically Rookery itself
     public static func frontmostWindow(at point: CGPoint, excluding excludedProcessId: pid_t) -> WindowServerWindow? {
         listOnScreenWindows().first { $0.processId != excludedProcessId && $0.frame.contains(point) }
     }

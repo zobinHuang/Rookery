@@ -9,7 +9,7 @@ public enum ControlConnectionError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case .unreachable(let path, let reason):
-            "cannot connect to \(path) (is MuxShots running?): \(reason)"
+            "cannot connect to \(path) (is Rookery running?): \(reason)"
         case .transport(let reason):
             "control connection failed: \(reason)"
         }

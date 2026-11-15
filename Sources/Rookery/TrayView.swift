@@ -43,7 +43,7 @@ struct TrayView: View {
             Image(systemName: "rectangle.stack.badge.plus")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.tint)
-            Text(model.draggedGroupName.map { "Move from \($0)" } ?? "Add to MuxShots")
+            Text(model.draggedGroupName.map { "Move from \($0)" } ?? "Add to Rookery")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
         }

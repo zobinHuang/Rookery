@@ -1,4 +1,4 @@
-/// An application process whose windows MuxShots tracks.
+/// An application process whose windows Rookery tracks.
 public struct RunningApplication: Codable, Hashable, Sendable {
     /// The process identifier.
     public let processId: Int32

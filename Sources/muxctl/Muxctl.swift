@@ -2,7 +2,7 @@ import Foundation
 import RookeryControl
 import RookeryCore
 
-/// Command-line client of the running MuxShots app.
+/// Command-line client of the running Rookery app.
 @main
 enum Muxctl {
     private static let usage = """
@@ -161,7 +161,7 @@ enum Muxctl {
         }
     }
 
-    /// One table row: id, flags (Fullscreen, Minimized, On screen, Hidden by MuxShots), application, frame, title.
+    /// One table row: id, flags (Fullscreen, Minimized, On screen, Hidden by Rookery), application, frame, title.
     private static func row(for window: WindowRecord, isHidden: Bool, name: String? = nil) -> String {
         let flags = [
             window.isFullscreen ? "F" : "-",

@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-/// Which windows MuxShots manages and how they are grouped; a window belongs to at most one group.
+/// Which windows Rookery manages and how they are grouped; a window belongs to at most one group.
 public struct Workspace: Codable, Equatable, Sendable {
     private static let defaultGroupNamePrefix = "Group "
 
@@ -84,7 +84,7 @@ public struct Workspace: Codable, Equatable, Sendable {
         listGroups.flatMap(\.listMembers)
     }
 
-    /// Whether MuxShots manages a window.
+    /// Whether Rookery manages a window.
     public func isManaged(_ windowId: WindowId) -> Bool {
         group(containing: windowId) != nil
     }
@@ -139,7 +139,7 @@ public struct Workspace: Codable, Equatable, Sendable {
         return isChanged
     }
 
-    /// The managed windows MuxShots has moved off screen.
+    /// The managed windows Rookery has moved off screen.
     public var listHiddenWindows: [ManagedWindow] {
         listManagedWindows.filter(\.isHidden)
     }

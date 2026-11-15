@@ -3,7 +3,7 @@ import RookeryCore
 import SwiftUI
 
 /// The mixer in the stage's sidebar: a strip for every application connected to the audio system, then
-/// one for every browser tab playing or taken over through the MuxShots browser extension. A strip takes
+/// one for every browser tab playing or taken over through the Rookery browser extension. A strip takes
 /// its sound over with its switch, then offers a meter and volume, and opens to show pan, stereo,
 /// equalizer and reverb.
 struct MixerView: View {
@@ -71,7 +71,7 @@ struct MixerView: View {
                     .padding(.leading, 10)
             }
         } else if mixer.browserTabs.sessionCount == 0 && isChromeListed {
-            Text("Add the MuxShots extension to Chrome to mix its tabs one by one.")
+            Text("Add the Rookery extension to Chrome to mix its tabs one by one.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(StageColors.tertiaryText)
                 .padding(.horizontal, 6)
@@ -249,7 +249,7 @@ struct MixerView: View {
             MixerStripStatus(
                 text: "Needs a tab capture",
                 color: .orange,
-                help: "This page's sound can't be mixed from inside it; capture the whole tab with the MuxShots button in Chrome's toolbar"
+                help: "This page's sound can't be mixed from inside it; capture the whole tab with the Rookery button in Chrome's toolbar"
             )
         case .captured:
             MixerStripStatus(text: "Mixing the whole tab", color: .accentColor)

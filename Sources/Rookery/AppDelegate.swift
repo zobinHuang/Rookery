@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen, fading the
+    /// Draw every Rookery window in the chosen theme, or the system's when none is chosen, fading the
     /// stages from one to the other.
     private func applyTheme() {
         let appearance = preferences.theme.flatMap { NSAppearance(named: $0.appearanceName) }
@@ -140,20 +140,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The menu bar MuxShots shows while it is the active application.
+    /// The menu bar Rookery shows while it is the active application.
     private func makeMainMenu() -> NSMenu {
-        let applicationMenu = NSMenu(title: "MuxShots")
-        applicationMenu.addItem(withTitle: "About MuxShots", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let applicationMenu = NSMenu(title: "Rookery")
+        applicationMenu.addItem(withTitle: "About Rookery", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         applicationMenu.addItem(.separator())
         applicationMenu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        applicationMenu.addItem(withTitle: "New MuxShots Window", action: #selector(newStage), keyEquivalent: "n").target = self
+        applicationMenu.addItem(withTitle: "New Rookery Window", action: #selector(newStage), keyEquivalent: "n").target = self
         applicationMenu.addItem(withTitle: "Open or Close Stage Here", action: #selector(toggleStage), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Close All Stages", action: #selector(closeAllStages), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Move Stage to Next Display", action: #selector(moveStageToNextDisplay), keyEquivalent: "").target = self
         applicationMenu.addItem(withTitle: "Show Managed Windows…", action: #selector(showPanel), keyEquivalent: "").target = self
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(withTitle: "Hide MuxShots", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        applicationMenu.addItem(withTitle: "Quit MuxShots", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        applicationMenu.addItem(withTitle: "Hide Rookery", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        applicationMenu.addItem(withTitle: "Quit Rookery", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")

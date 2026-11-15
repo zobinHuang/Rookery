@@ -3,7 +3,7 @@ import OSLog
 import RookeryCore
 import RookeryPlatform
 
-/// The stage's window. It takes keyboard input only while a name is edited, and never activates MuxShots,
+/// The stage's window. It takes keyboard input only while a name is edited, and never activates Rookery,
 /// so clicking the stage leaves its front window's application in front.
 final class StagePanel: NSPanel {
     /// The window the stage shows, which a press on the stage must not cover: AppKit orders a pressed window

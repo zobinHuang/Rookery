@@ -189,7 +189,7 @@ public actor WindowTracker {
     }
 
     /// A stream of every change from now on, ending when the tracker stops. A removal means the window
-    /// closed or MuxShots stopped managing it.
+    /// closed or Rookery stopped managing it.
     public func changes() -> AsyncStream<WindowChange> {
         let subscriberId = UUID()
         let (stream, continuation) = AsyncStream.makeStream(of: WindowChange.self)
@@ -233,7 +233,7 @@ public actor WindowTracker {
     }
 
     /// Record a tracker's snapshot. A managed window that closed is reported removed even if it closed before
-    /// it was ever observed, as a window an application merges away right after it is dropped on MuxShots.
+    /// it was ever observed, as a window an application merges away right after it is dropped on Rookery.
     private func apply(_ snapshot: ApplicationSnapshot) {
         let processId = snapshot.application.processId
         let listWindows = snapshot.listWindows.filter { mapManagedProcessIds[$0.windowId] == processId }

@@ -3,7 +3,7 @@ import RookeryCore
 
 /// Reads Claude Code's plan limits by asking Claude Code itself: it runs headless with its stream-json
 /// control protocol, answers a `get_usage` request and exits. Claude Code signs in on its own, so
-/// MuxShots never handles the account's credentials; no prompt is sent, so no model is called, and the
+/// Rookery never handles the account's credentials; no prompt is sent, so no model is called, and the
 /// run neither saves a session nor runs the user's hooks.
 public struct ClaudeCodeUsageProvider: AgentUsageProvider {
     private static let executableName = "claude"
@@ -23,8 +23,8 @@ public struct ClaudeCodeUsageProvider: AgentUsageProvider {
         "--setting-sources", "",
     ]
     private static let configDirectoryVariable = "CLAUDE_CONFIG_DIR"
-    private static let initializeRequestId = "muxshots-initialize"
-    private static let usageRequestId = "muxshots-usage"
+    private static let initializeRequestId = "rookery-initialize"
+    private static let usageRequestId = "rookery-usage"
     private static let timeout = Duration.seconds(20)
 
     public let harness = AgentHarness.claudeCode

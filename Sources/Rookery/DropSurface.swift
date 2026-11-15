@@ -1,7 +1,7 @@
 import AppKit
 import RookeryCore
 
-/// Somewhere a dragged window can be dropped to hand it to MuxShots: the tray, or the open panel.
+/// Somewhere a dragged window can be dropped to hand it to Rookery: the tray, or the open panel.
 /// Cursor locations and frames are in AppKit screen coordinates.
 @MainActor
 protocol DropSurface: AnyObject {

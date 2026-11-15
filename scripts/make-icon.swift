@@ -1,4 +1,4 @@
-// Draws the MuxShots app icon and writes Resources/AppIcon.icns: three stacked window cards on a gradient.
+// Draws the Rookery app icon and writes Resources/AppIcon.icns: three stacked window cards on a gradient.
 import AppKit
 
 let canvasSize: CGFloat = 1024

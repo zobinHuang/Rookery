@@ -36,7 +36,7 @@ final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutli
         )
         super.init()
 
-        panel.title = "MuxShots"
+        panel.title = "Rookery"
         panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false

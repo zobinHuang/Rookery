@@ -1,16 +1,21 @@
 /**
- * A key of the palette: `.` is transparent, the rest name the logo's five colors.
+ * A key of the palette: `.` is transparent, `S` the ground shadow, whose color depends on what is behind it,
+ * and the rest name the logo's colors.
  */
-export type PaletteKey = "." | "K" | "G" | "Y" | "L" | "W";
+export type PaletteKey = "." | "S" | "K" | "G" | "M" | "H" | "Y" | "L" | "W";
+
+/** A key that stands for one fixed color. */
+type ColorKey = Exclude<PaletteKey, "." | "S">;
 
 /**
- * One crow, drawn on the 32 by 32 grid and redrawn by hand on the 16 by 16 one for the smallest icons.
+ * One crow, drawn on the 64 by 64 grid for large sizes, and on the 32 and 16 pixel grids for the small ones.
  */
 export interface CrowDesign {
     name: string;
     title: string;
     note: string;
     list_rows_large: readonly string[];
+    list_rows_medium: readonly string[];
     list_rows_small: readonly string[];
 }
 
@@ -24,10 +29,12 @@ export type Backing = "tile" | "outline" | "none";
  * SVG drawing. Every pixel is a whole square on an integer position, so nothing is ever blended.
  */
 export class PixelGrid {
-    /** The logo's colors, five in all. */
-    static readonly PALETTE_COLORS: Readonly<Record<Exclude<PaletteKey, ".">, string>> = {
+    /** The logo's colors: the five of the brief, and two sheen greys that light the black feathers. */
+    static readonly PALETTE_COLORS: Readonly<Record<ColorKey, string>> = {
         K: "#0E0E10",
         G: "#2A2A2E",
+        M: "#44444F",
+        H: "#6E6E7E",
         Y: "#FFC83D",
         L: "#FFE58A",
         W: "#FFFFFF",
@@ -78,7 +85,7 @@ export class PixelGrid {
             case "outline":
                 return this._outlined();
             case "none":
-                return this;
+                return new PixelGrid(this.list_rows.map((row) => row.map((key) => (key === "S" ? "G" : key))));
         }
     }
 
@@ -98,7 +105,7 @@ export class PixelGrid {
                     continue;
                 }
                 const key = row[run_start];
-                if (key !== undefined && key !== ".") {
+                if (key !== undefined && key !== "." && key !== "S") {
                     list_rects.push(
                         `<rect x="${run_start * pixel_size}" y="${y * pixel_size}" width="${(x - run_start) * pixel_size}" `
                         + `height="${pixel_size}" fill="${PixelGrid.PALETTE_COLORS[key]}"/>`,
@@ -112,7 +119,7 @@ export class PixelGrid {
     }
 
     private static _palette_key(key: string): PaletteKey {
-        if (key === "." || key in PixelGrid.PALETTE_COLORS) {
+        if (key === "." || key === "S" || key in PixelGrid.PALETTE_COLORS) {
             return key as PaletteKey;
         }
         throw new Error(`"${key}" is not a palette key`);
@@ -145,6 +152,9 @@ export class PixelGrid {
             if (distance_squared > radius * radius + PixelGrid.TILE_CORNER_SLACK) {
                 return ".";
             }
+            if (key === "S") {
+                return "K";
+            }
             if (key !== ".") {
                 return key;
             }
@@ -156,10 +166,13 @@ export class PixelGrid {
     /** A one-pixel yellow outline around the black body; the yellow beak and feet need none. */
     private _outlined(): PixelGrid {
         const list_rows = this.list_rows.map((row, y) => row.map((key, x): PaletteKey => {
+            if (key === "S") {
+                return "G";
+            }
             if (key !== ".") {
                 return key;
             }
-            return this._touches(x, y, "KG", true) ? "Y" : ".";
+            return this._touches(x, y, "KGMH", true) ? "Y" : ".";
         }));
         return new PixelGrid(list_rows);
     }

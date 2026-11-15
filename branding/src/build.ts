@@ -10,11 +10,10 @@ import { type Backing, type CrowDesign, PixelGrid } from "./pixel-grid.ts";
  */
 class LogoBuild {
     static readonly OUTPUT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
-    /** The sizes drawn from the 32-pixel design, in screen pixels. */
-    static readonly LIST_LARGE_SIZES: readonly number[] = [256, 128, 64, 32];
-    /** The 16-pixel design, drawn at its own size and enlarged to check it pixel by pixel. */
-    static readonly SMALL_SIZE = 16;
-    static readonly SMALL_ENLARGED_SIZE = 64;
+    /** The sizes drawn from the 64-pixel design, in screen pixels. */
+    static readonly LIST_LARGE_SIZES: readonly number[] = [512, 256, 128, 64];
+    /** How much the 32 and 16 pixel designs are enlarged beside their own size, to check them pixel by pixel. */
+    static readonly SMALL_ENLARGEMENT = 4;
     static readonly LIST_BACKINGS: readonly { backing: Backing; title: string; note: string }[] = [
         { backing: "tile", title: "A · Yellow tile", note: "App-icon style; the beak and feet are edged in black" },
         { backing: "outline", title: "B · Yellow outline", note: "Transparent, with a 1px yellow outline around the body" },
@@ -55,7 +54,7 @@ h2 .tag { color: var(--page); background: var(--yellow); border-radius: 6px; pad
 .backing { margin: 0 0 18px; }
 .backing h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--text); }
 .backing h3 span { color: var(--muted); font-weight: 400; margin-left: 8px; }
-.surfaces { display: grid; grid-template-columns: repeat(auto-fit, minmax(520px, 1fr)); gap: 12px; }
+.surfaces { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .surface { border-radius: 14px; padding: 18px; display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap; }
 .surface.dark { background: var(--dark); }
 .surface.light { background: var(--light); color: #4b4945; }
@@ -68,7 +67,7 @@ svg { display: block; image-rendering: pixelated; }
 <body>
 <main>
 <h1>Rookery crow drafts</h1>
-<p class="lead">Three original crows on a 32 × 32 grid, each redrawn by hand at 16 × 16. Pick one, and a backing, and it gets the animation, the wordmark and the exports.</p>
+<p class="lead">One original crow, modelled in 3D and lit from the top left, rendered as 2.5D pixel art on 64, 32 and 16 pixel grids. Pick a draft and a backing; that one gets the animation, the wordmark and the exports.</p>
 ${sections}
 </main>
 </body>
@@ -78,7 +77,7 @@ ${sections}
 
     private static _draft_section(draft: CrowDesign, draft_index: number): string {
         const large = PixelGrid.parse(draft.list_rows_large);
-        const small = PixelGrid.parse(draft.list_rows_small);
+        const list_small = [PixelGrid.parse(draft.list_rows_medium), PixelGrid.parse(draft.list_rows_small)];
         const backings = LogoBuild.LIST_BACKINGS.map(({ backing, title, note }) => {
             const surfaces = LogoBuild.LIST_SURFACES
                 .filter((surface) => backing !== "none" || surface.name === "light")
@@ -86,11 +85,14 @@ ${sections}
                     const figures = LogoBuild.LIST_LARGE_SIZES
                         .map((size) => LogoBuild._figure(large.backed(backing).to_svg(size / large.size), `${size}`))
                         .join("");
-                    const small_figures = LogoBuild._figure(small.backed(backing).to_svg(1), `${LogoBuild.SMALL_SIZE}`)
-                        + LogoBuild._figure(
-                            small.backed(backing).to_svg(LogoBuild.SMALL_ENLARGED_SIZE / small.size),
-                            `${LogoBuild.SMALL_SIZE} × 4`,
-                        );
+                    const small_figures = list_small.map((small) => {
+                        const backed = small.backed(backing);
+                        return LogoBuild._figure(backed.to_svg(1), `${small.size}`)
+                            + LogoBuild._figure(
+                                backed.to_svg(LogoBuild.SMALL_ENLARGEMENT),
+                                `${small.size} × ${LogoBuild.SMALL_ENLARGEMENT}`,
+                            );
+                    }).join("");
                     return `<div class="surface ${surface.name}"><div class="label">${surface.title}</div>${figures}${small_figures}</div>`;
                 })
                 .join("");

@@ -28,7 +28,7 @@ export class RookeryMark {
     /** The size the mark is shown at unless a place calls for another. */
     static readonly FULL_SIZE: MarkSize = { grid_size: RookeryMark.GRID_SIZE, font_scale: 4 };
     /** Small enough for the top of the app's sidebar, one logo pixel a point. */
-    static readonly SIDEBAR_SIZE: MarkSize = { grid_size: 56, font_scale: 2 };
+    static readonly SIDEBAR_SIZE: MarkSize = { grid_size: 40, font_scale: 2 };
     /** Pixels between the crows and the name. */
     static readonly LOCKUP_GAP = 6;
     /** Room around the name for its outline. */

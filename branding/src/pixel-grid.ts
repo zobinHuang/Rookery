@@ -25,8 +25,18 @@ export interface CrowDesign {
 export type Backing = "tile" | "outline" | "none";
 
 /**
- * A square grid of palette keys, one per pixel, and what the logo derives from one: the backings and the
- * SVG drawing. Every pixel is a whole square on an integer position, so nothing is ever blended.
+ * One grid placed on another, its top left corner at a pixel.
+ */
+export interface GridPlacement {
+    grid: PixelGrid;
+    left: number;
+    top: number;
+}
+
+/**
+ * A rectangular grid of palette keys, one per pixel, and what the logo derives from one: the backings, the
+ * layouts and the SVG drawing. Every pixel is a whole square on an integer position, so nothing is ever
+ * blended.
  */
 export class PixelGrid {
     /** The logo's colors: the five of the brief, and two sheen greys that light the black feathers. */
@@ -53,23 +63,74 @@ export class PixelGrid {
     /**
      * Read a grid from its rows, one string of palette keys per row.
      *
-     * @param list_rows - the rows, all as long as there are rows
+     * @param list_rows - the rows, all as long as the first
      * @returns the grid
-     * @throws Error when the grid is not square or holds a key outside the palette
+     * @throws Error when the rows differ in length or hold a key outside the palette
      */
     static parse(list_rows: readonly string[]): PixelGrid {
+        const width = list_rows[0]?.length ?? 0;
         const list_parsed = list_rows.map((row) => {
-            if (row.length !== list_rows.length) {
-                throw new Error(`row "${row}" is not ${list_rows.length} pixels long`);
+            if (row.length !== width) {
+                throw new Error(`row "${row}" is not ${width} pixels long`);
             }
-            return [...row].map((key) => PixelGrid._palette_key(key));
+            return [...row].map((key) => PixelGrid.palette_key(key));
         });
         return new PixelGrid(list_parsed);
     }
 
-    /** How many pixels the grid is across and down. */
-    get size(): number {
+    /**
+     * Grids laid out on one empty canvas; where they overlap, the later one's pixels win, but its empty
+     * pixels let the earlier ones show.
+     *
+     * @param width - the canvas's width in pixels
+     * @param height - the canvas's height in pixels
+     * @param list_placements - the grids and where they go
+     * @returns the canvas
+     */
+    static compose(width: number, height: number, list_placements: readonly GridPlacement[]): PixelGrid {
+        const list_rows: PaletteKey[][] = Array.from({ length: height }, () => Array.from({ length: width }, (): PaletteKey => "."));
+        for (const { grid, left, top } of list_placements) {
+            grid.list_rows.forEach((row, y) => row.forEach((key, x) => {
+                const target = list_rows[top + y];
+                if (key !== "." && target !== undefined && left + x >= 0 && left + x < width) {
+                    target[left + x] = key;
+                }
+            }));
+        }
+        return new PixelGrid(list_rows);
+    }
+
+    /**
+     * A grid from rows of keys already read.
+     *
+     * @param list_rows - the rows, as many as each is long
+     * @returns the grid
+     */
+    static from_keys(list_rows: readonly (readonly PaletteKey[])[]): PixelGrid {
+        return new PixelGrid(list_rows.map((row) => [...row]));
+    }
+
+    /** How many pixels the grid is across. */
+    get width(): number {
+        return this.list_rows[0]?.length ?? 0;
+    }
+
+    /** How many pixels the grid is down. */
+    get height(): number {
         return this.list_rows.length;
+    }
+
+    /**
+     * The grid with every pixel made a square block of pixels.
+     *
+     * @param factor - how many pixels across each pixel becomes
+     * @returns the enlarged grid
+     */
+    enlarged(factor: number): PixelGrid {
+        return new PixelGrid(this.list_rows.flatMap((row) => {
+            const wide = row.flatMap((key) => Array.from({ length: factor }, () => key));
+            return Array.from({ length: factor }, () => [...wide]);
+        }));
     }
 
     /**
@@ -96,7 +157,8 @@ export class PixelGrid {
      * @returns the SVG markup
      */
     to_svg(pixel_size: number): string {
-        const side = this.size * pixel_size;
+        const width = this.width * pixel_size;
+        const height = this.height * pixel_size;
         const list_rects: string[] = [];
         this.list_rows.forEach((row, y) => {
             let run_start = 0;
@@ -114,11 +176,18 @@ export class PixelGrid {
                 run_start = x;
             }
         });
-        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}" width="${side}" height="${side}" `
+        return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" `
             + `shape-rendering="crispEdges">${list_rects.join("")}</svg>`;
     }
 
-    private static _palette_key(key: string): PaletteKey {
+    /**
+     * A character read as a palette key.
+     *
+     * @param key - the character
+     * @returns the key
+     * @throws Error when the character is not a palette key
+     */
+    static palette_key(key: string): PaletteKey {
         if (key === "." || key === "S" || key in PixelGrid.PALETTE_COLORS) {
             return key as PaletteKey;
         }
@@ -144,10 +213,10 @@ export class PixelGrid {
 
     /** On a yellow rounded tile, the yellow beak and feet edged in black so they do not melt into it. */
     private _on_tile(): PixelGrid {
-        const radius = this.size * PixelGrid.TILE_CORNER_FRACTION;
+        const radius = Math.min(this.width, this.height) * PixelGrid.TILE_CORNER_FRACTION;
         const list_rows = this.list_rows.map((row, y) => row.map((key, x): PaletteKey => {
-            const corner_x = Math.min(Math.max(x + 0.5, radius), this.size - radius);
-            const corner_y = Math.min(Math.max(y + 0.5, radius), this.size - radius);
+            const corner_x = Math.min(Math.max(x + 0.5, radius), this.width - radius);
+            const corner_y = Math.min(Math.max(y + 0.5, radius), this.height - radius);
             const distance_squared = (x + 0.5 - corner_x) ** 2 + (y + 0.5 - corner_y) ** 2;
             if (distance_squared > radius * radius + PixelGrid.TILE_CORNER_SLACK) {
                 return ".";

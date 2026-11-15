@@ -391,12 +391,14 @@ struct StageView: View {
                         Button {
                             model.sidebarMode = mode
                         } label: {
-                            HStack(spacing: 5) {
+                            HStack(spacing: 4) {
                                 Image(systemName: mode.symbol)
                                     .font(.system(size: 10, weight: .semibold))
                                 Text(mode.title)
                                     .font(.system(size: 11.5, weight: .semibold))
                             }
+                            .fixedSize()
+                            .padding(.horizontal, 3)
                             .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                             .frame(maxWidth: .infinity)
                             .frame(height: 24)

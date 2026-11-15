@@ -1,0 +1,14 @@
+{
+    "name": "rookery-branding",
+    "private": true,
+    "type": "module",
+    "description": "Rookery's pixel crow logo, generated from one set of pixel data",
+    "scripts": {
+        "check": "tsc --noEmit",
+        "build:logo": "tsc --noEmit && node src/build.ts"
+    },
+    "devDependencies": {
+        "@types/node": "^24.0.0",
+        "typescript": "^5.9.0"
+    }
+}

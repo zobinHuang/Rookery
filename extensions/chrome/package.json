@@ -1,7 +1,7 @@
 {
-    "name": "muxshots-chrome-extension",
+    "name": "rookery-chrome-extension",
     "private": true,
-    "description": "Mixes Chrome tabs one by one from the MuxShots mixer",
+    "description": "Mixes Chrome tabs one by one from the Rookery mixer",
     "scripts": {
         "check": "tsc --noEmit",
         "build": "tsc --noEmit && esbuild src/background.ts src/content.ts src/offscreen.ts --bundle --format=iife --target=chrome120 --outdir=dist && cp -R static/ dist/"

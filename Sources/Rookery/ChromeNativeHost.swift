@@ -6,16 +6,27 @@ import os
 enum ChromeNativeHost {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "chrome")
     /// The host's name, which the extension connects to.
-    private static let hostName = "io.github.zobinhuang.muxshots"
-    private static let executableName = "muxshots-chrome-host"
+    private static let hostName = "io.github.zobinhuang.rookery"
+    /// The host's name while the app was called MuxShots, whose registration points at an app now gone.
+    private static let legacyHostName = "io.github.zobinhuang.muxshots"
+    private static let executableName = "rookery-chrome-host"
     /// The extension's id, fixed by the public key in its manifest.
     private static let extensionId = "lgpadonpeijgfofmlgpgncedeflfifdp"
     private static let chromeDirectory = URL.applicationSupportDirectory.appending(path: "Google/Chrome", directoryHint: .isDirectory)
 
-    /// Register the host with Chrome, if Chrome is set up for this user and the registration is not current.
+    /// Register the host with Chrome, if Chrome is set up for this user and the registration is not current,
+    /// and drop the registration left from when the app was called MuxShots.
     static func register() {
         let hostDirectory = chromeDirectory.appending(path: "NativeMessagingHosts", directoryHint: .isDirectory)
         let manifestUrl = hostDirectory.appending(path: "\(hostName).json", directoryHint: .notDirectory)
+        let legacyManifestUrl = hostDirectory.appending(path: "\(legacyHostName).json", directoryHint: .notDirectory)
+        if FileManager.default.fileExists(atPath: legacyManifestUrl.path) {
+            do {
+                try FileManager.default.removeItem(at: legacyManifestUrl)
+            } catch {
+                logger.error("cannot remove the Chrome host registered as MuxShots: \(error)")
+            }
+        }
         let executableUrl = Bundle.main.bundleURL.appending(path: "Contents/MacOS/\(executableName)", directoryHint: .notDirectory)
         guard
             FileManager.default.fileExists(atPath: chromeDirectory.path),

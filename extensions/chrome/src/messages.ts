@@ -1,7 +1,7 @@
 import type { TrackSettings } from "./track-settings";
 
 /**
- * How the extension is treating a tab's sound, as the MuxShots app reads it.
+ * How the extension is treating a tab's sound, as the Rookery app reads it.
  */
 export type TabMode = "idle" | "page" | "waiting" | "blocked" | "captured";
 
@@ -44,7 +44,7 @@ export interface BrowserTab {
 }
 
 /**
- * A message from the extension to the MuxShots app.
+ * A message from the extension to the Rookery app.
  */
 export type BrowserEvent =
     | { type: "tabs"; list_tabs: BrowserTab[] }
@@ -54,7 +54,7 @@ export type BrowserEvent =
     | { type: "picture_ended"; tab_id: number };
 
 /**
- * A message from the MuxShots app to the extension.
+ * A message from the Rookery app to the extension.
  */
 export type BrowserCommand =
     | { type: "hello" }

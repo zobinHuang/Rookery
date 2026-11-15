@@ -13,7 +13,7 @@ import type { TrackSettings } from "./track-settings";
 import { TrackSettingsSchema } from "./track-settings";
 
 /**
- * The extension's hub: connects to the MuxShots app through its native messaging host, reports the tabs
+ * The extension's hub: connects to the Rookery app through its native messaging host, reports the tabs
  * and their levels to it, and carries its settings to each tab, either to the page's own processing or
  * to a capture of the whole tab when the user asked for one with the toolbar button.
  *
@@ -22,8 +22,8 @@ import { TrackSettingsSchema } from "./track-settings";
  * app does, and go with the tab when it closes or with the browser when it quits.
  */
 class MixerBridge {
-    static readonly BRIDGE_HOST_NAME = "io.github.zobinhuang.muxshots";
-    static readonly BRIDGE_RECONNECT_ALARM = "muxshots-reconnect";
+    static readonly BRIDGE_HOST_NAME = "io.github.zobinhuang.rookery";
+    static readonly BRIDGE_RECONNECT_ALARM = "rookery-reconnect";
     static readonly BRIDGE_RECONNECT_MINUTES = 0.5;
     static readonly REPORT_DELAY_MS = 150;
     static readonly LEVELS_INTERVAL_MS = 100;
@@ -518,7 +518,7 @@ class MixerBridge {
                 if (!(err instanceof Error)) {
                     throw err;
                 }
-                console.warn(`MuxShots cannot reach tab ${tab.id}: ${err.message}`);
+                console.warn(`Rookery cannot reach tab ${tab.id}: ${err.message}`);
             }
         }
     }
@@ -618,7 +618,7 @@ class MixerBridge {
             stream_id = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab_id });
         } catch (err: unknown) {
             if (err instanceof Error) {
-                console.warn(`MuxShots cannot capture this tab: ${err.message}`);
+                console.warn(`Rookery cannot capture this tab: ${err.message}`);
                 return;
             }
             throw err;
@@ -654,7 +654,7 @@ class MixerBridge {
         await chrome.offscreen.createDocument({
             url: MixerBridge.OFFSCREEN_PATH,
             reasons: [chrome.offscreen.Reason.USER_MEDIA],
-            justification: "Play captured tabs through the MuxShots mixer",
+            justification: "Play captured tabs through the Rookery mixer",
         });
     }
 

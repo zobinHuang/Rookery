@@ -18,7 +18,7 @@ export interface PageAudio {
 }
 
 /**
- * What every MuxShots script that has run in a page shares: the page's audio once wired, and how to stop
+ * What every Rookery script that has run in a page shares: the page's audio once wired, and how to stop
  * the script running the page now, as a newer one takes over.
  */
 export interface PageState {
@@ -27,7 +27,7 @@ export interface PageState {
 }
 
 declare global {
-    var muxshots_page: PageState | undefined;
+    var rookery_page: PageState | undefined;
 }
 
 /**
@@ -61,9 +61,9 @@ class PageMixer {
      * over from an earlier script if one wired it.
      */
     async start(): Promise<void> {
-        const previous = globalThis.muxshots_page;
+        const previous = globalThis.rookery_page;
         previous?.retire();
-        globalThis.muxshots_page = {
+        globalThis.rookery_page = {
             audio: previous?.audio,
             retire: () => this._retire(),
         };
@@ -147,7 +147,7 @@ class PageMixer {
 
     private async _apply(settings: TrackSettings): Promise<void> {
         this._settings = settings;
-        globalThis.muxshots_page?.audio?.graph.apply(settings);
+        globalThis.rookery_page?.audio?.graph.apply(settings);
         if (settings.is_taken_over) {
             for (const element of document.querySelectorAll<HTMLMediaElement>(PageMixer.MEDIA_SELECTOR)) {
                 if (!element.paused) {
@@ -166,7 +166,7 @@ class PageMixer {
 
     /** Send an element's sound through the track, if it can be processed. */
     private async _route(element: HTMLMediaElement): Promise<void> {
-        const existing = globalThis.muxshots_page?.audio;
+        const existing = globalThis.rookery_page?.audio;
         if (existing?.set_routed.has(element) ?? false) {
             return;
         }
@@ -206,14 +206,14 @@ class PageMixer {
             set_routed: new WeakSet(),
             routed_count: 0,
         };
-        if (globalThis.muxshots_page !== undefined) {
-            globalThis.muxshots_page.audio = audio;
+        if (globalThis.rookery_page !== undefined) {
+            globalThis.rookery_page.audio = audio;
         }
         return audio;
     }
 
     private _report(): void {
-        const routed_count = globalThis.muxshots_page?.audio?.routed_count ?? 0;
+        const routed_count = globalThis.rookery_page?.audio?.routed_count ?? 0;
         const mode: PageMode = !this._settings.is_taken_over
             ? "idle"
             : routed_count > 0 ? "page" : this._set_blocked.size > 0 ? "blocked" : "waiting";
@@ -240,7 +240,7 @@ class PageMixer {
             this._orphan();
             return;
         }
-        const audio = globalThis.muxshots_page?.audio;
+        const audio = globalThis.rookery_page?.audio;
         if (audio === undefined || !this._settings.is_taken_over || !this._is_meter_wanted) {
             return;
         }
@@ -265,7 +265,7 @@ class PageMixer {
     private _orphan(): void {
         this._retire();
         this._settings = TrackSettingsSchema.make_neutral();
-        globalThis.muxshots_page?.audio?.graph.apply(this._settings);
+        globalThis.rookery_page?.audio?.graph.apply(this._settings);
     }
 
     /** Whether the element's sound reaches Web Audio, rather than arriving as silence. */

@@ -18,7 +18,7 @@ enum ChromeHost {
             connection = try await ControlConnection.connect(to: ControlSocket.url)
             try await connection.send(ControlRequest.browserSession(browserProcessId: getppid()))
         } catch {
-            exit(withMessage: "muxshots-chrome-host: \(error)")
+            exit(withMessage: "rookery-chrome-host: \(error)")
         }
         defer { connection.cancel() }
         await withTaskGroup(of: Void.self) { group in
@@ -44,7 +44,7 @@ enum ChromeHost {
                 try await connection.sendLine(message)
             }
         } catch {
-            FileHandle.standardError.write(Data("muxshots-chrome-host: \(error)\n".utf8))
+            FileHandle.standardError.write(Data("rookery-chrome-host: \(error)\n".utf8))
         }
     }
 
@@ -60,7 +60,7 @@ enum ChromeHost {
                 FileHandle.standardOutput.write(frame)
             }
         } catch {
-            FileHandle.standardError.write(Data("muxshots-chrome-host: \(error)\n".utf8))
+            FileHandle.standardError.write(Data("rookery-chrome-host: \(error)\n".utf8))
         }
     }
 

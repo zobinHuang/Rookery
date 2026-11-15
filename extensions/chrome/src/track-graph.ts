@@ -3,7 +3,7 @@ import type { ReverbRoom, TrackSettings } from "./track-settings";
 import { TrackSettingsSchema } from "./track-settings";
 
 /**
- * One track's sound on its way to the speakers, as the MuxShots mixer treats it: phase and channel swap,
+ * One track's sound on its way to the speakers, as the Rookery mixer treats it: phase and channel swap,
  * stereo width, volume, a ten-band equalizer, reverb and pan, then meters, and muting last so a muted
  * track still shows on its meters.
  */

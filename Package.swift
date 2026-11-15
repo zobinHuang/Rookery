@@ -13,7 +13,7 @@ let package = Package(
     products: [
         .executable(name: "Rookery", targets: ["Rookery"]),
         .executable(name: "muxctl", targets: ["muxctl"]),
-        .executable(name: "muxshots-chrome-host", targets: ["RookeryChromeHost"]),
+        .executable(name: "rookery-chrome-host", targets: ["RookeryChromeHost"]),
     ],
     targets: [
         .target(

@@ -1,7 +1,7 @@
 import type { PageMessage } from "./messages";
 
 /**
- * A page's video shown in the MuxShots sidebar, streamed to the app over a WebRTC connection on this
+ * A page's video shown in the Rookery sidebar, streamed to the app over a WebRTC connection on this
  * machine: the video's own track, encoded by the browser and played by the app, so no frame passes
  * through the extension. The track comes from a capture of the video element, which keeps playing even
  * while its tab is in the background.

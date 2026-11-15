@@ -1,5 +1,5 @@
 /**
- * The rooms the reverb can simulate, spelled as the MuxShots app spells them.
+ * The rooms the reverb can simulate, spelled as the Rookery app spells them.
  */
 export type ReverbRoom =
     | "smallRoom"
@@ -11,7 +11,7 @@ export type ReverbRoom =
     | "cathedral";
 
 /**
- * How the mixer treats one tab's sound, as the MuxShots app sends it.
+ * How the mixer treats one tab's sound, as the Rookery app sends it.
  */
 export interface TrackSettings {
     /** Whether the extension processes the tab's sound at all. */

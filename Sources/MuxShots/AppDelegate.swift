@@ -118,14 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Draw every MuxShots window in the chosen theme, or the system's when none is chosen, fading the
     /// stages from one to the other.
     private func applyTheme() {
-        let appearance: NSAppearance? = switch preferences.theme {
-        case .light:
-            NSAppearance(named: .aqua)
-        case .dark:
-            NSAppearance(named: .darkAqua)
-        case nil:
-            nil
-        }
+        let appearance = preferences.theme.flatMap { NSAppearance(named: $0.appearanceName) }
         guard let stageCoordinator else {
             NSApplication.shared.appearance = appearance
             return

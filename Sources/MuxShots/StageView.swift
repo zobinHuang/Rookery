@@ -34,7 +34,7 @@ protocol StageActions: AnyObject {
     /// Move a tab to just before another tab, or to the end with nil.
     func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?)
     func toggleSidebar()
-    /// Switch between the light and the dark theme.
+    /// Switch between the light and the dark theme, keeping the contrast.
     func toggleTheme()
     /// Fill the display with the stage, or go back to its earlier frame.
     func toggleMaximize()
@@ -124,6 +124,8 @@ struct StageView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(StageColors.window)
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .environment(\.chosenTheme, model.shownTheme)
         .opacity(model.isVisible ? 1 : 0)
         .animation(.easeOut(duration: 0.22), value: model.isVisible)
         .animation(Self.zoneAnimation, value: model.highlightedZone)
@@ -230,7 +232,7 @@ struct StageView: View {
             } else if sidebarMode == .groups && model.listGroups.isEmpty && !model.isSidebarCollapsed {
                 Text("Drop a window on New Group to start a group.")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .padding(14)
             }
             if !model.isSidebarCollapsed && !mixer.browserTabs.pictures.listPictures.isEmpty {
@@ -274,7 +276,8 @@ struct StageView: View {
             sidebarHeight = height
         }
         .background {
-            StageColors.sidebar
+            Rectangle()
+                .fill(StageColors.sidebar)
                 .onTapGesture(perform: finishEditingOnEmptySpace)
         }
         .overlay(alignment: .trailing) {
@@ -361,7 +364,7 @@ struct StageView: View {
                         } label: {
                             Image(systemName: mode.symbol)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                                .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                                 .frame(width: 34, height: 26)
                                 .background {
                                     if sidebarMode == mode {
@@ -389,13 +392,14 @@ struct StageView: View {
                                 Text(mode.title)
                                     .font(.system(size: 11.5, weight: .semibold))
                             }
-                            .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                            .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                             .frame(maxWidth: .infinity)
                             .frame(height: 24)
                             .background {
                                 if sidebarMode == mode {
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                                         .fill(StageColors.selectedSegment)
+                                        .strokeBorder(StageColors.contrastActiveBorder)
                                         .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
                                         .matchedGeometryEffect(id: "mode", in: modeNamespace)
                                 }
@@ -422,8 +426,8 @@ struct StageView: View {
         return layout {
             headerButton("plus", help: "New MuxShots window", action: actions.newStage)
             headerButton(
-                model.isDarkTheme ? "sun.max" : "moon",
-                help: model.isDarkTheme ? "Switch to the light theme" : "Switch to the dark theme",
+                model.shownTheme.isDark ? "sun.max" : "moon",
+                help: "Switch to the \(model.shownTheme.opposite.title) theme",
                 action: actions.toggleTheme
             )
             headerButton("sparkles.tv", help: "Screen saver") {
@@ -451,6 +455,7 @@ struct StageView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 22, height: 22)
         }
         .buttonStyle(.borderless)
@@ -484,12 +489,12 @@ struct StageView: View {
                             } else {
                                 Text(row.name)
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(row.isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.primary))
+                                    .foregroundStyle(row.isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                                     .lineLimit(1)
                             }
                             GroupSubtitleText(model: model, row: row)
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(StageColors.secondaryText)
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
@@ -505,6 +510,7 @@ struct StageView: View {
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(rowFill(isActive: row.isActive, isHovered: isHovered, isDropTarget: isDropTarget))
+                    .strokeBorder(row.isActive ? StageColors.contrastActiveBorder : .clear)
             }
             .overlay {
                 if isDropTarget {
@@ -609,7 +615,7 @@ struct StageView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -805,7 +811,7 @@ struct StageView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
         .simultaneousGesture(TapGesture(count: 2).onEnded {
             beginRenaming(tab: tab.windowId)
         })
@@ -889,12 +895,17 @@ struct StageView: View {
                         .font(.system(size: 15, weight: .semibold))
                     Text("Drop it on the pill that appears above to open it here as a tab.")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StageColors.secondaryText)
                 }
                 .transition(.opacity)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(StageColors.contrastBorder)
+                .allowsHitTesting(false)
+        }
         .animation(Self.zoneAnimation, value: model.shownPage)
         .modifier(ZoneFrameReporter(zone: .content, model: model))
     }
@@ -1034,6 +1045,7 @@ struct TabBackgrounds: View {
                         let bounds = proxy[anchor]
                         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                             .fill(StageColors.idleTab)
+                            .strokeBorder(StageColors.contrastBorder)
                             .frame(width: bounds.width, height: bounds.height)
                             .offset(x: bounds.minX, y: bounds.minY)
                     }

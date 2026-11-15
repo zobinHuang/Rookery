@@ -41,7 +41,7 @@ struct AgentUsagePanel: View {
         HStack(spacing: 6) {
             Text("Propellant")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(height: 1)
@@ -56,7 +56,7 @@ struct AgentUsagePanel: View {
                     Text(Self.nextRefreshText(monitor.nextRefreshAt, isRefreshing: monitor.isRefreshing, at: date))
                         .font(.system(size: 9.5, weight: .medium).monospacedDigit())
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -88,7 +88,7 @@ struct AgentUsagePanel: View {
                         }
                     }
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .help(group.listAccounts.map { $0.configDirectory ?? "Default directory" }.joined(separator: ", "))
                 }
                 Spacer(minLength: 4)
@@ -119,7 +119,7 @@ struct AgentUsagePanel: View {
                 .frame(width: 5, height: 5)
             Text(text)
                 .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
         }
         .help(error ?? text)
     }
@@ -133,7 +133,7 @@ struct AgentUsagePanel: View {
         return HStack(spacing: 6) {
             Text(limit.title)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .lineLimit(1)
                 .frame(width: 34, alignment: .leading)
                 .opacity(spentOpacity)
@@ -141,7 +141,7 @@ struct AgentUsagePanel: View {
                 .opacity(spentOpacity)
             Text("\(Int((remainingFraction * 100).rounded()))%")
                 .font(.system(size: 10.5, weight: .medium).monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: Self.percentWidth, alignment: .trailing)
                 .opacity(spentOpacity)
             SevenSegmentDisplay(

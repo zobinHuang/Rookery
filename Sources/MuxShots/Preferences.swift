@@ -6,10 +6,61 @@ import Observation
 import os
 import SystemConfiguration
 
-/// The appearance MuxShots draws in.
-enum Theme: String {
+/// The appearance MuxShots draws in. The high-contrast ones, after the editor themes of the same name, draw
+/// on pure black or white and outline every panel, and the selected one in a second color.
+enum Theme: String, CaseIterable {
     case light
     case dark
+    case highContrastLight
+    case highContrastDark
+
+    /// The name the settings show.
+    var title: String {
+        switch self {
+        case .light: "Light"
+        case .dark: "Dark"
+        case .highContrastLight: "Light High Contrast"
+        case .highContrastDark: "Dark High Contrast"
+        }
+    }
+
+    /// The system appearance that draws this theme's controls and text. An application cannot ask for the
+    /// system's high-contrast appearances, which only its accessibility setting turns on, so the
+    /// high-contrast themes draw their controls in the regular ones.
+    var appearanceName: NSAppearance.Name {
+        isDark ? .darkAqua : .aqua
+    }
+
+    /// Whether the theme draws light content on a dark background.
+    var isDark: Bool {
+        self == .dark || self == .highContrastDark
+    }
+
+    /// The theme of the same contrast on the other side of light and dark.
+    var opposite: Theme {
+        switch self {
+        case .light: .dark
+        case .dark: .light
+        case .highContrastLight: .highContrastDark
+        case .highContrastDark: .highContrastLight
+        }
+    }
+
+    /// The theme an appearance draws in, at increased contrast when the system's accessibility setting
+    /// asks for it.
+    static func matching(_ appearance: NSAppearance) -> Theme {
+        switch appearance.bestMatch(from: [
+            .aqua,
+            .darkAqua,
+            .accessibilityHighContrastAqua,
+            .accessibilityHighContrastDarkAqua,
+        ]) {
+        case .darkAqua: .dark
+        case .accessibilityHighContrastAqua: .highContrastLight
+        case .accessibilityHighContrastDarkAqua: .highContrastDark
+        default: .light
+        }
+    }
 }
 
 /// The user's settings, kept in `UserDefaults`; every change is saved at once and announced to observers.

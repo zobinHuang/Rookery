@@ -203,7 +203,7 @@ struct MixerChip: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(isOn ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isOn ? AnyShapeStyle(.white) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(maxWidth: .infinity)
                 .frame(height: 22)
                 .background {
@@ -264,12 +264,12 @@ struct MixerMuteButton: View {
         Button(action: action) {
             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isMuted ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isMuted ? AnyShapeStyle(Color.red) : AnyShapeStyle(StageColors.secondaryText))
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: Self.diameter, height: Self.diameter)
                 .background {
                     Circle()
-                        .fill(isMuted ? AnyShapeStyle(Color.red.opacity(0.16)) : AnyShapeStyle(isHovered ? StageColors.hoveredRow : Color.clear))
+                        .fill(isMuted ? AnyShapeStyle(Color.red.opacity(0.16)) : AnyShapeStyle(isHovered ? StageColors.hoveredRow : .clear))
                 }
                 .contentShape(Circle())
         }
@@ -295,7 +295,7 @@ struct EqualizerPresetChip: View {
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
                 .fixedSize()
-                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(StageColors.secondaryText))
                 .padding(.horizontal, 8)
                 .frame(height: 20)
                 .background {

@@ -42,8 +42,7 @@ struct SettingsView: View {
         agentUsageMonitor: AgentUsageMonitor
     ) -> NSView {
         NSHostingView(rootView: SettingsView(preferences: preferences, recorder: recorder, agentUsageMonitor: agentUsageMonitor)
-            .frame(width: 560, height: 680)
-            .background(StageColors.window))
+            .frame(width: 560, height: 680))
     }
 
     var body: some View {
@@ -64,6 +63,9 @@ struct SettingsView: View {
         } action: { width in
             pageWidth = width
         }
+        .background(onClose == nil ? StageColors.window : .clear)
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .environment(\.chosenTheme, preferences.theme)
     }
 
     /// The cards spread over as many columns as the page is wide enough for, each column filling its share.
@@ -226,7 +228,7 @@ struct SettingsView: View {
         }
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
             TextField("Add City or Time Zone", text: $citySearch.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -421,7 +423,7 @@ private struct SettingsRow<Control: View>: View {
             if let detail {
                 Text(detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -499,7 +501,7 @@ private struct SettingsResultRow: View {
                     .lineLimit(1)
                 Text(detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -526,7 +528,7 @@ private struct SettingsIconButton: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 14))
-                .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(isHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.plain)
@@ -560,7 +562,7 @@ private struct SettingsCloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(width: 28, height: 28)
                 .background(isHovered ? StageColors.groove : StageColors.idleTab, in: Circle())
         }
@@ -591,13 +593,13 @@ private struct AgentAccountRow: View {
                     .font(.system(size: 13, weight: .medium))
                 Text(account.configDirectory ?? "~/.claude")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let sameLogin = monitor.listSameLoginAccounts(as: account).first {
                     Image(systemName: "link")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StageColors.secondaryText)
                         .help("Same Account as \(sameLogin.configDirectory ?? "~/.claude")")
                 }
                 Spacer(minLength: 8)
@@ -635,7 +637,7 @@ private struct AgentAccountRow: View {
         return HStack(spacing: 8) {
             Text(command)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .textSelection(.enabled)
                 .lineLimit(1)
                 .truncationMode(.middle)

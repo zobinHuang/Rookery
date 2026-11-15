@@ -73,7 +73,7 @@ struct MixerView: View {
         } else if mixer.browserTabs.sessionCount == 0 && isChromeListed {
             Text("Add the MuxShots extension to Chrome to mix its tabs one by one.")
                 .font(.system(size: 10.5))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(StageColors.tertiaryText)
                 .padding(.horizontal, 6)
                 .padding(.bottom, 2)
         }
@@ -106,12 +106,12 @@ struct MixerView: View {
         VStack(spacing: 8) {
             Image(systemName: "speaker.wave.2")
                 .font(.system(size: 22, weight: .light))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(StageColors.tertiaryText)
             Text("No app is using sound")
                 .font(.system(size: 12, weight: .medium))
             Text("Apps show up here once they play or connect to audio.")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -122,7 +122,7 @@ struct MixerView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(StageColors.secondaryText)
             .padding(.horizontal, 6)
             .padding(.top, 6)
     }
@@ -299,7 +299,7 @@ struct MixerStripIconView: View {
             } placeholder: {
                 Image(systemName: "globe")
                     .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
             }
             .frame(width: 16, height: 16)
             .frame(width: 24, height: 24)
@@ -380,7 +380,7 @@ private struct MixerStrip: View {
                         .frame(width: 5, height: 5)
                     Text(status.text)
                         .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StageColors.secondaryText)
                         .lineLimit(1)
                 }
                 .help(status.help ?? status.text)
@@ -410,7 +410,7 @@ private struct MixerStrip: View {
                 systemImage: toggle.isShowing ? "pip.fill" : "pip.enter"
             )
             .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(toggle.isShowing ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            .foregroundStyle(toggle.isShowing ? AnyShapeStyle(.white) : AnyShapeStyle(StageColors.secondaryText))
             .frame(maxWidth: .infinity)
             .frame(height: 22)
             .background {
@@ -441,7 +441,7 @@ private struct MixerStrip: View {
                     .font(.system(size: 8, weight: .bold))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(StageColors.secondaryText)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
@@ -574,7 +574,7 @@ private struct MixerStrip: View {
                 ForEach(listFrequencies.indices, id: \.self) { index in
                     Text(Self.frequencyText(listFrequencies[index]))
                         .font(.system(size: 7.5, weight: .medium).monospacedDigit())
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(StageColors.tertiaryText)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -595,7 +595,7 @@ private struct MixerStrip: View {
             HStack {
                 Text(title)
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                 Spacer(minLength: 0)
                 accessory
             }
@@ -613,12 +613,12 @@ private struct MixerStrip: View {
         HStack(spacing: 7) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 16)
             MixerSlider(value: value, range: range, restValue: restValue)
             Text(valueText)
                 .font(.system(size: 10, weight: .medium).monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 44, alignment: .trailing)
                 .lineLimit(1)
         }
@@ -646,7 +646,7 @@ struct ApplicationIconView: View {
             Image(systemName: "app.dashed")
                 .font(.system(size: size * 0.7))
                 .frame(width: size, height: size)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
         }
     }
 }

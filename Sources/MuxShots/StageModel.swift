@@ -134,8 +134,8 @@ final class StageModel {
     /// The page the content area shows with the front window set aside, or nil for the front window.
     var shownPage: StagePage?
     var sidebarMode = SidebarMode.groups
-    /// Whether MuxShots draws dark now, which picks the theme button's symbol.
-    var isDarkTheme = false
+    /// The theme MuxShots draws in now, chosen or the system's, which picks the theme button's symbol.
+    var shownTheme = Theme.light
     /// The cities the world clock shows.
     var listClockCities: [WorldClockCity] = []
     /// The group whose name is being edited.

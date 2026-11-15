@@ -293,7 +293,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             dismiss()
             return
         }
-        let isDarkTheme = NSApplication.shared.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let shownTheme = preferences.theme ?? Theme.matching(NSApplication.shared.effectiveAppearance)
         let activeGroup = workspaceController.group(onStage: stageId)
         let listStageGroups = workspaceController.groups(ofStage: stageId)
         let listGroups = listStageGroups.map { group in
@@ -310,8 +310,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             mapLinkedWindowNames[window.windowId] = window.displayName
         }
         let selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
-        if model.isDarkTheme != isDarkTheme {
-            model.isDarkTheme = isDarkTheme
+        if model.shownTheme != shownTheme {
+            model.shownTheme = shownTheme
         }
         if model.listClockCities != preferences.listClockCities {
             model.listClockCities = preferences.listClockCities
@@ -620,7 +620,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     }
 
     func toggleTheme() {
-        preferences.theme = model.isDarkTheme ? .light : .dark
+        preferences.theme = model.shownTheme.opposite
     }
 
     func moveStageChanged() {

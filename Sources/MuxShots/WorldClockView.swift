@@ -40,7 +40,7 @@ struct WorldClockView: View {
                     .lineLimit(1)
                 Text(detail(for: timeZone, at: date))
                     .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
@@ -59,7 +59,7 @@ struct WorldClockView: View {
                     )
                     Text(Self.weekdayText(for: timeZone, at: date))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(StageColors.secondaryText)
                         .lineLimit(1)
                         .fixedSize()
                         .frame(width: Self.weekdayWidth, alignment: .trailing)

@@ -13,6 +13,7 @@ struct TabHighlight: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TabHighlightView, context: Context) {
+        nsView.theme = context.environment.stageTheme
         nsView.move(to: frame)
     }
 }
@@ -26,14 +27,26 @@ final class TabHighlightView: NSView {
     /// Matches the spring the stage's other motion uses: a quarter second, barely overshooting.
     private static let springDuration: TimeInterval = 0.26
     private static let springBounce: CGFloat = 0.15
+    /// The selected outline, drawn only by the high-contrast themes.
+    private static let borderWidth: CGFloat = 1
 
     private let highlight = CALayer()
+
+    /// The theme the highlight is drawn in.
+    var theme = Theme.light {
+        didSet {
+            if theme != oldValue {
+                needsDisplay = true
+            }
+        }
+    }
 
     init() {
         super.init(frame: .zero)
         wantsLayer = true
         highlight.cornerRadius = Self.cornerRadius
         highlight.cornerCurve = .continuous
+        highlight.borderWidth = Self.borderWidth
         highlight.shadowColor = NSColor.black.cgColor
         highlight.shadowOpacity = Self.shadowOpacity
         highlight.shadowRadius = Self.shadowRadius
@@ -59,9 +72,8 @@ final class TabHighlightView: NSView {
     }
 
     override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            highlight.backgroundColor = StageColors.selectedTabFill.cgColor
-        }
+        highlight.backgroundColor = StageColors.selectedTab.color(in: theme).cgColor
+        highlight.borderColor = StageColors.contrastActiveBorder.color(in: theme).cgColor
     }
 
     /// Put the highlight over a tab, sliding there from the tab it was over.

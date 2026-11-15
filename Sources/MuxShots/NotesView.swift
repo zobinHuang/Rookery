@@ -84,7 +84,7 @@ struct NotesView: View {
             if notes.listNotes.isEmpty {
                 Text("Jot down anything you want at hand. Notes are kept until you delete them.")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(StageColors.secondaryText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 10)
@@ -151,14 +151,14 @@ struct NotesView: View {
         if isTabOverNewNote {
             return AnyShapeStyle(Color.accentColor)
         }
-        return isNewNoteHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)
+        return isNewNoteHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText)
     }
 
-    private var newNoteFill: Color {
+    private var newNoteFill: AnyShapeStyle {
         if isTabOverNewNote {
-            return Color.accentColor.opacity(Self.tabTargetFillOpacity)
+            return AnyShapeStyle(Color.accentColor.opacity(Self.tabTargetFillOpacity))
         }
-        return isNewNoteHovered ? StageColors.hoveredRow : Color.clear
+        return AnyShapeStyle(isNewNoteHovered ? StageColors.hoveredRow : .clear)
     }
 
     private func noteCard(_ note: QuickNote) -> some View {
@@ -186,7 +186,7 @@ struct NotesView: View {
             HStack(spacing: 2) {
                 Text(isTabTarget ? "Drop to add the tab to this note" : Self.modifiedText(note.modifiedAt))
                     .font(.system(size: 10))
-                    .foregroundStyle(isTabTarget ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                    .foregroundStyle(isTabTarget ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.tertiaryText))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -217,10 +217,11 @@ struct NotesView: View {
         .background {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .fill(StageColors.card)
+                .strokeBorder(StageColors.contrastBorder)
         }
         .overlay {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .fill(isHovered ? StageColors.hoveredRow : Color.clear)
+                .fill(isHovered ? StageColors.hoveredRow : .clear)
                 .allowsHitTesting(false)
         }
         .overlay {
@@ -342,18 +343,18 @@ struct NotesView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .help("Take the tab off the note")
                 .transition(.opacity)
             } else {
                 Image(systemName: liveName == nil ? "xmark" : "arrow.up.forward")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(StageColors.tertiaryText)
                     .frame(width: Self.linkHeight, height: Self.linkHeight)
                     .transition(.opacity)
             }
         }
-        .foregroundStyle(.secondary)
+        .foregroundStyle(StageColors.secondaryText)
         .padding(.leading, 6)
         .frame(height: Self.linkHeight)
         .background {
@@ -419,7 +420,7 @@ struct NotesView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: Self.footerHeight, height: Self.footerHeight)
                 .contentShape(Rectangle())
         }
@@ -460,11 +461,12 @@ struct NotesView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 38, height: 30)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(StageColors.card)
+                        .strokeBorder(StageColors.contrastBorder)
                 }
                 .contentShape(Rectangle())
         }
@@ -480,18 +482,19 @@ struct NotesView: View {
         } label: {
             linkIcon(link)
                 .frame(width: 18, height: 18)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(StageColors.secondaryText)
                 .opacity(model.mapLinkedWindowNames[link.windowId] == nil ? Self.closedLinkOpacity : 1)
                 .frame(width: 38, height: 30)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(StageColors.card)
+                        .strokeBorder(StageColors.contrastBorder)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if note.listLinks.count > 1 {
                         Text(String(note.listLinks.count))
                             .font(.system(size: 9, weight: .semibold).monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(StageColors.secondaryText)
                             .padding(.horizontal, 4)
                             .frame(minWidth: 14, minHeight: 14)
                             .background(StageColors.groove, in: Capsule())
@@ -551,14 +554,14 @@ struct NoteEditor: View {
                     if text.isEmpty {
                         Text("Note")
                             .font(.system(size: Self.fontSize))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(StageColors.tertiaryText)
                             .padding(.horizontal, Self.textInset)
                             .allowsHitTesting(false)
                     }
                 }
             Text("Click outside to save    ⎋ Cancel")
                 .font(.system(size: 9.5))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(StageColors.tertiaryText)
                 .padding(.horizontal, Self.textInset)
         }
         .padding(.horizontal, 10 - Self.textInset)

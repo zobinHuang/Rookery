@@ -82,12 +82,18 @@ export class RookeryMark {
      * @param lockup - the crows alone, or with the name beside or below them
      * @param backing - how the black is set off from the background
      * @param size - how big the crows and the name are
+     * @param is_trimmed - whether the empty space around the crows and around the whole is cut away, the
+     *   same from every frame, so the name sits close and the frames keep one size
      * @returns the animation
      */
-    static animate(lockup: Lockup, backing: Backing, size: MarkSize = RookeryMark.FULL_SIZE): Animation {
-        const wordmark = RookeryMark._backed_wordmark(backing, size.font_scale);
+    static animate(
+        lockup: Lockup,
+        backing: Backing,
+        size: MarkSize = RookeryMark.FULL_SIZE,
+        is_trimmed = false,
+    ): Animation {
         const map_frame_indices = new Map<string, number>();
-        const list_frames: PixelGrid[] = [];
+        const list_crow_frames: PixelGrid[] = [];
         const list_sequence = Array.from({ length: CrowStates.FRAME_COUNT }, (_, index) => {
             const list_poses = RookeryMark.poses(index);
             const key = JSON.stringify(list_poses);
@@ -95,32 +101,28 @@ export class RookeryMark {
             if (known !== undefined) {
                 return known;
             }
-            list_frames.push(RookeryMark._lay_out(lockup, RookeryMark.render_crows(list_poses, size.grid_size).backed(backing), wordmark));
-            map_frame_indices.set(key, list_frames.length - 1);
-            return list_frames.length - 1;
+            list_crow_frames.push(RookeryMark.render_crows(list_poses, size.grid_size).backed(backing));
+            map_frame_indices.set(key, list_crow_frames.length - 1);
+            return list_crow_frames.length - 1;
         });
-        const first = list_frames[0];
+        const wordmark = RookeryMark._backed_wordmark(backing, size.font_scale);
+        const list_frames = RookeryMark._trimmed(is_trimmed, list_crow_frames)
+            .map((crows) => RookeryMark._lay_out(lockup, crows, wordmark));
+        const list_trimmed_frames = RookeryMark._trimmed(is_trimmed, list_frames);
+        const first = list_trimmed_frames[0];
         return {
             width: first?.width ?? 0,
             height: first?.height ?? 0,
             frames_per_second: CrowStates.FRAMES_PER_SECOND,
-            list_frames,
+            list_frames: list_trimmed_frames,
             list_sequence,
         };
     }
 
-    /**
-     * The mark's first frame in a layout, with a backing, for places that show it still; the crows are
-     * trimmed of the empty space around them, so the name sits close.
-     *
-     * @param lockup - the crows alone, or with the name beside or below them
-     * @param backing - how the black is set off from the background
-     * @param size - how big the crows and the name are
-     * @returns the grid
-     */
-    static still(lockup: Lockup, backing: Backing, size: MarkSize): PixelGrid {
-        const crows = RookeryMark.render_crows(RookeryMark.poses(0), size.grid_size).backed(backing).trimmed();
-        return RookeryMark._lay_out(lockup, crows, RookeryMark._backed_wordmark(backing, size.font_scale));
+    /** Frames cut to the space they jointly fill, when asked to be. */
+    private static _trimmed(is_trimmed: boolean, list_frames: readonly PixelGrid[]): readonly PixelGrid[] {
+        const bounds = is_trimmed ? PixelGrid.joint_bounds(list_frames) : undefined;
+        return bounds === undefined ? list_frames : list_frames.map((frame) => frame.cropped(bounds));
     }
 
     /**

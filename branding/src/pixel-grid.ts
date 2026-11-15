@@ -25,6 +25,16 @@ export interface CrowDesign {
 export type Backing = "tile" | "outline" | "none";
 
 /**
+ * A rectangle of a grid's pixels, its edges included.
+ */
+export interface GridBounds {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+}
+
+/**
  * One grid placed on another, its top left corner at a pixel.
  */
 export interface GridPlacement {
@@ -121,17 +131,16 @@ export class PixelGrid {
     }
 
     /**
-     * The grid cut down to the smallest rectangle that holds all its pixels.
+     * The smallest rectangle that holds all the grid's pixels.
      *
-     * @returns the trimmed grid, or the grid itself when it is empty
+     * @returns the rectangle, edges included, or undefined when the grid is empty
      */
-    trimmed(): PixelGrid {
+    bounds(): GridBounds | undefined {
         const list_filled_rows = this.list_rows.map((row) => row.some((key) => key !== "."));
         const top = list_filled_rows.indexOf(true);
         if (top < 0) {
-            return this;
+            return undefined;
         }
-        const bottom = list_filled_rows.lastIndexOf(true);
         let left = this.width;
         let right = 0;
         for (const row of this.list_rows) {
@@ -141,7 +150,40 @@ export class PixelGrid {
                 right = Math.max(right, row.findLastIndex((key) => key !== "."));
             }
         }
-        return new PixelGrid(this.list_rows.slice(top, bottom + 1).map((row) => row.slice(left, right + 1)));
+        return { left, top, right, bottom: list_filled_rows.lastIndexOf(true) };
+    }
+
+    /**
+     * The smallest rectangle that holds the pixels of every one of some grids, as the frames of an
+     * animation, so they can all be cut to one size.
+     *
+     * @param list_grids - the grids
+     * @returns the rectangle, or undefined when every grid is empty
+     */
+    static joint_bounds(list_grids: readonly PixelGrid[]): GridBounds | undefined {
+        return list_grids
+            .map((grid) => grid.bounds())
+            .reduce<GridBounds | undefined>((joint, bounds) => {
+                if (joint === undefined || bounds === undefined) {
+                    return joint ?? bounds;
+                }
+                return {
+                    left: Math.min(joint.left, bounds.left),
+                    top: Math.min(joint.top, bounds.top),
+                    right: Math.max(joint.right, bounds.right),
+                    bottom: Math.max(joint.bottom, bounds.bottom),
+                };
+            }, undefined);
+    }
+
+    /**
+     * The part of the grid inside a rectangle.
+     *
+     * @param bounds - the rectangle, edges included
+     * @returns the cut grid
+     */
+    cropped(bounds: GridBounds): PixelGrid {
+        return new PixelGrid(this.list_rows.slice(bounds.top, bounds.bottom + 1).map((row) => row.slice(bounds.left, bounds.right + 1)));
     }
 
     /**

@@ -45,15 +45,31 @@ class LogoBuild {
         LogoBuild._write_sidebar_logo();
     }
 
-    /** The still horizontal mark the app's sidebar shows, one PNG per screen scale. */
+    /**
+     * The animated horizontal mark the app's sidebar shows: its distinct frames side by side in one PNG per
+     * screen scale, and how to play them, for the app to hand to Core Animation.
+     */
     private static _write_sidebar_logo(): void {
-        const logo = RookeryMark.still("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_SIZE).trimmed();
+        const animation = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_SIZE, true);
+        const strip = PixelGrid.compose(
+            animation.width * animation.list_frames.length,
+            animation.height,
+            animation.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * animation.width, top: 0 })),
+        );
         for (const scale of LogoBuild.LIST_SIDEBAR_SCALES) {
             const suffix = scale === 1 ? "" : `@${scale}x`;
             const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}${suffix}.png`);
-            writeFileSync(path, PngWriter.encode(logo.enlarged(scale)));
-            console.log(path, `${logo.width * scale} × ${logo.height * scale}`);
+            writeFileSync(path, PngWriter.encode(strip.enlarged(scale)));
+            console.log(path);
         }
+        const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}.json`);
+        writeFileSync(path, `${JSON.stringify({
+            frame_width: animation.width,
+            frame_height: animation.height,
+            frames_per_second: animation.frames_per_second,
+            sequence: animation.list_sequence,
+        }, undefined, 4)}\n`);
+        console.log(path, `${animation.width} × ${animation.height}, ${animation.list_frames.length} frames`);
     }
 
     /** An animation's frames, each run-length encoded row after row, for the page's player. */

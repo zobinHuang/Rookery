@@ -4,6 +4,7 @@ import AppKit
 @MainActor
 enum RookeryMain {
     static func main() {
+        MuxShotsMigration.run()
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.delegate = delegate

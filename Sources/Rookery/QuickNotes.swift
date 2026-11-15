@@ -7,15 +7,12 @@ import RookeryCore
 @MainActor
 @Observable
 final class QuickNotes {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "notes")
-    nonisolated private static let directoryName = "MuxShots"
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "notes")
     nonisolated private static let fileName = "notes.json"
 
     /// Where the notes are kept: beside the workspace.
     nonisolated static var defaultFileUrl: URL {
-        URL.applicationSupportDirectory
-            .appending(path: directoryName, directoryHint: .isDirectory)
-            .appending(path: fileName, directoryHint: .notDirectory)
+        DataDirectory.file(named: fileName)
     }
 
     private let fileUrl: URL

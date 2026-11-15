@@ -6,7 +6,7 @@ import RookeryCore
 /// unresponsive application stalls only its own tracker.
 final class ApplicationWindowTracker: @unchecked Sendable {
     // Every mutable property is touched only on `thread`.
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "tracker")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "tracker")
     /// Coalesce bursts such as terminals changing their titles while output streams in.
     private static let refreshDebounce: TimeInterval = 0.25
     private static let discoveryRetryInterval = Duration.seconds(30)
@@ -80,7 +80,7 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         self.onSnapshot = onSnapshot
         self.onFocus = onFocus
         self.root = AccessibilityElement.application(processId: application.processId)
-        self.thread = RunLoopThread(name: "MuxShots.tracker.\(application.processId)")
+        self.thread = RunLoopThread(name: "Rookery.tracker.\(application.processId)")
     }
 
     /// Start observing the application.

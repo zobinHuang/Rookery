@@ -7,7 +7,7 @@ import WebKit
 /// app never handles a frame.
 @MainActor
 final class PictureReceiver: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "picture")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "picture")
     private static let messageHandlerName = "muxshots"
     /// A secure origin for the page, which WebRTC requires; nothing is loaded from it.
     private static let pageBaseUrl = URL(string: "https://localhost/")

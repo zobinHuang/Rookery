@@ -7,7 +7,7 @@ import RookeryPlatform
 /// separate shortcuts show every window, open the group switcher and cycle the active group's windows.
 @MainActor
 final class ShortcutController {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "shortcuts")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "shortcuts")
     /// The number keys 1–9, whose virtual key codes are not consecutive.
     static let listGroupKeyCodes = [
         kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5,

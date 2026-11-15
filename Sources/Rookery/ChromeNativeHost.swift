@@ -4,7 +4,7 @@ import os
 /// The registration that lets Chrome start MuxShots' native messaging host for the MuxShots extension: a
 /// manifest in Chrome's per-user host directory pointing at the host inside this app.
 enum ChromeNativeHost {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "chrome")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "chrome")
     /// The host's name, which the extension connects to.
     private static let hostName = "io.github.zobinhuang.muxshots"
     private static let executableName = "muxshots-chrome-host"

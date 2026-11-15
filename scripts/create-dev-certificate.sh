@@ -3,7 +3,7 @@
 # which keeps the Accessibility grant across rebuilds.
 set -euo pipefail
 
-identity=${MUXSHOTS_SIGN_IDENTITY:-MuxShots Development}
+identity=${ROOKERY_SIGN_IDENTITY:-Rookery Development}
 keychain=${1:-$HOME/Library/Keychains/login.keychain-db}
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
@@ -29,8 +29,8 @@ CONFIG
 /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
     -config "$work_dir/openssl.cnf" \
     -keyout "$work_dir/key.pem" -out "$work_dir/cert.pem" 2>/dev/null
-/usr/bin/openssl pkcs12 -export -passout pass:muxshots \
+/usr/bin/openssl pkcs12 -export -passout pass:rookery \
     -inkey "$work_dir/key.pem" -in "$work_dir/cert.pem" -out "$work_dir/identity.p12"
-security import "$work_dir/identity.p12" -k "$keychain" -P muxshots -T /usr/bin/codesign
+security import "$work_dir/identity.p12" -k "$keychain" -P rookery -T /usr/bin/codesign
 
 echo "created identity \"$identity\" in $keychain"

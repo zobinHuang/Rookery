@@ -32,7 +32,7 @@ struct MixerBrowserTab: Identifiable, Equatable {
 @MainActor
 @Observable
 final class BrowserTabMixer {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "browser")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "browser")
     /// How much of its level a tab's meter keeps from one report to the next, so it falls back smoothly.
     private static let meterDecay: Float = 0.7
 

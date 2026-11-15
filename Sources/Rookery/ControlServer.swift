@@ -7,7 +7,7 @@ import RookeryPlatform
 
 /// Serves `muxctl` requests on the control socket.
 final class ControlServer: Sendable {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "control")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "control")
     private static let mixerOffMessage = "the mixer is off; turn it on under General in the settings"
 
     private let tracker: WindowTracker
@@ -16,7 +16,7 @@ final class ControlServer: Sendable {
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
     private let listener: NWListener
-    private let queue = DispatchQueue(label: "MuxShots.control.listener")
+    private let queue = DispatchQueue(label: "Rookery.control.listener")
 
     /// Bind the control socket, replacing a stale one left by an earlier run.
     ///

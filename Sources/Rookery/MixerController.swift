@@ -10,7 +10,7 @@ import RookeryPlatform
 @MainActor
 @Observable
 final class MixerController {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "mixer")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "mixer")
     private static let settingsKey = "mixerTracks"
     private static let meterInterval: TimeInterval = 1 / 30
     /// How much of its level a meter keeps from one reading to the next, so it falls back smoothly.

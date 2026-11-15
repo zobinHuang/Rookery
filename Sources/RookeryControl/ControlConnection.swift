@@ -23,7 +23,7 @@ public final class ControlConnection: @unchecked Sendable {
     private static let maximumReadLength = 64 * 1024
 
     private let connection: NWConnection
-    private let queue = DispatchQueue(label: "MuxShots.control.connection")
+    private let queue = DispatchQueue(label: "Rookery.control.connection")
     private var buffer = Data()
 
     /// Wrap a connection the listener accepted and start it.

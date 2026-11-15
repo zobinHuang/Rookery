@@ -67,7 +67,7 @@ enum Theme: String, CaseIterable {
 @MainActor
 @Observable
 final class Preferences {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "preferences")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "preferences")
     private static let dropTrayKey = "isDropTrayEnabled"
     private static let returnDroppedKey = "isReturningDroppedWindows"
     private static let mixerEnabledKey = "isMixerEnabled"

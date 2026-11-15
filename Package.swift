@@ -11,7 +11,7 @@ let package = Package(
         .macOS("14.2"),
     ],
     products: [
-        .executable(name: "MuxShots", targets: ["Rookery"]),
+        .executable(name: "Rookery", targets: ["Rookery"]),
         .executable(name: "muxctl", targets: ["muxctl"]),
         .executable(name: "muxshots-chrome-host", targets: ["RookeryChromeHost"]),
     ],

@@ -1,13 +1,15 @@
 #!/bin/zsh
-# Build MuxShots and assemble a signed MuxShots.app under .build/.
+# Build Rookery and assemble a signed Rookery.app under .build/.
 set -euo pipefail
 
 configuration=${1:-debug}
 root=${0:A:h:h}
-identity=${MUXSHOTS_SIGN_IDENTITY:-MuxShots Development}
-app="$root/.build/MuxShots.app"
+identity=${ROOKERY_SIGN_IDENTITY:-Rookery Development}
+# The identity made while the app was called MuxShots signs just as well, until a new one is made.
+legacy_identity="MuxShots Development"
+app="$root/.build/Rookery.app"
 
-swift build --package-path "$root" -c "$configuration" --product MuxShots
+swift build --package-path "$root" -c "$configuration" --product Rookery
 swift build --package-path "$root" -c "$configuration" --product muxshots-chrome-host
 bin_path=$(swift build --package-path "$root" -c "$configuration" --show-bin-path)
 
@@ -15,8 +17,13 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 cp "$root/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
-cp "$bin_path/MuxShots" "$app/Contents/MacOS/MuxShots"
+cp "$bin_path/Rookery" "$app/Contents/MacOS/Rookery"
 cp "$bin_path/muxshots-chrome-host" "$app/Contents/MacOS/muxshots-chrome-host"
+
+if ! security find-identity -p codesigning | grep -q "\"$identity\"" \
+    && security find-identity -p codesigning | grep -q "\"$legacy_identity\""; then
+    identity=$legacy_identity
+fi
 
 if security find-identity -p codesigning | grep -q "\"$identity\""; then
     codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/muxshots-chrome-host"

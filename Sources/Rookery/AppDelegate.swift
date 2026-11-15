@@ -5,7 +5,7 @@ import RookeryPlatform
 /// Owns the application's long-lived controllers.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "app")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "app")
 
     private let tracker = WindowTracker()
     private let preferences = Preferences()

@@ -40,7 +40,7 @@ final class StagePanel: NSPanel {
 /// that window. While it is open it is also where windows dragged over it are dropped.
 @MainActor
 final class StageController: NSObject, DropSurface, StageActions, NSWindowDelegate {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "stage")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "stage")
     private static let cornerRadius: CGFloat = 14
     private static let minimumSize = CGSize(width: 640, height: 420)
     private static let landedHold = Duration.milliseconds(260)

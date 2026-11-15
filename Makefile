@@ -16,15 +16,17 @@ app:
 	scripts/bundle-app.sh release
 
 run: app
-	open .build/MuxShots.app
+	open .build/Rookery.app
 
-# Install into /Applications, quitting a running copy first so the new build is the one that opens.
+# Install into /Applications, quitting a running copy first so the new build is the one that opens. The app
+# was called MuxShots before; that copy is quit and removed too, so it cannot put windows back over Rookery's.
 install: app
+	-osascript -e 'quit app "Rookery"'
 	-osascript -e 'quit app "MuxShots"'
-	while pgrep -x MuxShots > /dev/null; do sleep 0.2; done
-	rm -rf /Applications/MuxShots.app
-	cp -R .build/MuxShots.app /Applications/MuxShots.app
-	open /Applications/MuxShots.app
+	while pgrep -x Rookery > /dev/null || pgrep -x MuxShots > /dev/null; do sleep 0.2; done
+	rm -rf /Applications/Rookery.app /Applications/MuxShots.app
+	cp -R .build/Rookery.app /Applications/Rookery.app
+	open /Applications/Rookery.app
 
 icon:
 	swiftc -o .build/make-icon scripts/make-icon.swift

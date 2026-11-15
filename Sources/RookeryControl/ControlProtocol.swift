@@ -136,13 +136,10 @@ public enum ControlMessage: Codable, Sendable {
 
 /// Where the running app listens for control connections.
 public enum ControlSocket {
-    private static let directoryName = "MuxShots"
     private static let fileName = "control.sock"
 
-    /// The socket path, inside the user's Application Support directory.
+    /// The socket path, inside the app's data directory.
     public static var url: URL {
-        URL.applicationSupportDirectory
-            .appending(path: directoryName, directoryHint: .isDirectory)
-            .appending(path: fileName, directoryHint: .notDirectory)
+        DataDirectory.file(named: fileName)
     }
 }

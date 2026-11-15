@@ -8,7 +8,7 @@ import RookeryPlatform
 /// persists the result.
 @MainActor
 final class WorkspaceController: WindowDragMonitorDelegate {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "workspace")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "workspace")
     /// Lets the dragged application finish its own drag before the window is moved back.
     private static let settleDelay = Duration.milliseconds(120)
     private static let fullscreenPollInterval = Duration.milliseconds(100)

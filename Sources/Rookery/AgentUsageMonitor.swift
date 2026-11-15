@@ -31,7 +31,7 @@ struct AgentAccountGroup: Identifiable {
 @MainActor
 @Observable
 final class AgentUsageMonitor {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "agents")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "agents")
     /// The pace when no shown account's harness asks for a slower one.
     private static let regularInterval: TimeInterval = 300
     /// The least time between a read and one the user asks for, so repeated clicks do not hammer the services.

@@ -3,13 +3,10 @@ import RookeryCore
 
 /// Persists the workspace between launches.
 enum WorkspaceStore {
-    private static let directoryName = "MuxShots"
     private static let fileName = "workspace.json"
 
     private static var url: URL {
-        URL.applicationSupportDirectory
-            .appending(path: directoryName, directoryHint: .isDirectory)
-            .appending(path: fileName, directoryHint: .notDirectory)
+        DataDirectory.file(named: fileName)
     }
 
     /// The saved workspace, or an empty one on first launch.

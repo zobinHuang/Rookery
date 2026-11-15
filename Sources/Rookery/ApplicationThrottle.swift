@@ -7,7 +7,7 @@ import RookeryPlatform
 /// in the background band and made the whole machine lag.
 @MainActor
 final class ApplicationThrottle {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.muxshots", category: "throttle")
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "throttle")
     private static let processIdsKey = "throttledProcessIds"
 
     private let defaults: UserDefaults

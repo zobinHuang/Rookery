@@ -7,7 +7,7 @@ import RookeryCore
 final class WorkspacePanelController: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSTextFieldDelegate,
     DropSurface
 {
-    private static let windowIdPasteboardType = NSPasteboard.PasteboardType("io.github.zobinhuang.muxshots.window-id")
+    private static let windowIdPasteboardType = NSPasteboard.PasteboardType("io.github.zobinhuang.rookery.window-id")
     private static let initialSize = CGSize(width: 360, height: 480)
     private static let columnIdentifier = NSUserInterfaceItemIdentifier("content")
     private static let topContentInset: CGFloat = 28

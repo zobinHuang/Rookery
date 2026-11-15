@@ -10,7 +10,7 @@ final class ProcessTap {
     private var tapId = AudioObjectID(kAudioObjectUnknown)
     private var aggregateDeviceId = AudioObjectID(kAudioObjectUnknown)
     private var ioProcId: AudioDeviceIOProcID?
-    private let queue = DispatchQueue(label: "io.github.zobinhuang.muxshots.tap", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "io.github.zobinhuang.rookery.tap", qos: .userInteractive)
 
     /// Start capturing, which also silences the processes everywhere else.
     ///

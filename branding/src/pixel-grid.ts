@@ -121,6 +121,30 @@ export class PixelGrid {
     }
 
     /**
+     * The grid cut down to the smallest rectangle that holds all its pixels.
+     *
+     * @returns the trimmed grid, or the grid itself when it is empty
+     */
+    trimmed(): PixelGrid {
+        const list_filled_rows = this.list_rows.map((row) => row.some((key) => key !== "."));
+        const top = list_filled_rows.indexOf(true);
+        if (top < 0) {
+            return this;
+        }
+        const bottom = list_filled_rows.lastIndexOf(true);
+        let left = this.width;
+        let right = 0;
+        for (const row of this.list_rows) {
+            const first = row.findIndex((key) => key !== ".");
+            if (first >= 0) {
+                left = Math.min(left, first);
+                right = Math.max(right, row.findLastIndex((key) => key !== "."));
+            }
+        }
+        return new PixelGrid(this.list_rows.slice(top, bottom + 1).map((row) => row.slice(left, right + 1)));
+    }
+
+    /**
      * The grid with every pixel made a square block of pixels.
      *
      * @param factor - how many pixels across each pixel becomes

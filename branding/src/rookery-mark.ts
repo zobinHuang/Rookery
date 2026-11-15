@@ -11,12 +11,24 @@ import { Wordmark } from "./wordmark.ts";
 export type Lockup = "icon" | "horizontal" | "vertical";
 
 /**
+ * How big the mark is drawn: the crows' grid, and the scale of the name's font.
+ */
+export interface MarkSize {
+    grid_size: number;
+    font_scale: number;
+}
+
+/**
  * Rookery's own mark: a murder of three crows in a woven nest, the one at the back the tallest. They
  * breathe, blink and look about out of step with one another, and the tall one caws, while the name beside
  * them stays still.
  */
 export class RookeryMark {
     static readonly GRID_SIZE = 96;
+    /** The size the mark is shown at unless a place calls for another. */
+    static readonly FULL_SIZE: MarkSize = { grid_size: RookeryMark.GRID_SIZE, font_scale: 4 };
+    /** Small enough for the top of the app's sidebar, one logo pixel a point. */
+    static readonly SIDEBAR_SIZE: MarkSize = { grid_size: 56, font_scale: 2 };
     /** Pixels between the crows and the name. */
     static readonly LOCKUP_GAP = 6;
     /** Room around the name for its outline. */
@@ -69,10 +81,11 @@ export class RookeryMark {
      *
      * @param lockup - the crows alone, or with the name beside or below them
      * @param backing - how the black is set off from the background
+     * @param size - how big the crows and the name are
      * @returns the animation
      */
-    static animate(lockup: Lockup, backing: Backing): Animation {
-        const wordmark = RookeryMark._backed_wordmark(backing);
+    static animate(lockup: Lockup, backing: Backing, size: MarkSize = RookeryMark.FULL_SIZE): Animation {
+        const wordmark = RookeryMark._backed_wordmark(backing, size.font_scale);
         const map_frame_indices = new Map<string, number>();
         const list_frames: PixelGrid[] = [];
         const list_sequence = Array.from({ length: CrowStates.FRAME_COUNT }, (_, index) => {
@@ -82,7 +95,7 @@ export class RookeryMark {
             if (known !== undefined) {
                 return known;
             }
-            list_frames.push(RookeryMark._lay_out(lockup, RookeryMark.render_crows(list_poses).backed(backing), wordmark));
+            list_frames.push(RookeryMark._lay_out(lockup, RookeryMark.render_crows(list_poses, size.grid_size).backed(backing), wordmark));
             map_frame_indices.set(key, list_frames.length - 1);
             return list_frames.length - 1;
         });
@@ -97,19 +110,34 @@ export class RookeryMark {
     }
 
     /**
+     * The mark's first frame in a layout, with a backing, for places that show it still; the crows are
+     * trimmed of the empty space around them, so the name sits close.
+     *
+     * @param lockup - the crows alone, or with the name beside or below them
+     * @param backing - how the black is set off from the background
+     * @param size - how big the crows and the name are
+     * @returns the grid
+     */
+    static still(lockup: Lockup, backing: Backing, size: MarkSize): PixelGrid {
+        const crows = RookeryMark.render_crows(RookeryMark.poses(0), size.grid_size).backed(backing).trimmed();
+        return RookeryMark._lay_out(lockup, crows, RookeryMark._backed_wordmark(backing, size.font_scale));
+    }
+
+    /**
      * The nest and its crows in some poses, before any backing.
      *
      * @param list_poses - a pose for each crow, back one first
+     * @param grid_size - the grid's side in pixels
      * @returns the grid
      */
-    static render_crows(list_poses: readonly CrowPose[]): PixelGrid {
-        const key = JSON.stringify(list_poses);
+    static render_crows(list_poses: readonly CrowPose[], grid_size: number = RookeryMark.GRID_SIZE): PixelGrid {
+        const key = `${grid_size} ${JSON.stringify(list_poses)}`;
         const rendered = RookeryMark._MAP_RENDERED.get(key);
         if (rendered !== undefined) {
             return rendered;
         }
         const scene = SceneRenderer.render({
-            size: RookeryMark.GRID_SIZE,
+            size: grid_size,
             zoom: RookeryMark._ZOOM,
             centre_x: RookeryMark._CENTRE_X,
             centre_y: RookeryMark._CENTRE_Y,
@@ -126,8 +154,8 @@ export class RookeryMark {
     }
 
     /** The name with room around it for its backing. */
-    private static _backed_wordmark(backing: Backing): PixelGrid {
-        const bare = Wordmark.grid();
+    private static _backed_wordmark(backing: Backing, font_scale: number): PixelGrid {
+        const bare = Wordmark.grid(font_scale);
         const margin = RookeryMark.WORDMARK_MARGIN;
         return PixelGrid.compose(bare.width + margin * 2, bare.height + margin * 2, [{ grid: bare, left: margin, top: margin }])
             .backed(backing === "tile" ? "outline" : backing);

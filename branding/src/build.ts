@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { type Animation, Animator } from "./animation.ts";
 import { type CrowState, CrowStates } from "./crow-states.ts";
 import { PixelGrid } from "./pixel-grid.ts";
+import { PngWriter } from "./png-writer.ts";
 import { type Lockup, RookeryMark } from "./rookery-mark.ts";
 
 /**
@@ -12,6 +13,11 @@ import { type Lockup, RookeryMark } from "./rookery-mark.ts";
  */
 class LogoBuild {
     static readonly OUTPUT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+    /** The app's resources, where the sidebar's logo goes. */
+    static readonly APP_RESOURCES_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Resources");
+    static readonly SIDEBAR_LOGO_NAME = "SidebarLogo";
+    /** The screen scales the sidebar's logo is written for, each pixel a block of that many. */
+    static readonly LIST_SIDEBAR_SCALES: readonly number[] = [1, 2];
     /** The backing the logo uses: a yellow outline around the black. */
     static readonly BACKING = "outline";
     static readonly LIST_HARNESSES: readonly string[] = ["Claude Code", "Codex", "dsh"];
@@ -36,6 +42,18 @@ class LogoBuild {
         const path = join(LogoBuild.OUTPUT_DIRECTORY, "preview.html");
         writeFileSync(path, LogoBuild._page(map_animations));
         console.log(path);
+        LogoBuild._write_sidebar_logo();
+    }
+
+    /** The still horizontal mark the app's sidebar shows, one PNG per screen scale. */
+    private static _write_sidebar_logo(): void {
+        const logo = RookeryMark.still("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_SIZE).trimmed();
+        for (const scale of LogoBuild.LIST_SIDEBAR_SCALES) {
+            const suffix = scale === 1 ? "" : `@${scale}x`;
+            const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}${suffix}.png`);
+            writeFileSync(path, PngWriter.encode(logo.enlarged(scale)));
+            console.log(path, `${logo.width * scale} × ${logo.height * scale}`);
+        }
     }
 
     /** An animation's frames, each run-length encoded row after row, for the page's player. */

@@ -131,6 +131,15 @@ struct SettingsView: View {
             if let loginItemError {
                 SettingsMessage(text: loginItemError)
             }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Appearance")
+                    .font(.system(size: 13))
+                ThemePicker(theme: $preferences.theme)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 11)
+            .padding(.bottom, 8)
+            .modifier(SettingsSeparator())
             SettingsRow(title: "Sidebar Title") {
                 TextField(Preferences.hostName, text: $preferences.stageTitle)
                     .textFieldStyle(.roundedBorder)

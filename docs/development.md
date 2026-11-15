@@ -41,7 +41,7 @@ Screen recording is not granted to the terminal, so screenshots of the real app 
 3. Host `StageView` in an `NSHostingView` inside a borderless `NSWindow` with the `darkAqua` or `aqua` appearance, run the run loop for half a second, then `bitmapImageRepForCachingDisplay` + `cacheDisplay` and write a PNG.
 4. Crop and enlarge with `sips -c <h> <w> --cropOffset <y> <x>` and `sips -z`, then read the PNG.
 
-Check both themes. Materials (`.regularMaterial`) and `WKWebView` content do not render this way; everything drawn by SwiftUI does.
+Check the light and dark themes, and the high-contrast ones when colors change; they are chosen by `StageView`'s environment rather than the window's appearance, so set the stage model's theme as well. Materials (`.regularMaterial`) and `WKWebView` content do not render this way; everything drawn by SwiftUI does.
 
 ## Verifying windows
 

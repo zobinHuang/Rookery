@@ -238,7 +238,6 @@ struct StageView: View {
                     }
                     .transition(.opacity)
             }
-            sidebarToolbar
         }
         .frame(maxHeight: .infinity)
         .onGeometryChange(for: CGFloat.self) { proxy in
@@ -282,14 +281,21 @@ struct StageView: View {
             if model.isSidebarCollapsed {
                 VStack(spacing: 12) {
                     CloseButton(action: actions.exitStage)
-                    headerButton("sidebar.left", help: "Show the sidebar", action: actions.toggleSidebar)
+                    VStack(spacing: 6) {
+                        headerButton("sidebar.left", help: "Show the sidebar", action: actions.toggleSidebar)
+                        stageTools
+                    }
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                HStack(spacing: 8) {
-                    CloseButton(action: actions.exitStage)
-                    headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
-                    Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 4) {
+                        CloseButton(action: actions.exitStage)
+                            .padding(.trailing, 4)
+                        headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
+                        stageTools
+                        Spacer(minLength: 0)
+                    }
                     RookeryLogo()
                 }
                 .padding(.horizontal, 14)
@@ -383,34 +389,21 @@ struct StageView: View {
         .padding(.bottom, 4)
     }
 
-    /// The tools along the bottom of the sidebar.
-    private var sidebarToolbar: some View {
-        let layout = model.isSidebarCollapsed ? AnyLayout(VStackLayout(spacing: 6)) : AnyLayout(HStackLayout(spacing: 4))
-        return layout {
-            headerButton("plus", help: "New Rookery window", action: actions.newStage)
-            headerButton(
-                model.shownTheme.isDark ? "sun.max" : "moon",
-                help: "Switch to the \(model.shownTheme.opposite.title) theme",
-                action: actions.toggleTheme
-            )
-            headerButton("sparkles.tv", help: "Screen saver") {
-                actions.showPage(.screenSaver)
-            }
-            headerButton("gearshape", help: "Settings") {
-                actions.showPage(.settings)
-            }
-            if !model.isSidebarCollapsed {
-                Spacer(minLength: 0)
-            }
+    /// The stage's tools beside the sidebar's own buttons at its top: a new window, the theme, the screen
+    /// saver and the settings.
+    @ViewBuilder
+    private var stageTools: some View {
+        headerButton("plus", help: "New Rookery window", action: actions.newStage)
+        headerButton(
+            model.shownTheme.isDark ? "sun.max" : "moon",
+            help: "Switch to the \(model.shownTheme.opposite.title) theme",
+            action: actions.toggleTheme
+        )
+        headerButton("sparkles.tv", help: "Screen saver") {
+            actions.showPage(.screenSaver)
         }
-        .frame(maxWidth: .infinity, alignment: model.isSidebarCollapsed ? .center : .leading)
-        .padding(.vertical, model.isSidebarCollapsed ? 8 : 0)
-        .padding(.horizontal, 10)
-        .frame(minHeight: 38)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(StageColors.separator)
-                .frame(height: 1)
+        headerButton("gearshape", help: "Settings") {
+            actions.showPage(.settings)
         }
     }
 

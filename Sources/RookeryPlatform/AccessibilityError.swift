@@ -13,6 +13,15 @@ public enum AccessibilityError: Error, Sendable, CustomStringConvertible {
         return false
     }
 
+    /// Whether the application did not answer in time: the request may still reach it and be carried out
+    /// later.
+    public var isUnanswered: Bool {
+        if case .callFailed(let code, _) = self {
+            return code == AXError.cannotComplete.rawValue
+        }
+        return false
+    }
+
     public var description: String {
         switch self {
         case .callFailed(let code, let operation):

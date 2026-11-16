@@ -12,6 +12,14 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private static let discoveryRetryInterval = Duration.seconds(30)
     private static let discoverySliceSize: UInt64 = 10_000
     private static let frameTolerance: CGFloat = 2
+    /// How long a request the application did not answer in time is waited on, for the application to
+    /// answer again and show what it did with it.
+    private static let answerWaitSeconds: TimeInterval = 8
+    private static let answerPollSeconds: TimeInterval = 0.2
+    /// How long a minimize or restore the application took is given to show, before it is asked once more:
+    /// one asked for just as the window comes back from the Dock is dropped.
+    private static let minimizeConfirmSeconds: TimeInterval = 1
+    private static let minimizeConfirmPollSeconds: TimeInterval = 0.1
     private static let listApplicationNotifications = [
         kAXWindowCreatedNotification,
         kAXFocusedWindowChangedNotification,
@@ -63,6 +71,9 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private var mapServerWindows: [WindowId: WindowServerWindow] = [:]
     private var mapLastProbeTimes: [WindowId: ContinuousClock.Instant] = [:]
     /// The next element identifier to probe while a discovery is running; nil when none is.
+    /// Whether the application left a request unanswered and has not answered since: until it does, no
+    /// request that changes a window is sent, so none piles up behind it to be carried out out of order.
+    private var isUnanswering = false
     private var discoveryCursor: UInt64?
     private var setDiscoveryTargetIds: Set<WindowId> = []
     private var discoveryStartTime = ContinuousClock.now
@@ -128,7 +139,10 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Returns: the frame after the move, or nil if the window could not be moved
     func applyFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
         let result = await thread.run { [self] () -> CGRect? in
-            guard let element = mapElements[windowId] ?? listedElement(of: windowId) else {
+            guard
+                let element = mapElements[windowId] ?? listedElement(of: windowId),
+                isAnswering(element, windowId: windowId)
+            else {
                 return nil
             }
             let isEnhanced = (try? root.isEnhancedUserInterface()) == true
@@ -153,6 +167,9 @@ final class ApplicationWindowTracker: @unchecked Sendable {
                 setObservedIds.remove(windowId)
                 Self.logger.info("window \(windowId.rawValue) is gone from Accessibility")
                 return nil
+            } catch let error as AccessibilityError where error.isUnanswered {
+                Self.logger.error("window \(windowId.rawValue)'s application did not answer a move in time")
+                return awaitAnswer(from: element, windowId: windowId) != nil ? try? element.frame() : nil
             } catch {
                 Self.logger.error("cannot move window \(windowId.rawValue): \(error, privacy: .public)")
                 return nil
@@ -195,7 +212,10 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Returns: whether the window was raised
     func raise(_ windowId: WindowId) async -> Bool {
         await thread.run { [self] () -> Bool in
-            guard let element = mapElements[windowId] ?? listedElement(of: windowId) else {
+            guard
+                let element = mapElements[windowId] ?? listedElement(of: windowId),
+                isAnswering(element, windowId: windowId)
+            else {
                 return false
             }
             do {
@@ -205,6 +225,22 @@ final class ApplicationWindowTracker: @unchecked Sendable {
                 try element.raise()
                 try? root.focusWindow(element)
                 return true
+            } catch let error as AccessibilityError where error.isUnanswered {
+                Self.logger.error("window \(windowId.rawValue)'s application did not answer a raise in time")
+                guard awaitAnswer(from: element, windowId: windowId) != nil else {
+                    return false
+                }
+                do {
+                    if try element.isMinimized() {
+                        try element.applyMinimized(false)
+                    }
+                    try element.raise()
+                    try? root.focusWindow(element)
+                    return true
+                } catch {
+                    Self.logger.error("cannot raise window \(windowId.rawValue) once its application answered: \(error, privacy: .public)")
+                    return false
+                }
             } catch {
                 Self.logger.error("cannot raise window \(windowId.rawValue): \(error, privacy: .public)")
                 return false
@@ -217,14 +253,25 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Returns: whether the window took the request
     func applyMinimized(_ isMinimized: Bool, to windowId: WindowId) async -> Bool {
         await thread.run { [self] () -> Bool in
-            guard let element = mapElements[windowId] ?? listedElement(of: windowId) else {
+            guard
+                let element = mapElements[windowId] ?? listedElement(of: windowId),
+                isAnswering(element, windowId: windowId)
+            else {
                 return false
             }
             do {
                 if try element.isMinimized() != isMinimized {
                     try element.applyMinimized(isMinimized)
+                    if try !confirmMinimized(isMinimized, element: element) {
+                        Self.logger.info("window \(windowId.rawValue) did not take a minimize of \(isMinimized); asking once more")
+                        try element.applyMinimized(isMinimized)
+                        return try confirmMinimized(isMinimized, element: element)
+                    }
                 }
                 return true
+            } catch let error as AccessibilityError where error.isUnanswered {
+                Self.logger.error("window \(windowId.rawValue)'s application did not answer a minimize in time")
+                return settleMinimized(isMinimized, element: element, windowId: windowId)
             } catch {
                 Self.logger.error("cannot minimize window \(windowId.rawValue): \(error, privacy: .public)")
                 return false
@@ -251,11 +298,82 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     /// - Returns: whether the request was accepted
     func requestExitFullscreen(_ windowId: WindowId) async -> Bool {
         await thread.run { [self] in
-            guard let element = mapElements[windowId] else {
+            guard let element = mapElements[windowId], isAnswering(element, windowId: windowId) else {
                 return false
             }
             return (try? element.applyFullscreen(false)) != nil
         } ?? false
+    }
+
+    /// Wait for the application to answer again after a request it did not answer in time, which it may
+    /// still carry out; nothing more is sent meanwhile, so requests never pile up to land out of order.
+    ///
+    /// - Returns: whether the window is minimized once the application answers, or nil if it does not
+    private func awaitAnswer(from element: AccessibilityElement, windowId: WindowId) -> Bool? {
+        let deadline = Date().addingTimeInterval(Self.answerWaitSeconds)
+        while Date() < deadline {
+            do {
+                let isMinimized = try element.isMinimized()
+                isUnanswering = false
+                Self.logger.info("window \(windowId.rawValue)'s application answers again; minimized: \(isMinimized)")
+                return isMinimized
+            } catch let error as AccessibilityError where error.isUnanswered {
+                Thread.sleep(forTimeInterval: Self.answerPollSeconds)
+            } catch {
+                return nil
+            }
+        }
+        isUnanswering = true
+        Self.logger.error("window \(windowId.rawValue)'s application still does not answer; its windows are left alone until it does")
+        return nil
+    }
+
+    /// Whether a window reaches a minimized state soon after it was asked to.
+    private func confirmMinimized(_ isMinimized: Bool, element: AccessibilityElement) throws -> Bool {
+        let deadline = Date().addingTimeInterval(Self.minimizeConfirmSeconds)
+        while true {
+            if try element.isMinimized() == isMinimized {
+                return true
+            }
+            guard Date() < deadline else {
+                return false
+            }
+            Thread.sleep(forTimeInterval: Self.minimizeConfirmPollSeconds)
+        }
+    }
+
+    /// Bring a window to a minimized state after a request for it went unanswered: wait for the application
+    /// to answer, and only then, with nothing left queued, ask once more if it did not get there.
+    private func settleMinimized(_ isMinimized: Bool, element: AccessibilityElement, windowId: WindowId) -> Bool {
+        guard let answered = awaitAnswer(from: element, windowId: windowId) else {
+            return false
+        }
+        guard answered != isMinimized else {
+            return true
+        }
+        do {
+            try element.applyMinimized(isMinimized)
+            return true
+        } catch let error as AccessibilityError where error.isUnanswered {
+            return awaitAnswer(from: element, windowId: windowId) == isMinimized
+        } catch {
+            Self.logger.error("cannot minimize window \(windowId.rawValue) once its application answered: \(error, privacy: .public)")
+            return false
+        }
+    }
+
+    /// Whether requests that change a window may be sent: always, unless the application left one
+    /// unanswered, and then only once it answers again.
+    private func isAnswering(_ element: AccessibilityElement, windowId: WindowId) -> Bool {
+        guard isUnanswering else {
+            return true
+        }
+        guard (try? element.isMinimized()) != nil else {
+            Self.logger.info("window \(windowId.rawValue) is left alone: its application still does not answer")
+            return false
+        }
+        isUnanswering = false
+        return true
     }
 
     /// Refresh against the window server's current list of this application's windows.

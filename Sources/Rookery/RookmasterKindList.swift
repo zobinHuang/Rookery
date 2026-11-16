@@ -69,6 +69,8 @@ struct RookmasterKindList: View {
             PlaybookEditor(fleetModel: fleetModel, resource: resource, onOpen: onOpen, onDeleted: onDeleted)
         case "memory":
             MemoryEditor(fleetModel: fleetModel, resource: resource, onOpen: onOpen, onDeleted: onDeleted)
+        case AgentFleet.agentKind:
+            AgentInspector(fleetModel: fleetModel, resource: resource, onOpen: onOpen)
         default:
             ResourceInspector(
                 fleetModel: fleetModel,

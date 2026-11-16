@@ -697,3 +697,262 @@ struct FlowRow: Layout {
         }
     }
 }
+
+// MARK: - Agent
+
+/// An agent as roost holds it: its crow and title, where it runs, its session, what it touched, and any
+/// other facts roost keeps about it, each laid out as a fact rather than as data.
+struct AgentInspector: View {
+    /// The attributes the page lays out itself; any other shows under Other.
+    private static let setShownAttributes: Set<String> = [
+        "state", "title", "harness", "rook_name", "tab", "machine", "cwd", "git_branch", "model",
+        "opened_at", "closed_at", "transcript_path",
+    ]
+
+    let fleetModel: FleetModel
+    let resource: FleetResource
+    let onOpen: (FleetRef) -> Void
+
+    private var ref: FleetRef {
+        FleetRef(kind: resource.kind, id: resource.id)
+    }
+
+    private var attributes: [String: JSONValue] {
+        resource.mapAttributes
+    }
+
+    private var agent: FleetAgent? {
+        fleetModel.fleet.mapAgents[resource.id]
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                FactCard(title: "Where it runs") {
+                    machineFacts
+                }
+                FactCard(title: "Session") {
+                    sessionFacts
+                }
+                RelationsList(fleetModel: fleetModel, ref: ref, onOpen: onOpen)
+                otherFacts
+            }
+            .padding(24)
+        }
+    }
+
+    private var header: some View {
+        let state = agent?.state ?? AgentState(rawValue: attributes["state"]?.stringValue ?? "") ?? .ended
+        let isOnline = agent.map { fleetModel.fleet.isOnline($0) } ?? false
+        return HStack(alignment: .center, spacing: 14) {
+            CrowView(state: state, size: .large)
+            VStack(alignment: .leading, spacing: 6) {
+                FittingText(resource.displayName, size: 20, weight: .bold)
+                    .textSelection(.enabled)
+                HStack(spacing: 5) {
+                    InfoTag(state.title, tint: state.needsAttention ? .orange : nil)
+                    if state != .ended {
+                        InfoTag(isOnline ? "online" : "offline", tint: isOnline ? .green : .orange)
+                    }
+                    if let harness = attributes["harness"]?.stringValue {
+                        InfoTag(harness)
+                    }
+                    if let model = attributes["model"]?.stringValue {
+                        InfoTag(model)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            Button {
+                onOpen(ref)
+            } label: {
+                RookeryLabel("Open Agent", icon: .arrowRight, spacing: 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+        }
+    }
+
+    @ViewBuilder
+    private var machineFacts: some View {
+        let machine = attributes["machine"]
+        if let rookName = attributes["rook_name"]?.stringValue {
+            FactRow(title: "Rook", icon: .link) {
+                Text(rookName)
+                if let tab = attributes["tab"]?.stringValue, !tab.isEmpty {
+                    InfoTag("window \(tab)")
+                }
+            }
+        }
+        if let hostname = machine?["hostname"]?.stringValue {
+            FactRow(title: "Machine", icon: .chip) {
+                Text(hostname)
+                ForEach([machine?["os"]?.stringValue, machine?["arch"]?.stringValue, machine?["user"]?.stringValue].compactMap { $0 }, id: \.self) { fact in
+                    InfoTag(fact)
+                }
+            }
+        }
+        if let cwd = attributes["cwd"]?.stringValue, !cwd.isEmpty {
+            FactRow(title: "Directory", icon: .folder) {
+                Text(cwd)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        if let branch = attributes["git_branch"]?.stringValue, !branch.isEmpty {
+            FactRow(title: "Branch", icon: .branch) {
+                Text(branch)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sessionFacts: some View {
+        FactRow(title: "Session", icon: .terminal) {
+            Text(resource.id)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+        }
+        if let openedAt = attributes["opened_at"]?.stringValue {
+            FactRow(title: "Opened", icon: .clock) {
+                Text(Self.moment(openedAt))
+                Text("\(RookmasterStyle.age(of: openedAt, now: .now)) ago")
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+        }
+        if let closedAt = attributes["closed_at"]?.stringValue {
+            FactRow(title: "Closed", icon: .clock) {
+                Text(Self.moment(closedAt))
+                Text("\(RookmasterStyle.age(of: closedAt, now: .now)) ago")
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+        }
+        FactRow(title: "Last active", icon: .clock) {
+            Text(Self.moment(resource.lastUsedAt))
+            Text("\(RookmasterStyle.age(of: resource.lastUsedAt, now: .now)) ago")
+                .foregroundStyle(StageColors.tertiaryText)
+        }
+        if let path = attributes["transcript_path"]?.stringValue {
+            FactRow(title: "Transcript", icon: .book) {
+                Text(path)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var otherFacts: some View {
+        let listKeys = attributes.keys.filter { key in
+            !Self.setShownAttributes.contains(key) && attributes[key].map(FactValue.text(of:))?.isEmpty == false
+        }.sorted()
+        if !listKeys.isEmpty {
+            FactCard(title: "Other") {
+                ForEach(listKeys, id: \.self) { key in
+                    FactRow(title: FactValue.title(of: key), icon: nil) {
+                        Text(attributes[key].map(FactValue.text(of:)) ?? "")
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
+    /// A timestamp as a date and time on this Mac's clock.
+    private static func moment(_ timestamp: String) -> String {
+        guard let date = FleetTimestamp.date(from: timestamp) else {
+            return timestamp
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+/// A titled card of facts, one a row.
+struct FactCard<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(StageColors.secondaryText)
+            VStack(alignment: .leading, spacing: 10) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(StageColors.separator)
+            }
+        }
+    }
+}
+
+/// One fact: what it is, with an icon, and its value beside it.
+struct FactRow<Content: View>: View {
+    let title: String
+    let icon: RookeryIcon?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            HStack(spacing: 6) {
+                if let icon {
+                    RookeryIconView(icon)
+                        .foregroundStyle(StageColors.tertiaryText)
+                }
+                Text(title)
+                    .foregroundStyle(StageColors.secondaryText)
+            }
+            .frame(width: FactValue.titleWidth, alignment: .leading)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                content
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12))
+    }
+}
+
+/// How a fact roost keeps reads to a person: its key in words, its value as text.
+enum FactValue {
+    /// The width of a fact's title column, so the values line up.
+    static let titleWidth: CGFloat = 96
+
+    /// A key such as `git_branch` as "Git branch".
+    static func title(of key: String) -> String {
+        let words = key.replacingOccurrences(of: "_", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
+
+    /// A value as text: a string as it is, a number or flag in words, a list or object as its parts.
+    static func text(of value: JSONValue) -> String {
+        switch value {
+        case .null:
+            return ""
+        case .string(let string):
+            return string
+        case .number(let number):
+            return number.formatted()
+        case .bool(let flag):
+            return flag ? "yes" : "no"
+        case .array(let listValues):
+            return listValues.map(text(of:)).filter { !$0.isEmpty }.joined(separator: ", ")
+        case .object(let mapValues):
+            return mapValues.keys.sorted().compactMap { key in
+                let part = mapValues[key].map(text(of:)) ?? ""
+                return part.isEmpty ? nil : "\(title(of: key)): \(part)"
+            }.joined(separator: "\n")
+        }
+    }
+}

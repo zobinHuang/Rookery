@@ -10,8 +10,8 @@ import SwiftUI
 struct AgentDetailView: View {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "agents")
     private static let pollInterval: Duration = .seconds(2)
-    /// The most steps of the conversation drawn; earlier ones are a click away.
-    private static let shownEntryLimit = 400
+    /// How much of a transcript's end is read when the page opens; the rest is a click away.
+    private static let openingTailBytes = 3 * 1024 * 1024
     private static let shownDeliveryLimit = 3
     private static let bottomId = "bottom"
 
@@ -25,7 +25,6 @@ struct AgentDetailView: View {
     @State private var draft = ""
     @State private var isSending = false
     @State private var sendError: String?
-    @State private var isShowingAll = false
     @FocusState private var isComposerFocused: Bool
 
     private var agent: FleetAgent? {
@@ -60,11 +59,16 @@ struct AgentDetailView: View {
                 .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    Text(agent.name)
+                    Text(reader.title ?? agent.name)
                         .font(.system(size: 20, weight: .bold))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     statePill(agent.state)
+                }
+                if reader.title != nil {
+                    Text(agent.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(StageColors.secondaryText)
                 }
                 metadata(agent)
             }
@@ -137,98 +141,11 @@ struct AgentDetailView: View {
     // MARK: - Conversation
 
     private var conversation: some View {
-        let listEntries = reader.listEntries
-        let listShown = isShowingAll ? listEntries[...] : listEntries.suffix(Self.shownEntryLimit)
-        return ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    if listShown.count < listEntries.count {
-                        Button("Show \(listEntries.count - listShown.count) Earlier Steps") {
-                            isShowingAll = true
-                        }
-                        .buttonStyle(.link)
-                        .frame(maxWidth: .infinity)
-                    }
-                    if listEntries.isEmpty {
-                        emptyConversation
-                    }
-                    ForEach(listShown) { entry in
-                        entryView(entry)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.bottomId)
-                }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-                .textSelection(.enabled)
-            }
-            .onChange(of: listEntries.count) {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
-                }
-            }
-            .onAppear {
-                proxy.scrollTo(Self.bottomId, anchor: .bottom)
-            }
+        TranscriptView(reader: reader, hasTranscript: hasTranscript) {
+            fleetModel.transcripts.forget(agentId)
+            reader = TranscriptReader()
         }
-    }
-
-    private var emptyConversation: some View {
-        VStack(spacing: 8) {
-            PixelIconView(hasTranscript ? .bubble : .offline, scale: 3)
-                .foregroundStyle(StageColors.tertiaryText)
-            Text(hasTranscript ? "Nothing said yet" : "roost has no transcript of this session")
-                .font(.system(size: 13, weight: .semibold))
-            if !hasTranscript {
-                Text("Transcripts arrive once the agent's machine uploads them with rook connect.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(StageColors.secondaryText)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 60)
-    }
-
-    @ViewBuilder
-    private func entryView(_ entry: TranscriptEntry) -> some View {
-        switch entry.role {
-        case .user:
-            HStack {
-                Spacer(minLength: 80)
-                Text(entry.text)
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-        case .assistant:
-            Text(Self.markdown(entry.text))
-                .font(.system(size: 13))
-                .lineSpacing(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case .tool(let name):
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                PixelIconView(.tool)
-                    .foregroundStyle(StageColors.tertiaryText)
-                Text(name)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(StageColors.secondaryText)
-                Text(entry.text)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(StageColors.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-    }
-
-    private static func markdown(_ text: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        .id(agentId)
     }
 
     // MARK: - Composer
@@ -364,7 +281,11 @@ struct AgentDetailView: View {
         reader = TranscriptReader()
         hasTranscript = true
         listDeliveries = []
-        isShowingAll = false
+        if let cached = await fleetModel.transcripts.reader(for: agentId) {
+            reader = cached
+        } else if let client = fleetModel.client() {
+            await startAtTail(from: client)
+        }
         while !Task.isCancelled {
             if let client = fleetModel.client() {
                 await readTranscript(from: client)
@@ -382,24 +303,50 @@ struct AgentDetailView: View {
         }
     }
 
+    /// Begin reading at the transcript's last stretch, so the latest of a long conversation shows at once.
+    private func startAtTail(from client: RoostClient) async {
+        guard !agentId.contains("~") else {
+            return
+        }
+        do {
+            guard let probe = try await client.transcript(of: agentId, from: 0, limit: 1) else {
+                return
+            }
+            if probe.total > Self.openingTailBytes {
+                reader = TranscriptReader(startOffset: probe.total - Self.openingTailBytes)
+            }
+        } catch {
+            Self.logger.info("cannot read the transcript: \(FleetModel.describe(error), privacy: .public)")
+        }
+    }
+
+    /// Read what the transcript grew by since the last read, all of it, a chunk at a time; start over when
+    /// the agent rewrote it.
     private func readTranscript(from client: RoostClient) async {
-        let sessionId = agentId.components(separatedBy: "~").first ?? agentId
         guard !agentId.contains("~") else {
             hasTranscript = false
             return
         }
         do {
-            guard let chunk = try await client.transcript(of: sessionId, from: reader.byteCount) else {
-                hasTranscript = false
-                return
-            }
-            hasTranscript = true
-            if chunk.total < reader.byteCount {
-                reader = TranscriptReader()
-                return
-            }
-            if !chunk.data.isEmpty {
+            while !Task.isCancelled {
+                guard let chunk = try await client.transcript(of: agentId, from: reader.nextOffset) else {
+                    hasTranscript = false
+                    return
+                }
+                hasTranscript = true
+                if chunk.total < reader.nextOffset {
+                    fleetModel.transcripts.forget(agentId)
+                    reader = TranscriptReader()
+                    continue
+                }
+                guard !chunk.data.isEmpty else {
+                    return
+                }
                 reader.append(chunk.data)
+                fleetModel.transcripts.append(chunk.data, after: reader, for: agentId)
+                if reader.nextOffset >= chunk.total {
+                    return
+                }
             }
         } catch {
             Self.logger.info("cannot read the transcript: \(FleetModel.describe(error), privacy: .public)")

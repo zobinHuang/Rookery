@@ -170,7 +170,7 @@ struct MaintenancePanel: View {
     @ViewBuilder
     private func entryView(_ entry: TranscriptEntry) -> some View {
         switch entry.role {
-        case .user:
+        case .user, .command, .compaction:
             EmptyView()
         case .assistant:
             Text((try? AttributedString(
@@ -181,7 +181,7 @@ struct MaintenancePanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .tool(let name):
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                PixelIconView(name == "Skill" ? .book : .terminal)
+                PixelIconView(TranscriptView.icon(ofTool: name))
                 Text(entry.text.isEmpty ? name : entry.text)
                     .lineLimit(2)
                     .truncationMode(.tail)

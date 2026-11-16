@@ -38,6 +38,24 @@ public enum JSONValue: Codable, Equatable, Sendable {
         }
     }
 
+    /// A value as `JSONSerialization` reads it.
+    ///
+    /// - Parameter any: a string, number, boolean, array, dictionary or null from `JSONSerialization`
+    public init(any: Any) {
+        switch any {
+        case let text as String:
+            self = .string(text)
+        case let number as NSNumber:
+            self = CFGetTypeID(number) == CFBooleanGetTypeID() ? .bool(number.boolValue) : .number(number.doubleValue)
+        case let list as [Any]:
+            self = .array(list.map(JSONValue.init(any:)))
+        case let map as [String: Any]:
+            self = .object(map.mapValues(JSONValue.init(any:)))
+        default:
+            self = .null
+        }
+    }
+
     /// The value as text, or nil when it is not a non-empty string.
     public var stringValue: String? {
         guard case .string(let value) = self, !value.isEmpty else {
@@ -375,14 +393,11 @@ public struct AgentFleet: Equatable, Sendable {
 
 /// roost's timestamps: ISO 8601 in UTC, with milliseconds.
 public enum FleetTimestamp {
+    private static let withFractionStyle = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let wholeSecondStyle = Date.ISO8601FormatStyle()
+
     /// The moment a timestamp names, or nil when it is not one.
     public static func date(from text: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: text) {
-            return date
-        }
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: text)
+        (try? withFractionStyle.parse(text)) ?? (try? wholeSecondStyle.parse(text))
     }
 }

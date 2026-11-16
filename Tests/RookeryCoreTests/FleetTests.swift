@@ -108,8 +108,8 @@ struct TranscriptReaderTests {
 
         reader.append(Data(lines.utf8))
 
-        #expect(reader.listEntries.map(\.role) == [.user, .assistant, .tool("Bash")])
-        #expect(reader.listEntries.map(\.text) == ["fix the login test", "Looking.", "npm test"])
+        #expect(reader.listEntries.map(\.role) == [.user, .command("/clear"), .assistant, .tool("Bash")])
+        #expect(reader.listEntries.map(\.text) == ["fix the login test", "", "Looking.", "npm test"])
     }
 
     @Test func readsCodexRollouts() {
@@ -125,6 +125,60 @@ struct TranscriptReaderTests {
 
         #expect(reader.listEntries.map(\.role) == [.user, .tool("shell"), .assistant])
         #expect(reader.listEntries.map(\.text) == ["add a flag", "rg flag", "Added."])
+    }
+
+    @Test func readsCompactionsCommandsTimesAndTheTitle() {
+        var reader = TranscriptReader()
+        let lines = #"""
+            {"type":"ai-title","aiTitle":"Repo overview"}
+            {"type":"user","timestamp":"2026-11-08T05:50:31.324Z","message":{"content":"<command-name>/compact</command-name>\n<command-args></command-args>"}}
+            {"type":"user","isCompactSummary":true,"isVisibleInTranscriptOnly":true,"message":{"content":"This session is being continued..."}}
+            {"type":"custom-title","customTitle":"G-Watch development"}
+            {"type":"user","timestamp":"2026-11-08T05:51:00.000Z","message":{"content":"carry on"}}
+
+            """#
+
+        reader.append(Data(lines.utf8))
+
+        #expect(reader.listEntries.map(\.role) == [.command("/compact"), .compaction, .user])
+        #expect(reader.title == "G-Watch development")
+        #expect(reader.listEntries.last?.timestamp != nil)
+    }
+
+    @Test func startsPartwayAtTheNextWholeLine() {
+        let line = #"{"type":"user","message":{"content":"hello"}}"# + "\n"
+        let data = Data((line + line).utf8)
+        var reader = TranscriptReader(startOffset: 10)
+
+        reader.append(data.dropFirst(10))
+
+        #expect(reader.listEntries.map(\.text) == ["hello"])
+        #expect(reader.nextOffset == data.count)
+    }
+
+    @Test func foldsRunsOfToolCalls() {
+        let listEntries = [
+            TranscriptEntry(id: 0, role: .user, text: "go"),
+            TranscriptEntry(id: 1, role: .tool("Bash"), text: "ls"),
+            TranscriptEntry(id: 2, role: .tool("Read"), text: "a.swift"),
+            TranscriptEntry(id: 3, role: .assistant, text: "done"),
+        ]
+
+        let listBlocks = TranscriptBlock.blocks(of: listEntries)
+
+        #expect(listBlocks.count == 3)
+        #expect(listBlocks[1] == .tools(Array(listEntries[1...2])))
+    }
+
+    @Test func splitsARepliesProseHeadingsAndCode() {
+        let text = "## Plan\nFirst **this**.\n- one\n- two\n\n```swift\nlet x = 1\n```\nAfter."
+
+        #expect(MarkdownBlock.blocks(of: text) == [
+            .heading(level: 2, text: "Plan"),
+            .paragraph("First **this**.\n- one\n- two"),
+            .code(language: "swift", text: "let x = 1"),
+            .paragraph("After."),
+        ])
     }
 
     @Test func waitsForALineToFinish() {

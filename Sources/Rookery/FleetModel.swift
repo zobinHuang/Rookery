@@ -36,6 +36,8 @@ final class FleetModel {
     @ObservationIgnored private let preferences: Preferences
     /// The maintenance agent, which works on what this model follows; it lives as long as the app.
     @ObservationIgnored private(set) lazy var maintenance = MaintenanceAgent(fleetModel: self)
+    /// The transcripts read so far, so an agent's page reopens at once.
+    @ObservationIgnored let transcripts = TranscriptCache()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var cachedToken: String??

@@ -83,7 +83,8 @@ public struct RoostTranscriptChunk: Sendable {
 public final class RoostClient: Sendable {
     private static let requestTimeout: TimeInterval = 20
     private static let resourceLimit = 1000
-    private static let transcriptChunkBytes = 4 * 1024 * 1024
+    /// The most of a transcript one request reads.
+    public static let transcriptChunkBytes = 4 * 1024 * 1024
 
     public let endpoint: RoostEndpoint
     private let session: URLSession
@@ -183,11 +184,11 @@ public final class RoostClient: Sendable {
     /// A session's transcript from a byte on.
     ///
     /// - Returns: the stretch, or nil when roost holds no transcript of the session
-    public func transcript(of sessionId: String, from offset: Int) async throws -> RoostTranscriptChunk? {
+    public func transcript(of sessionId: String, from offset: Int, limit: Int = transcriptChunkBytes) async throws -> RoostTranscriptChunk? {
         var components = URLComponents(url: endpoint.baseURL.appending(path: "/v1/sessions/\(sessionId)/transcript"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "offset", value: String(offset)),
-            URLQueryItem(name: "limit", value: String(Self.transcriptChunkBytes)),
+            URLQueryItem(name: "limit", value: String(limit)),
         ]
         guard let url = components?.url else {
             throw RoostError.invalidAddress(endpoint.baseURL.absoluteString)

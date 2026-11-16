@@ -112,6 +112,43 @@ public final class RookdClient: Sendable {
         try decode(FleetResource.self, from: try await request("GET", path: "/v1/resources/\(ref.kind)/\(ref.id)"))
     }
 
+    /// The kinds of resource rookd manages.
+    public func kinds() async throws -> [FleetKind] {
+        try decode(KindPage.self, from: try await request("GET", path: "/v1/kinds")).kinds
+    }
+
+    /// Every relation between resources.
+    public func relations() async throws -> [FleetRelation] {
+        try decode(RelationPage.self, from: try await request("GET", path: "/v1/relations")).relations
+    }
+
+    /// The latest events, oldest first.
+    public func latestEvents(limit: Int) async throws -> [FleetEvent] {
+        let data = try await request("GET", path: "/v1/events", query: [URLQueryItem(name: "limit", value: String(limit))])
+        return try decode(EventPage.self, from: data).events
+    }
+
+    /// Change a resource's name or attributes, logged as the user's doing.
+    ///
+    /// - Parameters:
+    ///   - ref: the resource
+    ///   - name: its new name, or nil to keep it
+    ///   - mapAttributes: attributes to merge into its own
+    /// - Returns: the resource as rookd keeps it now
+    public func update(_ ref: FleetRef, name: String?, attributes mapAttributes: [String: JSONValue]) async throws -> FleetResource {
+        var mapBody: [String: JSONValue] = ["attributes": .object(mapAttributes)]
+        if let name {
+            mapBody["name"] = .string(name)
+        }
+        let body = try JSONEncoder().encode(mapBody)
+        return try decode(FleetResource.self, from: try await request("PATCH", path: "/v1/resources/\(ref.kind)/\(ref.id)", body: body))
+    }
+
+    /// Remove a resource and its relations, logged as the user's doing.
+    public func delete(_ ref: FleetRef) async throws {
+        _ = try await request("DELETE", path: "/v1/resources/\(ref.kind)/\(ref.id)")
+    }
+
     /// The sequence number of the last event logged, 0 when none is.
     public func lastSeq() async throws -> Int {
         let data = try await request("GET", path: "/v1/events", query: [URLQueryItem(name: "limit", value: "1")])
@@ -274,6 +311,14 @@ public final class RookdClient: Sendable {
 
     private struct EventPage: Decodable {
         let events: [FleetEvent]
+    }
+
+    private struct KindPage: Decodable {
+        let kinds: [FleetKind]
+    }
+
+    private struct RelationPage: Decodable {
+        let relations: [FleetRelation]
     }
 
     private struct DeliveryPage: Decodable {

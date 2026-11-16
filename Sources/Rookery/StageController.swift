@@ -478,6 +478,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     func showPage(_ page: StagePage) {
         guard model.shownPage != page else {
+            if case .agent = page {
+                return
+            }
             closePage()
             return
         }
@@ -489,10 +492,14 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         workspaceController.cancelPendingFocus()
         workspaceController.notePageShown(page)
         guard model.shownPage == nil else {
+            if model.shownPage != page {
+                model.pageBefore = model.shownPage
+            }
             model.shownPage = page
             refreshScreenSaverKeyMonitor()
             return
         }
+        model.pageBefore = nil
         model.shownPage = page
         refreshScreenSaverKeyMonitor()
         panel.makeKey()
@@ -531,6 +538,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             return
         }
         model.shownPage = nil
+        model.pageBefore = nil
         refreshScreenSaverKeyMonitor()
         asideWindowId = nil
         shortcutRecorder.cancel()

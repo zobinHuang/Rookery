@@ -135,6 +135,16 @@ struct StageView: View {
         model.shownPage == nil || showsDropZones
     }
 
+    /// What an agent's page's back button names: the console or the settings it was opened from; none for
+    /// another agent's page, or a window.
+    private static func backTitle(of pageBefore: StagePage?) -> String? {
+        switch pageBefore {
+        case .rookmaster: "Rookmaster"
+        case .settings: "Settings"
+        default: nil
+        }
+    }
+
     // MARK: - Sidebar
 
     private var showsDropZones: Bool {
@@ -872,7 +882,17 @@ struct StageView: View {
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if case .agent(let agentId) = model.shownPage {
-                AgentDetailView(fleetModel: fleetModel, agentId: agentId, onClose: actions.closePage)
+                AgentDetailView(
+                    fleetModel: fleetModel,
+                    agentId: agentId,
+                    backTitle: Self.backTitle(of: model.pageBefore),
+                    onBack: {
+                        if let pageBefore = model.pageBefore {
+                            actions.showPage(pageBefore)
+                        }
+                    },
+                    onClose: actions.closePage
+                )
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .screenSaver {
                 ScreenSaverView(

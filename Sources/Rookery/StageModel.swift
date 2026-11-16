@@ -125,6 +125,9 @@ final class StageModel {
     var isSidebarCollapsed = false
     /// The page the content area shows with the front window set aside, or nil for the front window.
     var shownPage: StagePage?
+    /// The page shown before this one, which a back button returns to; nil when the page was opened over a
+    /// window.
+    var pageBefore: StagePage?
     var sidebarMode = SidebarMode.groups
     /// The theme Rookery draws in now, chosen or the system's, which picks the theme button's symbol.
     var shownTheme = Theme.light

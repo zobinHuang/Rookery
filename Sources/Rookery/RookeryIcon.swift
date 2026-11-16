@@ -78,6 +78,7 @@ enum RookeryIcon: String, CaseIterable {
     case warning
     case width
     case window
+    case chevronLeft = "chevron-left"
 
     private static let setBadges: Set<RookeryIcon> = [
         .agent, .board, .command, .crown, .gauge, .gear, .globe, .hand, .machine, .memory, .mixer, .moon,
@@ -173,6 +174,7 @@ enum RookeryIcon: String, CaseIterable {
         case .warning: "exclamationmark.triangle.fill"
         case .width: "arrow.left.and.right"
         case .window: "macwindow"
+        case .chevronLeft: "chevron.left"
         }
     }
 

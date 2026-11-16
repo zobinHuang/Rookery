@@ -10,7 +10,7 @@ import SwiftUI
 final class PageMemory {
     var rookmasterTab = RookmasterTab.board
     var rookmasterSelectedRef: FleetRef?
-    var panelTab = RookmasterPanelTab.log
+    var panelTab = RookmasterPanelTab.raven
     var isPanelExpanded = true
     var logFilter = ""
     var logClearedThroughSeq = 0

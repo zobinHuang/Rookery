@@ -45,20 +45,28 @@ enum RavenStarter: CaseIterable {
     }
 }
 
-/// The Rookmaster console's Raven column: a box to ask Raven for something in plain
-/// words, naming resources with @ and choosing them from suggestions, a few requests to start from, and
-/// each request's conversation as the agent works through it.
+/// The Rookmaster console's Raven column: the conversations with Raven, the one last active first, beside
+/// the one open, read as an agent's conversation is, and a box to ask in plain words, naming agents and
+/// resources with @ and choosing them from suggestions; a new conversation offers a few requests to start
+/// from.
 struct RavenPanel: View {
+    private static let listWidth: CGFloat = 220
 
     let fleetModel: FleetModel
 
     @State private var draft = ""
     @State private var listMentions: [FleetRef] = []
     @State private var highlightedIndex = 0
+    @State private var renamingId: String?
+    @State private var renameDraft = ""
     @FocusState private var isFocused: Bool
 
     private var raven: RavenAgent {
         fleetModel.raven
+    }
+
+    private var openId: String? {
+        raven.openConversationId
     }
 
     private var listSuggestions: [FleetResource] {
@@ -72,126 +80,184 @@ struct RavenPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            conversation
-            composer
+        HStack(spacing: 0) {
+            conversationList
+                .frame(width: Self.listWidth)
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(width: 1)
+            VStack(spacing: 0) {
+                conversation
+                composer
+            }
+        }
+        .onAppear {
+            raven.loadIfNeeded()
         }
     }
 
-    // MARK: - Runs
+    // MARK: - Conversations
 
-    private var conversation: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
-                if raven.listRuns.isEmpty {
-                    starters
+    private var conversationList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    raven.openConversationId = nil
                 }
-                ForEach(raven.listRuns) { run in
-                    runView(run)
+                isFocused = true
+            } label: {
+                HStack(spacing: 6) {
+                    RookeryIconView(.plus)
+                    Text("New Conversation")
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(openId == nil ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(
+                    openId == nil ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColor.clear),
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(raven.conversations.listConversations) { conversation in
+                        conversationRow(conversation)
+                    }
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: raven.conversations.listConversations.map(\.id))
+            }
+            .scrollIndicators(.never)
+        }
+        .padding(8)
+    }
+
+    private func conversationRow(_ conversation: RavenConversation) -> some View {
+        let isOpen = openId == conversation.id
+        return Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                raven.openConversationId = conversation.id
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                if renamingId == conversation.id {
+                    TextField("Title", text: $renameDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .onSubmit {
+                            raven.rename(conversation.id, to: renameDraft)
+                            renamingId = nil
+                        }
+                } else {
+                    FittingText(conversation.title, size: 12, weight: .semibold)
+                        .foregroundStyle(isOpen ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
+                }
+                HStack(spacing: 5) {
+                    if raven.isRunning(conversation.id) {
+                        AwaitingDots()
+                    } else if case .failed = raven.mapStatuses[conversation.id] {
+                        RookeryIconView(.failed)
+                            .foregroundStyle(.red)
+                    }
+                    Text(conversation.lastAt, format: .relative(presentation: .named))
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(StageColors.tertiaryText)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                isOpen ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColor.clear),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Rename") {
+                renameDraft = conversation.title
+                renamingId = conversation.id
+            }
+            Button("Delete", role: .destructive) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    raven.remove(conversation.id)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .textSelection(.enabled)
         }
-        .modifier(RememberedScroll(
-            key: "rookmaster.raven",
-            memory: fleetModel.pageMemory,
-            followsEnd: true,
-            isReady: true,
-            endToken: (raven.listRuns.count << 16) + (raven.listRuns.last?.reader.listEntries.count ?? 0)
-        ))
+    }
+
+    // MARK: - The open conversation
+
+    @ViewBuilder
+    private var conversation: some View {
+        if let openId {
+            VStack(spacing: 0) {
+                TranscriptView(
+                    reader: raven.reader(of: openId),
+                    agentId: openId,
+                    memory: fleetModel.pageMemory,
+                    hasTranscript: true,
+                    isWorking: raven.isRunning(openId)
+                ) {}
+                .id(openId)
+                status(of: openId)
+            }
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Ask Raven about your agents and everything roost holds.")
+                        .font(.system(size: 13, weight: .semibold))
+                    starters
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            }
+        }
     }
 
     private var starters: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ForEach(RavenStarter.allCases, id: \.self) { starter in
-                    Button {
-                        draft = starter.request
-                        isFocused = true
-                    } label: {
-                        RookeryLabel(starter.title, icon: starter.symbol)
-                            .font(.system(size: 12, weight: .medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+        FlowRow(spacing: 8) {
+            ForEach(RavenStarter.allCases, id: \.self) { starter in
+                Button {
+                    draft = starter.request
+                    isFocused = true
+                } label: {
+                    RookeryLabel(starter.title, icon: starter.symbol)
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
-        }
-    }
-
-    private func runView(_ run: RavenRun) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Spacer(minLength: 30)
-                Text(run.prompt)
-                    .font(.system(size: 12))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            ForEach(run.reader.listEntries) { entry in
-                entryView(entry)
-            }
-            status(of: run)
-        }
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-    }
-
-    @ViewBuilder
-    private func entryView(_ entry: TranscriptEntry) -> some View {
-        switch entry.role {
-        case .user, .command, .compaction:
-            EmptyView()
-        case .assistant:
-            Text((try? AttributedString(
-                markdown: entry.text,
-                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-            )) ?? AttributedString(entry.text))
-                .font(.system(size: 12))
-                .frame(maxWidth: .infinity, alignment: .leading)
-        case .tool(let name):
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                RookeryIconView(TranscriptView.icon(ofTool: name))
-                Text(entry.text.isEmpty ? name : entry.text)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-            }
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(StageColors.secondaryText)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
         }
     }
 
     @ViewBuilder
-    private func status(of run: RavenRun) -> some View {
-        switch run.status {
-        case .running:
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.mini)
-                Text("Working…")
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(StageColors.secondaryText)
-        case .finished:
-            RookeryLabel(run.costUSD.map { "Done for $\(String(format: "%.2f", $0))" } ?? "Done", icon: .check)
-                .font(.system(size: 11))
-                .foregroundStyle(.green)
+    private func status(of conversationId: String) -> some View {
+        switch raven.mapStatuses[conversationId] {
         case .failed(let reason):
             RookeryLabel(reason, icon: .failed)
                 .font(.system(size: 11))
                 .foregroundStyle(.red)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 4)
         case .cancelled:
             RookeryLabel("Stopped", icon: .stop)
                 .font(.system(size: 11))
                 .foregroundStyle(StageColors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 4)
+        default:
+            EmptyView()
         }
     }
 
@@ -208,9 +274,13 @@ struct RavenPanel: View {
                 text: $draft,
                 placeholder: isReady ? "Ask Raven; name an agent or a resource with @" : "Connect to roost first",
                 isEnabled: isReady,
-                isBusy: raven.isRunning,
+                isBusy: raven.isRunning(openId),
                 fontSize: 12,
-                onStop: raven.cancel,
+                onStop: {
+                    if let openId {
+                        raven.cancel(openId)
+                    }
+                },
                 onSend: send,
                 onKey: takeSuggestionKey,
                 isFocused: $isFocused
@@ -300,14 +370,14 @@ struct RavenPanel: View {
 
     private func send() {
         let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !request.isEmpty, !raven.isRunning else {
+        guard !request.isEmpty, !raven.isRunning(openId) else {
             return
         }
         let listNamed = listMentions.filter { ref in
             fleetModel.graph.resource(ref).map { request.contains(Mentions.token(for: $0)) } ?? false
         }
         withAnimation(.easeOut(duration: 0.2)) {
-            raven.ask(request, mentioning: listNamed)
+            _ = raven.ask(request, mentioning: listNamed, in: openId)
         }
         draft = ""
         listMentions = []

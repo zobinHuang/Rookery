@@ -22,6 +22,8 @@ struct TranscriptView: View {
     var mapDeliveries: [String: FleetDelivery] = [:]
     /// Changes when the user sends a prompt, to bring the end into view.
     var sendToken = 0
+    /// Whether the agent is working on the latest prompt, shown at the end.
+    var isWorking = false
     /// Read the conversation from its start, when the page began at its last stretch.
     let onLoadEarlier: () -> Void
 
@@ -46,6 +48,15 @@ struct TranscriptView: View {
                 ForEach(listBlocks) { block in
                     blockView(block)
                 }
+                if isWorking {
+                    HStack(spacing: 6) {
+                        AwaitingDots()
+                        Text("Working")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .transition(.opacity)
+                }
                 ForEach(listOutgoing) { outgoing in
                     outgoingPrompt(outgoing)
                         .transition(.asymmetric(
@@ -64,7 +75,7 @@ struct TranscriptView: View {
             memory: memory,
             followsEnd: true,
             isReady: !reader.listEntries.isEmpty || !hasTranscript,
-            endToken: (reader.listEntries.last?.id ?? 0) &* 31 &+ listOutgoing.count,
+            endToken: (reader.listEntries.last?.id ?? 0) &* 31 &+ listOutgoing.count &+ (isWorking ? 7 : 0),
             jumpToken: sendToken
         ))
     }

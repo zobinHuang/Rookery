@@ -194,6 +194,11 @@ public final class RoostClient: Sendable {
         return try decode(DeliveryPage.self, from: data).messages
     }
 
+    /// One delivery, as it stands now.
+    public func delivery(_ deliveryId: String) async throws -> FleetDelivery {
+        try decode(FleetDelivery.self, from: try await request("GET", path: "/v1/messages/\(deliveryId)"))
+    }
+
     /// A session's transcript from a byte on.
     ///
     /// - Returns: the stretch, or nil when roost holds no transcript of the session

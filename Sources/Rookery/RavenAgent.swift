@@ -30,8 +30,15 @@ final class RavenAgent {
     private static let resourceFolder = "Raven"
     private static let fileMode: Int = 0o600
     private static let executableMode: Int = 0o755
-    /// It changes roost through rook-client alone, and reads skills' own pages to describe them.
-    private static let listAllowedTools = ["Bash(rook-client:*)", "Skill", "WebFetch"]
+    /// It reads and changes roost's resources and reads the agents through rook-client, and only proposes
+    /// what it would do to an agent, which the user carries out; it reads skills' own pages to describe them.
+    private static let listAllowedTools = [
+        "Bash(rook-client resource:*)",
+        "Bash(rook-client agent:*)",
+        "Bash(rook-client propose:*)",
+        "Skill",
+        "WebFetch",
+    ]
 
     private(set) var conversations = RavenConversations()
     /// What was said in each conversation opened since launch, as read from its history.
@@ -40,6 +47,12 @@ final class RavenAgent {
     private(set) var mapStatuses: [String: RavenTurnStatus] = [:]
     /// The conversation the panel shows; nil for a new one, not begun yet.
     var openConversationId: String?
+    /// What Raven proposed in each conversation read since launch, oldest first.
+    private(set) var mapProposals: [String: [RavenProposal]] = [:]
+    /// The latest state of each delivery the user's decisions sent, by its id.
+    private(set) var mapDeliveries: [String: FleetDelivery] = [:]
+    /// Why carrying out a proposal failed, by the proposal's id.
+    private(set) var mapProposalErrors: [String: String] = [:]
 
     @ObservationIgnored private unowned let fleetModel: FleetModel
     @ObservationIgnored private var mapTasks: [String: Task<Void, Never>] = [:]
@@ -88,6 +101,9 @@ final class RavenAgent {
         var reader = TranscriptReader()
         if let data = try? Data(contentsOf: historyFile(of: conversationId)) {
             reader.append(data)
+            mapProposals[conversationId] = data
+                .split(separator: UInt8(ascii: "\n"))
+                .flatMap { RavenProposal.proposals(in: Data($0)) }
         }
         mapReaders[conversationId] = reader
         return reader
@@ -122,7 +138,13 @@ final class RavenAgent {
         openConversationId = sessionId
         record(Self.requestLine(request, at: now), in: sessionId)
         mapStatuses[sessionId] = .running
-        let prompt = Self.prompt(request, listMentions: listMentions, graph: fleetModel.graph, agentId: sessionId)
+        let prompt = Self.prompt(
+            request,
+            listMentions: listMentions,
+            graph: fleetModel.graph,
+            agentId: sessionId,
+            listDecisions: decisionLines(in: sessionId)
+        )
         mapTasks[sessionId] = Task { [weak self] in
             await self?.perform(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, client: client)
         }
@@ -145,6 +167,60 @@ final class RavenAgent {
             openConversationId = nil
         }
         saveIndex()
+    }
+
+    /// Carry out a proposal: send its text to its agent, as the user.
+    func approve(_ proposal: RavenProposal, in conversationId: String) async {
+        mapProposalErrors[proposal.id] = nil
+        do {
+            let delivery = try await fleetModel.send(proposal.text, to: proposal.agentId)
+            mapDeliveries[delivery.id] = delivery
+            conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .sent(deliveryId: delivery.id), decidedAt: .now))
+            saveIndex()
+        } catch {
+            mapProposalErrors[proposal.id] = FleetModel.describe(error)
+        }
+    }
+
+    func reject(_ proposal: RavenProposal, in conversationId: String) {
+        conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .rejected, decidedAt: .now))
+        saveIndex()
+    }
+
+    /// Read again the deliveries a conversation's decisions sent that have not settled.
+    func refreshDeliveries(in conversationId: String) async {
+        guard let client = fleetModel.client(), let conversation = conversations.conversation(conversationId) else {
+            return
+        }
+        for decision in conversation.mapDecisions.values {
+            guard
+                case .sent(let deliveryId) = decision.outcome,
+                mapDeliveries[deliveryId]?.isSettled != true
+            else {
+                continue
+            }
+            do {
+                mapDeliveries[deliveryId] = try await client.delivery(deliveryId)
+            } catch {
+                Self.logger.info("cannot read delivery \(deliveryId, privacy: .public): \(FleetModel.describe(error), privacy: .public)")
+            }
+        }
+    }
+
+    /// The user's decisions Raven has not heard of, one line each, now marked as told.
+    private func decisionLines(in conversationId: String) -> [String] {
+        let mapUnreported = conversations.takeUnreportedDecisions(in: conversationId)
+        saveIndex()
+        let mapProposed = Dictionary((mapProposals[conversationId] ?? []).map { ($0.id, $0) }) { first, _ in first }
+        return mapUnreported.keys.sorted().map { proposalId in
+            let about = mapProposed[proposalId].map { "your message to \($0.agentTitle) (\(proposalId))" } ?? proposalId
+            switch mapUnreported[proposalId]?.outcome {
+            case .sent(let deliveryId):
+                return "- \(about): the user sent it; delivery \(deliveryId)"
+            default:
+                return "- \(about): the user decided not to send it"
+            }
+        }
     }
 
     func rename(_ conversationId: String, to title: String) {
@@ -256,6 +332,10 @@ final class RavenAgent {
     /// Add a line to what was said in a conversation, on screen and in its history.
     private func record(_ line: Data, in conversationId: String) {
         var reader = reader(of: conversationId)
+        let listProposed = RavenProposal.proposals(in: line)
+        if !listProposed.isEmpty {
+            mapProposals[conversationId, default: []].append(contentsOf: listProposed)
+        }
         let terminated = line + Data("\n".utf8)
         reader.append(terminated)
         mapReaders[conversationId] = reader
@@ -344,8 +424,19 @@ final class RavenAgent {
     }
 
     /// The request as the agent reads it: the user's words, the resources they named, and the agent's id.
-    static func prompt(_ request: String, listMentions: [FleetRef], graph: ResourceGraph, agentId: String) -> String {
+    static func prompt(
+        _ request: String,
+        listMentions: [FleetRef],
+        graph: ResourceGraph,
+        agentId: String,
+        listDecisions: [String]
+    ) -> String {
         var listLines = [request]
+        if !listDecisions.isEmpty {
+            listLines.append("")
+            listLines.append("Since your last answer, the user decided on your proposals:")
+            listLines.append(contentsOf: listDecisions)
+        }
         let listUnique = listMentions.reduce(into: [FleetRef]()) { list, ref in
             if !list.contains(ref) {
                 list.append(ref)

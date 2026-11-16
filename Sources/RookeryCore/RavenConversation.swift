@@ -14,14 +14,46 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public var turnCount: Int
     /// What its turns cost, in US dollars.
     public var costUSD: Double
+    /// What the user decided about each of Raven's proposals in it, by the proposal's id.
+    public var mapDecisions: [String: RavenDecision]
 
-    public init(id: String, title: String, createdAt: Date, lastAt: Date, turnCount: Int, costUSD: Double) {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case createdAt
+        case lastAt
+        case turnCount
+        case costUSD
+        case mapDecisions
+    }
+
+    public init(
+        id: String,
+        title: String,
+        createdAt: Date,
+        lastAt: Date,
+        turnCount: Int,
+        costUSD: Double,
+        mapDecisions: [String: RavenDecision] = [:]
+    ) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
         self.lastAt = lastAt
         self.turnCount = turnCount
         self.costUSD = costUSD
+        self.mapDecisions = mapDecisions
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastAt = try container.decode(Date.self, forKey: .lastAt)
+        turnCount = try container.decode(Int.self, forKey: .turnCount)
+        costUSD = try container.decode(Double.self, forKey: .costUSD)
+        mapDecisions = try container.decodeIfPresent([String: RavenDecision].self, forKey: .mapDecisions) ?? [:]
     }
 
     /// A title from the request that opened the conversation: its first line, cut at a word to fit.
@@ -100,6 +132,27 @@ public struct RavenConversations: Codable, Equatable, Sendable {
             return
         }
         listConversations[index].title = trimmed
+    }
+
+    /// Record what the user decided about a proposal.
+    public mutating func decide(_ proposalId: String, in conversationId: String, _ decision: RavenDecision) {
+        guard let index = listConversations.firstIndex(where: { $0.id == conversationId }) else {
+            return
+        }
+        listConversations[index].mapDecisions[proposalId] = decision
+    }
+
+    /// The decisions in a conversation Raven has not heard of, which go with the next request, now marked
+    /// as told.
+    public mutating func takeUnreportedDecisions(in conversationId: String) -> [String: RavenDecision] {
+        guard let index = listConversations.firstIndex(where: { $0.id == conversationId }) else {
+            return [:]
+        }
+        let mapUnreported = listConversations[index].mapDecisions.filter { !$0.value.isReported }
+        for proposalId in mapUnreported.keys {
+            listConversations[index].mapDecisions[proposalId]?.isReported = true
+        }
+        return mapUnreported
     }
 
     public mutating func remove(_ conversationId: String) {

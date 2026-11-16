@@ -55,6 +55,9 @@ enum RavenStarter: CaseIterable {
 /// from.
 struct RavenPanel: View {
     private static let listWidth: CGFloat = 220
+    private static let deliveryPollInterval: Duration = .seconds(3)
+    /// The most decided proposals shown above the box, the latest.
+    private static let shownDecidedLimit = 3
 
     let fleetModel: FleetModel
 
@@ -63,6 +66,7 @@ struct RavenPanel: View {
     @State private var highlightedIndex = 0
     @State private var renamingId: String?
     @State private var renameDraft = ""
+    @State private var setSendingIds: Set<String> = []
     @FocusState private var isFocused: Bool
 
     private var raven: RavenAgent {
@@ -210,6 +214,17 @@ struct RavenPanel: View {
                 ) {}
                 .id(openId)
                 status(of: openId)
+                proposals(in: openId)
+            }
+            .task(id: openId) {
+                while !Task.isCancelled {
+                    await raven.refreshDeliveries(in: openId)
+                    do {
+                        try await Task.sleep(for: Self.deliveryPollInterval)
+                    } catch {
+                        return
+                    }
+                }
             }
         } else {
             ScrollView {
@@ -220,6 +235,125 @@ struct RavenPanel: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(20)
+            }
+        }
+    }
+
+    // MARK: - Proposals
+
+    /// What Raven proposed to do to agents in a conversation: those waiting on the user in full, with
+    /// buttons to carry them out or not, and the latest decided ones in a line each.
+    @ViewBuilder
+    private func proposals(in conversationId: String) -> some View {
+        let listProposals = raven.mapProposals[conversationId] ?? []
+        let mapDecisions = raven.conversations.conversation(conversationId)?.mapDecisions ?? [:]
+        let listPending = listProposals.filter { mapDecisions[$0.id] == nil }
+        let listDecided = listProposals.filter { mapDecisions[$0.id] != nil }.suffix(Self.shownDecidedLimit)
+        if !listPending.isEmpty || !listDecided.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(listDecided)) { proposal in
+                    decidedLine(proposal, decision: mapDecisions[proposal.id])
+                }
+                ForEach(listPending) { proposal in
+                    proposalCard(proposal, in: conversationId)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listPending.map(\.id))
+        }
+    }
+
+    private func proposalCard(_ proposal: RavenProposal, in conversationId: String) -> some View {
+        let isSending = setSendingIds.contains(proposal.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                RookeryIconView(.send)
+                    .foregroundStyle(Color.accentColor)
+                Text("Raven would send this to")
+                    .foregroundStyle(StageColors.secondaryText)
+                FittingText(proposal.agentTitle, size: 12, weight: .semibold)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12))
+            Text(proposal.text)
+                .font(.system(size: 12))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(StageColors.groove.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if let error = raven.mapProposalErrors[proposal.id] {
+                RookeryLabel(error, icon: .warning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Button("Don't Send") {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        raven.reject(proposal, in: conversationId)
+                    }
+                }
+                .disabled(isSending)
+                Button {
+                    send(proposal, in: conversationId)
+                } label: {
+                    if isSending {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Send")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isSending)
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.45))
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func decidedLine(_ proposal: RavenProposal, decision: RavenDecision?) -> some View {
+        HStack(spacing: 6) {
+            switch decision?.outcome {
+            case .sent(let deliveryId):
+                let delivery = raven.mapDeliveries[deliveryId]
+                RookeryIconView(delivery?.isFailed == true ? .failed : .check)
+                    .foregroundStyle(delivery?.isFailed == true ? Color.red : Color.green)
+                Text("Sent to \(proposal.agentTitle)")
+                if let delivery {
+                    InfoTag(delivery.status.capitalized, tint: delivery.isFailed ? .red : nil)
+                    if delivery.isFailed {
+                        Text(delivery.reason)
+                            .foregroundStyle(StageColors.secondaryText)
+                            .lineLimit(1)
+                    }
+                }
+            default:
+                RookeryIconView(.close)
+                    .foregroundStyle(StageColors.tertiaryText)
+                Text("Not sent to \(proposal.agentTitle)")
+                    .foregroundStyle(StageColors.secondaryText)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 4)
+    }
+
+    private func send(_ proposal: RavenProposal, in conversationId: String) {
+        setSendingIds.insert(proposal.id)
+        Task {
+            await raven.approve(proposal, in: conversationId)
+            withAnimation(.easeOut(duration: 0.2)) {
+                _ = setSendingIds.remove(proposal.id)
             }
         }
     }

@@ -1,6 +1,8 @@
 {
     "frame_width": 127,
     "frame_height": 29,
+    "retina_frame_width": 243,
+    "retina_frame_height": 57,
     "frames_per_second": 10,
     "sequence": [
         0,

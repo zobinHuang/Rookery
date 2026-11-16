@@ -31,7 +31,6 @@ class LogoBuild {
     static readonly README_LOGO_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "images", "rookery-logo.png");
     static readonly README_LOGO_SCALE = 2;
     /** The screen scales the sidebar's logo is written for, each pixel a block of that many. */
-    static readonly LIST_SIDEBAR_SCALES: readonly number[] = [1, 2];
     /** The backing the logo uses: a yellow outline around the black. */
     static readonly BACKING = "outline";
     static readonly LIST_HARNESSES: readonly string[] = ["Claude Code", "Codex", "dsh"];
@@ -154,29 +153,35 @@ class LogoBuild {
 
     /**
      * The animated horizontal mark the app's sidebar shows: its distinct frames side by side in one PNG per
-     * screen scale, and how to play them, for the app to hand to Core Animation.
+     * screen scale, and how to play them, for the app to hand to Core Animation. The Retina strip is drawn
+     * on a grid twice as fine rather than enlarged, so the mark keeps its pixels' look at twice the detail.
      */
     private static _write_sidebar_logo(): void {
         const animation = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_SIZE, true);
-        const strip = PixelGrid.compose(
-            animation.width * animation.list_frames.length,
-            animation.height,
-            animation.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * animation.width, top: 0 })),
-        );
-        for (const scale of LogoBuild.LIST_SIDEBAR_SCALES) {
-            const suffix = scale === 1 ? "" : `@${scale}x`;
+        const retina = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_RETINA_SIZE, true);
+        if (JSON.stringify(retina.list_sequence) !== JSON.stringify(animation.list_sequence)) {
+            throw new Error("the sidebar mark's Retina frames do not follow the same sequence");
+        }
+        for (const [suffix, drawn] of [["", animation], ["@2x", retina]] as const) {
+            const strip = PixelGrid.compose(
+                drawn.width * drawn.list_frames.length,
+                drawn.height,
+                drawn.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * drawn.width, top: 0 })),
+            );
             const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}${suffix}.png`);
-            writeFileSync(path, PngWriter.encode(strip.enlarged(scale)));
-            console.log(path);
+            writeFileSync(path, PngWriter.encode(strip));
+            console.log(path, `${drawn.width} × ${drawn.height}`);
         }
         const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}.json`);
         writeFileSync(path, `${JSON.stringify({
             frame_width: animation.width,
             frame_height: animation.height,
+            retina_frame_width: retina.width,
+            retina_frame_height: retina.height,
             frames_per_second: animation.frames_per_second,
             sequence: animation.list_sequence,
         }, undefined, 4)}\n`);
-        console.log(path, `${animation.width} × ${animation.height}, ${animation.list_frames.length} frames`);
+        console.log(path, `${animation.list_frames.length} frames`);
     }
 
     /** An animation's frames, each run-length encoded row after row, for the page's player. */

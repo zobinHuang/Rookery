@@ -14,7 +14,7 @@ struct RookeryLogo: View {
     var body: some View {
         if let timeline = SidebarLogoArt.timeline {
             RookeryLogoLayer(timeline: timeline)
-                .frame(width: CGFloat(timeline.frameWidth), height: CGFloat(timeline.frameHeight))
+                .frame(width: timeline.pointSize.width, height: timeline.pointSize.height)
                 .accessibilityElement()
                 .accessibilityLabel(Self.name)
         } else {
@@ -29,12 +29,34 @@ struct RookeryLogo: View {
 struct SidebarLogoTimeline: Decodable, Equatable {
     let frameWidth: Int
     let frameHeight: Int
+    /// A Retina frame's size in pixels, drawn on a grid twice as fine; nil when the strip is the 1x one
+    /// enlarged.
+    let retinaFrameWidth: Int?
+    let retinaFrameHeight: Int?
     let framesPerSecond: Double
     let listSequence: [Int]
+
+    /// The size the logo takes, in points: half its Retina frame, one logo pixel to a Retina pixel.
+    var pointSize: CGSize {
+        guard let retinaFrameWidth, let retinaFrameHeight else {
+            return CGSize(width: frameWidth, height: frameHeight)
+        }
+        return CGSize(width: CGFloat(retinaFrameWidth) / 2, height: CGFloat(retinaFrameHeight) / 2)
+    }
+
+    /// A frame's size in pixels in the strip made for a screen scale.
+    func frameSize(scale: Int) -> CGSize {
+        if scale > 1, let retinaFrameWidth, let retinaFrameHeight {
+            return CGSize(width: retinaFrameWidth, height: retinaFrameHeight)
+        }
+        return CGSize(width: frameWidth * scale, height: frameHeight * scale)
+    }
 
     enum CodingKeys: String, CodingKey {
         case frameWidth = "frame_width"
         case frameHeight = "frame_height"
+        case retinaFrameWidth = "retina_frame_width"
+        case retinaFrameHeight = "retina_frame_height"
         case framesPerSecond = "frames_per_second"
         case listSequence = "sequence"
     }
@@ -95,8 +117,9 @@ enum SidebarLogoArt {
             logger.error("cannot read the sidebar logo's frames at \(scale)x")
             return []
         }
-        let frameWidth = timeline.frameWidth * scale
-        let frameHeight = timeline.frameHeight * scale
+        let frameSize = timeline.frameSize(scale: scale)
+        let frameWidth = Int(frameSize.width)
+        let frameHeight = Int(frameSize.height)
         return (0..<(strip.width / max(frameWidth, 1))).compactMap { frameIndex in
             strip.cropping(to: CGRect(x: frameIndex * frameWidth, y: 0, width: frameWidth, height: frameHeight))
         }

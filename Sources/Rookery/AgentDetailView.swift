@@ -13,9 +13,6 @@ struct AgentDetailView: View {
     /// How much of a transcript's end is read when the page opens; the rest is a click away.
     private static let openingTailBytes = 3 * 1024 * 1024
     private static let shownDeliveryLimit = 3
-    private static let sendButtonSize: CGFloat = 26
-    /// Round enough to make a one-line box a capsule; a taller one keeps rounded corners.
-    private static let composerCornerRadius: CGFloat = 19
     private static let bottomId = "bottom"
 
     let fleetModel: FleetModel
@@ -158,7 +155,6 @@ struct AgentDetailView: View {
 
     private func composer(_ agent: FleetAgent) -> some View {
         let isReachable = agent.state != .ended && fleetModel.fleet.isOnline(agent)
-        let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: 8) {
             ForEach(listDeliveries.prefix(Self.shownDeliveryLimit)) { delivery in
                 deliveryLine(delivery)
@@ -168,52 +164,14 @@ struct AgentDetailView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
             }
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField(
-                    isReachable ? "Message \(agent.displayName)" : composerHint(agent),
-                    text: $draft,
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .lineLimit(1...8)
-                .frame(minHeight: Self.sendButtonSize)
-                .focused($isComposerFocused)
-                .disabled(!isReachable)
-                .onKeyPress(.return, phases: .down) { keyPress in
-                    guard !keyPress.modifiers.contains(.shift) else {
-                        return .ignored
-                    }
-                    send(to: agent)
-                    return .handled
-                }
-                Button {
-                    send(to: agent)
-                } label: {
-                    Group {
-                        if isSending {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            RookeryIconView(.arrowUp)
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .frame(width: Self.sendButtonSize, height: Self.sendButtonSize)
-                    .background(isEmpty || !isReachable ? Color.gray.opacity(0.5) : Color.accentColor, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(isEmpty || !isReachable || isSending)
-                .help("Send (Return); Shift-Return for a new line")
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 6)
-            .padding(.vertical, 6)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: Self.composerCornerRadius, style: .circular))
-            .overlay {
-                RoundedRectangle(cornerRadius: Self.composerCornerRadius, style: .circular)
-                    .strokeBorder(isComposerFocused ? AnyShapeStyle(Color.accentColor.opacity(0.6)) : AnyShapeStyle(StageColors.separator))
-            }
+            AgentComposer(
+                text: $draft,
+                placeholder: isReachable ? "Message \(agent.displayName)" : composerHint(agent),
+                isEnabled: isReachable,
+                isBusy: isSending,
+                onSend: { send(to: agent) },
+                isFocused: $isComposerFocused
+            )
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 18)

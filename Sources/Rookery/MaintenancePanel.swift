@@ -202,71 +202,25 @@ struct MaintenancePanel: View {
     // MARK: - Composer
 
     private var composer: some View {
-        let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isReady = fleetModel.connection == .online
         return VStack(alignment: .leading, spacing: 6) {
             if !listSuggestions.isEmpty {
                 suggestions
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField(isReady ? "Ask the maintenance agent…" : "Connect to roost first", text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .lineLimit(1...6)
-                    .focused($isFocused)
-                    .disabled(!isReady)
-                    .onChange(of: draft) {
-                        highlightedIndex = 0
-                    }
-                    .onKeyPress(.upArrow) {
-                        moveHighlight(by: -1)
-                    }
-                    .onKeyPress(.downArrow) {
-                        moveHighlight(by: 1)
-                    }
-                    .onKeyPress(.tab) {
-                        pickHighlighted()
-                    }
-                    .onKeyPress(.return, phases: .down) { keyPress in
-                        if !listSuggestions.isEmpty {
-                            return pickHighlighted()
-                        }
-                        guard !keyPress.modifiers.contains(.shift) else {
-                            return .ignored
-                        }
-                        send()
-                        return .handled
-                    }
-                if maintenance.isRunning {
-                    Button {
-                        maintenance.cancel()
-                    } label: {
-                        RookeryIconView(.stop)
-                            .foregroundStyle(.white)
-                            .frame(width: 24, height: 24)
-                            .background(Color.red, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Stop the agent")
-                } else {
-                    Button(action: send) {
-                        RookeryIconView(.arrowUp)
-                            .foregroundStyle(.white)
-                            .frame(width: 24, height: 24)
-                            .background(isEmpty || !isReady ? Color.gray.opacity(0.5) : Color.accentColor, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isEmpty || !isReady)
-                    .help("Ask (Return)")
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isFocused ? AnyShapeStyle(Color.accentColor.opacity(0.6)) : AnyShapeStyle(StageColors.separator))
+            AgentComposer(
+                text: $draft,
+                placeholder: isReady ? "Ask the maintenance agent; name a resource with @" : "Connect to roost first",
+                isEnabled: isReady,
+                isBusy: maintenance.isRunning,
+                fontSize: 12,
+                onStop: maintenance.cancel,
+                onSend: send,
+                onKey: takeSuggestionKey,
+                isFocused: $isFocused
+            )
+            .onChange(of: draft) {
+                highlightedIndex = 0
             }
         }
         .padding(12)
@@ -308,6 +262,22 @@ struct MaintenancePanel: View {
                 .strokeBorder(StageColors.separator)
         }
         .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
+    }
+
+    /// The keys that work the suggestions while they show.
+    private func takeSuggestionKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        switch keyPress.key {
+        case .upArrow:
+            return moveHighlight(by: -1)
+        case .downArrow:
+            return moveHighlight(by: 1)
+        case .tab:
+            return pickHighlighted()
+        case .return where !listSuggestions.isEmpty:
+            return pickHighlighted()
+        default:
+            return .ignored
+        }
     }
 
     private func moveHighlight(by step: Int) -> KeyPress.Result {

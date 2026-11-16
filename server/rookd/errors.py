@@ -55,6 +55,12 @@ class ConflictError(RookdError):
     ERROR_HTTP_STATUS = 409
 
 
+class BusyError(RookdError):
+    """The server is already serving as many of these requests as it allows at once."""
+
+    ERROR_HTTP_STATUS = 503
+
+
 class CursorConflictError(RookdError):
     """The client's write offset disagrees with the stored transcript."""
 

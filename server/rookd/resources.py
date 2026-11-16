@@ -274,7 +274,7 @@ class ResourceStore:
             ).fetchone()
         if row is None:
             raise NotFoundError(f"no such {ref.kind}: {ref.id}")
-        return self._resource_of(row)
+        return self.resource_of(row)
 
     def put(self, resource: Resource, connection: sqlite3.Connection | None = None) -> Resource:
         """Store a resource whole, creating it or replacing what was stored, keeping when it was created and,
@@ -382,7 +382,7 @@ class ResourceStore:
                 f"SELECT * FROM resources {where} ORDER BY {order} LIMIT ?",
                 (*list_values, query.limit),
             ).fetchall()
-        return [self._resource_of(row) for row in list_rows]
+        return [self.resource_of(row) for row in list_rows]
 
     def touch(self, ref: ResourceRef, at: str, connection: sqlite3.Connection) -> None:
         """Record that a resource was used, which moves it up its column on a board.
@@ -463,7 +463,15 @@ class ResourceStore:
         ]
 
     @staticmethod
-    def _resource_of(row: sqlite3.Row) -> Resource:
+    def resource_of(row: sqlite3.Row) -> Resource:
+        """Read a resource out of a database row.
+
+        Args:
+            row: a row of the resources table
+
+        Returns:
+            the resource it holds
+        """
         origin = None
         if row["origin_kind"] and row["origin_id"]:
             origin = ResourceRef(kind=row["origin_kind"], id=row["origin_id"])

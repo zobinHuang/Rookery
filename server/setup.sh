@@ -112,7 +112,7 @@ ROOKD_CONFIG="$HOME/.config/rookd/config.json"
 ROOKD_BIN="$HOME/.local/bin/rookd"
 
 mkdir -p "$ROOKD_APP_DIR/rookd" "$HOME/.local/bin"
-for MODULE in __init__.py __main__.py config.py database.py errors.py http.py playbooks.py records.py resources.py skills.py store.py; do
+for MODULE in __init__.py __main__.py catalog.py config.py database.py errors.py events.py http.py playbooks.py records.py resources.py skills.py store.py; do
   if ! rookd_install_file "server/rookd/$MODULE" "$ROOKD_APP_DIR/rookd/$MODULE"; then
     err "Failed to install rookd/$MODULE"
     exit 1

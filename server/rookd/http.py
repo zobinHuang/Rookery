@@ -2,21 +2,25 @@ import json
 import secrets
 import ssl
 import sys
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from rookd import ROOKD_VERSION
 from rookd.config import ServerConfig
+from rookd.catalog import ResourceCatalog
+from rookd.database import Database
 from rookd.errors import (
     AuthError,
+    BusyError,
     NotFoundError,
     PayloadTooLargeError,
-    ValidationError,
     RookdError,
+    ValidationError,
 )
-from rookd.database import Database
+from rookd.events import EventLog
 from rookd.playbooks import PlaybookIndex
-from rookd.resources import ResourceStore
+from rookd.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
 from rookd.skills import SkillIndex
 from rookd.store import SessionMeta, SessionQuery, SessionStore
 
@@ -106,6 +110,10 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
             self._route_skills(method, list_segments, map_query)
         elif collection == "playbooks":
             self._route_playbooks(method, list_segments, map_query)
+        elif collection in ("kinds", "resources", "relations"):
+            self._route_resources(method, list_segments, map_query)
+        elif collection == "events":
+            self._route_events(method, list_segments, map_query)
         else:
             raise NotFoundError(self._no_such_route(method, list_segments))
 
@@ -289,6 +297,119 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
             return
 
         raise NotFoundError(self._no_such_route(method, list_segments))
+
+    def _route_resources(
+        self,
+        method: str,
+        list_segments: list[str],
+        map_query: dict[str, list[str]],
+    ) -> None:
+        catalog = self._catalog()
+        if list_segments == ["kinds"] and method == "GET":
+            self._respond_json(HTTPStatus.OK, {"kinds": [kind.as_payload() for kind in ResourceKinds.LIST_KINDS]})
+            return
+        if list_segments == ["relations"] and method == "GET":
+            kind = self._query_text(map_query, "kind")
+            resource_id = self._query_text(map_query, "id")
+            ref = ResourceRef.of(kind, resource_id) if kind and resource_id else None
+            self._respond_json(
+                HTTPStatus.OK,
+                {"relations": [relation.as_payload() for relation in self.server.resources.relations(ref)]},
+            )
+            return
+        if list_segments == ["resources"] and method == "GET":
+            query = ResourceQuery(
+                kind=self._query_text(map_query, "kind"),
+                text=self._query_text(map_query, "q"),
+                since=self._query_text(map_query, "since"),
+                order=self._query_text(map_query, "order") or "last_used",
+                limit=self._index_limit(map_query, ResourceQuery.QUERY_MAX_LIMIT),
+            )
+            self._respond_json(
+                HTTPStatus.OK,
+                {"resources": [resource.as_payload() for resource in self.server.resources.query(query)]},
+            )
+            return
+        if len(list_segments) == 2 and list_segments[0] == "resources" and method == "POST":
+            self._respond_json(HTTPStatus.CREATED, catalog.create(list_segments[1], self._read_json_body()).as_payload())
+            return
+        if len(list_segments) == 3 and list_segments[0] == "resources":
+            kind, resource_id = list_segments[1], list_segments[2]
+            if method == "GET":
+                self._respond_json(
+                    HTTPStatus.OK,
+                    self.server.resources.get(ResourceRef.of(kind, resource_id)).as_payload(),
+                )
+                return
+            if method == "PATCH":
+                self._respond_json(
+                    HTTPStatus.OK,
+                    catalog.update(kind, resource_id, self._read_json_body()).as_payload(),
+                )
+                return
+            if method == "DELETE":
+                catalog.delete(kind, resource_id, self._read_json_body())
+                self._respond_json(HTTPStatus.OK, {"ok": True})
+                return
+        raise NotFoundError(self._no_such_route(method, list_segments))
+
+    def _route_events(
+        self,
+        method: str,
+        list_segments: list[str],
+        map_query: dict[str, list[str]],
+    ) -> None:
+        events = self.server.events
+        if list_segments == ["events"] and method == "POST":
+            list_reports = self._read_json_body().get("events")
+            if not isinstance(list_reports, list):
+                raise ValidationError("the body needs an events list")
+            self._respond_json(
+                HTTPStatus.OK,
+                {"events": [event.as_payload() for event in events.record(list_reports)]},
+            )
+            return
+        if list_segments == ["events"] and method == "GET":
+            limit = self._index_limit(map_query, EventLog.EVENT_PAGE_MAX)
+            if "after" in map_query:
+                list_events = events.after(self._query_int(map_query, "after"), limit)
+            else:
+                list_events = events.latest(limit)
+            self._respond_json(HTTPStatus.OK, {"events": [event.as_payload() for event in list_events]})
+            return
+        if list_segments == ["events", "stream"] and method == "GET":
+            after = self._query_int(map_query, "after") if "after" in map_query else 0
+            self._stream_events(after)
+            return
+        raise NotFoundError(self._no_such_route(method, list_segments))
+
+    def _stream_events(self, after: int) -> None:
+        """Send every event after a sequence number as server-sent events, then each new one as it is
+        logged, with a comment now and then so idle proxies keep the connection open, until the client
+        goes away."""
+        if not self.server.stream_slots.acquire(blocking=False):
+            raise BusyError("too many event streams are open; try again later")
+        try:
+            self.close_connection = True
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            cursor = after
+            while not self.server.is_stopping:
+                list_events = self.server.events.wait_after(cursor, RookdServer.SERVER_STREAM_HEARTBEAT_SECONDS)
+                if not list_events:
+                    self.wfile.write(b": keepalive\n\n")
+                for event in list_events:
+                    body = json.dumps(event.as_payload())
+                    self.wfile.write(f"id: {event.seq}\nevent: event\ndata: {body}\n\n".encode("utf-8"))
+                    cursor = event.seq
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+            pass
+        finally:
+            self.server.stream_slots.release()
 
     def _index_limit(self, map_query: dict[str, list[str]], default: int) -> int:
         if "limit" not in map_query:
@@ -476,6 +597,9 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
     def _playbooks(self) -> PlaybookIndex:
         return self.server.playbooks
 
+    def _catalog(self) -> ResourceCatalog:
+        return self.server.catalog
+
     def _respond_json(self, status: HTTPStatus, map_payload: dict[str, object]) -> None:
         body = json.dumps(map_payload).encode("utf-8")
         self.send_response(status)
@@ -494,6 +618,8 @@ class RookdServer(ThreadingHTTPServer):
 
     daemon_threads = True
     allow_reuse_address = True
+    SERVER_STREAMS_MAX = 32
+    SERVER_STREAM_HEARTBEAT_SECONDS = 15
 
     def __init__(
         self,
@@ -508,6 +634,10 @@ class RookdServer(ThreadingHTTPServer):
         self.resources = resources or ResourceStore(Database(config.data_root))
         self.skills = skills or SkillIndex(self.resources)
         self.playbooks = playbooks or PlaybookIndex(self.resources, self.skills)
+        self.events = EventLog(self.resources)
+        self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)
+        self.stream_slots = threading.BoundedSemaphore(self.SERVER_STREAMS_MAX)
+        self.is_stopping = False
         super().__init__(
             (config.host, config.port),
             RookdRequestHandler,
@@ -527,6 +657,12 @@ class RookdServer(ThreadingHTTPServer):
             sys.stderr.write(f"rookd {client_address[0]} dropped the connection: {error}\n")
             return
         super().handle_error(request, client_address)
+
+    def shutdown(self) -> None:
+        """Stop serving, ending the event streams too."""
+        self.is_stopping = True
+        self.events.wake()
+        super().shutdown()
 
     def bound_port(self) -> int:
         """Report the port the server actually bound.

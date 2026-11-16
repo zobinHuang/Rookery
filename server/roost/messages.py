@@ -3,9 +3,9 @@ import secrets
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from rookd.errors import NotFoundError, ValidationError
-from rookd.events import EventLog, EventVerbs
-from rookd.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
+from roost.errors import NotFoundError, ValidationError
+from roost.events import EventLog, EventVerbs
+from roost.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
 
 
 @dataclass

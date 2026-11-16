@@ -13,10 +13,10 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "server"))
 
-from rookd.config import ServerConfig  # noqa: E402
-from rookd.http import RookdServer  # noqa: E402
-from rookd.resources import ResourceRef  # noqa: E402
-from rookd.store import SessionStore  # noqa: E402
+from roost.config import ServerConfig  # noqa: E402
+from roost.http import RoostServer  # noqa: E402
+from roost.resources import ResourceRef  # noqa: E402
+from roost.store import SessionStore  # noqa: E402
 
 LOADER = importlib.machinery.SourceFileLoader("rook_client", str(REPO_ROOT / "rook" / "bin" / "rook-client"))
 SPEC = importlib.util.spec_from_loader("rook_client", LOADER)
@@ -141,8 +141,8 @@ class PlaybookEventsTest(unittest.TestCase):
 class QueueAndSendTest(RookHomeTest):
     TEST_TOKEN = "test-token"
 
-    def start_server(self) -> RookdServer:
-        root = self.home / "rookd"
+    def start_server(self) -> RoostServer:
+        root = self.home / "roost"
         config = ServerConfig(
             data_root=root,
             host="127.0.0.1",
@@ -152,7 +152,7 @@ class QueueAndSendTest(RookHomeTest):
             tls_cert=None,
             tls_key=None,
         )
-        server = RookdServer(config=config, store=SessionStore(root))
+        server = RoostServer(config=config, store=SessionStore(root))
         self.addCleanup(server.resources.database.close)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -183,7 +183,7 @@ class QueueAndSendTest(RookHomeTest):
         self.hook(self.payload("PreToolUse", tool_name="Bash", tool_input={}))
         self.assertEqual(len(self.queued()), 1)
 
-    def test_queued_events_reach_rookd(self) -> None:
+    def test_queued_events_reach_roost(self) -> None:
         server = self.start_server()
         self.connect(server.bound_port())
         self.hook(self.payload("SessionStart", cwd=str(self.home)))
@@ -193,7 +193,7 @@ class QueueAndSendTest(RookHomeTest):
         self.assertEqual(agent.name, "studio")
         self.assertEqual(self.queued(), [])
 
-    def test_events_wait_while_rookd_is_away_and_go_once_it_is_back(self) -> None:
+    def test_events_wait_while_roost_is_away_and_go_once_it_is_back(self) -> None:
         self.connect(1)
         self.hook(self.payload("SessionStart", cwd=str(self.home)))
         self.hook(self.payload("UserPromptSubmit"))

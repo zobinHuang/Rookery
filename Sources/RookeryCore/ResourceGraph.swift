@@ -1,6 +1,6 @@
 import Foundation
 
-/// A kind of resource rookd manages, as `GET /v1/kinds` lists it.
+/// A kind of resource roost manages, as `GET /v1/kinds` lists it.
 public struct FleetKind: Decodable, Equatable, Identifiable, Sendable {
     public let name: String
     public let title: String
@@ -58,12 +58,12 @@ public struct FleetRelation: Decodable, Equatable, Hashable, Identifiable, Senda
     }
 }
 
-/// Every resource rookd manages, the relations between them and the latest events, kept current by
+/// Every resource roost manages, the relations between them and the latest events, kept current by
 /// applying the event log in order, as the Rookmaster console shows them.
 public struct ResourceGraph: Equatable, Sendable {
     /// How many of the latest events the log keeps.
     public static let recentEventLimit = 100
-    /// The verbs that draw a relation from their actor to their object, as rookd applies them.
+    /// The verbs that draw a relation from their actor to their object, as roost applies them.
     public static let setRelationVerbs: Set<String> = [
         "created", "updated", "uses", "mounts", "follows", "spawned", "wrote", "depends_on", "messaged",
     ]
@@ -79,7 +79,7 @@ public struct ResourceGraph: Equatable, Sendable {
 
     public init() {}
 
-    /// Replace everything with a fresh read of rookd.
+    /// Replace everything with a fresh read of roost.
     public mutating func load(
         kinds listKinds: [FleetKind],
         resources listResources: [FleetResource],
@@ -97,7 +97,7 @@ public struct ResourceGraph: Equatable, Sendable {
         self.lastSeq = lastSeq
     }
 
-    /// Take in one resource as rookd serves it now.
+    /// Take in one resource as roost serves it now.
     public mutating func put(_ resource: FleetResource) {
         mapResources[resource.kind, default: [:]][resource.id] = resource
     }
@@ -122,8 +122,8 @@ public struct ResourceGraph: Equatable, Sendable {
 
     /// Apply one event, unless it was applied already.
     ///
-    /// - Parameter event: the next event from rookd
-    /// - Returns: the resources only rookd's copy of can tell what changed, to fetch again
+    /// - Parameter event: the next event from roost
+    /// - Returns: the resources only roost's copy of can tell what changed, to fetch again
     public mutating func apply(_ event: FleetEvent) -> [FleetRef] {
         guard event.seq > lastSeq else {
             return []

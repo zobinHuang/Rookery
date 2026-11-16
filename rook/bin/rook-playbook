@@ -635,7 +635,7 @@ pick_pause() {
   read -r _ || true
 }
 
-# ─── tell rookd which playbook a session follows ──────────────────────
+# ─── tell roost which playbook a session follows ──────────────────────
 # Reported when the agent is told about the playbook, which is when the
 # session's id is at hand in the hook's payload; rook-client queues the
 # events and sends them in the background.

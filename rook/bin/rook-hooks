@@ -129,7 +129,7 @@ JSON
 
 # ─── events ───────────────────────────────────────────────────────────
 # What each agent session is doing, and what it does to skills, playbooks
-# and memory, reported to rookd as events (docs/resources.md). Like the
+# and memory, reported to roost as events (docs/resources.md). Like the
 # upload hooks they only go in once a server is connected. The hook only
 # queues its events on disk and starts a sender, so it never waits on the
 # network; the tool hooks are async on Claude Code for the same reason the

@@ -2,8 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from rookd.errors import CursorConflictError, NotFoundError, ValidationError
-from rookd.store import AgentAccount, SessionMeta, SessionQuery, SessionStore
+from roost.errors import CursorConflictError, NotFoundError, ValidationError
+from roost.store import AgentAccount, SessionMeta, SessionQuery, SessionStore
 
 
 def make_meta(

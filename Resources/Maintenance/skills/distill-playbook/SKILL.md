@@ -7,7 +7,7 @@ description: Turn how agents actually solved a kind of problem into a playbook, 
 
 1. Find the sessions: the agents the user named, or those whose transcripts show the kind of problem (`resource ls --kind agent --json`, then `resource transcript <id>`).
 2. Read each transcript. Note what the agent was asked, the steps that worked, the mistakes it had to undo, and the checks that told it it was done.
-3. Find the skills they used: `resource relations agent <id>`, verb `uses` or `mounts`. Keep those rookd has registered (not `discovered`).
+3. Find the skills they used: `resource relations agent <id>`, verb `uses` or `mounts`. Keep those roost has registered (not `discovered`).
 4. Look for an existing playbook for the same problem (`resource ls --kind playbook --json`). Improve it rather than adding a second.
 5. Write the playbook:
    - `name`: the problem, in a few words ("Backend feature with migrations").

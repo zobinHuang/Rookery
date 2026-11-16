@@ -1,4 +1,4 @@
-# rookd
+# roost
 
 The server side of Rookery. It stores the JSON transcripts that Claude Code and
 codex write while you work, split by agent and by the account that was logged in,
@@ -14,13 +14,13 @@ environment of its own.
 curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/server/setup.sh | bash -s -- --port 8787
 
 # serve over HTTPS instead of plain HTTP
-server/setup.sh --port 8787 --tls-cert /etc/ssl/rookd.crt --tls-key /etc/ssl/rookd.key
+server/setup.sh --port 8787 --tls-cert /etc/ssl/roost.crt --tls-key /etc/ssl/roost.key
 
 # show the token clients need
-rookd token
+roost token
 
 # list what has been stored
-rookd ls
+roost ls
 ```
 
 Re-running the deploy upgrades in place and keeps the existing token.

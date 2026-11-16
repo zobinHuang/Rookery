@@ -8,7 +8,7 @@ enum RookmasterTab: Hashable {
     case kind(String)
 }
 
-/// The console over everything rookd manages: the board of resources and the relations between them, a
+/// The console over everything roost manages: the board of resources and the relations between them, a
 /// list per kind to read and change them, and the log of what happened, live.
 struct RookmasterView: View {
     private static let tabAnimation = Animation.spring(response: 0.3, dampingFraction: 0.88)
@@ -150,7 +150,7 @@ struct RookmasterView: View {
 
     private var connectionText: String {
         switch fleetModel.connection {
-        case .notConfigured: "Not connected to rookd"
+        case .notConfigured: "Not connected to roost"
         case .connecting: "Connecting…"
         case .online: ""
         case .offline(let reason): reason

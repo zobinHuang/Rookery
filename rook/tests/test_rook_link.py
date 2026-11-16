@@ -13,7 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 from rook.tests.test_rook_client import SESSION, QueueAndSendTest, RookHomeTest, rook_client
-from rookd.resources import ResourceRef
+from roost.resources import ResourceRef
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOADER = importlib.machinery.SourceFileLoader("rook_link", str(REPO_ROOT / "rook" / "bin" / "rook-link"))
@@ -176,7 +176,7 @@ class PaneTyperTest(unittest.TestCase):
 
 
 class RookLinkTest(QueueAndSendTest):
-    """rook-link against a rookd of the test's own."""
+    """rook-link against a roost of the test's own."""
 
     def start_server(self):
         server = super().start_server()
@@ -206,7 +206,7 @@ class RookLinkTest(QueueAndSendTest):
         self.addCleanup(thread.join, 5)
         self.addCleanup(link.stop)
         agent_ref = ResourceRef("agent", SESSION)
-        self.wait_for(lambda: server.resources.exists(agent_ref), "the agent to reach rookd")
+        self.wait_for(lambda: server.resources.exists(agent_ref), "the agent to reach roost")
         self.wait_for(lambda: server.link.online_rooks() == ["studio"], "the rook to come online")
         delivery = server.link.send_to_agent(ResourceRef("person", "user"), SESSION, "run the tests")
         self.wait_for(lambda: server.deliveries.get(delivery.id).status == "delivered", "the delivery")

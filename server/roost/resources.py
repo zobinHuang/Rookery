@@ -3,8 +3,8 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from rookd.database import Database
-from rookd.errors import NotFoundError, ValidationError
+from roost.database import Database
+from roost.errors import NotFoundError, ValidationError
 
 
 @dataclass(frozen=True)

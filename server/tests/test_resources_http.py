@@ -4,13 +4,13 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from rookd.config import ServerConfig
-from rookd.database import Database
-from rookd.http import RookdServer
-from rookd.playbooks import PlaybookIndex
-from rookd.resources import ResourceStore
-from rookd.skills import SkillIndex
-from rookd.store import SessionStore
+from roost.config import ServerConfig
+from roost.database import Database
+from roost.http import RoostServer
+from roost.playbooks import PlaybookIndex
+from roost.resources import ResourceStore
+from roost.skills import SkillIndex
+from roost.store import SessionStore
 from tests.test_skills import FakeResolver
 
 
@@ -37,7 +37,7 @@ class ResourceApiTest(unittest.TestCase):
             tls_cert=None,
             tls_key=None,
         )
-        self.server = RookdServer(
+        self.server = RoostServer(
             config=config,
             store=SessionStore(root),
             resources=resources,

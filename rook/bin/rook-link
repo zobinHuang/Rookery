@@ -230,7 +230,7 @@ class DeliveryDesk:
 
 
 class RookLink:
-    """The rook's end of the live link: holds a WebSocket to rookd, sends the event queue over it, and takes
+    """The rook's end of the live link: holds a WebSocket to roost, sends the event queue over it, and takes
     the deliveries for this machine's agents. Reconnects on its own, and follows `rook connect` and
     `rook disconnect` by watching the connection file."""
 
@@ -276,7 +276,7 @@ class RookLink:
         """Open the link and serve it until it drops, the connection file changes, or `stop`.
 
         Raises:
-            RookClientError: if rookd cannot be reached or refuses the link
+            RookClientError: if roost cannot be reached or refuses the link
             ConnectionClosed: if the link drops
         """
         self._connect_stamp = self._connect_file_stamp()
@@ -294,7 +294,7 @@ class RookLink:
             }))
             map_welcome = self._receive(websocket, self.LINK_ANSWER_TIMEOUT_SECONDS)
             if map_welcome.get("type") != "welcome":
-                raise RookLinkError(f"rookd did not welcome the link: {map_welcome}")
+                raise RookLinkError(f"roost did not welcome the link: {map_welcome}")
             self._write_status(True, connection.base_url)
             rook_client.EventQueue.log(f"link up to {connection.base_url}")
             while not self._is_stopping and self._connect_file_stamp() == self._connect_stamp:
@@ -308,7 +308,7 @@ class RookLink:
         map_health = connection.request("GET", "/v1/healthz")
         link_port = map_health.get("link_port")
         if not isinstance(link_port, int):
-            raise RookLinkError("rookd has no live link; upgrade it")
+            raise RookLinkError("roost has no live link; upgrade it")
         parts = urllib.parse.urlsplit(connection.base_url)
         is_tls = parts.scheme == "https"
         context = None
@@ -345,20 +345,20 @@ class RookLink:
                 self._dispatch(websocket, map_message)
                 continue
             if map_message.get("type") == "error":
-                raise rook_client.RookClientError(f"rookd refused events: {map_message.get('message')}")
+                raise rook_client.RookClientError(f"roost refused events: {map_message.get('message')}")
             return
 
     def _dispatch(self, websocket: ClientConnection, map_message: dict[str, object]) -> None:
         if map_message.get("type") == "deliver" and isinstance(map_message.get("delivery"), dict):
             self._desk.accept(map_message["delivery"])
         elif map_message.get("type") == "error":
-            rook_client.EventQueue.log(f"rookd: {map_message.get('message')}")
+            rook_client.EventQueue.log(f"roost: {map_message.get('message')}")
 
     @staticmethod
     def _receive(websocket: ClientConnection, timeout_seconds: float) -> dict[str, object]:
         map_message = json.loads(websocket.recv(timeout=timeout_seconds))
         if not isinstance(map_message, dict):
-            raise RookLinkError("rookd sent something other than an object")
+            raise RookLinkError("roost sent something other than an object")
         return map_message
 
     @staticmethod
@@ -416,7 +416,7 @@ class RookLinkCli:
     def prompts(is_on: bool) -> int:
         """Let prompts reach this machine's agents, or stop them."""
         rook_client.RookConfig.update({"accepts_prompts": is_on})
-        print(f"prompts {'on' if is_on else 'off'}; rook-link tells rookd when it next connects")
+        print(f"prompts {'on' if is_on else 'off'}; rook-link tells roost when it next connects")
         return 0
 
 

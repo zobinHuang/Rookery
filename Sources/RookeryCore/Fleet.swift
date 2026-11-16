@@ -1,6 +1,6 @@
 import Foundation
 
-/// A JSON value of any shape, for the attributes and details rookd keeps per kind of resource.
+/// A JSON value of any shape, for the attributes and details roost keeps per kind of resource.
 public enum JSONValue: Codable, Equatable, Sendable {
     case string(String)
     case number(Double)
@@ -63,7 +63,7 @@ public enum JSONValue: Codable, Equatable, Sendable {
     }
 }
 
-/// A pointer at one resource on rookd: its kind and its id within the kind.
+/// A pointer at one resource on roost: its kind and its id within the kind.
 public struct FleetRef: Codable, Hashable, Sendable {
     public let kind: String
     public let id: String
@@ -74,7 +74,7 @@ public struct FleetRef: Codable, Hashable, Sendable {
     }
 }
 
-/// One resource as rookd serves it: an agent, a skill, a playbook, a memory or a rook.
+/// One resource as roost serves it: an agent, a skill, a playbook, a memory or a rook.
 public struct FleetResource: Decodable, Equatable, Sendable {
     public let kind: String
     public let id: String
@@ -214,7 +214,7 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
     }
 }
 
-/// One thing rookd logged: who did what to what.
+/// One thing roost logged: who did what to what.
 public struct FleetEvent: Decodable, Equatable, Sendable {
     public let seq: Int
     public let at: String
@@ -274,11 +274,11 @@ public enum FleetEventEffect: Equatable, Sendable {
     case unchanged
     /// The fleet changed in place.
     case changed
-    /// The fleet changed in a way only rookd's copy of this resource can tell; fetch it again.
+    /// The fleet changed in a way only roost's copy of this resource can tell; fetch it again.
     case refetch(FleetRef)
 }
 
-/// The agents and rooks rookd knows of, kept current by applying its events in order.
+/// The agents and rooks roost knows of, kept current by applying its events in order.
 public struct AgentFleet: Equatable, Sendable {
     public static let agentKind = "agent"
     public static let rookKind = "rook"
@@ -291,10 +291,10 @@ public struct AgentFleet: Equatable, Sendable {
 
     public init() {}
 
-    /// Replace everything with a fresh read of rookd's resources.
+    /// Replace everything with a fresh read of roost's resources.
     ///
     /// - Parameters:
-    ///   - listResources: the agents and rooks, as rookd serves them
+    ///   - listResources: the agents and rooks, as roost serves them
     ///   - lastSeq: the last event logged when they were read
     public mutating func load(_ listResources: [FleetResource], lastSeq: Int) {
         mapAgents = [:]
@@ -305,7 +305,7 @@ public struct AgentFleet: Equatable, Sendable {
         self.lastSeq = lastSeq
     }
 
-    /// Take in one resource as rookd serves it now.
+    /// Take in one resource as roost serves it now.
     public mutating func put(_ resource: FleetResource) {
         switch resource.kind {
         case Self.agentKind:
@@ -319,7 +319,7 @@ public struct AgentFleet: Equatable, Sendable {
 
     /// Apply one event, unless it was applied already.
     ///
-    /// - Parameter event: the next event from rookd
+    /// - Parameter event: the next event from roost
     /// - Returns: what it did to the fleet
     public mutating func apply(_ event: FleetEvent) -> FleetEventEffect {
         guard event.seq > lastSeq else {
@@ -373,7 +373,7 @@ public struct AgentFleet: Equatable, Sendable {
     }
 }
 
-/// rookd's timestamps: ISO 8601 in UTC, with milliseconds.
+/// roost's timestamps: ISO 8601 in UTC, with milliseconds.
 public enum FleetTimestamp {
     /// The moment a timestamp names, or nil when it is not one.
     public static func date(from text: String) -> Date? {

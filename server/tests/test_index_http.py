@@ -5,13 +5,13 @@ import threading
 import unittest
 from pathlib import Path
 from tests.test_skills import FakeResolver
-from rookd.database import Database
-from rookd.config import ServerConfig
-from rookd.http import RookdServer
-from rookd.playbooks import PlaybookIndex
-from rookd.resources import ResourceStore
-from rookd.skills import SkillIndex
-from rookd.store import SessionStore
+from roost.database import Database
+from roost.config import ServerConfig
+from roost.http import RoostServer
+from roost.playbooks import PlaybookIndex
+from roost.resources import ResourceStore
+from roost.skills import SkillIndex
+from roost.store import SessionStore
 
 
 class IndexApiTest(unittest.TestCase):
@@ -34,7 +34,7 @@ class IndexApiTest(unittest.TestCase):
             tls_cert=None,
             tls_key=None,
         )
-        self.server = RookdServer(
+        self.server = RoostServer(
             config=config,
             store=SessionStore(self.root),
             resources=resources,
@@ -253,7 +253,7 @@ class IndexApiTest(unittest.TestCase):
         self.add_playbook(skills=[one["id"]])
         self.request("GET", "/v1/playbooks/backend-review/resolve")
         set_names = {path.name for path in self.root.rglob("*") if path.is_file()}
-        self.assertLessEqual(set_names, {"rookd.db", "rookd.db-wal", "rookd.db-shm"})
+        self.assertLessEqual(set_names, {"roost.db", "roost.db-wal", "roost.db-shm"})
         self.assertEqual(list(self.root.rglob("SKILL.md")), [])
 
 

@@ -190,6 +190,6 @@ enum StagePage: Equatable {
     case screenSaver
     /// One agent's conversation, by its id.
     case agent(String)
-    /// The console over every resource rookd manages.
+    /// The console over every resource roost manages.
     case rookmaster
 }

@@ -2,9 +2,9 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass, field
-from rookd.errors import ValidationError
-from rookd.records import RecordStore
-from rookd.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
+from roost.errors import ValidationError
+from roost.records import RecordStore
+from roost.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
 
 
 class AgentStates:

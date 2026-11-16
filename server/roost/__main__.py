@@ -3,18 +3,18 @@ import json
 import sys
 import threading
 from pathlib import Path
-from rookd import ROOKD_VERSION
-from rookd.config import ServerConfig
-from rookd.errors import ConfigError, RookdError
-from rookd.http import RookdServer
-from rookd.store import SessionQuery, SessionStore
+from roost import ROOST_VERSION
+from roost.config import ServerConfig
+from roost.errors import ConfigError, RoostError
+from roost.http import RoostServer
+from roost.store import SessionQuery, SessionStore
 
 
 class ServerCli:
     """The command line around the rook session server."""
 
-    CLI_DEFAULT_CONFIG = "~/.config/rookd/config.json"
-    CLI_DEFAULT_DATA_ROOT = "~/.local/share/rookd/data"
+    CLI_DEFAULT_CONFIG = "~/.config/roost/config.json"
+    CLI_DEFAULT_DATA_ROOT = "~/.local/share/roost/data"
 
     def __init__(self, path_config: Path) -> None:
         self._path_config = path_config
@@ -63,7 +63,7 @@ class ServerCli:
             the process exit status
         """
         config = ServerConfig.from_file(self._path_config)
-        server = RookdServer(
+        server = RoostServer(
             config=config,
             store=SessionStore(config.data_root),
         )
@@ -73,14 +73,14 @@ class ServerCli:
         scheme = "https" if config.is_tls_enabled() else "http"
         link_scheme = "wss" if config.is_tls_enabled() else "ws"
         sys.stderr.write(
-            f"rookd {ROOKD_VERSION} serving {config.data_root} on "
+            f"roost {ROOST_VERSION} serving {config.data_root} on "
             f"{scheme}://{config.host}:{server.bound_port()}, "
             f"the live link on {link_scheme}://{config.host}:{server.link.bound_port()}\n"
         )
         try:
             server.serve_forever()
         except KeyboardInterrupt:
-            sys.stderr.write("rookd stopping\n")
+            sys.stderr.write("roost stopping\n")
         finally:
             server.link.shutdown()
             server.server_close()
@@ -116,7 +116,7 @@ class ServerCli:
 
 
 def main(list_argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="rookd")
+    parser = argparse.ArgumentParser(prog="roost")
     parser.add_argument("--config", default=ServerCli.CLI_DEFAULT_CONFIG)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -154,10 +154,10 @@ def main(list_argv: list[str] | None = None) -> int:
             return cli.run_token()
         return cli.run_list(args.limit)
     except ConfigError as err:
-        sys.stderr.write(f"rookd: {err.message}\n")
+        sys.stderr.write(f"roost: {err.message}\n")
         return 2
-    except RookdError as err:
-        sys.stderr.write(f"rookd: {err.message}\n")
+    except RoostError as err:
+        sys.stderr.write(f"roost: {err.message}\n")
         return 1
 
 

@@ -1,10 +1,10 @@
 import tempfile
 import unittest
 from pathlib import Path
-from rookd.database import Database
-from rookd.errors import NotFoundError, ValidationError
-from rookd.resources import ResourceQuery, ResourceStore
-from rookd.skills import (
+from roost.database import Database
+from roost.errors import NotFoundError, ValidationError
+from roost.resources import ResourceQuery, ResourceStore
+from roost.skills import (
     GitRefResolver,
     SkillIndex,
     SkillRecord,
@@ -130,7 +130,7 @@ class SkillIndexTest(unittest.TestCase):
         self.index.register({"source": "owner/repo@one"})
         list_ids = [resource.id for resource in self.resources.query(ResourceQuery(kind="skill"))]
         self.assertEqual(list_ids, ["github-com-owner-repo-one"])
-        self.assertLessEqual({path.name for path in self.root.iterdir()}, {"rookd.db", "rookd.db-wal", "rookd.db-shm"})
+        self.assertLessEqual({path.name for path in self.root.iterdir()}, {"roost.db", "roost.db-wal", "roost.db-shm"})
 
     def test_registering_needs_a_source(self) -> None:
         with self.assertRaises(ValidationError):

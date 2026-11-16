@@ -6,14 +6,14 @@ import unittest
 from pathlib import Path
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 from websockets.sync.client import ClientConnection, connect
-from rookd.config import ServerConfig
-from rookd.http import RookdServer
-from rookd.resources import ResourceRef
-from rookd.store import SessionStore
+from roost.config import ServerConfig
+from roost.http import RoostServer
+from roost.resources import ResourceRef
+from roost.store import SessionStore
 
 
 class LinkTest(unittest.TestCase):
-    """The live link: rooks and desktops holding a WebSocket to rookd."""
+    """The live link: rooks and desktops holding a WebSocket to roost."""
 
     TEST_TOKEN = "test-token"
     TEST_TIMEOUT_SECONDS = 5
@@ -33,7 +33,7 @@ class LinkTest(unittest.TestCase):
             tls_key=None,
             link_port=0,
         )
-        self.server = RookdServer(config=config, store=SessionStore(root))
+        self.server = RoostServer(config=config, store=SessionStore(root))
         self.server.link.listen()
         for target in (self.server.serve_forever, self.server.link.serve_forever):
             thread = threading.Thread(target=target, daemon=True)

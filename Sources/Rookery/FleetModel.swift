@@ -4,7 +4,7 @@ import os
 import RookeryCore
 import RookeryPlatform
 
-/// How the app stands with rookd.
+/// How the app stands with roost.
 enum FleetConnection: Equatable {
     /// No address or token is set.
     case notConfigured
@@ -15,14 +15,14 @@ enum FleetConnection: Equatable {
     case offline(String)
 }
 
-/// The agents rookd knows of, kept current over the live link, and how the user grouped them on this Mac.
+/// The agents roost knows of, kept current over the live link, and how the user grouped them on this Mac.
 /// One for the app, shared by every stage's sidebar and detail page.
 @MainActor
 @Observable
 final class FleetModel {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "agents")
-    /// Where the app keeps rookd's token.
-    static let keychainToken = KeychainSecret(account: "rookd-token")
+    /// Where the app keeps roost's token.
+    static let keychainToken = KeychainSecret(account: "roost-token")
     private static let firstRetryDelay: Duration = .seconds(2)
     private static let longestRetryDelay: Duration = .seconds(60)
 
@@ -46,7 +46,7 @@ final class FleetModel {
         groups = Self.loadGroups()
     }
 
-    /// Follow rookd, if one is set.
+    /// Follow roost, if one is set.
     func start() {
         runTask?.cancel()
         runTask = Task { [weak self] in
@@ -59,7 +59,7 @@ final class FleetModel {
         runTask = nil
     }
 
-    /// The token kept for rookd, or empty.
+    /// The token kept for roost, or empty.
     var token: String {
         if let cachedToken {
             return cachedToken ?? ""
@@ -69,55 +69,55 @@ final class FleetModel {
             cachedToken = .some(token)
             return token ?? ""
         } catch {
-            Self.logger.error("cannot read rookd's token: \(error, privacy: .public)")
+            Self.logger.error("cannot read roost's token: \(error, privacy: .public)")
             return ""
         }
     }
 
-    /// Follow another rookd, or the same one with another token.
+    /// Follow another roost, or the same one with another token.
     ///
     /// - Throws: `KeychainError` when the token cannot be kept
     func connect(address: String, token: String) throws {
         try tokenStore.write(token)
         cachedToken = .some(token)
-        preferences.rookdAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        preferences.roostAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
         fleet = AgentFleet()
         start()
     }
 
     /// Try an address and token without keeping them.
     ///
-    /// - Returns: what rookd said, for the settings to show
+    /// - Returns: what roost said, for the settings to show
     func test(address: String, token: String) async -> String {
         do {
-            let client = RookdClient(endpoint: try RookdEndpoint(address: address, token: token))
+            let client = RoostClient(endpoint: try RoostEndpoint(address: address, token: token))
             let health = try await client.health()
             let listAgents = try await client.resources(kind: AgentFleet.agentKind)
-            let linkNote = health.linkPort.map { "live link on port \($0)" } ?? "no live link (upgrade rookd)"
-            return "rookd \(health.version), \(listAgents.count) agents, \(linkNote)"
+            let linkNote = health.linkPort.map { "live link on port \($0)" } ?? "no live link (upgrade roost)"
+            return "roost \(health.version), \(listAgents.count) agents, \(linkNote)"
         } catch {
             return Self.describe(error)
         }
     }
 
-    /// The client for the rookd set, or nil when none is.
-    func client() -> RookdClient? {
+    /// The client for the roost set, or nil when none is.
+    func client() -> RoostClient? {
         guard
-            !preferences.rookdAddress.isEmpty,
+            !preferences.roostAddress.isEmpty,
             !token.isEmpty,
-            let endpoint = try? RookdEndpoint(address: preferences.rookdAddress, token: token)
+            let endpoint = try? RoostEndpoint(address: preferences.roostAddress, token: token)
         else {
             return nil
         }
-        return RookdClient(endpoint: endpoint)
+        return RoostClient(endpoint: endpoint)
     }
 
     /// Send an agent a prompt from the user.
     ///
-    /// - Throws: `RookdError`, or when no rookd is set
+    /// - Throws: `RoostError`, or when no roost is set
     func send(_ text: String, to agentId: String) async throws -> FleetDelivery {
         guard let client = client() else {
-            throw RookdError.invalidAddress(preferences.rookdAddress)
+            throw RoostError.invalidAddress(preferences.roostAddress)
         }
         return try await client.send(text, to: agentId)
     }
@@ -125,7 +125,7 @@ final class FleetModel {
     /// An error as one line for the user.
     static func describe(_ error: any Error) -> String {
         return switch error {
-        case let error as RookdError: error.description
+        case let error as RoostError: error.description
         case let error as KeychainError: error.description
         default: error.localizedDescription
         }
@@ -133,10 +133,10 @@ final class FleetModel {
 
     /// Change a resource as the user.
     ///
-    /// - Throws: `RookdError`
+    /// - Throws: `RoostError`
     func update(_ ref: FleetRef, name: String?, attributes mapAttributes: [String: JSONValue]) async throws {
         guard let client = client() else {
-            throw RookdError.invalidAddress(preferences.rookdAddress)
+            throw RoostError.invalidAddress(preferences.roostAddress)
         }
         let resource = try await client.update(ref, name: name, attributes: mapAttributes)
         graph.put(resource)
@@ -145,10 +145,10 @@ final class FleetModel {
 
     /// Remove a resource as the user.
     ///
-    /// - Throws: `RookdError`
+    /// - Throws: `RoostError`
     func delete(_ ref: FleetRef) async throws {
         guard let client = client() else {
-            throw RookdError.invalidAddress(preferences.rookdAddress)
+            throw RoostError.invalidAddress(preferences.roostAddress)
         }
         try await client.delete(ref)
     }
@@ -188,7 +188,7 @@ final class FleetModel {
         saveGroups()
     }
 
-    // MARK: - Following rookd
+    // MARK: - Following roost
 
     private func run() async {
         var retryDelay = Self.firstRetryDelay
@@ -209,7 +209,7 @@ final class FleetModel {
                     return
                 }
                 connection = .offline(Self.describe(error))
-                Self.logger.info("rookd link down: \(Self.describe(error), privacy: .public)")
+                Self.logger.info("roost link down: \(Self.describe(error), privacy: .public)")
             }
             do {
                 try await Task.sleep(for: retryDelay)
@@ -224,7 +224,7 @@ final class FleetModel {
     }
 
     /// Read the fleet afresh, then apply the live link's events until it drops.
-    private func follow(_ client: RookdClient) async throws {
+    private func follow(_ client: RoostClient) async throws {
         let health = try await client.health()
         serverVersion = health.version
         let listRecentEvents = try await client.latestEvents(limit: ResourceGraph.recentEventLimit)
@@ -255,15 +255,15 @@ final class FleetModel {
                 await refetch(ref, from: client)
             }
         }
-        throw RookdError.unreachable("the live link closed")
+        throw RoostError.unreachable("the live link closed")
     }
 
-    private func refetch(_ ref: FleetRef, from client: RookdClient) async {
+    private func refetch(_ ref: FleetRef, from client: RoostClient) async {
         do {
             let resource = try await client.resource(ref)
             fleet.put(resource)
             graph.put(resource)
-        } catch RookdError.rejected(status: 404, _) {
+        } catch RoostError.rejected(status: 404, _) {
             return
         } catch {
             Self.logger.error("cannot read \(ref.kind) \(ref.id): \(Self.describe(error), privacy: .public)")

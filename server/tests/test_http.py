@@ -4,9 +4,9 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from rookd.config import ServerConfig
-from rookd.http import RookdServer
-from rookd.store import SessionStore
+from roost.config import ServerConfig
+from roost.http import RoostServer
+from roost.store import SessionStore
 
 
 class HttpApiTest(unittest.TestCase):
@@ -31,7 +31,7 @@ class HttpApiTest(unittest.TestCase):
             tls_cert=None,
             tls_key=None,
         )
-        self.server = RookdServer(
+        self.server = RoostServer(
             config=config,
             store=SessionStore(self.root),
         )

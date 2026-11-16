@@ -83,7 +83,7 @@ struct MaintenancePanel: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Maintenance")
                     .font(.system(size: 13, weight: .semibold))
-                Text("Claude Code on this Mac, changing rookd for you")
+                Text("Claude Code on this Mac, changing roost for you")
                     .font(.system(size: 10))
                     .foregroundStyle(StageColors.secondaryText)
             }
@@ -127,7 +127,7 @@ struct MaintenancePanel: View {
 
     private var starters: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ask it to tidy, distill or explain anything rookd holds. Name a resource with @.")
+            Text("Ask it to tidy, distill or explain anything roost holds. Name a resource with @.")
                 .font(.system(size: 12))
                 .foregroundStyle(StageColors.secondaryText)
                 .padding(.bottom, 4)
@@ -232,7 +232,7 @@ struct MaintenancePanel: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             HStack(alignment: .bottom, spacing: 8) {
-                TextField(isReady ? "Ask the maintenance agent…" : "Connect to rookd first", text: $draft, axis: .vertical)
+                TextField(isReady ? "Ask the maintenance agent…" : "Connect to roost first", text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .lineLimit(1...6)

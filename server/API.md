@@ -1,6 +1,6 @@
-# rookd API
+# roost API
 
-Everything a reading client needs to pull agent sessions off a rookd server. The
+Everything a reading client needs to pull agent sessions off a roost server. The
 write side — how a `rook connect` client ships transcripts up — is in
 [session history](../docs/sessions.md).
 
@@ -12,7 +12,7 @@ server's token:
 Authorization: Bearer <token>
 ```
 
-Run `rookd token` on the server to print it.
+Run `roost token` on the server to print it.
 
 ## Reading
 
@@ -103,7 +103,7 @@ codex. `account.uuid` is `anonymous` when the client could not determine one.
 
 ### `GET /v1/sessions/<id>/transcript`
 
-Returns the raw bytes rookd stored, which are byte-for-byte the agent's own
+Returns the raw bytes roost stored, which are byte-for-byte the agent's own
 JSONL transcript — one JSON object per line, in the agent's own schema.
 
 | Parameter | |
@@ -160,7 +160,7 @@ The two lists a UI needs to build its filters, busiest first.
 
 ## Skills
 
-rookd keeps an index of skills, never their files: an entry records which git
+roost keeps an index of skills, never their files: an entry records which git
 repository a skill lives in, which path inside it, and which commits its refs
 have pointed at. A client fetches the files itself from the repository.
 
@@ -193,11 +193,11 @@ so registering the same skill at another version updates one entry rather than
 creating a second. Registering resolves the ref to a commit straight away, with
 `git ls-remote`, so an entry is never stored without a usable version.
 
-`name` and `description` are whatever the registering client supplies; rookd does
+`name` and `description` are whatever the registering client supplies; roost does
 not read `SKILL.md`, because it does not fetch skill files at all. Without them,
 `name` falls back to the last path segment.
 
-Only repositories rookd is willing to contact are accepted: `https`, `http`,
+Only repositories roost is willing to contact are accepted: `https`, `http`,
 `ssh` and scp-style URLs, plus the `owner/repo` shorthand. Local paths and the
 `ext::` and `file::` transports are refused, and a `..` segment in a skill path
 is refused — the client turns that path into a checkout directory.

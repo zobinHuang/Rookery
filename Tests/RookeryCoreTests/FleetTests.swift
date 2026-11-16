@@ -70,7 +70,7 @@ struct AgentGroupsTests {
         #expect(groups.groupId(of: "a") == nil)
     }
 
-    @Test func forgetsAgentsRookdDropped() {
+    @Test func forgetsAgentsRoostDropped() {
         var groups = AgentGroups()
         let backend = groups.addGroup(title: "Backend")
         groups.move("a", to: backend)

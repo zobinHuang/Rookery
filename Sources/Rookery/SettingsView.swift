@@ -35,11 +35,11 @@ struct SettingsView: View {
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
     @State private var pageWidth: CGFloat = 0
-    @State private var rookdAddressDraft = ""
-    @State private var rookdTokenDraft = ""
-    @State private var rookdTestResult: String?
-    @State private var isTestingRookd = false
-    @State private var rookdError: String?
+    @State private var roostAddressDraft = ""
+    @State private var roostTokenDraft = ""
+    @State private var roostTestResult: String?
+    @State private var isTestingRoost = false
+    @State private var roostError: String?
 
     /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
@@ -91,7 +91,7 @@ struct SettingsView: View {
                 screenSaver
                 dragging
                 worldClock
-                rookd
+                roost
                 codeAgents
                 shortcuts
             }
@@ -103,7 +103,7 @@ struct SettingsView: View {
                     shortcuts
                 }
                 column {
-                    rookd
+                    roost
                     worldClock
                     codeAgents
                     screenSaver
@@ -117,7 +117,7 @@ struct SettingsView: View {
                     shortcuts
                 }
                 column {
-                    rookd
+                    roost
                     worldClock
                 }
                 column {
@@ -205,42 +205,42 @@ struct SettingsView: View {
         }
     }
 
-    private var rookd: some View {
-        SettingsSection(title: "rookd", symbol: "bird.fill", tint: .yellow) {
+    private var roost: some View {
+        SettingsSection(title: "Roost", symbol: "bird.fill", tint: .yellow) {
             SettingsRow(title: "Address") {
-                TextField("rookd.example.com:8787", text: $rookdAddressDraft)
+                TextField("roost.example.com:8787", text: $roostAddressDraft)
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
                     .frame(width: Self.fieldWidth)
             }
             SettingsRow(title: "Token", detail: "kept in the keychain") {
-                SecureField("rookd token", text: $rookdTokenDraft)
+                SecureField("roost token", text: $roostTokenDraft)
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)
                     .frame(width: Self.fieldWidth)
             }
-            SettingsRow(title: "Status", detail: rookdStatus) {
+            SettingsRow(title: "Status", detail: roostStatus) {
                 HStack(spacing: 8) {
                     Button {
-                        testRookd()
+                        testRoost()
                     } label: {
-                        if isTestingRookd {
+                        if isTestingRoost {
                             ProgressView()
                                 .controlSize(.mini)
                         } else {
                             Text("Test")
                         }
                     }
-                    .disabled(rookdAddressDraft.isEmpty || isTestingRookd)
+                    .disabled(roostAddressDraft.isEmpty || isTestingRoost)
                     Button("Connect") {
-                        connectRookd()
+                        connectRoost()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(rookdAddressDraft.isEmpty || rookdTokenDraft.isEmpty)
+                    .disabled(roostAddressDraft.isEmpty || roostTokenDraft.isEmpty)
                 }
             }
-            if let rookdTestResult {
-                Label(rookdTestResult, systemImage: "stethoscope")
+            if let roostTestResult {
+                Label(roostTestResult, systemImage: "stethoscope")
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -248,40 +248,40 @@ struct SettingsView: View {
                     .padding(.vertical, 10)
                     .modifier(SettingsSeparator())
             }
-            if let rookdError {
-                SettingsMessage(text: rookdError)
+            if let roostError {
+                SettingsMessage(text: roostError)
             }
         }
         .onAppear {
-            rookdAddressDraft = preferences.rookdAddress
-            rookdTokenDraft = fleetModel.token
+            roostAddressDraft = preferences.roostAddress
+            roostTokenDraft = fleetModel.token
         }
     }
 
-    private var rookdStatus: String {
+    private var roostStatus: String {
         switch fleetModel.connection {
         case .notConfigured: "Not connected"
         case .connecting: "Connecting…"
-        case .online: "Online\(fleetModel.serverVersion.map { ", rookd \($0)" } ?? "")"
+        case .online: "Online\(fleetModel.serverVersion.map { ", roost \($0)" } ?? "")"
         case .offline(let reason): "Offline: \(reason)"
         }
     }
 
-    private func testRookd() {
-        isTestingRookd = true
-        rookdTestResult = nil
+    private func testRoost() {
+        isTestingRoost = true
+        roostTestResult = nil
         Task {
-            rookdTestResult = await fleetModel.test(address: rookdAddressDraft, token: rookdTokenDraft)
-            isTestingRookd = false
+            roostTestResult = await fleetModel.test(address: roostAddressDraft, token: roostTokenDraft)
+            isTestingRoost = false
         }
     }
 
-    private func connectRookd() {
+    private func connectRoost() {
         do {
-            try fleetModel.connect(address: rookdAddressDraft, token: rookdTokenDraft)
-            rookdError = nil
+            try fleetModel.connect(address: roostAddressDraft, token: roostTokenDraft)
+            roostError = nil
         } catch {
-            rookdError = FleetModel.describe(error)
+            roostError = FleetModel.describe(error)
         }
     }
 

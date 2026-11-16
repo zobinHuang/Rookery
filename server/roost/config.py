@@ -2,7 +2,7 @@ import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from rookd.errors import ConfigError
+from roost.errors import ConfigError
 
 
 @dataclass

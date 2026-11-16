@@ -4,7 +4,7 @@ import RookeryCore
 import RookeryPlatform
 import SwiftUI
 
-/// The content area's page for one agent: its crow and where it runs, its conversation as rookd stored
+/// The content area's page for one agent: its crow and where it runs, its conversation as roost stored
 /// it, and a box to prompt it, with what became of each prompt. Reads the transcript's new bytes and the
 /// prompts' outcomes every couple of seconds while it shows.
 struct AgentDetailView: View {
@@ -180,7 +180,7 @@ struct AgentDetailView: View {
             Image(systemName: hasTranscript ? "text.bubble" : "icloud.slash")
                 .font(.system(size: 28))
                 .foregroundStyle(StageColors.tertiaryText)
-            Text(hasTranscript ? "Nothing said yet" : "rookd has no transcript of this session")
+            Text(hasTranscript ? "Nothing said yet" : "roost has no transcript of this session")
                 .font(.system(size: 13, weight: .semibold))
             if !hasTranscript {
                 Text("Transcripts arrive once the agent's machine uploads them with rook connect.")
@@ -349,7 +349,7 @@ struct AgentDetailView: View {
             Image(systemName: "bird")
                 .font(.system(size: 36))
                 .foregroundStyle(StageColors.tertiaryText)
-            Text("This agent is gone from rookd")
+            Text("This agent is gone from roost")
                 .font(.system(size: 14, weight: .semibold))
             Button("Close", action: onClose)
         }
@@ -381,7 +381,7 @@ struct AgentDetailView: View {
         }
     }
 
-    private func readTranscript(from client: RookdClient) async {
+    private func readTranscript(from client: RoostClient) async {
         let sessionId = agentId.components(separatedBy: "~").first ?? agentId
         guard !agentId.contains("~") else {
             hasTranscript = false

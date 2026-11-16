@@ -529,7 +529,7 @@ $("$HOME/.local/bin/rook-hooks" install)
 EOF
 
 # ─── live link ───────────────────────────────────────────────────────
-# rook-link holds a WebSocket to rookd once `rook connect` names one: it
+# rook-link holds a WebSocket to roost once `rook connect` names one: it
 # sends the agents' events and types prompts from Rookery and from other
 # agents into their panes. It needs the websockets package, installed into
 # a virtual environment of rook's own, and runs as a user service that
@@ -588,7 +588,7 @@ elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   mkdir -p "$ROOK_LINK_UNIT_DIR"
   cat > "$ROOK_LINK_UNIT_DIR/rook-link.service" <<UNIT
 [Unit]
-Description=rook's live link to rookd
+Description=rook's live link to roost
 After=network-online.target
 
 [Service]
@@ -665,7 +665,7 @@ echo "    rook ls                  List all sessions"
 echo "    rook kill <name>         Kill a session"
 echo "    rook exit                Kill current session"
 echo "    rook connect <host> <port> --token <token>"
-echo "                             Upload session history to a rookd server"
+echo "                             Upload session history to a roost server"
 echo ""
 echo "  Tabs (Ctrl+t):          Panes (Ctrl+p):"
 echo "    n   new tab              d   split down"

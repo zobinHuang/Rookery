@@ -1,6 +1,6 @@
 # Resources
 
-Everything Rookery manages about code agents is a resource, of one of a few kinds; what happens to resources is an event; and when one resource acts on another, the event draws a relation between them. rookd holds all three, rook reports events from the agents' hooks, and the app reads and subscribes. This document is the contract the three are written against.
+Everything Rookery manages about code agents is a resource, of one of a few kinds; what happens to resources is an event; and when one resource acts on another, the event draws a relation between them. roost holds all three, rook reports events from the agents' hooks, and the app reads and subscribes. This document is the contract the three are written against.
 
 ## Kinds
 
@@ -12,7 +12,7 @@ Everything Rookery manages about code agents is a resource, of one of a few kind
 | `memory` | Details of a particular problem an agent wrote down to keep | `text`, `path`, `project` | agents writing into their own memory directory |
 | `rook` | A machine running agents under rook | `online`, `machine`, `accepts_prompts`, `connected_at`, `disconnected_at` | the live link |
 
-`GET /v1/kinds` lists them; a new kind is one more entry in `ResourceKinds` (`server/rookd/resources.py`), and the generic API, the board and the lists take it from there.
+`GET /v1/kinds` lists them; a new kind is one more entry in `ResourceKinds` (`server/roost/resources.py`), and the generic API, the board and the lists take it from there.
 
 Every resource has `kind`, `id`, `name`, `attributes`, `origin` (the resource that made it, usually an agent), and `created_at`, `updated_at` and `last_used_at`. `last_used_at` orders the board's columns: whatever was used last rises to the top.
 
@@ -47,7 +47,7 @@ A change made through the resource API is logged as `created`, `updated` or `del
 
 ## States
 
-The tmux status bar keeps its three states (busy, wait, idle); rookd gets ten, one crow animation each.
+The tmux status bar keeps its three states (busy, wait, idle); roost gets ten, one crow animation each.
 
 | State | Claude Code | codex |
 |---|---|---|

@@ -7,12 +7,12 @@ from http import HTTPStatus
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 from websockets.sync.server import Server, ServerConnection, serve
-from rookd import ROOKD_VERSION
-from rookd.config import ServerConfig
-from rookd.errors import RookdError, ValidationError
-from rookd.events import EventLog, EventVerbs
-from rookd.messages import Delivery, DeliveryStore
-from rookd.resources import ResourceKinds, ResourceRef, ResourceStore
+from roost import ROOST_VERSION
+from roost.config import ServerConfig
+from roost.errors import RoostError, ValidationError
+from roost.events import EventLog, EventVerbs
+from roost.messages import Delivery, DeliveryStore
+from roost.resources import ResourceKinds, ResourceRef, ResourceStore
 
 
 class LinkPeer:
@@ -210,7 +210,7 @@ class LinkHub:
             }])
         peer.send({
             "type": "welcome",
-            "version": ROOKD_VERSION,
+            "version": ROOST_VERSION,
             "last_seq": self._last_seq(),
         })
         return peer
@@ -244,7 +244,7 @@ class LinkHub:
                 raise ValidationError(f"a {peer.role} cannot send {kind!r}")
         except ValueError as err:
             peer.send({"type": "error", "ref": ref, "status": 400, "message": f"not JSON: {err}"})
-        except RookdError as err:
+        except RoostError as err:
             peer.send({"type": "error", "ref": ref, "status": err.ERROR_HTTP_STATUS, "message": err.message})
 
     def _sender_of(self, peer: LinkPeer, map_as: object) -> ResourceRef:
@@ -287,8 +287,8 @@ class LinkHub:
                 "actor": {"kind": ResourceKinds.ROOK.name, "id": peer.rook_name},
                 "verb": EventVerbs.DISCONNECTED,
             }])
-        except RookdError as err:
-            sys.stderr.write(f"rookd could not log rook {peer.rook_name} leaving: {err.message}\n")
+        except RoostError as err:
+            sys.stderr.write(f"roost could not log rook {peer.rook_name} leaving: {err.message}\n")
 
     def _mark_rooks_offline(self) -> None:
         with self._resources.database.transaction() as connection:

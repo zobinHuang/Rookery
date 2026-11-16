@@ -2,11 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from tests.test_skills import FakeResolver
-from rookd.database import Database
-from rookd.errors import ConflictError, NotFoundError, ValidationError
-from rookd.playbooks import PlaybookIndex, PlaybookRecord, SkillPin
-from rookd.resources import ResourceQuery, ResourceStore
-from rookd.skills import SkillIndex
+from roost.database import Database
+from roost.errors import ConflictError, NotFoundError, ValidationError
+from roost.playbooks import PlaybookIndex, PlaybookRecord, SkillPin
+from roost.resources import ResourceQuery, ResourceStore
+from roost.skills import SkillIndex
 
 
 class PlaybookIndexTest(unittest.TestCase):
@@ -164,7 +164,7 @@ class PlaybookIndexTest(unittest.TestCase):
         self.make()
         list_ids = [resource.id for resource in self.resources.query(ResourceQuery(kind="playbook"))]
         self.assertEqual(list_ids, ["backend-review"])
-        self.assertLessEqual({path.name for path in self.root.iterdir()}, {"rookd.db", "rookd.db-wal", "rookd.db-shm"})
+        self.assertLessEqual({path.name for path in self.root.iterdir()}, {"roost.db", "roost.db-wal", "roost.db-shm"})
 
 
 if __name__ == "__main__":

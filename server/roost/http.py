@@ -6,34 +6,34 @@ import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-from rookd import ROOKD_VERSION
-from rookd.config import ServerConfig
-from rookd.catalog import ResourceCatalog
-from rookd.database import Database
-from rookd.errors import (
+from roost import ROOST_VERSION
+from roost.config import ServerConfig
+from roost.catalog import ResourceCatalog
+from roost.database import Database
+from roost.errors import (
     AuthError,
     BusyError,
     NotFoundError,
     PayloadTooLargeError,
-    RookdError,
+    RoostError,
     ValidationError,
 )
-from rookd.events import EventLog
-from rookd.link import LinkHub
-from rookd.messages import DeliveryStore
-from rookd.playbooks import PlaybookIndex
-from rookd.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
-from rookd.skills import SkillIndex
-from rookd.store import SessionMeta, SessionQuery, SessionStore
+from roost.events import EventLog
+from roost.link import LinkHub
+from roost.messages import DeliveryStore
+from roost.playbooks import PlaybookIndex
+from roost.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
+from roost.skills import SkillIndex
+from roost.store import SessionMeta, SessionQuery, SessionStore
 
 
-class RookdRequestHandler(BaseHTTPRequestHandler):
+class RoostRequestHandler(BaseHTTPRequestHandler):
     """The HTTP surface through which clients upload agent session transcripts."""
 
     HANDLER_API_PREFIX = "v1"
     HANDLER_BEARER_PREFIX = "Bearer "
 
-    server_version = f"rookd/{ROOKD_VERSION}"
+    server_version = f"roost/{ROOST_VERSION}"
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
@@ -64,7 +64,7 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
             args: the template's arguments
         """
         sys.stderr.write(
-            "rookd %s %s\n"
+            "roost %s %s\n"
             % (
                 self.address_string(),
                 format % args,
@@ -82,10 +82,10 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
                 list_segments=list_segments[1:],
                 map_query=parse_qs(parsed.query),
             )
-        except RookdError as err:
+        except RoostError as err:
             self._respond_error(err)
         except OSError as err:
-            self._respond_error(RookdError(f"storage failure: {err}"))
+            self._respond_error(RoostError(f"storage failure: {err}"))
 
     def _route(
         self,
@@ -98,7 +98,7 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 {
                     "ok": True,
-                    "version": ROOKD_VERSION,
+                    "version": ROOST_VERSION,
                     "link_port": self.server.link.bound_port(),
                 },
             )
@@ -435,7 +435,7 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             cursor = after
             while not self.server.is_stopping:
-                list_events = self.server.events.wait_after(cursor, RookdServer.SERVER_STREAM_HEARTBEAT_SECONDS)
+                list_events = self.server.events.wait_after(cursor, RoostServer.SERVER_STREAM_HEARTBEAT_SECONDS)
                 if not list_events:
                     self.wfile.write(b": keepalive\n\n")
                 for event in list_events:
@@ -645,12 +645,12 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _respond_error(self, err: RookdError) -> None:
+    def _respond_error(self, err: RoostError) -> None:
         self.close_connection = True
         self._respond_json(HTTPStatus(err.ERROR_HTTP_STATUS), err.as_payload())
 
 
-class RookdServer(ThreadingHTTPServer):
+class RoostServer(ThreadingHTTPServer):
     """A threaded HTTP server that carries the configuration, the session store and the resources."""
 
     daemon_threads = True
@@ -679,7 +679,7 @@ class RookdServer(ThreadingHTTPServer):
         self.is_stopping = False
         super().__init__(
             (config.host, config.port),
-            RookdRequestHandler,
+            RoostRequestHandler,
         )
         if config.is_tls_enabled():
             self._wrap_tls()
@@ -693,7 +693,7 @@ class RookdServer(ThreadingHTTPServer):
         """
         error = sys.exc_info()[1]
         if isinstance(error, (ConnectionError, TimeoutError, ssl.SSLError)):
-            sys.stderr.write(f"rookd {client_address[0]} dropped the connection: {error}\n")
+            sys.stderr.write(f"roost {client_address[0]} dropped the connection: {error}\n")
             return
         super().handle_error(request, client_address)
 

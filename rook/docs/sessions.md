@@ -1,7 +1,7 @@
 # Session history
 
 `rook connect` makes every Claude Code and codex session in your panes upload its
-own JSON transcript to a [rookd](../server/) server as you work.
+own JSON transcript to a [roost](../server/) server as you work.
 
 ```bash
 # on the server
@@ -66,7 +66,7 @@ the session ran on: short hostname, FQDN, OS, OS release, architecture and unix
 user. The same agent account is usually logged in on several boxes, so that is
 what tells their sessions apart.
 
-To read sessions back off a server, see the [rookd API](../server/API.md). The
+To read sessions back off a server, see the [roost API](../server/API.md). The
 same server also indexes [playbooks](playbooks.md).
 
 ## Storage layout
@@ -105,6 +105,6 @@ whatever is still behind.
 
 A transcript holds everything the agent saw: your source, your paths, command
 output, and whatever you typed. Treat the server as holding the same secrets your
-working copy does. It stores files `0600` under `0700` directories, and `rookd`
+working copy does. It stores files `0600` under `0700` directories, and `roost`
 over plain HTTP sends them in the clear — give it `--tls-cert`/`--tls-key`, or keep
 it on a trusted network.

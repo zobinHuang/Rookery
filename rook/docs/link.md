@@ -20,7 +20,7 @@ An agent is a session, and rook notes the tmux pane each session starts in. A de
 
 Two deliveries never land in one prompt: after typing one, rook-link waits for the agent to change state before typing the next. A message from another agent arrives with the sender's id and the `rook message` line that answers it; a person's prompt arrives as written.
 
-What became of each delivery goes back to rookd, which logs it (`delivered` or `undelivered`) and shows it in Rookery.
+What became of each delivery goes back to roost, which logs it (`delivered` or `undelivered`) and shows it in Rookery.
 
 ## Files
 
@@ -31,4 +31,4 @@ What became of each delivery goes back to rookd, which logs it (`delivered` or `
 | `~/.local/state/rook/events.log` | what was sent, and when the link went up or down |
 | `~/.local/state/rook/agent-panes/` | the pane each session started in |
 | `~/.local/state/rook/mailbox/` | messages held for busy agents |
-| `~/.local/state/rook/deliveries/` | the deliveries rook-link holds, until rookd has heard what became of them |
+| `~/.local/state/rook/deliveries/` | the deliveries rook-link holds, until roost has heard what became of them |

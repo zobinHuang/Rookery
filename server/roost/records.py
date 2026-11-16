@@ -1,8 +1,8 @@
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
-from rookd.errors import ValidationError
-from rookd.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
+from roost.errors import ValidationError
+from roost.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
 
 
 class RecordStore:

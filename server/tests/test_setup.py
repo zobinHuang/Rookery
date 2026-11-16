@@ -7,7 +7,7 @@ class SetupScriptTest(unittest.TestCase):
     """The deploy script copies the package module by module, so it must name every one."""
 
     SETUP_PATH = Path(__file__).resolve().parent.parent / "setup.sh"
-    PACKAGE_PATH = Path(__file__).resolve().parent.parent / "rookd"
+    PACKAGE_PATH = Path(__file__).resolve().parent.parent / "roost"
     MODULE_LOOP_PATTERN = re.compile(r"^for MODULE in (.+); do$", re.MULTILINE)
 
     def test_installs_every_module_of_the_package(self) -> None:

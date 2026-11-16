@@ -13,7 +13,7 @@ class Database:
     few desktops, and a single writer keeps every change and the event that announces it in one order.
     """
 
-    DATABASE_FILE_NAME = "rookd.db"
+    DATABASE_FILE_NAME = "roost.db"
     DATABASE_FILE_MODE = 0o600
     DATABASE_DIR_MODE = 0o700
     DATABASE_BUSY_TIMEOUT_SECONDS = 10

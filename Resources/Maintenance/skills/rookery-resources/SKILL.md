@@ -1,15 +1,15 @@
 ---
 name: rookery-resources
-description: Reference for reading and changing rookd's resources (agents, skills, playbooks, memories), their relations, the event log and agent transcripts with rook-client. Read before running any rook-client command.
+description: Reference for reading and changing roost's resources (agents, skills, playbooks, memories), their relations, the event log and agent transcripts with rook-client. Read before running any rook-client command.
 ---
 
-# rookd resources with rook-client
+# roost resources with rook-client
 
 Every command prints JSON unless noted. `$ROOKERY_AGENT_ID` is your own agent id.
 
 ## Read
 
-    rook-client resource kinds                                # the kinds rookd manages
+    rook-client resource kinds                                # the kinds roost manages
     rook-client resource ls --kind memory --json              # a kind's resources, last used first; --q text filters
     rook-client resource get skill <id>                       # one resource with its attributes
     rook-client resource relations                            # every relation
@@ -37,6 +37,6 @@ Always pass `--as-agent $ROOKERY_AGENT_ID`.
     rook-client resource create playbook --body '{"name": "Backend feature", "description": "...", "prompt": "...", "skills": ["<skill id>"]}' --as-agent $ROOKERY_AGENT_ID
     rook-client resource update playbook <id> --body '{"prompt": "..."}' --as-agent $ROOKERY_AGENT_ID
 
-`--body` takes the whole request as JSON; `--name` and `--attr KEY=VALUE` add to it. A playbook may only pin skills rookd already knows (`ls --kind skill`); a skill seen in use but never registered has `discovered: true` and no repository, and cannot be pinned.
+`--body` takes the whole request as JSON; `--name` and `--attr KEY=VALUE` add to it. A playbook may only pin skills roost already knows (`ls --kind skill`); a skill seen in use but never registered has `discovered: true` and no repository, and cannot be pinned.
 
-If a command fails, read rookd's answer: it says what was wrong.
+If a command fails, read roost's answer: it says what was wrong.

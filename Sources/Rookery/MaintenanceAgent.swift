@@ -13,7 +13,7 @@ struct MaintenanceRun: Identifiable {
         case cancelled
     }
 
-    /// The agent session's id, which is its agent's id on rookd too.
+    /// The agent session's id, which is its agent's id on roost too.
     let id: String
     let prompt: String
     let startedAt: Date
@@ -25,8 +25,8 @@ struct MaintenanceRun: Identifiable {
 }
 
 /// Rookery's maintenance agent: Claude Code run headless on this Mac, in a workspace of the app's own that
-/// holds Rookery's skills and a `rook-client` connected to the rookd the app follows, allowed that
-/// command and its skills and nothing else. Each request is one session, reported to rookd as the agent
+/// holds Rookery's skills and a `rook-client` connected to the roost the app follows, allowed that
+/// command and its skills and nothing else. Each request is one session, reported to roost as the agent
 /// `rookery/maintenance`, so whatever it changes is logged as its doing; it changes without asking, as
 /// the user chose.
 @MainActor
@@ -81,7 +81,7 @@ final class MaintenanceAgent {
 
     // MARK: - A run
 
-    private func perform(prompt: String, sessionId: String, client: RookdClient) async {
+    private func perform(prompt: String, sessionId: String, client: RoostClient) async {
         let workspace: URL
         do {
             workspace = try prepareWorkspace(endpoint: client.endpoint)
@@ -176,7 +176,7 @@ final class MaintenanceAgent {
         listRuns[runIndex].status = status
     }
 
-    private func report(_ sessionId: String, _ listEvents: [[String: JSONValue]], to client: RookdClient) async {
+    private func report(_ sessionId: String, _ listEvents: [[String: JSONValue]], to client: RoostClient) async {
         do {
             try await client.post(events: listEvents)
         } catch {
@@ -187,8 +187,8 @@ final class MaintenanceAgent {
     // MARK: - The workspace and the prompt
 
     /// Lay out the agent's workspace afresh from the app's resources: its instructions, its skills, the
-    /// client, and the connection to rookd, readable by the user alone.
-    private func prepareWorkspace(endpoint: RookdEndpoint) throws -> URL {
+    /// client, and the connection to roost, readable by the user alone.
+    private func prepareWorkspace(endpoint: RoostEndpoint) throws -> URL {
         let fileManager = FileManager.default
         let workspace = workspaceOverride ?? DataDirectory.file(named: Self.workspaceName)
         guard let bundled = Bundle.main.url(forResource: Self.resourceFolder, withExtension: nil) else {

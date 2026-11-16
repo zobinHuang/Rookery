@@ -1,39 +1,39 @@
 import Foundation
 import RookeryCore
 
-/// A failure talking to rookd.
-public enum RookdError: Error, CustomStringConvertible, Sendable {
+/// A failure talking to roost.
+public enum RoostError: Error, CustomStringConvertible, Sendable {
     /// The address set is not an http or https URL.
     case invalidAddress(String)
-    /// rookd could not be reached.
+    /// roost could not be reached.
     case unreachable(String)
-    /// rookd answered with an error status.
+    /// roost answered with an error status.
     case rejected(status: Int, message: String)
-    /// rookd answered with something that is not what its API promises.
+    /// roost answered with something that is not what its API promises.
     case malformed(String)
 
     public var description: String {
         switch self {
         case .invalidAddress(let address): "\(address) is not an http:// or https:// address"
-        case .unreachable(let reason): "can't reach rookd: \(reason)"
-        case .rejected(401, _): "rookd didn't accept the token"
-        case .rejected(let status, let message): "rookd answered \(status): \(message)"
-        case .malformed(let reason): "rookd sent something unexpected: \(reason)"
+        case .unreachable(let reason): "can't reach roost: \(reason)"
+        case .rejected(401, _): "roost didn't accept the token"
+        case .rejected(let status, let message): "roost answered \(status): \(message)"
+        case .malformed(let reason): "roost sent something unexpected: \(reason)"
         }
     }
 }
 
-/// Where a rookd server is and the token it asks for.
-public struct RookdEndpoint: Equatable, Sendable {
+/// Where a roost server is and the token it asks for.
+public struct RoostEndpoint: Equatable, Sendable {
     public let baseURL: URL
     public let token: String
 
     /// An endpoint from an address as the user typed it, with or without a scheme or `/v1`.
     ///
     /// - Parameters:
-    ///   - address: as `rookd.example.com:8787` or `https://rookd.example.com:8787`
+    ///   - address: as `roost.example.com:8787` or `https://roost.example.com:8787`
     ///   - token: the server's token
-    /// - Throws: `RookdError.invalidAddress`
+    /// - Throws: `RoostError.invalidAddress`
     public init(address: String, token: String) throws {
         var trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.contains("://") {
@@ -50,17 +50,17 @@ public struct RookdEndpoint: Equatable, Sendable {
             url.scheme == "http" || url.scheme == "https",
             url.host() != nil
         else {
-            throw RookdError.invalidAddress(address)
+            throw RoostError.invalidAddress(address)
         }
         self.baseURL = url
         self.token = token
     }
 }
 
-/// What rookd's health check says about it.
-public struct RookdHealth: Decodable, Equatable, Sendable {
+/// What roost's health check says about it.
+public struct RoostHealth: Decodable, Equatable, Sendable {
     public let version: String
-    /// The port of the live link, or nil for a rookd without one.
+    /// The port of the live link, or nil for a roost without one.
     public let linkPort: Int?
 
     enum CodingKeys: String, CodingKey {
@@ -69,8 +69,8 @@ public struct RookdHealth: Decodable, Equatable, Sendable {
     }
 }
 
-/// A stretch of a transcript as rookd stored it.
-public struct RookdTranscriptChunk: Sendable {
+/// A stretch of a transcript as roost stored it.
+public struct RoostTranscriptChunk: Sendable {
     public let data: Data
     /// Where the stretch starts in the transcript.
     public let offset: Int
@@ -78,24 +78,24 @@ public struct RookdTranscriptChunk: Sendable {
     public let total: Int
 }
 
-/// rookd's API as the app uses it: the agents and rooks, an agent's transcript, sending it text, and the
+/// roost's API as the app uses it: the agents and rooks, an agent's transcript, sending it text, and the
 /// live link, over which the app follows the event log as a desktop. See `server/API.md`.
-public final class RookdClient: Sendable {
+public final class RoostClient: Sendable {
     private static let requestTimeout: TimeInterval = 20
     private static let resourceLimit = 1000
     private static let transcriptChunkBytes = 4 * 1024 * 1024
 
-    public let endpoint: RookdEndpoint
+    public let endpoint: RoostEndpoint
     private let session: URLSession
 
-    public init(endpoint: RookdEndpoint, session: URLSession = .shared) {
+    public init(endpoint: RoostEndpoint, session: URLSession = .shared) {
         self.endpoint = endpoint
         self.session = session
     }
 
     /// The server's version and live link port; needs no token.
-    public func health() async throws -> RookdHealth {
-        try decode(RookdHealth.self, from: try await request("GET", path: "/v1/healthz"))
+    public func health() async throws -> RoostHealth {
+        try decode(RoostHealth.self, from: try await request("GET", path: "/v1/healthz"))
     }
 
     /// The resources of one kind, those last used first.
@@ -120,7 +120,7 @@ public final class RookdClient: Sendable {
         _ = try await request("POST", path: "/v1/events", body: body)
     }
 
-    /// The kinds of resource rookd manages.
+    /// The kinds of resource roost manages.
     public func kinds() async throws -> [FleetKind] {
         try decode(KindPage.self, from: try await request("GET", path: "/v1/kinds")).kinds
     }
@@ -142,7 +142,7 @@ public final class RookdClient: Sendable {
     ///   - ref: the resource
     ///   - name: its new name, or nil to keep it
     ///   - mapAttributes: attributes to merge into its own
-    /// - Returns: the resource as rookd keeps it now
+    /// - Returns: the resource as roost keeps it now
     public func update(_ ref: FleetRef, name: String?, attributes mapAttributes: [String: JSONValue]) async throws -> FleetResource {
         var mapBody: [String: JSONValue] = ["attributes": .object(mapAttributes)]
         if let name {
@@ -182,15 +182,15 @@ public final class RookdClient: Sendable {
 
     /// A session's transcript from a byte on.
     ///
-    /// - Returns: the stretch, or nil when rookd holds no transcript of the session
-    public func transcript(of sessionId: String, from offset: Int) async throws -> RookdTranscriptChunk? {
+    /// - Returns: the stretch, or nil when roost holds no transcript of the session
+    public func transcript(of sessionId: String, from offset: Int) async throws -> RoostTranscriptChunk? {
         var components = URLComponents(url: endpoint.baseURL.appending(path: "/v1/sessions/\(sessionId)/transcript"), resolvingAgainstBaseURL: false)
         components?.queryItems = [
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "limit", value: String(Self.transcriptChunkBytes)),
         ]
         guard let url = components?.url else {
-            throw RookdError.invalidAddress(endpoint.baseURL.absoluteString)
+            throw RoostError.invalidAddress(endpoint.baseURL.absoluteString)
         }
         let (data, response) = try await perform(authorized(URLRequest(url: url)))
         if response.statusCode == 404 {
@@ -199,7 +199,7 @@ public final class RookdClient: Sendable {
         try check(response, data: data)
         let total = Int(response.value(forHTTPHeaderField: "X-Rook-Total") ?? "") ?? offset + data.count
         let start = Int(response.value(forHTTPHeaderField: "X-Rook-Offset") ?? "") ?? offset
-        return RookdTranscriptChunk(data: data, offset: start, total: total)
+        return RoostTranscriptChunk(data: data, offset: start, total: total)
     }
 
     /// Follow the event log over the live link, from after an event on, until the stream is cancelled or the
@@ -231,14 +231,14 @@ public final class RookdClient: Sendable {
 
     private func openLink() async throws -> URLSessionWebSocketTask {
         guard let linkPort = try await health().linkPort else {
-            throw RookdError.malformed("this rookd has no live link; upgrade it")
+            throw RoostError.malformed("this roost has no live link; upgrade it")
         }
         var components = URLComponents(url: endpoint.baseURL, resolvingAgainstBaseURL: false)
         components?.scheme = endpoint.baseURL.scheme == "https" ? "wss" : "ws"
         components?.port = linkPort
         components?.path = "/v1/link"
         guard let url = components?.url else {
-            throw RookdError.invalidAddress(endpoint.baseURL.absoluteString)
+            throw RoostError.invalidAddress(endpoint.baseURL.absoluteString)
         }
         let socket = session.webSocketTask(with: authorized(URLRequest(url: url)))
         socket.maximumMessageSize = 4 * 1024 * 1024
@@ -263,7 +263,7 @@ public final class RookdClient: Sendable {
             components?.queryItems = query
         }
         guard let url = components?.url else {
-            throw RookdError.invalidAddress(endpoint.baseURL.absoluteString)
+            throw RoostError.invalidAddress(endpoint.baseURL.absoluteString)
         }
         var urlRequest = authorized(URLRequest(url: url))
         urlRequest.httpMethod = method
@@ -289,10 +289,10 @@ public final class RookdClient: Sendable {
         do {
             (data, response) = try await session.data(for: urlRequest)
         } catch let error as URLError {
-            throw RookdError.unreachable(error.localizedDescription)
+            throw RoostError.unreachable(error.localizedDescription)
         }
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw RookdError.malformed("not an HTTP answer")
+            throw RoostError.malformed("not an HTTP answer")
         }
         return (data, httpResponse)
     }
@@ -302,14 +302,14 @@ public final class RookdClient: Sendable {
             return
         }
         let message = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.message ?? String(decoding: data.prefix(200), as: UTF8.self)
-        throw RookdError.rejected(status: response.statusCode, message: message)
+        throw RoostError.rejected(status: response.statusCode, message: message)
     }
 
     private func decode<Value: Decodable>(_ type: Value.Type, from data: Data) throws -> Value {
         do {
             return try JSONDecoder().decode(type, from: data)
         } catch let error as DecodingError {
-            throw RookdError.malformed(String(describing: error))
+            throw RoostError.malformed(String(describing: error))
         }
     }
 

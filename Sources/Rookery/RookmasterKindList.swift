@@ -214,7 +214,7 @@ private struct ResourceInspector: View {
                 delete()
             }
         } message: {
-            Text("rookd removes it and its relations. This can't be undone.")
+            Text("roost removes it and its relations. This can't be undone.")
         }
     }
 

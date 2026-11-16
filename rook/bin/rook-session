@@ -1,6 +1,6 @@
 #!/bin/sh
 # [rook] rook-session — ship a code agent's session transcript to a
-# rookd server as it is written.
+# roost server as it is written.
 #
 #   rook-session connect <host> <port> --token <t> [--tls] [--insecure] [--no-email]
 #   rook-session disconnect
@@ -514,7 +514,7 @@ cmd_connect() {
   _curl_flags="-fsS"
   [ "$_insecure" = true ] && _curl_flags="-fsSk"
   if ! curl $_curl_flags --max-time 10 "$_base/v1/healthz" >/dev/null 2>&1; then
-    printf 'rook-session: no rookd answering at %s\n' "$_base" >&2
+    printf 'rook-session: no roost answering at %s\n' "$_base" >&2
     exit 1
   fi
 

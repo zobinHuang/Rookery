@@ -55,7 +55,7 @@ class LogoBuild {
 
     /**
      * The crow in each state, for the app: one PNG strip of a state's distinct frames at one pixel a grid
-     * pixel, named by the state as rookd reports it, and one timeline for all of them. The app scales them
+     * pixel, named by the state as roost reports it, and one timeline for all of them. The app scales them
      * with nearest-neighbour filtering, so a 64-pixel crow fills 32 points on a Retina screen exactly.
      */
     private static _write_crows(): void {

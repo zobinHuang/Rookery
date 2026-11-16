@@ -1,6 +1,6 @@
 # <img src="docs/images/rookery-logo.png" alt="Rookery" width="258">
 
-Rookery is a macOS app that gathers your windows into a stage of its own: drag a window in and it is grouped with others, shown one at a time and switched as tabs and groups, without full-screen Spaces. A sidebar keeps your tools beside it: a world clock, how much of your code agents' plan limits is left, and an optional mixer for each app's and each Chrome tab's sound. Alongside it, `rook` keeps your code agents running in tmux and shows what each is doing, and `rookd` collects their sessions on a server. It is for people who keep many windows and agents going across several tasks.
+Rookery is a macOS app that gathers your windows into a stage of its own: drag a window in and it is grouped with others, shown one at a time and switched as tabs and groups, without full-screen Spaces. A sidebar keeps your tools beside it: a world clock, how much of your code agents' plan limits is left, and an optional mixer for each app's and each Chrome tab's sound. Alongside it, `rook` keeps your code agents running in tmux and shows what each is doing, and `roost` collects their sessions on a server. It is for people who keep many windows and agents going across several tasks.
 
 ## Usage
 
@@ -22,4 +22,4 @@ On each machine where your code agents run, install `rook` and start a session; 
     curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/rook/setup.sh | bash
     rook new <name>
 
-See [rook/](rook/README.md) for its keys and for uploading sessions to a [rookd](server/README.md) server, [docs/](docs/) for how the app works and how to develop it, and [branding/](branding/) for the pixel crow logo.
+See [rook/](rook/README.md) for its keys and for uploading sessions to a [roost](server/README.md) server, [docs/](docs/) for how the app works and how to develop it, and [branding/](branding/) for the pixel crow logo.

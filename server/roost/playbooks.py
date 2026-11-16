@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
-from rookd.errors import ConflictError, NotFoundError, ValidationError
-from rookd.records import RecordStore
-from rookd.resources import ResourceStore
-from rookd.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
+from roost.errors import ConflictError, NotFoundError, ValidationError
+from roost.records import RecordStore
+from roost.resources import ResourceStore
+from roost.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
 
 
 @dataclass

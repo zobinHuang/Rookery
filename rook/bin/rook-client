@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 class RookClientError(Exception):
-    """A failure talking to rookd, or reading rook's own files."""
+    """A failure talking to roost, or reading rook's own files."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -46,7 +46,7 @@ class RookPaths:
 
     @classmethod
     def connect_file(cls) -> Path:
-        """The rookd server this machine reports to, written by `rook connect`."""
+        """The roost server this machine reports to, written by `rook connect`."""
         return cls.config_dir() / "connect.json"
 
     @classmethod
@@ -61,7 +61,7 @@ class RookPaths:
 
     @classmethod
     def sending_file(cls) -> Path:
-        """Events taken off the queue and being sent, kept until rookd has them."""
+        """Events taken off the queue and being sent, kept until roost has them."""
         return cls.state_dir() / "events.sending.jsonl"
 
     @classmethod
@@ -157,7 +157,7 @@ class RookConfig:
 
 
 class Connection:
-    """The rookd server this machine reports to."""
+    """The roost server this machine reports to."""
 
     CONNECTION_TIMEOUT_SECONDS = 30
 
@@ -186,7 +186,7 @@ class Connection:
         return cls(base_url, token, map_connect.get("insecure") in (True, "true", 1))
 
     def request(self, method: str, path: str, map_body: object = None) -> dict[str, object]:
-        """Send one request to rookd.
+        """Send one request to roost.
 
         Args:
             method: the HTTP method
@@ -197,16 +197,16 @@ class Connection:
             the decoded response
 
         Raises:
-            RookClientError: if rookd cannot be reached or refuses the request
+            RookClientError: if roost cannot be reached or refuses the request
         """
         raw = self.request_bytes(method, path, map_body)
         return json.loads(raw) if raw else {}
 
     def request_bytes(self, method: str, path: str, map_body: object = None) -> bytes:
-        """Send one request to rookd and take its answer as it came, for answers that are not one object.
+        """Send one request to roost and take its answer as it came, for answers that are not one object.
 
         Raises:
-            RookClientError: if rookd cannot be reached or refuses the request
+            RookClientError: if roost cannot be reached or refuses the request
         """
         data = None if map_body is None else json.dumps(map_body).encode("utf-8")
         request = urllib.request.Request(self.base_url + path, data=data, method=method)
@@ -223,14 +223,14 @@ class Connection:
                 raw = response.read()
         except urllib.error.HTTPError as err:
             detail = err.read().decode("utf-8", errors="replace")
-            raise RookClientError(f"rookd answered {err.code}: {detail}") from err
+            raise RookClientError(f"roost answered {err.code}: {detail}") from err
         except (urllib.error.URLError, OSError) as err:
-            raise RookClientError(f"cannot reach rookd at {self.base_url}: {err}") from err
+            raise RookClientError(f"cannot reach roost at {self.base_url}: {err}") from err
         return raw
 
 
 class HookEventMapper:
-    """Turns one hook payload of a code agent into the events rookd takes, following docs/resources.md."""
+    """Turns one hook payload of a code agent into the events roost takes, following docs/resources.md."""
 
     MAPPER_MEMORY_PATTERN = re.compile(r"/projects/(?P<project>[^/]+)/memory/(?P<file>[^/]+\.md)$")
     MAPPER_SKILL_PATTERN = re.compile(r"/\.(?:claude|agents)/skills/(?P<name>[^/]+)/")
@@ -268,7 +268,7 @@ class HookEventMapper:
         """The events the payload stands for.
 
         Returns:
-            the events, oldest first; none for a payload that says nothing rookd keeps
+            the events, oldest first; none for a payload that says nothing roost keeps
         """
         if not self._session_id:
             return []
@@ -288,7 +288,7 @@ class HookEventMapper:
 
     @staticmethod
     def now() -> str:
-        """The current time as rookd writes it."""
+        """The current time as roost writes it."""
         return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
     def _state(self) -> str | None:
@@ -410,7 +410,7 @@ class PlaybookEvents:
 
     @staticmethod
     def of(session_id: str, map_resolved: dict[str, object]) -> list[dict[str, object]]:
-        """The events for a playbook as rookd resolved it for installing.
+        """The events for a playbook as roost resolved it for installing.
 
         Args:
             session_id: the agent session it was loaded into
@@ -631,7 +631,7 @@ class Mailbox:
 
 
 class EventQueue:
-    """Events kept on disk until rookd has them. A hook only appends; one sender at a time moves the queue
+    """Events kept on disk until roost has them. A hook only appends; one sender at a time moves the queue
     behind what is already pending and posts that in batches, oldest first, keeping whatever did not go out
     for the next try."""
 
@@ -658,13 +658,13 @@ class EventQueue:
         """Send what is queued, unless another sender already is.
 
         Args:
-            send_batch: sends one batch to rookd, raising RookClientError when it cannot
+            send_batch: sends one batch to roost, raising RookClientError when it cannot
 
         Returns:
             how many events were sent
 
         Raises:
-            RookClientError: if rookd cannot take them; they stay queued
+            RookClientError: if roost cannot take them; they stay queued
         """
         with cls._sender_lock() as is_held:
             if not is_held:
@@ -817,7 +817,7 @@ class TranscriptLines:
 
 
 class ResourceCommands:
-    """`rook resource`: read and change rookd's resources from a terminal, or from an agent."""
+    """`rook resource`: read and change roost's resources from a terminal, or from an agent."""
 
     @staticmethod
     def build_parser(parser: argparse.ArgumentParser) -> None:
@@ -863,7 +863,7 @@ class ResourceCommands:
             the process exit status
 
         Raises:
-            RookClientError: if rookd refuses the request or the arguments are unusable
+            RookClientError: if roost refuses the request or the arguments are unusable
         """
         if args.action == "kinds":
             cls._print_json(connection.request("GET", "/v1/kinds")["kinds"])
@@ -950,7 +950,7 @@ class MessageCommands:
             the process exit status
 
         Raises:
-            RookClientError: if rookd refuses it
+            RookClientError: if roost refuses it
         """
         map_body: dict[str, object] = {"to": args.agent, "text": " ".join(args.text)}
         session_id = None if args.as_person else AgentPane.session_here()
@@ -1060,7 +1060,7 @@ class RookClient:
         """Send the queued events, if connected.
 
         Returns:
-            0, or 1 when rookd could not take them
+            0, or 1 when roost could not take them
         """
         connection = Connection.load()
         if connection is None:

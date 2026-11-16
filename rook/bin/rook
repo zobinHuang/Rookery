@@ -11,12 +11,12 @@ usage() {
   echo "  rook exit                   Kill current session"
   echo ""
   echo "  rook connect <host> <port> --token <token>"
-  echo "                              Upload agent session history to a rookd server"
+  echo "                              Upload agent session history to a roost server"
   echo "  rook disconnect             Stop uploading session history"
   echo "  rook sessions               Show the upload connection and its backlog"
-  echo "  rook resource <command>     Read and change rookd's agents, skills, playbooks and memories"
+  echo "  rook resource <command>     Read and change roost's agents, skills, playbooks and memories"
   echo "  rook message <agent> <text> Send text to an agent, as the agent in this pane"
-  echo "  rook link [status]          Show the live link to rookd"
+  echo "  rook link [status]          Show the live link to roost"
   echo "  rook link prompts on|off    Let prompts from Rookery and other agents reach agents here"
   exit 1
 }

@@ -7,9 +7,9 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from rookd.config import ServerConfig
-from rookd.http import RookdServer
-from rookd.store import SessionStore
+from roost.config import ServerConfig
+from roost.http import RoostServer
+from roost.store import SessionStore
 
 
 @unittest.skipUnless(shutil.which("openssl"), "openssl is needed to make a test certificate")
@@ -42,7 +42,7 @@ class TlsTest(unittest.TestCase):
             tls_cert=path_cert,
             tls_key=path_key,
         )
-        self.server = RookdServer(config=config, store=SessionStore(config.data_root))
+        self.server = RoostServer(config=config, store=SessionStore(config.data_root))
         self.port = self.server.bound_port()
         thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         thread.start()

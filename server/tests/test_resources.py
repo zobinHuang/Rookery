@@ -2,10 +2,10 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from rookd.database import Database
-from rookd.errors import NotFoundError, ValidationError
-from rookd.events import AgentStates, EventLog
-from rookd.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
+from roost.database import Database
+from roost.errors import NotFoundError, ValidationError
+from roost.events import AgentStates, EventLog
+from roost.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
 
 AGENT = {"kind": "agent", "id": "s-1"}
 

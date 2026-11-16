@@ -15,8 +15,8 @@ Rookery is one SwiftPM package with a Dock app (with a menu bar item), a command
 | `RookeryCoreTests` | tests | Swift Testing suites for Core and the wire formats. |
 | `RookeryPlatformTests` | tests | Swift Testing suites for the Platform wrappers that need no permission, such as process priority. |
 | `extensions/chrome` | npm package | The Chrome extension: background service worker, content script, offscreen capture document. |
-| `rook/` | shell | The command line around code agents in tmux: `rook` sessions, `rook-agent` (each pane's agent state and the status bar), `rook-hooks` (merges the hooks into Claude Code and codex), `rook-session` (uploads transcripts), `rook-playbook` (installs a playbook's skills), `rook-client` (reports agent events to rookd, backs `rook resource` and `rook message`), `rook-link` (the live link to rookd, a user service that types prompts and messages into agents' panes; see `rook/docs/link.md`), and `setup.sh`. See `rook/README.md`. |
-| `server/rookd` | Python package | The server rook reports to: session transcripts, and the resources (agents, skills, playbooks, memories), their relations and the event log, in SQLite, over HTTP with a bearer token and a live event stream. See `docs/resources.md`. Standard library only. See `server/README.md` and `server/API.md`. |
+| `rook/` | shell | The command line around code agents in tmux: `rook` sessions, `rook-agent` (each pane's agent state and the status bar), `rook-hooks` (merges the hooks into Claude Code and codex), `rook-session` (uploads transcripts), `rook-playbook` (installs a playbook's skills), `rook-client` (reports agent events to roost, backs `rook resource` and `rook message`), `rook-link` (the live link to roost, a user service that types prompts and messages into agents' panes; see `rook/docs/link.md`), and `setup.sh`. See `rook/README.md`. |
+| `server/roost` | Python package | The server rook reports to: session transcripts, and the resources (agents, skills, playbooks, memories), their relations and the event log, in SQLite, over HTTP with a bearer token and a live event stream. See `docs/resources.md`. Standard library only. See `server/README.md` and `server/API.md`. |
 | `branding/` | npm package | The pixel crow logo, rendered from a 3D model into the sidebar's frames and the preview page. |
 
 Warnings are errors and the Swift 6 language mode is on everywhere; see `Package.swift`.
@@ -47,7 +47,7 @@ Warnings are errors and the Swift 6 language mode is on everywhere; see `Package
 - `WorkspaceController` (Accessibility granted): owns the `Workspace` (groups of managed windows), applies actions through `WindowTracker`, runs the stages' layout, the MRU order and the switchers' requests. Persists to `workspace.json`.
 - `StageCoordinator` / `StageController` / `StageModel` / `StageView`: the stage windows. Each stage is a borderless panel kept just beneath its front window; its SwiftUI view hosts the sidebar (windows, agents or mixer, sidebar videos, agent limits, world clock, toolbar) and the tab bar.
 - `MixerController`: per-app tracks over `AudioMixer`, settings persisted per bundle id; owns `BrowserTabMixer`, the per-tab state from the extension, which owns `BrowserPictures`, the sidebar videos.
-- `FleetModel`: the agents rookd knows of, kept current over its live link, and the user's local groups of them; backs the sidebar's Agents mode and each agent's page. See `docs/agents.md`.
+- `FleetModel`: the agents roost knows of, kept current over its live link, and the user's local groups of them; backs the sidebar's Agents mode and each agent's page. See `docs/agents.md`.
 - `AgentUsageMonitor`: reads the shown code agent accounts' limits on a schedule and groups accounts signed in to one login.
 - `ShortcutController`, `SwitcherController`, `KeyInterceptor`: hotkeys, the group and window switchers, ⌘⇥ while a stage is in front.
 - `Preferences`: everything in `UserDefaults` (`io.github.zobinhuang.rookery`), with change callbacks the controllers subscribe to.
@@ -64,8 +64,8 @@ UI state is `@MainActor`; the window tracker is an actor with a run loop thread 
 | Per-app mixer settings | `UserDefaults` key `mixerTracks` | Permanent, by bundle id |
 | Per-tab mixer settings | The extension's `chrome.storage.session` | While the tab and the browser live |
 | Agent limits | In memory | Read again on launch |
-| rookd's address; its token | `UserDefaults` key `rookdAddress`; the login keychain, service `io.github.zobinhuang.rookery`, account `rookd-token` | Permanent |
-| Groups of agents | `~/Library/Application Support/Rookery/agent-groups.json` | Permanent; agents rookd forgot are dropped |
+| roost's address; its token | `UserDefaults` key `roostAddress`; the login keychain, service `io.github.zobinhuang.rookery`, account `roost-token` | Permanent |
+| Groups of agents | `~/Library/Application Support/Rookery/agent-groups.json` | Permanent; agents roost forgot are dropped |
 | Chrome native host registration | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.zobinhuang.rookery.json` | Rewritten by the app at launch when it changed |
 
 The app was called MuxShots until it was renamed Rookery, with a new bundle identifier. On its first launch, before anything reads them, `MuxShotsMigration` copies the settings over from the old identifier's defaults domain and moves `~/Library/Application Support/MuxShots` to `Rookery`; neither happens when Rookery already has its own, and the old domain is left in place. `ChromeNativeHost` removes the old host registration (`io.github.zobinhuang.muxshots.json`), and `make install` quits and removes an installed `MuxShots.app`. What a new identifier cannot keep, the user grants again: Accessibility, audio capture, and opening at login. The extension's id is fixed by its key, so the native host still accepts it, but the extension must be rebuilt and reloaded to connect to the new host name. Builds are signed with `Rookery Development`, or with `MuxShots Development` while that is the only identity made.

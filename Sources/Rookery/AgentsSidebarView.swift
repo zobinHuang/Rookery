@@ -28,7 +28,7 @@ enum AgentPayload {
     }
 }
 
-/// The sidebar's Agents mode: every agent rookd knows of as a crow playing its state, in the groups the
+/// The sidebar's Agents mode: every agent roost knows of as a crow playing its state, in the groups the
 /// user dragged them into, then the rest, then those that ended. A session's subagents fold under it.
 struct AgentsSidebarView: View {
     private static let rowAnimation = Animation.spring(response: 0.3, dampingFraction: 0.85)
@@ -563,7 +563,7 @@ struct AgentsSidebarView: View {
             case .notConfigured:
                 Image(systemName: "antenna.radiowaves.left.and.right.slash")
                 if !isCollapsedBanner {
-                    Text("Connect Rookery to rookd to see your agents.")
+                    Text("Connect Rookery to roost to see your agents.")
                     Spacer(minLength: 0)
                     Button("Set Up…", action: onOpenSettings)
                         .controlSize(.small)
@@ -572,7 +572,7 @@ struct AgentsSidebarView: View {
                 ProgressView()
                     .controlSize(.mini)
                 if !isCollapsedBanner {
-                    Text("Connecting to rookd…")
+                    Text("Connecting to roost…")
                     Spacer(minLength: 0)
                 }
             case .offline(let reason):

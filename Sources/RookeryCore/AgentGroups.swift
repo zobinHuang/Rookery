@@ -97,9 +97,9 @@ public struct AgentGroups: Codable, Equatable, Sendable {
         listGroups.insert(group, at: insertIndex)
     }
 
-    /// Forget agents rookd no longer knows of.
+    /// Forget agents roost no longer knows of.
     ///
-    /// - Parameter setKnownIds: the agents rookd knows
+    /// - Parameter setKnownIds: the agents roost knows
     public mutating func prune(keeping setKnownIds: Set<String>) {
         for groupIndex in listGroups.indices {
             listGroups[groupIndex].listAgentIds.removeAll { !setKnownIds.contains($0) }

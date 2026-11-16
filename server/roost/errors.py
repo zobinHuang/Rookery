@@ -1,4 +1,4 @@
-class RookdError(Exception):
+class RoostError(Exception):
     """Base class for every failure the session server reports to a client."""
 
     ERROR_HTTP_STATUS = 500
@@ -19,49 +19,49 @@ class RookdError(Exception):
         }
 
 
-class ConfigError(RookdError):
+class ConfigError(RoostError):
     """The server configuration is absent, unreadable or incomplete."""
 
     ERROR_HTTP_STATUS = 500
 
 
-class AuthError(RookdError):
+class AuthError(RoostError):
     """The request carried no bearer token, or one that does not match."""
 
     ERROR_HTTP_STATUS = 401
 
 
-class ValidationError(RookdError):
+class ValidationError(RoostError):
     """A request field is missing or would not be safe to store."""
 
     ERROR_HTTP_STATUS = 400
 
 
-class NotFoundError(RookdError):
+class NotFoundError(RoostError):
     """The addressed route or session is unknown to this server."""
 
     ERROR_HTTP_STATUS = 404
 
 
-class PayloadTooLargeError(RookdError):
+class PayloadTooLargeError(RoostError):
     """The request body is larger than the configured per-request limit."""
 
     ERROR_HTTP_STATUS = 413
 
 
-class ConflictError(RookdError):
+class ConflictError(RoostError):
     """The request would overwrite something that already exists."""
 
     ERROR_HTTP_STATUS = 409
 
 
-class BusyError(RookdError):
+class BusyError(RoostError):
     """The server is already serving as many of these requests as it allows at once."""
 
     ERROR_HTTP_STATUS = 503
 
 
-class CursorConflictError(RookdError):
+class CursorConflictError(RoostError):
     """The client's write offset disagrees with the stored transcript."""
 
     ERROR_HTTP_STATUS = 409

@@ -4,9 +4,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
-from rookd.errors import NotFoundError, ValidationError
-from rookd.records import RecordStore
-from rookd.resources import ResourceStore
+from roost.errors import NotFoundError, ValidationError
+from roost.records import RecordStore
+from roost.resources import ResourceStore
 
 
 @dataclass

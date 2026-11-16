@@ -1,9 +1,9 @@
-from rookd.errors import ValidationError
-from rookd.events import EventLog, EventVerbs
-from rookd.playbooks import PlaybookIndex
-from rookd.records import RecordStore
-from rookd.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
-from rookd.skills import SkillIndex
+from roost.errors import ValidationError
+from roost.events import EventLog, EventVerbs
+from roost.playbooks import PlaybookIndex
+from roost.records import RecordStore
+from roost.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
+from roost.skills import SkillIndex
 
 
 class ResourceCatalog:

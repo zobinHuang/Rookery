@@ -786,8 +786,9 @@ struct AgentInspector: View {
             }
         }
         if let hostname = machine?["hostname"]?.stringValue {
-            FactRow(title: "Machine", icon: .chip) {
+            FactRow(title: "Hostname", icon: .chip) {
                 Text(hostname)
+                    .help("The name the machine's own system goes by, which may differ from its rook's name")
                 ForEach([machine?["os"]?.stringValue, machine?["arch"]?.stringValue, machine?["user"]?.stringValue].compactMap { $0 }, id: \.self) { fact in
                     InfoTag(fact)
                 }

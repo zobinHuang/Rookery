@@ -260,15 +260,6 @@ struct StageView: View {
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if !model.isSidebarCollapsed && !agentUsage.listShownAccounts.isEmpty {
-                AgentUsagePanel(monitor: agentUsage)
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(StageColors.separator)
-                            .frame(height: 1)
-                    }
-                    .transition(.opacity)
-            }
             if !model.isSidebarCollapsed && !model.listClockCities.isEmpty {
                 WorldClockView(listCities: model.listClockCities)
                     .overlay(alignment: .top) {
@@ -873,6 +864,7 @@ struct StageView: View {
                 RookmasterView(
                     fleetModel: fleetModel,
                     logClock: preferences.logClock,
+                    agentUsage: agentUsage,
                     onOpenAgent: { agentId in
                         actions.showPage(.agent(agentId))
                     },

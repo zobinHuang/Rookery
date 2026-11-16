@@ -1,6 +1,6 @@
 # Code agent usage
 
-The sidebar's propellant panel shows how much of each code agent account's plan limits is left and when each resets.
+Rookmaster's propellant panel, to the right of its log and maintenance panel, shows how much of each code agent account's plan limits is left and when each resets.
 
 ## Reading the limits
 

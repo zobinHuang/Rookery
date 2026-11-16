@@ -23,6 +23,8 @@ struct RookmasterView: View {
 
     let fleetModel: FleetModel
     let logClock: LogClock
+    /// The code agents' plan limits, shown beside the log.
+    let agentUsage: AgentUsageMonitor
     let onOpenAgent: (String) -> Void
     let onClose: () -> Void
 
@@ -59,7 +61,7 @@ struct RookmasterView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Self.tabAnimation, value: memory.rookmasterTab)
-            RookmasterPanel(fleetModel: fleetModel, clock: logClock)
+            RookmasterPanel(fleetModel: fleetModel, clock: logClock, agentUsage: agentUsage)
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
     }
@@ -198,14 +200,16 @@ enum RookmasterStyle {
 }
 
 /// The panel at the bottom of the Rookmaster console, after an editor's: the log of the latest events,
-/// newest at the bottom, live, with a filter; and the maintenance agent beside it in a tab of its own.
-/// Folds down to its title bar.
+/// newest at the bottom, live, with a filter; and the maintenance agent beside it in a tab of its own; with
+/// the code agents' plan limits to their right. Folds down to its title bar.
 struct RookmasterPanel: View {
     private static let expandedHeight: CGFloat = 260
+    private static let usageWidth: CGFloat = 300
     private static let foldAnimation = Animation.spring(response: 0.3, dampingFraction: 0.9)
 
     let fleetModel: FleetModel
     let clock: LogClock
+    let agentUsage: AgentUsageMonitor
 
     @Namespace private var tabNamespace
 
@@ -231,12 +235,26 @@ struct RookmasterPanel: View {
                 .frame(height: 1)
             titleBar
             if memory.isPanelExpanded {
-                Group {
-                    switch memory.panelTab {
-                    case .log:
-                        rows
-                    case .maintenance:
-                        MaintenancePanel(fleetModel: fleetModel)
+                HStack(spacing: 0) {
+                    Group {
+                        switch memory.panelTab {
+                        case .log:
+                            rows
+                        case .maintenance:
+                            MaintenancePanel(fleetModel: fleetModel)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    if !agentUsage.listShownAccounts.isEmpty {
+                        Rectangle()
+                            .fill(StageColors.separator)
+                            .frame(width: 1)
+                        ScrollView {
+                            AgentUsagePanel(monitor: agentUsage)
+                        }
+                        .scrollIndicators(.never)
+                        .frame(width: Self.usageWidth)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
                 .frame(height: Self.expandedHeight)

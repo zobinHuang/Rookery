@@ -39,7 +39,8 @@ final class MaintenanceAgent {
     private static let resourceFolder = "Maintenance"
     private static let fileMode: Int = 0o600
     private static let executableMode: Int = 0o755
-    private static let listAllowedTools = ["Bash(rook-client:*)", "Skill"]
+    /// It changes roost through rook-client alone, and reads skills' own pages to describe them.
+    private static let listAllowedTools = ["Bash(rook-client:*)", "Skill", "WebFetch"]
 
     private(set) var listRuns: [MaintenanceRun] = []
 

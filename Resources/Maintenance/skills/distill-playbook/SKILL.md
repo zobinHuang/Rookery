@@ -12,6 +12,6 @@ description: Turn how agents actually solved a kind of problem into a playbook, 
 5. Write the playbook:
    - `name`: the problem, in a few words ("Backend feature with migrations").
    - `description`: when to load it, in one sentence.
-   - `prompt`: standing instructions in the imperative, one line each: the order to work in, the checks to run, the traps the sessions fell into. No narrative, no history of the sessions.
-   - `skills`: the registered skills from step 3 that the work needed.
+   - `prompt`: the steps, numbered, one a line, in the imperative: the order to work in, the checks to run, the traps the sessions fell into. A step that uses a skill names it with `@` (`3. Review the change with @review.`). No narrative, no history of the sessions.
+   - `skills`: every skill a step names, plus any other registered skill from step 3 the work needed.
 6. Create or update it with `--as-agent`, then report the playbook's id, what it says, and which sessions it came from.

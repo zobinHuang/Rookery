@@ -3,6 +3,8 @@ import SwiftUI
 
 /// A request to start the maintenance agent from, each one of its skills.
 enum MaintenanceStarter: CaseIterable {
+    case registerSkill
+    case writePlaybook
     case distillPlaybook
     case tidyMemories
     case describeSkills
@@ -10,6 +12,8 @@ enum MaintenanceStarter: CaseIterable {
 
     var title: String {
         switch self {
+        case .registerSkill: "Register a skill"
+        case .writePlaybook: "Write a playbook"
         case .distillPlaybook: "Distill a playbook"
         case .tidyMemories: "Tidy memories"
         case .describeSkills: "Describe skills"
@@ -19,6 +23,8 @@ enum MaintenanceStarter: CaseIterable {
 
     var symbol: RookeryIcon {
         switch self {
+        case .registerSkill: .skill
+        case .writePlaybook: .playbook
         case .distillPlaybook: .playbook
         case .tidyMemories: .memory
         case .describeSkills: .skill
@@ -29,6 +35,8 @@ enum MaintenanceStarter: CaseIterable {
     /// The request it fills in, for the user to finish or send.
     var request: String {
         switch self {
+        case .registerSkill: "Register the skill at "
+        case .writePlaybook: "Write a playbook for "
         case .distillPlaybook: "Distill a playbook from how @"
         case .tidyMemories: "Tidy the memories: merge duplicates and drop what nothing needs."
         case .describeSkills: "Write the missing descriptions of the registered skills."

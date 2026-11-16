@@ -30,12 +30,16 @@ Always pass `--as-agent $ROOKERY_AGENT_ID`.
     rook-client resource update memory <id> --attr text="..." --as-agent $ROOKERY_AGENT_ID
     rook-client resource delete memory <id> --as-agent $ROOKERY_AGENT_ID
 
-    # a skill: name, description or default_ref
+    # a skill: register it from its address, as copied from GitHub or GitLab, or owner/repo@path#ref
+    rook-client resource create skill --body '{"source": "https://github.com/owner/repo/tree/main/skills/pdf", "description": "..."}' --as-agent $ROOKERY_AGENT_ID
+    # then change its name, description or default_ref
     rook-client resource update skill <id> --body '{"description": "..."}' --as-agent $ROOKERY_AGENT_ID
 
     # a playbook: name, description, prompt, skills (replaces the list)
     rook-client resource create playbook --body '{"name": "Backend feature", "description": "...", "prompt": "...", "skills": ["<skill id>"]}' --as-agent $ROOKERY_AGENT_ID
     rook-client resource update playbook <id> --body '{"prompt": "..."}' --as-agent $ROOKERY_AGENT_ID
+
+A playbook's `prompt` is its steps, one a line, in the imperative. A step that uses a skill names it with `@` and the skill's id or its name with dashes for spaces (`2. Write the migration with @db-migrations.`), and the skill is in the playbook's `skills` too, so agents that follow it load it.
 
 `--body` takes the whole request as JSON; `--name` and `--attr KEY=VALUE` add to it. A playbook may only pin skills roost already knows (`ls --kind skill`); a skill seen in use but never registered has `discovered: true` and no repository, and cannot be pinned.
 

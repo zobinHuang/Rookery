@@ -280,5 +280,22 @@ class AgentCommandsTest(QueueAndSendTest):
         self.assertEqual(output.splitlines(), ["[user] step 4997", "[user] step 4998", "[user] step 4999"])
 
 
+    def test_a_proposal_names_the_agent_and_sends_nothing(self) -> None:
+        self.start_agent("busy", "working", "2026-11-16T10:00:00.000+00:00", {"title": "Payments"})
+        output = self.run_client(["propose", "message", "busy", "run", "the", "tests"])
+        proposal = json.loads(output.splitlines()[0])["proposal"]
+        self.assertEqual(proposal["agent_title"], "Payments")
+        self.assertEqual(proposal["text"], "run the tests")
+        self.assertTrue(proposal["id"].startswith("p-"))
+        self.assertEqual(self.server.deliveries.list_recent(agent_id="busy", limit=10), [])
+
+    def test_an_ended_agent_takes_no_proposal(self) -> None:
+        self.start_agent("gone", "ended", "2026-11-16T10:00:00.000+00:00")
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "message", "gone", "hello"]), 1)
+        self.assertIn("has ended", stderr.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

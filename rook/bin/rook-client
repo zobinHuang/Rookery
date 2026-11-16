@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import re
+import secrets
 import socket
 import ssl
 import subprocess
@@ -1141,6 +1142,46 @@ class AgentCommands:
             print(f"{flag} {str(row['state']):15} {str(row['title'])[:40]:40} {where:24} {place}{extra}  [{row['id']}]")
 
 
+class ProposeCommands:
+    """`rook-client propose`: what an overseeing agent would do to another agent, put to the person for a
+    decision rather than done. It prints the proposal, which the app shows with a button to carry it out."""
+
+    PROPOSE_ID_BYTES = 6
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the propose subcommands to a parser."""
+        commands = parser.add_subparsers(dest="action", required=True)
+        message_parser = commands.add_parser("message", help="propose text to send an agent")
+        message_parser.add_argument("agent", help="the agent's id")
+        message_parser.add_argument("text", nargs="+")
+
+    @classmethod
+    def run(cls, args: argparse.Namespace, connection: Connection) -> int:
+        """Check the proposal against roost and print it.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if the agent is unknown or has ended
+        """
+        agent = connection.request("GET", f"/v1/resources/agent/{urllib.parse.quote(args.agent, safe='')}")
+        map_attributes = agent.get("attributes") or {}
+        if map_attributes.get("state") == "ended":
+            raise RookClientError(f"agent {args.agent} has ended; it can no longer take a message")
+        proposal = {
+            "id": "p-" + secrets.token_hex(cls.PROPOSE_ID_BYTES),
+            "action": "message",
+            "agent": args.agent,
+            "agent_title": str(map_attributes.get("title") or agent.get("name") or args.agent),
+            "text": " ".join(args.text),
+        }
+        json.dump({"proposal": proposal}, sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\nProposed. The user decides in Rookery; nothing was sent. Do not send it another way.\n")
+        return 0
+
+
 class MessageCommands:
     """`rook message`: send text to another agent, as the agent in this pane, or as a person outside one."""
 
@@ -1320,6 +1361,7 @@ def main(list_argv: list[str] | None = None) -> int:
     ResourceCommands.build_parser(commands.add_parser("resource"))
     MessageCommands.build_parser(commands.add_parser("message"))
     AgentCommands.build_parser(commands.add_parser("agent"))
+    ProposeCommands.build_parser(commands.add_parser("propose"))
     args = parser.parse_args(list_argv)
     if args.command == "event":
         if args.event_command == "hook":
@@ -1336,6 +1378,8 @@ def main(list_argv: list[str] | None = None) -> int:
             return MessageCommands.run(args, connection)
         if args.command == "agent":
             return AgentCommands.run(args, connection)
+        if args.command == "propose":
+            return ProposeCommands.run(args, connection)
         return ResourceCommands.run(args, connection)
     except RookClientError as err:
         sys.stderr.write(f"rook: {err.message}\n")

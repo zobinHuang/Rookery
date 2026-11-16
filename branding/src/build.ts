@@ -16,6 +16,9 @@ class LogoBuild {
     /** The app's resources, where the sidebar's logo goes. */
     static readonly APP_RESOURCES_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Resources");
     static readonly SIDEBAR_LOGO_NAME = "SidebarLogo";
+    /** The crows the app's Agents list shows, one strip per state, and the timeline of all of them. */
+    static readonly CROW_STRIP_PREFIX = "Crow_";
+    static readonly CROW_TIMELINE_NAME = "Crows";
     /** The still logo the repository's README shows, each pixel a block of this many. */
     static readonly README_LOGO_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "images", "rookery-logo.png");
     static readonly README_LOGO_SCALE = 2;
@@ -46,7 +49,37 @@ class LogoBuild {
         writeFileSync(path, LogoBuild._page(map_animations));
         console.log(path);
         LogoBuild._write_sidebar_logo();
+        LogoBuild._write_crows();
         LogoBuild._write_readme_logo();
+    }
+
+    /**
+     * The crow in each state, for the app: one PNG strip of a state's distinct frames at one pixel a grid
+     * pixel, named by the state as rookd reports it, and one timeline for all of them. The app scales them
+     * with nearest-neighbour filtering, so a 64-pixel crow fills 32 points on a Retina screen exactly.
+     */
+    private static _write_crows(): void {
+        const map_states: Record<string, { frame_count: number; sequence: readonly number[] }> = {};
+        let width = 0;
+        let height = 0;
+        let frames_per_second = 0;
+        for (const state of CrowStates.LIST_STATES) {
+            const animation = Animator.animate(state, LogoBuild.BACKING);
+            const strip = PixelGrid.compose(
+                animation.width * animation.list_frames.length,
+                animation.height,
+                animation.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * animation.width, top: 0 })),
+            );
+            const name = state.name.replaceAll("-", "_");
+            writeFileSync(join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.CROW_STRIP_PREFIX}${name}.png`), PngWriter.encode(strip));
+            map_states[name] = { frame_count: animation.list_frames.length, sequence: animation.list_sequence };
+            width = animation.width;
+            height = animation.height;
+            frames_per_second = animation.frames_per_second;
+        }
+        const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.CROW_TIMELINE_NAME}.json`);
+        writeFileSync(path, `${JSON.stringify({ frame_width: width, frame_height: height, frames_per_second, states: map_states }, undefined, 4)}\n`);
+        console.log(path, `${CrowStates.LIST_STATES.length} states, ${width} × ${height}`);
     }
 
     /** The full-size horizontal mark's first frame, for the README. */

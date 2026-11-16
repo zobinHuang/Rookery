@@ -18,6 +18,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
 cp "$root/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 cp "$root"/Resources/SidebarLogo*.png "$root"/Resources/SidebarLogo.json "$app/Contents/Resources/"
+cp "$root"/Resources/Crow_*.png "$root"/Resources/Crows.json "$app/Contents/Resources/"
 cp "$bin_path/Rookery" "$app/Contents/MacOS/Rookery"
 cp "$bin_path/rookery-chrome-host" "$app/Contents/MacOS/rookery-chrome-host"
 

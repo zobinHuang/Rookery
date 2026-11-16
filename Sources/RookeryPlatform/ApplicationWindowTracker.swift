@@ -138,8 +138,11 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     ///   - frame: the frame in global screen coordinates, origin at the top-left of the main display
     ///   - windowId: the window
     /// - Returns: the frame after the move, or nil if the window could not be moved
-    func applyFrame(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
+    func applyFrame(_ frame: CGRect, to windowId: WindowId, isAfresh: Bool = false) async -> CGRect? {
         let result = await thread.run { [self] () -> CGRect? in
+            if isAfresh {
+                mapElements[windowId] = nil
+            }
             guard
                 let element = mapElements[windowId] ?? listedElement(of: windowId),
                 isAnswering(element, windowId: windowId)
@@ -675,7 +678,8 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             frame: try element.frame(),
             isMinimized: try element.isMinimized(),
             isFullscreen: try element.isFullscreen(),
-            isOnScreen: mapServerWindows[windowId]?.isOnScreen ?? false
+            isOnScreen: mapServerWindows[windowId]?.isOnScreen ?? false,
+            drawnFrame: mapServerWindows[windowId]?.frame
         )
     }
 }

@@ -16,6 +16,10 @@ public struct WindowRecord: Codable, Equatable, Sendable {
     public let isFullscreen: Bool
     /// Whether the window is on screen in the current Space.
     public let isOnScreen: Bool
+    /// Where the window server draws the window, in the same coordinates as `frame`, or nil when it does
+    /// not list it. It differs from `frame` when the application reports a frame it does not draw at, as
+    /// Telegram does once it shows its window again from the Dock.
+    public let drawnFrame: CGRect?
 
     public init(
         windowId: WindowId,
@@ -24,7 +28,8 @@ public struct WindowRecord: Codable, Equatable, Sendable {
         frame: CGRect,
         isMinimized: Bool,
         isFullscreen: Bool,
-        isOnScreen: Bool
+        isOnScreen: Bool,
+        drawnFrame: CGRect? = nil
     ) {
         self.windowId = windowId
         self.application = application
@@ -33,5 +38,12 @@ public struct WindowRecord: Codable, Equatable, Sendable {
         self.isMinimized = isMinimized
         self.isFullscreen = isFullscreen
         self.isOnScreen = isOnScreen
+        self.drawnFrame = drawnFrame
+    }
+
+    /// Where the window is seen: where the window server draws it while it is on screen, else where its
+    /// application says it is.
+    public var seenFrame: CGRect {
+        isOnScreen ? (drawnFrame ?? frame) : frame
     }
 }

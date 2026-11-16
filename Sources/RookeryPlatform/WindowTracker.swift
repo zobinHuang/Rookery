@@ -100,6 +100,18 @@ public actor WindowTracker {
         return await tracker.applyFrame(frame, to: windowId)
     }
 
+    /// Move and resize a managed window through the element its application lists now rather than the one
+    /// kept: an application that ordered the window out and back in can leave the kept element answering
+    /// without moving the window, as Telegram does.
+    ///
+    /// - Returns: the frame after the move, or nil if the window could not be moved
+    public func applyFrameAfresh(_ frame: CGRect, to windowId: WindowId) async -> CGRect? {
+        guard let tracker = tracker(of: windowId) else {
+            return nil
+        }
+        return await tracker.applyFrame(frame, to: windowId, isAfresh: true)
+    }
+
     /// Where a managed window is, as Accessibility reports it.
     public func frame(of windowId: WindowId) async -> CGRect? {
         guard let tracker = tracker(of: windowId) else {

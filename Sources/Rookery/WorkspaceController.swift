@@ -49,16 +49,21 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
     /// How far a managed window may be from where its stage keeps it and still count as there.
     private static let placementTolerance: CGFloat = 2
-    /// How long a window brought forward is given to show on screen and hold still, to be checked where it
-    /// is drawn.
-    private static let drawnFrameTimeout = Duration.milliseconds(1500)
-    private static let drawnFramePollInterval = Duration.milliseconds(60)
+    /// How long a window brought forward must hold still on screen to be checked where it is drawn: longer
+    /// than Telegram takes to move its window back once it shows.
+    private static let stillDuration = Duration.milliseconds(800)
+    private static let stillTimeout = Duration.seconds(4)
+    private static let stillPollInterval = Duration.milliseconds(60)
+    /// How many times a window that will not stay is placed again before it is left.
+    private static let placementAttempts = 3
     /// How often putting back a displaced window checks whether the mouse is up and layout is idle.
     private static let putBackPollInterval = Duration.milliseconds(100)
 
     private(set) var workspace: Workspace
     /// The area each open stage's front window fills, in window-server coordinates.
     private var mapStageContentFrames: [StageId: CGRect] = [:]
+    /// The background watch that keeps the latest window brought forward where it was placed.
+    private var placementTask: Task<Void, Never>?
     /// The group each open stage shows; a stage with no group shows nothing.
     private var mapStageGroupIds: [StageId: GroupId] = [:]
     /// The stage each group belongs to; a group in no stage is left where it is.
@@ -258,6 +263,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         applicationHidingTask?.cancel()
         applicationSweepTask?.cancel()
         displayChangeTask?.cancel()
+        placementTask?.cancel()
         if let activationObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(activationObserver)
         }
@@ -1114,55 +1120,87 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Raise a window and activate its application.
-    /// Make sure a window brought onto its stage is drawn where the stage put it, as the window server
-    /// shows it rather than as its application reports it. Telegram, back from the Dock, draws its window
-    /// where it last was on screen while reporting the frame it was given meanwhile, and then takes that
-    /// same frame again as no change; a frame one point off and then the right one moves it.
-    private func settleOnWindowServer(_ windowId: WindowId, at frame: CGRect) async {
+    /// Whether a window is the one its group shows on a stage: its group is on a stage and it is the
+    /// group's front window.
+    private func isShownOnStage(_ windowId: WindowId, in group: WindowGroup) -> Bool {
         guard
-            let shownFrame = await drawnFrame(of: windowId),
-            !Self.isFrame(shownFrame, closeTo: frame)
+            let stageId = mapGroupStageIds[group.groupId],
+            mapStageGroupIds[stageId] == group.groupId
         else {
-            return
+            return false
         }
-        Self.logger.notice("""
-            window \(windowId.rawValue) is drawn at \(String(describing: shownFrame), privacy: .public) though placed \
-            at \(String(describing: frame), privacy: .public); placing it again
-            """)
-        let nudgedFrame = CGRect(origin: frame.origin, size: CGSize(width: frame.width - 1, height: frame.height))
-        _ = await tracker.applyFrame(nudgedFrame, to: windowId)
-        _ = await tracker.applyFrame(frame, to: windowId)
-        let deadline = ContinuousClock.now + Self.drawnFrameTimeout
-        while ContinuousClock.now < deadline {
-            if let window = WindowServer.window(withId: windowId), Self.isFrame(window.frame, closeTo: frame) {
-                Self.logger.notice("window \(windowId.rawValue) is drawn where it was placed")
-                return
-            }
-            do {
-                try await Task.sleep(for: Self.drawnFramePollInterval)
-            } catch {
-                return
-            }
-        }
-        Self.logger.error("window \(windowId.rawValue) stays drawn away from where it was placed")
+        return group.listMembersFrontToBack.first?.windowId == windowId
     }
 
-    /// Where the window server draws a window once it is on screen and holds still, or nil if it does not
-    /// show within `drawnFrameTimeout`.
-    private func drawnFrame(of windowId: WindowId) async -> CGRect? {
-        let deadline = ContinuousClock.now + Self.drawnFrameTimeout
-        var previousFrame: CGRect?
+    /// Keep a window brought forward drawn where it was placed, as the window server shows it rather than as
+    /// its application reports it, in the background so the switch is not held up; a later one takes over.
+    private func keepPlaced(_ windowId: WindowId, at frame: CGRect) {
+        placementTask?.cancel()
+        placementTask = Task { [weak self] in
+            await self?.settlePlacement(of: windowId, at: frame)
+        }
+    }
+
+    /// Wait for a window to hold still on screen and place it again wherever that is not where it was put,
+    /// until it holds still there. Telegram, back from the Dock, draws its window where it last was on
+    /// screen while reporting the frame it was given meanwhile, takes that same frame again as no change,
+    /// and some half a second after it shows moves its window back once more: so the window is placed only
+    /// once it holds still, a point off and then right, and watched until it holds still in place. A window
+    /// drawn at another size than it reports is warped, as Telegram's was by a minimize animation cut short;
+    /// moving it shifts the warp along and nothing short of its application reopening it mends it.
+    private func settlePlacement(of windowId: WindowId, at frame: CGRect) async {
+        for attempt in 1...Self.placementAttempts {
+            guard let stillFrame = await stillFrame(of: windowId) else {
+                return
+            }
+            if Self.isFrame(stillFrame, closeTo: frame) {
+                if attempt > 1 {
+                    Self.logger.notice("window \(windowId.rawValue) holds still where it was placed")
+                }
+                return
+            }
+            Self.logger.notice("""
+                window \(windowId.rawValue) holds still at \(String(describing: stillFrame), privacy: .public) though \
+                placed at \(String(describing: frame), privacy: .public); placing it again (\(attempt))
+                """)
+            _ = await tracker.applyFrameAfresh(frame.offsetBy(dx: 1, dy: 1), to: windowId)
+            _ = await tracker.applyFrame(frame, to: windowId)
+        }
+        if
+            let reportedFrame = await tracker.frame(of: windowId),
+            let drawnFrame = WindowServer.window(withId: windowId)?.frame,
+            abs(reportedFrame.width - drawnFrame.width) > Self.placementTolerance
+                || abs(reportedFrame.height - drawnFrame.height) > Self.placementTolerance
+        {
+            Self.logger.error("""
+                window \(windowId.rawValue) is drawn warped, \(String(describing: drawnFrame), privacy: .public) for \
+                \(String(describing: reportedFrame), privacy: .public), as a minimize animation cut short leaves it; \
+                only its application reopening it mends it
+                """)
+            return
+        }
+        Self.logger.error("window \(windowId.rawValue) will not stay where it was placed")
+    }
+
+    /// Where the window server draws a window once it has held still on screen for `stillDuration`, or nil
+    /// if it does not within `stillTimeout`, or the wait is cancelled.
+    private func stillFrame(of windowId: WindowId) async -> CGRect? {
+        let deadline = ContinuousClock.now + Self.stillTimeout
+        var heldFrame: CGRect?
+        var heldSince = ContinuousClock.now
         while ContinuousClock.now < deadline {
             if let window = WindowServer.window(withId: windowId), window.isOnScreen {
-                if previousFrame == window.frame {
+                if heldFrame != window.frame {
+                    heldFrame = window.frame
+                    heldSince = ContinuousClock.now
+                } else if ContinuousClock.now - heldSince >= Self.stillDuration {
                     return window.frame
                 }
-                previousFrame = window.frame
             } else {
-                previousFrame = nil
+                heldFrame = nil
             }
             do {
-                try await Task.sleep(for: Self.drawnFramePollInterval)
+                try await Task.sleep(for: Self.stillPollInterval)
             } catch {
                 return nil
             }
@@ -1312,7 +1350,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             broughtForwardWindowId = selected.windowId
             await bringForward(selected.windowId)
             if let contentFrame = mapShownFrames[selected.windowId] {
-                await settleOnWindowServer(selected.windowId, at: contentFrame)
+                keepPlaced(selected.windowId, at: contentFrame)
             }
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
@@ -1354,8 +1392,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             try await show(windowId)
         }
         broughtForwardWindowId = windowId
-        guard await tracker.raise(windowId) else {
-            throw WindowActionError.cannotRaise(windowId: windowId)
+        if await !tracker.raise(windowId) {
+            guard
+                await reopenApplication(of: windowId),
+                await retryWhileReopening({ await self.tracker.raise(windowId) })
+            else {
+                throw WindowActionError.cannotRaise(windowId: windowId)
+            }
         }
         guard
             let processId = await tracker.processId(of: windowId),
@@ -1369,7 +1412,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             placedFrame = await tracker.frame(of: windowId)
         }
         if let placedFrame {
-            await settleOnWindowServer(windowId, at: placedFrame)
+            keepPlaced(windowId, at: placedFrame)
         }
     }
 
@@ -1427,12 +1470,32 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             return landedFrame
         }
+        guard await reopenApplication(of: windowId) else {
+            return nil
+        }
+        var landedFrame: CGRect?
+        _ = await retryWhileReopening {
+            landedFrame = await self.tracker.applyFrame(frame, to: windowId)
+            return landedFrame != nil
+        }
+        if landedFrame != nil, isRestoring {
+            _ = await tracker.applyMinimized(false, to: windowId)
+        }
+        return landedFrame
+    }
+
+    /// Ask the application of a window it ordered out to reopen, as a click on its Dock icon does, which
+    /// shows the window again; unless Rookery holds other windows of it hidden, which a reopen would restore
+    /// from the Dock in its place, as Chrome does.
+    ///
+    /// - Returns: whether the application was asked
+    private func reopenApplication(of windowId: WindowId) async -> Bool {
         guard
             WindowServer.window(withId: windowId)?.isOrderedIn != true,
             let processId = await tracker.processId(of: windowId),
             let bundleUrl = NSRunningApplication(processIdentifier: processId)?.bundleURL
         else {
-            return nil
+            return false
         }
         let hasHiddenSiblings = workspace.listHiddenWindows.contains { window in
             window.windowId != windowId && window.application.processId == processId
@@ -1442,30 +1505,33 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 window \(windowId.rawValue) was ordered out by its application, which is not asked to reopen: \
                 that would bring back one of its hidden windows instead
                 """)
-            return nil
+            return false
         }
         Self.logger.info("window \(windowId.rawValue) was ordered out by its application, which is asked to reopen")
         do {
             try await NSWorkspace.shared.openApplication(at: bundleUrl, configuration: NSWorkspace.OpenConfiguration())
         } catch {
             Self.logger.error("cannot reopen the application of window \(windowId.rawValue): \(error)")
-            return nil
+            return false
         }
+        return true
+    }
+
+    /// Try something on a window its application was asked to reopen until it works or `reopenTimeout`
+    /// passes: the window is listed again only once the application has shown it.
+    private func retryWhileReopening(_ attempt: @MainActor () async -> Bool) async -> Bool {
         let deadline = ContinuousClock.now + Self.reopenTimeout
         while ContinuousClock.now < deadline {
             do {
                 try await Task.sleep(for: Self.reopenPollInterval)
             } catch {
-                return nil
+                return false
             }
-            if let landedFrame = await tracker.applyFrame(frame, to: windowId) {
-                if isRestoring {
-                    _ = await tracker.applyMinimized(false, to: windowId)
-                }
-                return landedFrame
+            if await attempt() {
+                return true
             }
         }
-        return nil
+        return false
     }
 
     /// Put the stages back on a display and minimize again any hidden window back from the Dock, once the
@@ -1725,24 +1791,32 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Where a window belongs when it is shown: its place before Rookery hid it, or where it is now.
-    /// Note a managed window on a stage that is no longer where its stage keeps it, as when the user resizes
-    /// it or its application moves it, so it is put back: managed windows stay with their stage until
-    /// released.
+    /// Note a managed window that is not where its stage keeps it, so it is put back: one on a stage that is
+    /// no longer in place, as when the user resizes it or its application moves it, and, while the stages
+    /// are open, one on screen though its stage does not show it, as Telegram's when it shows its window
+    /// again by itself. Where a window is is where the window server draws it: an application can report a
+    /// frame it does not draw at. Managed windows stay with their stage until released.
     private func noteIfDisplaced(_ record: WindowRecord) {
         guard
             !record.isMinimized,
             !record.isFullscreen,
-            let group = workspace.group(containing: record.windowId),
-            let stageId = mapGroupStageIds[group.groupId],
-            let contentFrame = mapStageContentFrames[stageId],
-            !Self.isFrame(record.frame, closeTo: contentFrame),
-            mapUnfitFrames[record.windowId].map({ Self.isFrame(record.frame, closeTo: $0) }) != true
+            let group = workspace.group(containing: record.windowId)
         else {
             return
         }
-        let isHidden = workspace.listHiddenWindows.contains { $0.windowId == record.windowId }
-        if !isHidden && mapStageGroupIds[stageId] != group.groupId {
-            return
+        if !isShownOnStage(record.windowId, in: group) {
+            guard isStageOpen, record.isOnScreen else {
+                return
+            }
+        } else {
+            guard
+                let stageId = mapGroupStageIds[group.groupId],
+                let contentFrame = mapStageContentFrames[stageId],
+                !Self.isFrame(record.seenFrame, closeTo: contentFrame),
+                mapUnfitFrames[record.windowId].map({ Self.isFrame(record.seenFrame, closeTo: $0) }) != true
+            else {
+                return
+            }
         }
         setDisplacedIds.insert(record.windowId)
         guard putBackTask == nil else {
@@ -1772,31 +1846,53 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Put a displaced managed window back where its stage keeps it: in the content area if it is its
-    /// stage's front window, minimized again if it is hidden.
+    /// stage's front window, minimized again if it is hidden, and hidden if it shows though no stage does.
     private func putBack(_ windowId: WindowId) async {
         if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
             await minimizeAgain(windowId)
             return
         }
-        guard
-            let frame = await tracker.frame(of: windowId),
-            let group = workspace.group(containing: windowId),
-            let stageId = mapGroupStageIds[group.groupId],
-            let contentFrame = mapStageContentFrames[stageId]
-        else {
+        guard let group = workspace.group(containing: windowId) else {
+            return
+        }
+        guard isShownOnStage(windowId, in: group) else {
+            guard isStageOpen, WindowServer.window(withId: windowId)?.isOnScreen == true else {
+                return
+            }
+            if isInFrontmostApplication(windowId) {
+                Self.logger.notice("window \(windowId.rawValue) shows off its stage in the application in front; following it")
+                await performSwitch(to: group.groupId, bringingToFront: windowId, onStage: focusedStageId())
+                return
+            }
+            Self.logger.notice("window \(windowId.rawValue) shows though no stage shows it; hiding it")
+            do {
+                try await hide(windowId)
+            } catch {
+                Self.logger.error("cannot hide window \(windowId.rawValue) that shows off its stage: \(error, privacy: .public)")
+            }
             return
         }
         guard
-            mapStageGroupIds[stageId] == group.groupId,
-            !Self.isFrame(frame, closeTo: contentFrame),
+            let stageId = mapGroupStageIds[group.groupId],
+            let contentFrame = mapStageContentFrames[stageId],
+            let reportedFrame = await tracker.frame(of: windowId),
             await !tracker.isFullscreen(windowId)
         else {
+            return
+        }
+        let shownWindow = WindowServer.window(withId: windowId)
+        let frame = shownWindow?.isOnScreen == true ? (shownWindow?.frame ?? reportedFrame) : reportedFrame
+        guard !Self.isFrame(frame, closeTo: contentFrame) else {
             return
         }
         Self.logger.info("""
             window \(windowId.rawValue) moved off its stage to \(String(describing: frame), privacy: .public); \
             putting it back
             """)
+        if Self.isFrame(reportedFrame, closeTo: contentFrame) {
+            keepPlaced(windowId, at: contentFrame)
+            return
+        }
         if
             let landedFrame = await tracker.applyFrame(contentFrame, to: windowId),
             !Self.isFrame(landedFrame, closeTo: contentFrame)

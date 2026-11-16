@@ -341,7 +341,10 @@ struct RookmasterBoard: View {
                     .frame(width: Self.cardWidth, alignment: .leading)
                     .padding(.leading, 4)
             }
-            ForEach(listResources, id: \.id) { resource in
+            ForEach(Array(listResources.enumerated()), id: \.element.id) { index, resource in
+                if kind.name == AgentFleet.agentKind, let heading = teamHeading(at: index, in: listResources) {
+                    teamHeader(heading)
+                }
                 card(resource, setFocus: setFocus, now: now)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
@@ -525,6 +528,9 @@ struct RookmasterBoard: View {
                 }
                 return true
             }
+            if kind.name == AgentFleet.agentKind {
+                listResources = byTeam(listResources)
+            }
             if memory.isBoardLocked, let listFrozen = memory.mapBoardFrozenOrder[kind.name] {
                 let mapRanks = Dictionary(listFrozen.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
                 listResources.sort { first, second in
@@ -536,6 +542,58 @@ struct RookmasterBoard: View {
             mapColumns[kind.name] = Array(listResources.prefix(Self.columnLimit))
         }
         return mapColumns
+    }
+
+    /// The agents with each team's together, in the teams' order and each team's own, then those in none.
+    private func byTeam(_ listAgents: [FleetResource]) -> [FleetResource] {
+        let teams = fleetModel.teams
+        let mapTeamIndices = Dictionary(uniqueKeysWithValues: teams.listTeams.enumerated().map { ($1.id, $0) })
+        let mapMemberIndices = Dictionary(
+            teams.listTeams.flatMap { team in team.listAgentIds.enumerated().map { ($1, $0) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return listAgents.enumerated().sorted { first, second in
+            let firstTeam = teams.teamId(of: first.element.id).flatMap { mapTeamIndices[$0] } ?? Int.max
+            let secondTeam = teams.teamId(of: second.element.id).flatMap { mapTeamIndices[$0] } ?? Int.max
+            if firstTeam != secondTeam {
+                return firstTeam < secondTeam
+            }
+            if firstTeam != Int.max {
+                return (mapMemberIndices[first.element.id] ?? 0) < (mapMemberIndices[second.element.id] ?? 0)
+            }
+            return first.offset < second.offset
+        }.map(\.element)
+    }
+
+    /// The team heading above the agent at an index, when it starts a team's run, or the unassigned ones
+    /// after the teams; nil within a run, or when there are no teams.
+    private func teamHeading(at index: Int, in listAgents: [FleetResource]) -> String? {
+        let teams = fleetModel.teams
+        guard !teams.listTeams.isEmpty, listAgents.indices.contains(index) else {
+            return nil
+        }
+        let teamId = teams.teamId(of: listAgents[index].id)
+        if index > 0, teams.teamId(of: listAgents[index - 1].id) == teamId {
+            return nil
+        }
+        guard let teamId else {
+            return "Unassigned"
+        }
+        return teams.listTeams.first { $0.id == teamId }?.title
+    }
+
+    private func teamHeader(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(StageColors.secondaryText)
+                .lineLimit(1)
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: 1)
+        }
+        .padding(.leading, 4)
+        .padding(.top, 6)
     }
 
     /// The edges between shown cards, a subagent's drawn from its session.

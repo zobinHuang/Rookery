@@ -62,8 +62,6 @@ struct AgentDetailView: View {
     private func header(_ agent: FleetAgent) -> some View {
         HStack(alignment: .center, spacing: 16) {
             CrowView(state: agent.state, size: .large)
-                .padding(4)
-                .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
                     Text(reader.title ?? agent.displayName)

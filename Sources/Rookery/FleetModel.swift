@@ -15,7 +15,7 @@ enum FleetConnection: Equatable {
     case offline(String)
 }
 
-/// The agents roost knows of, kept current over the live link, and how the user grouped them on this Mac.
+/// The agents roost knows of, kept current over the live link, and how the user teamed them on this Mac.
 /// One for the app, shared by every stage's sidebar and detail page.
 @MainActor
 @Observable
@@ -30,7 +30,7 @@ final class FleetModel {
     private(set) var fleet = AgentFleet()
     /// Every resource, relation and recent event, for the Rookmaster console.
     private(set) var graph = ResourceGraph()
-    private(set) var groups: AgentGroups
+    private(set) var teams: AgentTeams
     private(set) var serverVersion: String?
 
     @ObservationIgnored private let preferences: Preferences
@@ -47,7 +47,7 @@ final class FleetModel {
     init(preferences: Preferences, tokenStore: any SecretStore = FleetModel.keychainToken) {
         self.preferences = preferences
         self.tokenStore = tokenStore
-        groups = Self.loadGroups()
+        teams = Self.loadTeams()
     }
 
     /// Follow roost, if one is set.
@@ -157,39 +157,39 @@ final class FleetModel {
         try await client.delete(ref)
     }
 
-    // MARK: - Groups
+    // MARK: - Teams
 
-    func addGroup(title: String, with agentId: String? = nil) {
-        let groupId = groups.addGroup(title: title)
+    func addTeam(title: String, with agentId: String? = nil) {
+        let teamId = teams.addTeam(title: title)
         if let agentId {
-            groups.move(agentId, to: groupId)
+            teams.move(agentId, to: teamId)
         }
-        saveGroups()
+        saveTeams()
     }
 
-    func renameGroup(_ groupId: String, to title: String) {
-        groups.rename(groupId, to: title)
-        saveGroups()
+    func renameTeam(_ teamId: String, to title: String) {
+        teams.rename(teamId, to: title)
+        saveTeams()
     }
 
-    func removeGroup(_ groupId: String) {
-        groups.removeGroup(groupId)
-        saveGroups()
+    func removeTeam(_ teamId: String) {
+        teams.removeTeam(teamId)
+        saveTeams()
     }
 
-    func toggleGroup(_ groupId: String) {
-        groups.toggleCollapsed(groupId)
-        saveGroups()
+    func toggleTeam(_ teamId: String) {
+        teams.toggleCollapsed(teamId)
+        saveTeams()
     }
 
-    func move(_ agentId: String, to groupId: String?, before beforeAgentId: String? = nil) {
-        groups.move(agentId, to: groupId, before: beforeAgentId)
-        saveGroups()
+    func move(_ agentId: String, to teamId: String?, before beforeAgentId: String? = nil) {
+        teams.move(agentId, to: teamId, before: beforeAgentId)
+        saveTeams()
     }
 
-    func moveGroup(_ groupId: String, before beforeGroupId: String?) {
-        groups.moveGroup(groupId, before: beforeGroupId)
-        saveGroups()
+    func moveTeam(_ teamId: String, before beforeTeamId: String?) {
+        teams.moveTeam(teamId, before: beforeTeamId)
+        saveTeams()
     }
 
     // MARK: - Following roost
@@ -247,8 +247,8 @@ final class FleetModel {
             recentEvents: listRecentEvents,
             lastSeq: lastSeq
         )
-        groups.prune(keeping: Set(fleet.mapAgents.keys))
-        saveGroups()
+        teams.prune(keeping: Set(fleet.mapAgents.keys))
+        saveTeams()
         connection = .online
         for try await event in client.events(after: lastSeq) {
             var setRefetch = Set(graph.apply(event))
@@ -274,27 +274,30 @@ final class FleetModel {
         }
     }
 
-    private static func loadGroups() -> AgentGroups {
-        let url = DataDirectory.file(named: AgentGroups.fileName)
+    private static func loadTeams() -> AgentTeams {
+        var url = DataDirectory.file(named: AgentTeams.fileName)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            url = DataDirectory.file(named: AgentTeams.legacyFileName)
+        }
         guard FileManager.default.fileExists(atPath: url.path) else {
-            return AgentGroups()
+            return AgentTeams()
         }
         do {
-            return try JSONDecoder().decode(AgentGroups.self, from: Data(contentsOf: url))
+            return try JSONDecoder().decode(AgentTeams.self, from: Data(contentsOf: url))
         } catch {
-            logger.error("cannot read the agent groups: \(error, privacy: .public)")
-            return AgentGroups()
+            logger.error("cannot read the agent teams: \(error, privacy: .public)")
+            return AgentTeams()
         }
     }
 
-    private func saveGroups() {
+    private func saveTeams() {
         do {
             try FileManager.default.createDirectory(at: DataDirectory.url, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(groups).write(to: DataDirectory.file(named: AgentGroups.fileName), options: .atomic)
+            try encoder.encode(teams).write(to: DataDirectory.file(named: AgentTeams.fileName), options: .atomic)
         } catch {
-            Self.logger.error("cannot save the agent groups: \(error, privacy: .public)")
+            Self.logger.error("cannot save the agent teams: \(error, privacy: .public)")
         }
     }
 }

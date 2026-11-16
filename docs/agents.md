@@ -11,8 +11,8 @@ The sidebar's Agents mode shows every code agent roost knows of, one crow each p
 ## The sidebar
 
 - Sessions only; a session's subagents fold under it behind a count.
-- The user's groups first, then the rest by last activity, then those that ended, folded away.
-- Groups are this Mac's own (`agent-groups.json` in the data directory): drag an agent onto a group, onto an agent in a group to put it before, onto New Group to start one, or onto Ungrouped to take it out; drag a group's header to reorder groups. Agents roost forgot are pruned on every full read.
+- The user's teams first, then the rest by last activity, then those that ended, folded away.
+- Teams are this Mac's own (`agent-teams.json` in the data directory; `agent-groups.json`, from when they were called groups, is read once): drag an agent onto a team, onto an agent in a team to put it before, onto New Team to start one, or onto Unassigned to take it out; drag a team's header to reorder teams. Agents roost forgot are pruned on every full read.
 - A machine whose rook is offline dims its agents.
 
 ## The crows

@@ -66,44 +66,52 @@ struct FleetTests {
     }
 }
 
-struct AgentGroupsTests {
-    @Test func movesAgentsBetweenGroupsKeepingOneHome() {
-        var groups = AgentGroups()
-        let backend = groups.addGroup(title: "Backend")
-        let frontend = groups.addGroup(title: "Frontend")
+struct AgentTeamsTests {
+    @Test func movesAgentsBetweenTeamsKeepingOneHome() {
+        var teams = AgentTeams()
+        let backend = teams.addTeam(title: "Backend")
+        let frontend = teams.addTeam(title: "Frontend")
 
-        groups.move("a", to: backend)
-        groups.move("b", to: backend)
-        groups.move("c", to: backend, before: "a")
-        groups.move("a", to: frontend)
+        teams.move("a", to: backend)
+        teams.move("b", to: backend)
+        teams.move("c", to: backend, before: "a")
+        teams.move("a", to: frontend)
 
-        #expect(groups.listGroups[0].listAgentIds == ["c", "b"])
-        #expect(groups.groupId(of: "a") == frontend)
-        groups.move("a", to: nil)
-        #expect(groups.groupId(of: "a") == nil)
+        #expect(teams.listTeams[0].listAgentIds == ["c", "b"])
+        #expect(teams.teamId(of: "a") == frontend)
+        teams.move("a", to: nil)
+        #expect(teams.teamId(of: "a") == nil)
+    }
+
+    @Test func readsTeamsSavedWhenTheyWereGroups() throws {
+        let legacy = #"{"listGroups":[{"id":"t","title":"Backend","listAgentIds":["a"],"isCollapsed":false}]}"#
+
+        let teams = try JSONDecoder().decode(AgentTeams.self, from: Data(legacy.utf8))
+
+        #expect(teams.listTeams.map(\.title) == ["Backend"])
     }
 
     @Test func forgetsAgentsRoostDropped() {
-        var groups = AgentGroups()
-        let backend = groups.addGroup(title: "Backend")
-        groups.move("a", to: backend)
-        groups.move("b", to: backend)
+        var teams = AgentTeams()
+        let backend = teams.addTeam(title: "Backend")
+        teams.move("a", to: backend)
+        teams.move("b", to: backend)
 
-        groups.prune(keeping: ["b"])
+        teams.prune(keeping: ["b"])
 
-        #expect(groups.listGroups[0].listAgentIds == ["b"])
+        #expect(teams.listTeams[0].listAgentIds == ["b"])
     }
 
-    @Test func reordersAndRenamesGroups() {
-        var groups = AgentGroups()
-        let first = groups.addGroup(title: "One")
-        let second = groups.addGroup(title: "Two")
+    @Test func reordersAndRenamesTeams() {
+        var teams = AgentTeams()
+        let first = teams.addTeam(title: "One")
+        let second = teams.addTeam(title: "Two")
 
-        groups.moveGroup(second, before: first)
-        groups.rename(first, to: "  ")
-        groups.rename(second, to: "Second")
+        teams.moveTeam(second, before: first)
+        teams.rename(first, to: "  ")
+        teams.rename(second, to: "Second")
 
-        #expect(groups.listGroups.map(\.title) == ["Second", "One"])
+        #expect(teams.listTeams.map(\.title) == ["Second", "One"])
     }
 }
 

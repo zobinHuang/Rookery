@@ -67,7 +67,7 @@ UI state is `@MainActor`; the window tracker is an actor with a run loop thread 
 | Per-tab mixer settings | The extension's `chrome.storage.session` | While the tab and the browser live |
 | Agent limits | In memory | Read again on launch |
 | roost's address; its token | `UserDefaults` key `roostAddress`; the login keychain, service `io.github.zobinhuang.rookery`, account `roost-token` | Permanent |
-| Groups of agents | `~/Library/Application Support/Rookery/agent-groups.json` | Permanent; agents roost forgot are dropped |
+| Teams of agents | `~/Library/Application Support/Rookery/agent-teams.json` | Permanent; agents roost forgot are dropped |
 | Chrome native host registration | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.zobinhuang.rookery.json` | Rewritten by the app at launch when it changed |
 
 The app was called MuxShots until it was renamed Rookery, with a new bundle identifier. On its first launch, before anything reads them, `MuxShotsMigration` copies the settings over from the old identifier's defaults domain and moves `~/Library/Application Support/MuxShots` to `Rookery`; neither happens when Rookery already has its own, and the old domain is left in place. `ChromeNativeHost` removes the old host registration (`io.github.zobinhuang.muxshots.json`), and `make install` quits and removes an installed `MuxShots.app`. What a new identifier cannot keep, the user grants again: Accessibility, audio capture, and opening at login. The extension's id is fixed by its key, so the native host still accepts it, but the extension must be rebuilt and reloaded to connect to the new host name. Builds are signed with `Rookery Development`, or with `MuxShots Development` while that is the only identity made.

@@ -2,19 +2,19 @@ import AppKit
 import RookeryCore
 import SwiftUI
 
-/// What an agent drag carries, as text: an agent, or one of the user's groups of agents.
+/// What an agent drag carries, as text: an agent, or one of the user's teams of agents.
 enum AgentPayload {
     case agent(String)
-    case group(String)
+    case team(String)
 
     private static let agentPrefix = "rookery-agent:"
-    private static let groupPrefix = "rookery-agent-group:"
+    private static let teamPrefix = "rookery-agent-team:"
 
     init?(_ text: String) {
         if text.hasPrefix(Self.agentPrefix) {
             self = .agent(String(text.dropFirst(Self.agentPrefix.count)))
-        } else if text.hasPrefix(Self.groupPrefix) {
-            self = .group(String(text.dropFirst(Self.groupPrefix.count)))
+        } else if text.hasPrefix(Self.teamPrefix) {
+            self = .team(String(text.dropFirst(Self.teamPrefix.count)))
         } else {
             return nil
         }
@@ -23,12 +23,12 @@ enum AgentPayload {
     var text: String {
         switch self {
         case .agent(let agentId): Self.agentPrefix + agentId
-        case .group(let groupId): Self.groupPrefix + groupId
+        case .team(let teamId): Self.teamPrefix + teamId
         }
     }
 }
 
-/// The sidebar's Agents mode: every agent roost knows of as a crow playing its state, in the groups the
+/// The sidebar's Agents mode: every agent roost knows of as a crow playing its state, in the teams the
 /// user dragged them into, then the rest, then those that ended. A session's subagents fold under it.
 struct AgentsSidebarView: View {
     private static let rowAnimation = Animation.spring(response: 0.3, dampingFraction: 0.85)
@@ -43,14 +43,14 @@ struct AgentsSidebarView: View {
     /// Whether the content area shows the Rookmaster console.
     let isRookmasterShown: Bool
     let onOpenRookmaster: () -> Void
-    /// Make the stage take typing, while a group's name is edited.
+    /// Make the stage take typing, while a team's name is edited.
     let onBeginEditing: () -> Void
     let onEndEditing: () -> Void
 
     @State private var hoveredRowId: String?
     @State private var setExpandedAgentIds: Set<String> = []
     @State private var isEndedExpanded = false
-    @State private var editingGroupId: String?
+    @State private var editingTeamId: String?
     @State private var dropTargetId: String?
 
     var body: some View {
@@ -65,14 +65,14 @@ struct AgentsSidebarView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 2) {
-                        groupedSections
-                        ungroupedSection
+                        teamedSections
+                        unassignedSection
                         endedSection
-                        newGroupRow
+                        newTeamRow
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .animation(Self.rowAnimation, value: fleetModel.groups)
+                    .animation(Self.rowAnimation, value: fleetModel.teams)
                     .animation(Self.rowAnimation, value: listLiveIds)
                 }
             }
@@ -114,40 +114,40 @@ struct AgentsSidebarView: View {
         fleetModel.fleet
     }
 
-    /// The sessions not in any group, live first, then those that ended.
-    private var listUngrouped: [FleetAgent] {
-        fleet.listSessions.filter { fleetModel.groups.groupId(of: $0.id) == nil }
+    /// The sessions not in any team, live first, then those that ended.
+    private var listUnassigned: [FleetAgent] {
+        fleet.listSessions.filter { fleetModel.teams.teamId(of: $0.id) == nil }
     }
 
     private var listLiveIds: [String] {
-        listUngrouped.filter { $0.state != .ended }.map(\.id)
+        listUnassigned.filter { $0.state != .ended }.map(\.id)
     }
 
     @ViewBuilder
-    private var groupedSections: some View {
-        ForEach(fleetModel.groups.listGroups) { group in
-            let listAgents = group.listAgentIds.compactMap { fleet.mapAgents[$0] }
-            groupHeader(group, count: listAgents.count)
-            if !group.isCollapsed {
+    private var teamedSections: some View {
+        ForEach(fleetModel.teams.listTeams) { team in
+            let listAgents = team.listAgentIds.compactMap { fleet.mapAgents[$0] }
+            teamHeader(team, count: listAgents.count)
+            if !team.isCollapsed {
                 ForEach(listAgents) { agent in
-                    agentRows(agent, groupId: group.id)
+                    agentRows(agent, teamId: team.id)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private var ungroupedSection: some View {
-        let listLive = listUngrouped.filter { $0.state != .ended }
-        if !fleetModel.groups.listGroups.isEmpty && !listLive.isEmpty {
-            sectionHeader("Ungrouped", count: listLive.count, dropId: "ungrouped") {
+    private var unassignedSection: some View {
+        let listLive = listUnassigned.filter { $0.state != .ended }
+        if !fleetModel.teams.listTeams.isEmpty && !listLive.isEmpty {
+            sectionHeader("Unassigned", count: listLive.count, dropId: "unassigned") {
                 dropAgent($0, into: nil, before: nil)
             }
         }
         ForEach(listLive) { agent in
-            agentRows(agent, groupId: nil)
+            agentRows(agent, teamId: nil)
         }
-        if listLive.isEmpty && fleetModel.groups.listGroups.isEmpty && fleetModel.connection == .online {
+        if listLive.isEmpty && fleetModel.teams.listTeams.isEmpty && fleetModel.connection == .online {
             Text("No agents running. Start one in a tmux pane with rook set up, and its crow lands here.")
                 .font(.system(size: 12))
                 .foregroundStyle(StageColors.secondaryText)
@@ -157,7 +157,7 @@ struct AgentsSidebarView: View {
 
     @ViewBuilder
     private var endedSection: some View {
-        let listEnded = listUngrouped.filter { $0.state == .ended }
+        let listEnded = listUnassigned.filter { $0.state == .ended }
         if !listEnded.isEmpty {
             Button {
                 withAnimation(Self.rowAnimation) {
@@ -183,19 +183,19 @@ struct AgentsSidebarView: View {
             .buttonStyle(.plain)
             if isEndedExpanded {
                 ForEach(listEnded.prefix(Self.endedShownLimit)) { agent in
-                    agentRows(agent, groupId: nil)
+                    agentRows(agent, teamId: nil)
                 }
             }
         }
     }
 
-    private var newGroupRow: some View {
-        let isTargeted = dropTargetId == "new-group"
+    private var newTeamRow: some View {
+        let isTargeted = dropTargetId == "new-team"
         return Button {
-            fleetModel.addGroup(title: "New Group")
-            startRenamingNewestGroup()
+            fleetModel.addTeam(title: "New Team")
+            startRenamingNewestTeam()
         } label: {
-            RookeryLabel("New Group", icon: .plus)
+            RookeryLabel("New Team", icon: .plus)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isTargeted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -212,38 +212,38 @@ struct AgentsSidebarView: View {
         }
         .buttonStyle(.plain)
         .padding(.top, 8)
-        .help("Make a group, or drop an agent here to start one with it")
+        .help("Make a team, or drop an agent here to start one with it")
         .dropDestination(for: String.self) { listTexts, _ in
             guard case .agent(let agentId) = listTexts.first.flatMap(AgentPayload.init) else {
                 return false
             }
-            fleetModel.addGroup(title: "New Group", with: agentId)
-            startRenamingNewestGroup()
+            fleetModel.addTeam(title: "New Team", with: agentId)
+            startRenamingNewestTeam()
             return true
         } isTargeted: { isTargeted in
-            updateDropTarget("new-group", isTargeted: isTargeted)
+            updateDropTarget("new-team", isTargeted: isTargeted)
         }
     }
 
     // MARK: - Rows
 
-    private func groupHeader(_ group: AgentGroup, count: Int) -> some View {
-        let isTargeted = dropTargetId == group.id
-        let isHovered = hoveredRowId == group.id
+    private func teamHeader(_ team: AgentTeam, count: Int) -> some View {
+        let isTargeted = dropTargetId == team.id
+        let isHovered = hoveredRowId == team.id
         return HStack(spacing: 6) {
             RookeryIconView(.chevronRight)
-                .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
+                .rotationEffect(.degrees(team.isCollapsed ? 0 : 90))
                 .foregroundStyle(StageColors.secondaryText)
-            if editingGroupId == group.id {
-                InlineRenameField(initialText: group.title, placeholder: "Group name") { title in
-                    fleetModel.renameGroup(group.id, to: title)
+            if editingTeamId == team.id {
+                InlineRenameField(initialText: team.title, placeholder: "Team name") { title in
+                    fleetModel.renameTeam(team.id, to: title)
                     finishRenaming()
                 } onCancel: {
                     finishRenaming()
                 }
                 .font(.system(size: 12, weight: .semibold))
             } else {
-                Text(group.title)
+                Text(team.title)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
             }
@@ -251,13 +251,13 @@ struct AgentsSidebarView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(StageColors.tertiaryText)
             Spacer(minLength: 0)
-            if isHovered && editingGroupId != group.id {
+            if isHovered && editingTeamId != team.id {
                 Menu {
-                    Button("Rename Group…") {
-                        startRenaming(group.id)
+                    Button("Rename Team…") {
+                        startRenaming(team.id)
                     }
-                    Button("Remove Group", role: .destructive) {
-                        fleetModel.removeGroup(group.id)
+                    Button("Remove Team", role: .destructive) {
+                        fleetModel.removeTeam(team.id)
                     }
                 } label: {
                     RookeryIconView(.ellipsis)
@@ -278,39 +278,39 @@ struct AgentsSidebarView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) {
-            startRenaming(group.id)
+            startRenaming(team.id)
         }
         .onTapGesture {
             withAnimation(Self.rowAnimation) {
-                fleetModel.toggleGroup(group.id)
+                fleetModel.toggleTeam(team.id)
             }
         }
         .onHover { isInside in
-            hover(group.id, isInside: isInside)
+            hover(team.id, isInside: isInside)
         }
         .contextMenu {
-            Button("Rename Group…") {
-                startRenaming(group.id)
+            Button("Rename Team…") {
+                startRenaming(team.id)
             }
-            Button("Remove Group", role: .destructive) {
-                fleetModel.removeGroup(group.id)
+            Button("Remove Team", role: .destructive) {
+                fleetModel.removeTeam(team.id)
             }
         }
         .onDrag {
-            NSItemProvider(object: AgentPayload.group(group.id).text as NSString)
+            NSItemProvider(object: AgentPayload.team(team.id).text as NSString)
         }
         .dropDestination(for: String.self) { listTexts, _ in
             switch listTexts.first.flatMap(AgentPayload.init) {
             case .agent(let agentId):
-                return dropAgent(agentId, into: group.id, before: nil)
-            case .group(let groupId):
-                fleetModel.moveGroup(groupId, before: group.id)
+                return dropAgent(agentId, into: team.id, before: nil)
+            case .team(let teamId):
+                fleetModel.moveTeam(teamId, before: team.id)
                 return true
             case nil:
                 return false
             }
         } isTargeted: { isTargeted in
-            updateDropTarget(group.id, isTargeted: isTargeted)
+            updateDropTarget(team.id, isTargeted: isTargeted)
         }
     }
 
@@ -342,19 +342,19 @@ struct AgentsSidebarView: View {
     }
 
     @ViewBuilder
-    private func agentRows(_ agent: FleetAgent, groupId: String?) -> some View {
+    private func agentRows(_ agent: FleetAgent, teamId: String?) -> some View {
         let listSubagents = fleet.listSubagents(of: agent.id)
-        agentRow(agent, groupId: groupId, subagentCount: listSubagents.count)
+        agentRow(agent, teamId: teamId, subagentCount: listSubagents.count)
         if setExpandedAgentIds.contains(agent.id) {
             ForEach(listSubagents) { subagent in
-                agentRow(subagent, groupId: nil, subagentCount: 0)
+                agentRow(subagent, teamId: nil, subagentCount: 0)
                     .padding(.leading, 18)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
     }
 
-    private func agentRow(_ agent: FleetAgent, groupId: String?, subagentCount: Int) -> some View {
+    private func agentRow(_ agent: FleetAgent, teamId: String?, subagentCount: Int) -> some View {
         let isSubagent = agent.parentId != nil
         let isSelected = selectedAgentId == agent.id
         let isHovered = hoveredRowId == agent.id
@@ -409,20 +409,20 @@ struct AgentsSidebarView: View {
         .animation(.easeOut(duration: 0.2), value: agent.state)
         .contextMenu {
             if !isSubagent {
-                Menu("Move to Group") {
-                    ForEach(fleetModel.groups.listGroups) { group in
-                        Button(group.title) {
-                            fleetModel.move(agent.id, to: group.id)
+                Menu("Move to Team") {
+                    ForEach(fleetModel.teams.listTeams) { team in
+                        Button(team.title) {
+                            fleetModel.move(agent.id, to: team.id)
                         }
                     }
                     Divider()
-                    Button("New Group") {
-                        fleetModel.addGroup(title: "New Group", with: agent.id)
-                        startRenamingNewestGroup()
+                    Button("New Team") {
+                        fleetModel.addTeam(title: "New Team", with: agent.id)
+                        startRenamingNewestTeam()
                     }
                 }
-                if groupId != nil {
-                    Button("Remove from Group") {
+                if teamId != nil {
+                    Button("Remove from Team") {
                         fleetModel.move(agent.id, to: nil)
                     }
                 }
@@ -448,12 +448,12 @@ struct AgentsSidebarView: View {
             guard !isSubagent, case .agent(let draggedId) = listTexts.first.flatMap(AgentPayload.init) else {
                 return false
             }
-            return dropAgent(draggedId, into: groupId, before: groupId == nil ? nil : agent.id)
+            return dropAgent(draggedId, into: teamId, before: teamId == nil ? nil : agent.id)
         } isTargeted: { isTargeted in
             updateDropTarget(agent.id, isTargeted: isTargeted && !isSubagent)
         }
         .overlay(alignment: .top) {
-            if isTargeted && groupId != nil {
+            if isTargeted && teamId != nil {
                 InsertionMark(isVertical: false)
                     .offset(y: -2)
             }
@@ -595,9 +595,9 @@ struct AgentsSidebarView: View {
 
     // MARK: - Editing and dropping
 
-    private func dropAgent(_ agentId: String, into groupId: String?, before beforeAgentId: String?) -> Bool {
+    private func dropAgent(_ agentId: String, into teamId: String?, before beforeAgentId: String?) -> Bool {
         withAnimation(Self.rowAnimation) {
-            fleetModel.move(agentId, to: groupId, before: beforeAgentId)
+            fleetModel.move(agentId, to: teamId, before: beforeAgentId)
         }
         dropTargetId = nil
         return true
@@ -621,19 +621,19 @@ struct AgentsSidebarView: View {
         }
     }
 
-    private func startRenaming(_ groupId: String) {
+    private func startRenaming(_ teamId: String) {
         onBeginEditing()
-        editingGroupId = groupId
+        editingTeamId = teamId
     }
 
-    private func startRenamingNewestGroup() {
-        if let groupId = fleetModel.groups.listGroups.last?.id {
-            startRenaming(groupId)
+    private func startRenamingNewestTeam() {
+        if let teamId = fleetModel.teams.listTeams.last?.id {
+            startRenaming(teamId)
         }
     }
 
     private func finishRenaming() {
-        editingGroupId = nil
+        editingTeamId = nil
         onEndEditing()
     }
 }

@@ -6,7 +6,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let window: NSWindow
     private let recorder: ShortcutRecorder
 
-    init(preferences: Preferences, recorder: ShortcutRecorder, agentUsageMonitor: AgentUsageMonitor) {
+    init(
+        preferences: Preferences,
+        recorder: ShortcutRecorder,
+        agentUsageMonitor: AgentUsageMonitor,
+        fleetModel: FleetModel
+    ) {
         self.recorder = recorder
         window = NSWindow(
             contentRect: .zero,
@@ -22,7 +27,8 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         window.contentView = SettingsView.makeHostingView(
             preferences: preferences,
             recorder: recorder,
-            agentUsageMonitor: agentUsageMonitor
+            agentUsageMonitor: agentUsageMonitor,
+            fleetModel: fleetModel
         )
         window.center()
     }

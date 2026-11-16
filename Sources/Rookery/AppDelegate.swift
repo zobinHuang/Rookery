@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences()
     private let mixerController = MixerController()
     private lazy var agentUsageMonitor = AgentUsageMonitor(preferences: preferences)
+    private lazy var fleetModel = FleetModel(preferences: preferences)
     private var settingsWindowController: SettingsWindowController?
     /// Records a new shortcut in the settings, wherever they show, with the shortcuts suspended meanwhile.
     private lazy var shortcutRecorder = ShortcutRecorder(
@@ -76,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.applyMixerEnabled()
         }
         agentUsageMonitor.start()
+        fleetModel.start()
         preferences.onAgentAccountsChange = { [weak self] in
             self?.agentUsageMonitor.accountsDidChange()
         }
@@ -115,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlServer?.stop()
         mixerController.stop()
         agentUsageMonitor.stop()
+        fleetModel.stop()
     }
 
     /// Run the mixer while the settings turn it on; stopping it gives every application its sound back.
@@ -219,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let stages = workspace.makeStageCoordinator(
             mixerController: mixerController,
             agentUsageMonitor: agentUsageMonitor,
+            fleetModel: fleetModel,
             shortcutRecorder: shortcutRecorder
         )
         stageCoordinator = stages
@@ -245,7 +249,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController = SettingsWindowController(
             preferences: preferences,
             recorder: shortcutRecorder,
-            agentUsageMonitor: agentUsageMonitor
+            agentUsageMonitor: agentUsageMonitor,
+            fleetModel: fleetModel
         )
         stages.openOnCursorDisplay()
 

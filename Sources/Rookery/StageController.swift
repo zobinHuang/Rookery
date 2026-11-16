@@ -54,6 +54,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let preferences: Preferences
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
+    private let fleetModel: FleetModel
     private let ghostAnimator: DropGhostAnimator
     private let shortcutRecorder: ShortcutRecorder
     private let model = StageModel()
@@ -82,6 +83,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         preferences: Preferences,
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
+        fleetModel: FleetModel,
         ghostAnimator: DropGhostAnimator,
         shortcutRecorder: ShortcutRecorder,
         coordinator: StageCoordinator
@@ -92,6 +94,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         self.preferences = preferences
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
+        self.fleetModel = fleetModel
         self.ghostAnimator = ghostAnimator
         self.shortcutRecorder = shortcutRecorder
         panel = StagePanel(
@@ -128,6 +131,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             shortcutRecorder: shortcutRecorder,
             mixer: mixerController,
             agentUsage: agentUsageMonitor,
+            fleetModel: fleetModel,
             actions: self
         )
         stageView.translatesAutoresizingMaskIntoConstraints = false

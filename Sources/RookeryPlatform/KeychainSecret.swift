@@ -14,8 +14,16 @@ public enum KeychainError: Error, CustomStringConvertible, Sendable {
     }
 }
 
+/// Somewhere one secret is kept.
+public protocol SecretStore: Sendable {
+    /// The secret, or nil when none is kept.
+    func read() throws -> String?
+    /// Keep a secret, replacing the one kept; an empty one removes it.
+    func write(_ secret: String) throws
+}
+
 /// One secret Rookery keeps in the user's login keychain, as a generic password under the app's service.
-public struct KeychainSecret: Sendable {
+public struct KeychainSecret: SecretStore {
     public static let service = "io.github.zobinhuang.rookery"
 
     public let account: String

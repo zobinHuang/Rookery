@@ -27,6 +27,7 @@ struct SettingsView: View {
     @Bindable var preferences: Preferences
     let recorder: ShortcutRecorder
     let agentUsageMonitor: AgentUsageMonitor
+    let fleetModel: FleetModel
     /// Closes the settings, for the close button; nil in the settings window, which has its own.
     var onClose: (() -> Void)?
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
@@ -34,14 +35,25 @@ struct SettingsView: View {
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
     @State private var pageWidth: CGFloat = 0
+    @State private var rookdAddressDraft = ""
+    @State private var rookdTokenDraft = ""
+    @State private var rookdTestResult: String?
+    @State private var isTestingRookd = false
+    @State private var rookdError: String?
 
     /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
         preferences: Preferences,
         recorder: ShortcutRecorder,
-        agentUsageMonitor: AgentUsageMonitor
+        agentUsageMonitor: AgentUsageMonitor,
+        fleetModel: FleetModel
     ) -> NSView {
-        NSHostingView(rootView: SettingsView(preferences: preferences, recorder: recorder, agentUsageMonitor: agentUsageMonitor)
+        NSHostingView(rootView: SettingsView(
+            preferences: preferences,
+            recorder: recorder,
+            agentUsageMonitor: agentUsageMonitor,
+            fleetModel: fleetModel
+        )
             .frame(width: 560, height: 680))
     }
 
@@ -79,6 +91,7 @@ struct SettingsView: View {
                 screenSaver
                 dragging
                 worldClock
+                rookd
                 codeAgents
                 shortcuts
             }
@@ -90,6 +103,7 @@ struct SettingsView: View {
                     shortcuts
                 }
                 column {
+                    rookd
                     worldClock
                     codeAgents
                     screenSaver
@@ -103,6 +117,7 @@ struct SettingsView: View {
                     shortcuts
                 }
                 column {
+                    rookd
                     worldClock
                 }
                 column {
@@ -187,6 +202,86 @@ struct SettingsView: View {
                 }
             }
             SettingsActionRow(title: "Add Account…", symbol: "plus", action: addAgentAccount)
+        }
+    }
+
+    private var rookd: some View {
+        SettingsSection(title: "rookd", symbol: "bird.fill", tint: .yellow) {
+            SettingsRow(title: "Address") {
+                TextField("rookd.example.com:8787", text: $rookdAddressDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: Self.fieldWidth)
+            }
+            SettingsRow(title: "Token", detail: "kept in the keychain") {
+                SecureField("rookd token", text: $rookdTokenDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: Self.fieldWidth)
+            }
+            SettingsRow(title: "Status", detail: rookdStatus) {
+                HStack(spacing: 8) {
+                    Button {
+                        testRookd()
+                    } label: {
+                        if isTestingRookd {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Text("Test")
+                        }
+                    }
+                    .disabled(rookdAddressDraft.isEmpty || isTestingRookd)
+                    Button("Connect") {
+                        connectRookd()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(rookdAddressDraft.isEmpty || rookdTokenDraft.isEmpty)
+                }
+            }
+            if let rookdTestResult {
+                Label(rookdTestResult, systemImage: "stethoscope")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .modifier(SettingsSeparator())
+            }
+            if let rookdError {
+                SettingsMessage(text: rookdError)
+            }
+        }
+        .onAppear {
+            rookdAddressDraft = preferences.rookdAddress
+            rookdTokenDraft = fleetModel.token
+        }
+    }
+
+    private var rookdStatus: String {
+        switch fleetModel.connection {
+        case .notConfigured: "Not connected"
+        case .connecting: "Connecting…"
+        case .online: "Online\(fleetModel.serverVersion.map { ", rookd \($0)" } ?? "")"
+        case .offline(let reason): "Offline: \(reason)"
+        }
+    }
+
+    private func testRookd() {
+        isTestingRookd = true
+        rookdTestResult = nil
+        Task {
+            rookdTestResult = await fleetModel.test(address: rookdAddressDraft, token: rookdTokenDraft)
+            isTestingRookd = false
+        }
+    }
+
+    private func connectRookd() {
+        do {
+            try fleetModel.connect(address: rookdAddressDraft, token: rookdTokenDraft)
+            rookdError = nil
+        } catch {
+            rookdError = FleetModel.describe(error)
         }
     }
 

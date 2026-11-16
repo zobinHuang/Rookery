@@ -680,6 +680,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func makeStageCoordinator(
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
+        fleetModel: FleetModel,
         shortcutRecorder: ShortcutRecorder
     ) -> StageCoordinator {
         let coordinator = StageCoordinator(
@@ -687,6 +688,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             preferences: preferences,
             mixerController: mixerController,
             agentUsageMonitor: agentUsageMonitor,
+            fleetModel: fleetModel,
             ghostAnimator: ghostAnimator,
             shortcutRecorder: shortcutRecorder
         )

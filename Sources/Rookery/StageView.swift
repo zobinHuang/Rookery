@@ -62,6 +62,7 @@ struct StageView: View {
     let shortcutRecorder: ShortcutRecorder
     let mixer: MixerController
     let agentUsage: AgentUsageMonitor
+    let fleetModel: FleetModel
     unowned let actions: any StageActions
     @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
@@ -82,6 +83,7 @@ struct StageView: View {
         shortcutRecorder: ShortcutRecorder,
         mixer: MixerController,
         agentUsage: AgentUsageMonitor,
+        fleetModel: FleetModel,
         actions: any StageActions
     ) -> NSView {
         let view = NSHostingView(rootView: StageView(
@@ -90,6 +92,7 @@ struct StageView: View {
             shortcutRecorder: shortcutRecorder,
             mixer: mixer,
             agentUsage: agentUsage,
+            fleetModel: fleetModel,
             actions: actions
         ))
         view.sizingOptions = []
@@ -140,6 +143,14 @@ struct StageView: View {
         return .groups
     }
 
+    /// The agent whose page the content area shows, if any.
+    private var shownAgentId: String? {
+        if case .agent(let agentId) = model.shownPage {
+            return agentId
+        }
+        return nil
+    }
+
     /// The modes the switch offers: the mixer only while the settings turn it on.
     private var listShownModes: [SidebarMode] {
         SidebarMode.allCases.filter { $0 != .mixer || preferences.isMixerEnabled }
@@ -172,6 +183,21 @@ struct StageView: View {
                         insertion: .move(edge: .leading).combined(with: .opacity),
                         removal: .move(edge: .leading).combined(with: .opacity)
                     ))
+                } else if sidebarMode == .agents {
+                    AgentsSidebarView(
+                        fleetModel: fleetModel,
+                        isCollapsed: model.isSidebarCollapsed,
+                        selectedAgentId: shownAgentId,
+                        onSelect: { agentId in
+                            actions.showPage(.agent(agentId))
+                        },
+                        onOpenSettings: {
+                            actions.showPage(.settings)
+                        },
+                        onBeginEditing: actions.beginEditing,
+                        onEndEditing: actions.endEditing
+                    )
+                    .transition(.opacity)
                 } else if sidebarMode == .mixer {
                     ScrollView {
                         MixerView(mixer: mixer, isCollapsed: model.isSidebarCollapsed)
@@ -831,9 +857,13 @@ struct StageView: View {
                     preferences: preferences,
                     recorder: shortcutRecorder,
                     agentUsageMonitor: agentUsage,
+                    fleetModel: fleetModel,
                     onClose: actions.closePage
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if case .agent(let agentId) = model.shownPage {
+                AgentDetailView(fleetModel: fleetModel, agentId: agentId, onClose: actions.closePage)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .screenSaver {
                 ScreenSaverView(
                     text: preferences.shownScreenSaverText,

@@ -45,8 +45,9 @@ Warnings are errors and the Swift 6 language mode is on everywhere; see `Package
 `AppDelegate` creates and wires the long-lived controllers:
 
 - `WorkspaceController` (Accessibility granted): owns the `Workspace` (groups of managed windows), applies actions through `WindowTracker`, runs the stages' layout, the MRU order and the switchers' requests. Persists to `workspace.json`.
-- `StageCoordinator` / `StageController` / `StageModel` / `StageView`: the stage windows. Each stage is a borderless panel kept just beneath its front window; its SwiftUI view hosts the sidebar (groups or mixer, sidebar videos, agent limits, world clock, toolbar) and the tab bar.
+- `StageCoordinator` / `StageController` / `StageModel` / `StageView`: the stage windows. Each stage is a borderless panel kept just beneath its front window; its SwiftUI view hosts the sidebar (windows, agents or mixer, sidebar videos, agent limits, world clock, toolbar) and the tab bar.
 - `MixerController`: per-app tracks over `AudioMixer`, settings persisted per bundle id; owns `BrowserTabMixer`, the per-tab state from the extension, which owns `BrowserPictures`, the sidebar videos.
+- `FleetModel`: the agents rookd knows of, kept current over its live link, and the user's local groups of them; backs the sidebar's Agents mode and each agent's page. See `docs/agents.md`.
 - `AgentUsageMonitor`: reads the shown code agent accounts' limits on a schedule and groups accounts signed in to one login.
 - `ShortcutController`, `SwitcherController`, `KeyInterceptor`: hotkeys, the group and window switchers, ⌘⇥ while a stage is in front.
 - `Preferences`: everything in `UserDefaults` (`io.github.zobinhuang.rookery`), with change callbacks the controllers subscribe to.
@@ -63,6 +64,8 @@ UI state is `@MainActor`; the window tracker is an actor with a run loop thread 
 | Per-app mixer settings | `UserDefaults` key `mixerTracks` | Permanent, by bundle id |
 | Per-tab mixer settings | The extension's `chrome.storage.session` | While the tab and the browser live |
 | Agent limits | In memory | Read again on launch |
+| rookd's address; its token | `UserDefaults` key `rookdAddress`; the login keychain, service `io.github.zobinhuang.rookery`, account `rookd-token` | Permanent |
+| Groups of agents | `~/Library/Application Support/Rookery/agent-groups.json` | Permanent; agents rookd forgot are dropped |
 | Chrome native host registration | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.zobinhuang.rookery.json` | Rewritten by the app at launch when it changed |
 
 The app was called MuxShots until it was renamed Rookery, with a new bundle identifier. On its first launch, before anything reads them, `MuxShotsMigration` copies the settings over from the old identifier's defaults domain and moves `~/Library/Application Support/MuxShots` to `Rookery`; neither happens when Rookery already has its own, and the old domain is left in place. `ChromeNativeHost` removes the old host registration (`io.github.zobinhuang.muxshots.json`), and `make install` quits and removes an installed `MuxShots.app`. What a new identifier cannot keep, the user grants again: Accessibility, audio capture, and opening at login. The extension's id is fixed by its key, so the native host still accepts it, but the extension must be rebuilt and reloaded to connect to the new host name. Builds are signed with `Rookery Development`, or with `MuxShots Development` while that is the only identity made.

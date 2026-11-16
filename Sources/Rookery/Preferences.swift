@@ -83,6 +83,7 @@ final class Preferences {
     private static let legacyClockTimeZonesKey = "clockTimeZoneIds"
     private static let clockCitiesKey = "clockCities"
     private static let agentAccountsKey = "agentAccounts"
+    private static let rookdAddressKey = "rookdAddress"
     /// Where Claude Code keeps its default account, which is set up for the user when present.
     private static let defaultClaudeDirectory = "~/.claude"
 
@@ -142,6 +143,14 @@ final class Preferences {
     }
 
     /// The text the screen saver shows in the content area, as the user typed it; empty for the default.
+    /// The rookd server the Agents list follows, as the user typed it; empty for none. Its token is in the
+    /// keychain.
+    var rookdAddress: String {
+        didSet {
+            defaults.set(rookdAddress, forKey: Self.rookdAddressKey)
+        }
+    }
+
     var screenSaverText: String {
         didSet {
             defaults.set(screenSaverText, forKey: Self.screenSaverTextKey)
@@ -233,6 +242,7 @@ final class Preferences {
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         screenSaverText = defaults.string(forKey: Self.screenSaverTextKey) ?? ""
+        rookdAddress = defaults.string(forKey: Self.rookdAddressKey) ?? ""
         screenSaverTextSize = (defaults.object(forKey: Self.screenSaverTextSizeKey) as? Double)
             .map { min(max($0, Self.screenSaverTextSizeRange.lowerBound), Self.screenSaverTextSizeRange.upperBound) }
             ?? Self.defaultScreenSaverTextSize

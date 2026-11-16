@@ -77,11 +77,13 @@ struct StageGroupRow: Identifiable, Equatable {
 /// What the sidebar shows below its header.
 enum SidebarMode: String, CaseIterable {
     case groups
+    case agents
     case mixer
 
     var title: String {
         switch self {
         case .groups: "Windows"
+        case .agents: "Agents"
         case .mixer: "Mixer"
         }
     }
@@ -89,6 +91,7 @@ enum SidebarMode: String, CaseIterable {
     var symbol: String {
         switch self {
         case .groups: "square.grid.2x2"
+        case .agents: "bird"
         case .mixer: "slider.vertical.3"
         }
     }
@@ -181,8 +184,10 @@ final class StageModel {
 }
 
 /// A page the content area can show in place of the front window.
-enum StagePage {
+enum StagePage: Equatable {
     case settings
     /// The user's text, large, until a click or a key press closes it.
     case screenSaver
+    /// One agent's conversation, by its id.
+    case agent(String)
 }

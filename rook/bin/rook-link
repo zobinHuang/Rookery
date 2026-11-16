@@ -33,6 +33,26 @@ class PaneTyper:
 
     TYPER_TIMEOUT_SECONDS = 5
     TYPER_SETTLE_SECONDS = 0.3
+    TYPER_SHELLS = frozenset({"bash", "zsh", "sh", "dash", "fish", "ksh", "tcsh", "csh"})
+
+    def runs_program(self, agent_pane: "rook_client.AgentPane") -> bool:
+        """Whether the pane is still there and runs something other than its shell, as an agent does.
+
+        Args:
+            agent_pane: where the agent started
+
+        Returns:
+            False when the pane is gone or back at its shell prompt
+        """
+        try:
+            command = self._tmux(
+                agent_pane,
+                ["display-message", "-p", "-t", agent_pane.pane, "#{?pane_dead,,#{pane_current_command}}"],
+            )
+        except RookLinkError:
+            return False
+        program = command.strip().lstrip("-")
+        return bool(program) and program not in self.TYPER_SHELLS
 
     def type(self, agent_pane: "rook_client.AgentPane", buffer_name: str, text: str) -> None:
         """Paste text into a pane and submit it.
@@ -51,7 +71,7 @@ class PaneTyper:
         time.sleep(self.TYPER_SETTLE_SECONDS)
         self._tmux(agent_pane, ["send-keys", "-t", agent_pane.pane, "Enter"])
 
-    def _tmux(self, agent_pane: "rook_client.AgentPane", list_arguments: list[str], text: str | None = None) -> None:
+    def _tmux(self, agent_pane: "rook_client.AgentPane", list_arguments: list[str], text: str | None = None) -> str:
         try:
             completed = subprocess.run(
                 ["tmux", "-S", agent_pane.tmux_socket, *list_arguments],
@@ -65,6 +85,7 @@ class PaneTyper:
             raise RookLinkError(f"tmux failed: {err}") from err
         if completed.returncode != 0:
             raise RookLinkError(f"tmux {list_arguments[0]}: {completed.stderr.strip() or 'failed'}")
+        return completed.stdout
 
 
 class DeliveryDesk:
@@ -76,6 +97,8 @@ class DeliveryDesk:
     """
 
     DESK_READY_STATES = frozenset({"idle", "done", "error", "rate_limited"})
+    """What a session whose state went unrecorded counts as while its pane still runs it."""
+    DESK_UNKNOWN_STATE = "idle"
     DESK_KEEP_FINISHED_SECONDS = 2 * 24 * 3600
     DESK_OPEN = "open"
 
@@ -173,9 +196,11 @@ class DeliveryDesk:
             return
         state = rook_client.AgentStateMemo.current(session_id)
         if state is None:
-            rook_client.Mailbox.withdraw(session_id, delivery_id)
-            self._finish(map_record, "failed", "the session has ended")
-            return
+            if not self._typer.runs_program(agent_pane):
+                rook_client.Mailbox.withdraw(session_id, delivery_id)
+                self._finish(map_record, "failed", "the session has ended")
+                return
+            state = self.DESK_UNKNOWN_STATE
         if state not in self.DESK_READY_STATES:
             if not map_record["is_mailboxed"]:
                 rook_client.Mailbox.put(session_id, delivery_id, self.framed(map_delivery))
@@ -184,7 +209,8 @@ class DeliveryDesk:
                 map_record["is_reported"] = False
                 self._save(map_record)
             return
-        if self._map_typed_at.get(session_id, 0.0) >= rook_client.AgentStateMemo.changed_at(session_id):
+        typed_at = self._map_typed_at.get(session_id)
+        if typed_at is not None and typed_at >= rook_client.AgentStateMemo.changed_at(session_id):
             return
         if map_record["is_mailboxed"] and not rook_client.Mailbox.withdraw(session_id, delivery_id):
             self._finish(map_record, "delivered", "handed over when the agent stopped")

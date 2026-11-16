@@ -29,9 +29,13 @@ class RecordingTyper:
 
     def __init__(self) -> None:
         self.list_typed: list[str] = []
+        self.is_pane_running = False
 
     def type(self, agent_pane: object, buffer_name: str, text: str) -> None:
         self.list_typed.append(text)
+
+    def runs_program(self, agent_pane: object) -> bool:
+        return self.is_pane_running
 
 
 class AgentInPaneTest(RookHomeTest):
@@ -137,6 +141,15 @@ class DeliveryDeskTest(AgentInPaneTest):
         self.desk.process(accepts_prompts=True)
         self.assertEqual(self.outcome("d-1")["status"], "failed")
 
+    def test_a_session_whose_state_went_unrecorded_is_reached_while_its_pane_runs_it(self) -> None:
+        self.start_session()
+        rook_client.AgentStateMemo.forget(SESSION)
+        self.typer.is_pane_running = True
+        self.desk.accept(self.delivery("d-1", "hello"))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.typer.list_typed, ["hello"])
+        self.assertEqual(self.outcome("d-1")["status"], "delivered")
+
 
 @unittest.skipUnless(shutil.which("tmux"), "needs tmux")
 class PaneTyperTest(unittest.TestCase):
@@ -168,6 +181,12 @@ class PaneTyperTest(unittest.TestCase):
             check=True,
         ).stdout
         self.assertGreaterEqual(screen.count("hello from rookery"), 2)
+
+    def test_a_pane_tells_a_program_from_its_shell(self) -> None:
+        agent_pane = rook_client.AgentPane(session_id=SESSION, harness="claude", tmux_socket=self.socket, pane=self.pane)
+        self.assertTrue(rook_link.PaneTyper().runs_program(agent_pane))
+        gone_pane = rook_client.AgentPane(session_id=SESSION, harness="claude", tmux_socket=self.socket, pane="%99")
+        self.assertFalse(rook_link.PaneTyper().runs_program(gone_pane))
 
     def test_a_gone_pane_fails(self) -> None:
         agent_pane = rook_client.AgentPane(session_id=SESSION, harness="claude", tmux_socket=self.socket, pane="%99")

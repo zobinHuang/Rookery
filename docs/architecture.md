@@ -15,6 +15,9 @@ Rookery is one SwiftPM package with a Dock app (with a menu bar item), a command
 | `RookeryCoreTests` | tests | Swift Testing suites for Core and the wire formats. |
 | `RookeryPlatformTests` | tests | Swift Testing suites for the Platform wrappers that need no permission, such as process priority. |
 | `extensions/chrome` | npm package | The Chrome extension: background service worker, content script, offscreen capture document. |
+| `crow/` | shell | The command line around code agents in tmux: `crow` sessions, `crow-agent` (each pane's agent state and the status bar), `crow-hooks` (merges the hooks into Claude Code and codex), `crow-session` (uploads transcripts), `crow-playbook` (installs a playbook's skills), and `setup.sh`. See `crow/README.md`. |
+| `server/crowd` | Python package | The server crow uploads to: session transcripts, and the index of skills and playbooks, over HTTP with a bearer token. Standard library only. See `server/README.md` and `server/API.md`. |
+| `branding/` | npm package | The pixel crow logo, rendered from a 3D model into the sidebar's frames and the preview page. |
 
 Warnings are errors and the Swift 6 language mode is on everywhere; see `Package.swift`.
 

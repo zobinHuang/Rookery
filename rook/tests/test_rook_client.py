@@ -111,6 +111,23 @@ class HookEventMapperTest(RookHomeTest):
         self.assertEqual(rook_client.HookEventMapper("claude", {"hook_event_name": "Stop"}).events(), [])
 
 
+class TranscriptLinesTest(unittest.TestCase):
+    def test_a_transcript_reads_as_turns_and_tool_calls(self) -> None:
+        raw = "\n".join(json.dumps(line) for line in [
+            {"type": "user", "message": {"content": "fix the login test"}},
+            {"type": "assistant", "message": {"content": [
+                {"type": "thinking", "thinking": "hmm"},
+                {"type": "text", "text": "Looking."},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "npm test"}},
+            ]}},
+            {"type": "response_item", "payload": {"type": "function_call", "name": "shell", "arguments": "{\"command\": [\"rg\", \"x\"]}"}},
+        ]).encode()
+        self.assertEqual(
+            rook_client.TranscriptLines.readable(raw),
+            ["[user] fix the login test", "[assistant] Looking.", "[tool Bash] npm test", "[tool shell] rg x"],
+        )
+
+
 class PlaybookEventsTest(unittest.TestCase):
     def test_a_loaded_playbook_is_followed_and_its_skills_mounted(self) -> None:
         map_resolved = {"id": "backend-review", "skills": [{"skill_id": "review"}, {"skill_id": "lint"}]}

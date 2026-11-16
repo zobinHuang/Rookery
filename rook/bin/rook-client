@@ -199,6 +199,15 @@ class Connection:
         Raises:
             RookClientError: if rookd cannot be reached or refuses the request
         """
+        raw = self.request_bytes(method, path, map_body)
+        return json.loads(raw) if raw else {}
+
+    def request_bytes(self, method: str, path: str, map_body: object = None) -> bytes:
+        """Send one request to rookd and take its answer as it came, for answers that are not one object.
+
+        Raises:
+            RookClientError: if rookd cannot be reached or refuses the request
+        """
         data = None if map_body is None else json.dumps(map_body).encode("utf-8")
         request = urllib.request.Request(self.base_url + path, data=data, method=method)
         request.add_header("Authorization", f"Bearer {self.token}")
@@ -217,7 +226,7 @@ class Connection:
             raise RookClientError(f"rookd answered {err.code}: {detail}") from err
         except (urllib.error.URLError, OSError) as err:
             raise RookClientError(f"cannot reach rookd at {self.base_url}: {err}") from err
-        return json.loads(raw) if raw else {}
+        return raw
 
 
 class HookEventMapper:
@@ -720,6 +729,93 @@ class EventQueue:
             lock.rmdir()
 
 
+class TranscriptLines:
+    """A Claude Code transcript or a codex rollout as a person reads it: who said what, and each tool call
+    in one line. Thinking, tool output and injected context are left out."""
+
+    TRANSCRIPT_TOOL_KEYS = ("command", "file_path", "path", "pattern", "url", "description", "prompt", "skill")
+    TRANSCRIPT_TOOL_MAX_CHARS = 200
+
+    @classmethod
+    def readable(cls, raw: bytes) -> list[str]:
+        """The transcript's steps, oldest first.
+
+        Args:
+            raw: the transcript's JSONL bytes
+
+        Returns:
+            one string per step, prefixed by who it is from
+        """
+        list_lines: list[str] = []
+        for line in raw.decode("utf-8", errors="replace").splitlines():
+            try:
+                map_line = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(map_line, dict):
+                continue
+            if map_line.get("type") == "response_item" and isinstance(map_line.get("payload"), dict):
+                list_lines.extend(cls._codex(map_line["payload"]))
+            else:
+                list_lines.extend(cls._claude(map_line))
+        return list_lines
+
+    @classmethod
+    def _claude(cls, map_line: dict[str, object]) -> list[str]:
+        role = map_line.get("type")
+        if role not in ("user", "assistant") or map_line.get("isSidechain") or map_line.get("isMeta"):
+            return []
+        message = map_line.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str):
+            return cls._said(str(role), content)
+        list_lines: list[str] = []
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                list_lines.extend(cls._said(str(role), str(block.get("text") or "")))
+            elif block.get("type") == "tool_use":
+                list_lines.append(f"[tool {block.get('name')}] {cls._summary(block.get('input'))}")
+        return list_lines
+
+    @classmethod
+    def _codex(cls, payload: dict[str, object]) -> list[str]:
+        if payload.get("type") == "message" and payload.get("role") in ("user", "assistant"):
+            list_lines: list[str] = []
+            for block in payload.get("content") or []:
+                if isinstance(block, dict):
+                    list_lines.extend(cls._said(str(payload["role"]), str(block.get("text") or "")))
+            return list_lines
+        if payload.get("type") in ("function_call", "custom_tool_call"):
+            arguments = payload.get("arguments") or payload.get("input") or ""
+            try:
+                parsed = json.loads(arguments) if isinstance(arguments, str) else arguments
+            except ValueError:
+                parsed = arguments
+            return [f"[tool {payload.get('name')}] {cls._summary(parsed)}"]
+        return []
+
+    @staticmethod
+    def _said(role: str, text: str) -> list[str]:
+        trimmed = text.strip()
+        if not trimmed or (role == "user" and trimmed.startswith("<")):
+            return []
+        return [f"[{role}] {trimmed}"]
+
+    @classmethod
+    def _summary(cls, value: object) -> str:
+        if isinstance(value, dict):
+            for key in cls.TRANSCRIPT_TOOL_KEYS:
+                found = value.get(key)
+                if isinstance(found, list):
+                    found = " ".join(str(part) for part in found)
+                if isinstance(found, str) and found:
+                    return found.replace("\n", " ")[: cls.TRANSCRIPT_TOOL_MAX_CHARS]
+            return ""
+        return str(value)[: cls.TRANSCRIPT_TOOL_MAX_CHARS]
+
+
 class ResourceCommands:
     """`rook resource`: read and change rookd's resources from a terminal, or from an agent."""
 
@@ -752,6 +848,9 @@ class ResourceCommands:
         relations_parser = commands.add_parser("relations", help="list relations")
         relations_parser.add_argument("kind", nargs="?")
         relations_parser.add_argument("id", nargs="?")
+        transcript_parser = commands.add_parser("transcript", help="read an agent session's conversation")
+        transcript_parser.add_argument("session_id")
+        transcript_parser.add_argument("--last", type=int, default=200, help="only the last N steps")
         events_parser = commands.add_parser("events", help="list recent events")
         events_parser.add_argument("--after", type=int)
         events_parser.add_argument("--limit", type=int, default=50)
@@ -793,6 +892,10 @@ class ResourceCommands:
         elif args.action == "relations":
             query = f"?kind={args.kind}&id={args.id}" if args.kind and args.id else ""
             cls._print_json(connection.request("GET", f"/v1/relations{query}")["relations"])
+        elif args.action == "transcript":
+            raw = connection.request_bytes("GET", f"/v1/sessions/{args.session_id}/transcript")
+            for line in TranscriptLines.readable(raw)[-args.last:]:
+                print(line)
         elif args.action == "events":
             query = f"?after={args.after}&limit={args.limit}" if args.after is not None else f"?limit={args.limit}"
             cls._print_json(connection.request("GET", f"/v1/events{query}")["events"])

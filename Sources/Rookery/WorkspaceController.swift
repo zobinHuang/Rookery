@@ -1356,6 +1356,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             throw WindowActionError.cannotRaise(windowId: windowId)
         }
         running.activate()
+        var placedFrame = stageShowing(windowId: windowId).flatMap { mapStageContentFrames[$0] }
+        if placedFrame == nil {
+            placedFrame = await tracker.frame(of: windowId)
+        }
+        if let placedFrame {
+            await settleOnWindowServer(windowId, at: placedFrame)
+        }
     }
 
     private func hide(_ windowId: WindowId) async throws {

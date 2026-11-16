@@ -5,7 +5,7 @@
 export type PaletteKey = "." | "S" | "K" | "G" | "M" | "H" | "Y" | "L" | "W";
 
 /** A key that stands for one fixed color. */
-type ColorKey = Exclude<PaletteKey, "." | "S">;
+export type ColorKey = Exclude<PaletteKey, "." | "S">;
 
 /**
  * One crow, drawn on the 64 by 64 grid for large sizes, and on the 32 and 16 pixel grids for the small ones.

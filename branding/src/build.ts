@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Animation, Animator } from "./animation.ts";
 import { type CrowState, CrowStates } from "./crow-states.ts";
+import { GifWriter } from "./gif-writer.ts";
 import { Icons } from "./icons.ts";
 import { PixelGrid } from "./pixel-grid.ts";
 import { PngWriter } from "./png-writer.ts";
@@ -20,6 +21,10 @@ class LogoBuild {
     /** The crows the app's Agents list shows, one strip per state, and the timeline of all of them. */
     static readonly CROW_STRIP_PREFIX = "Crow_";
     static readonly CROW_TIMELINE_NAME = "Crows";
+    /** The logo's files for use outside the app. */
+    static readonly EXPORT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "exports");
+    /** How many file pixels a grid pixel becomes in the exported PNGs and GIFs. */
+    static readonly EXPORT_SCALE = 4;
     /** The interface icons' folder in the app's resources. */
     static readonly ICON_DIRECTORY_NAME = "Icons";
     /** The still logo the repository's README shows, each pixel a block of this many. */
@@ -54,7 +59,39 @@ class LogoBuild {
         LogoBuild._write_sidebar_logo();
         LogoBuild._write_crows();
         LogoBuild._write_icons();
+        LogoBuild._write_exports();
         LogoBuild._write_readme_logo();
+    }
+
+    /**
+     * The logo for use outside the app, in `exports/`: each lockup of the mark, and the crow in each state,
+     * as an SVG of its first frame at a unit a pixel, a PNG of that frame and a looping GIF, both at
+     * `EXPORT_SCALE` pixels a grid pixel, on a transparent background.
+     */
+    private static _write_exports(): void {
+        rmSync(LogoBuild.EXPORT_DIRECTORY, { recursive: true, force: true });
+        mkdirSync(LogoBuild.EXPORT_DIRECTORY, { recursive: true });
+        const list_exports: { name: string; animation: Animation }[] = [
+            ...LogoBuild.LIST_LOCKUPS.map(({ lockup }) => ({
+                name: `rookery-${lockup}`,
+                animation: RookeryMark.animate(lockup, LogoBuild.BACKING, RookeryMark.FULL_SIZE, true),
+            })),
+            ...CrowStates.LIST_STATES.map((state) => ({
+                name: `crow-${state.name}`,
+                animation: Animator.animate(state, LogoBuild.BACKING),
+            })),
+        ];
+        for (const { name, animation } of list_exports) {
+            const first = animation.list_frames[animation.list_sequence[0] ?? 0];
+            if (first === undefined) {
+                throw new Error(`${name} has no frames`);
+            }
+            const base = join(LogoBuild.EXPORT_DIRECTORY, name);
+            writeFileSync(`${base}.svg`, first.to_svg(1));
+            writeFileSync(`${base}.png`, PngWriter.encode(first.enlarged(LogoBuild.EXPORT_SCALE)));
+            writeFileSync(`${base}.gif`, GifWriter.encode(animation, LogoBuild.EXPORT_SCALE));
+        }
+        console.log(LogoBuild.EXPORT_DIRECTORY, `${list_exports.length} marks as SVG, PNG and GIF`);
     }
 
     /**

@@ -21,6 +21,7 @@ struct RookmasterView: View {
 
     @State private var tab = RookmasterTab.board
     @State private var selectedRef: FleetRef?
+    @State private var isMaintenanceShown = true
     @Namespace private var tabNamespace
 
     private var listKinds: [FleetKind] {
@@ -28,6 +29,22 @@ struct RookmasterView: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            console
+            if isMaintenanceShown {
+                Rectangle()
+                    .fill(StageColors.separator)
+                    .frame(width: 1)
+                MaintenancePanel(fleetModel: fleetModel)
+                    .frame(width: 340)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(Self.tabAnimation, value: isMaintenanceShown)
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+    }
+
+    private var console: some View {
         VStack(spacing: 0) {
             header
             Rectangle()
@@ -52,7 +69,6 @@ struct RookmasterView: View {
             .animation(Self.tabAnimation, value: tab)
             RookmasterLog(graph: fleetModel.graph)
         }
-        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
     }
 
     private var header: some View {
@@ -72,6 +88,17 @@ struct RookmasterView: View {
                     .foregroundStyle(.orange)
                     .lineLimit(1)
             }
+            Button {
+                isMaintenanceShown.toggle()
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isMaintenanceShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                    .frame(width: 26, height: 26)
+                    .background(StageColors.tile, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .help(isMaintenanceShown ? "Hide the maintenance agent" : "Ask the maintenance agent")
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))

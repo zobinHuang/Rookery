@@ -34,3 +34,14 @@ The console over everything rookd manages, opened from the top of the Agents sid
 - **Board** (`RookmasterBoard`): a column per kind, agents leftmost, each ordered by last use so what moved last rises, with an animation. Edges are the relations, drawn from the cards' frames (anchor preferences), thicker for relations that happened more often, coloured by verb; a subagent's edges are drawn from its session's card. Hovering or clicking a card brings forward it, its neighbours and the edges between them; double-clicking opens it. Lock freezes the order; the filters narrow by name, by time since last use, to live agents, and by kind.
 - **A list per kind** (`RookmasterKindList`): search, and beside it the resource's relations (click one to go to the other end) and attributes. Memories and any new kind are edited as a name and an attributes object and can be deleted; skills and playbooks keep their own shape and are read-only here, as agents are.
 - **Log** (`RookmasterLog`): the latest hundred events, newest at the bottom, following as they are logged, with a filter; it folds to its title bar.
+
+## The maintenance agent
+
+The Rookmaster console's right-hand column asks Rookery's maintenance agent for something in plain words; `@` names a resource, completed from the graph (`Mentions` in `RookeryCore`), and the request carries each named resource's kind, name and id. `MaintenanceAgent` runs Claude Code headless (`HeadlessAgent` in `RookeryPlatform`) in a workspace of its own under the data directory, laid out afresh for each request from the app's `Maintenance` resources (`Resources/Maintenance` in the repository):
+
+- `CLAUDE.md`, its standing instructions, and `.claude/skills/`, Rookery's skills: `rookery-resources` (the command reference), `distill-playbook`, `tidy-memories`, `describe-skills` and `review-fleet`.
+- `bin/rook-client`, the same client rook installs, and `config/rook/connect.json`, the app's rookd address and token, readable by the user alone.
+
+Claude Code runs with `--setting-sources project`, so neither the user's settings nor their hooks apply, and `--allowedTools "Bash(rook-client:*)" Skill`: it can read and change rookd through `rook-client` and load its skills, and nothing else. Each request is a session whose id the app chooses; the app reports it to rookd as the agent `rookery/maintenance` (started, thinking, then done or error, then ended), and the agent passes `--as-agent` with that id on every change, so its changes are logged as its own and appear on the board and in the log. As the user chose, it changes without asking first. The column shows each request's conversation from the stream-json output, which `TranscriptReader` reads as it does a transcript, and the run's cost.
+
+To check the plumbing without calling a model, set `executableOverride` to a script that prints stream-json lines and runs `rook-client` itself, and `workspaceOverride` to a scratch directory.

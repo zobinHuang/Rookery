@@ -59,8 +59,8 @@ struct BoardEdge: Identifiable, Equatable {
 /// session's card. Locking freezes the order; the filters narrow it down; hovering or selecting a card
 /// brings forward it, its neighbours and the edges between them.
 struct RookmasterBoard: View {
-    private static let cardWidth: CGFloat = 220
-    private static let columnSpacing: CGFloat = 72
+    private static let cardWidth: CGFloat = 210
+    private static let columnSpacing: CGFloat = 60
     private static let columnLimit = 150
     private static let reorderAnimation = Animation.spring(response: 0.45, dampingFraction: 0.85)
     private static let boardSpace = "board"
@@ -126,6 +126,17 @@ struct RookmasterBoard: View {
 
     private func toolbar(_ mapColumns: [String: [FleetResource]]) -> some View {
         HStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                filters(mapColumns)
+            }
+            lockButton(mapColumns)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+    }
+
+    private func filters(_ mapColumns: [String: [FleetResource]]) -> some View {
+        HStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(StageColors.secondaryText)
@@ -149,12 +160,16 @@ struct RookmasterBoard: View {
                 .toggleStyle(.checkbox)
                 .controlSize(.small)
                 .font(.system(size: 12))
+                .fixedSize()
             Divider()
                 .frame(height: 16)
             ForEach(listKinds) { kind in
                 kindChip(kind, count: mapColumns[kind.name]?.count ?? 0)
             }
-            Spacer(minLength: 8)
+        }
+    }
+
+    private func lockButton(_ mapColumns: [String: [FleetResource]]) -> some View {
             Button {
                 toggleLock(mapColumns)
             } label: {
@@ -164,10 +179,8 @@ struct RookmasterBoard: View {
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
+            .fixedSize()
             .help(isLocked ? "Let cards rise as they are used again" : "Hold the cards where they are")
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
     }
 
     private func kindChip(_ kind: FleetKind, count: Int) -> some View {
@@ -198,6 +211,7 @@ struct RookmasterBoard: View {
                     .strokeBorder(StageColors.separator)
             }
             .opacity(isShown ? 1 : 0.5)
+            .fixedSize()
         }
         .buttonStyle(.plain)
         .help(isShown ? "Hide \(kind.pluralTitle)" : "Show \(kind.pluralTitle)")

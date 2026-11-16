@@ -107,33 +107,55 @@ enum SidebarLogoArt {
 struct RookeryLogoLayer: NSViewRepresentable {
     let timeline: SidebarLogoTimeline
 
-    func makeNSView(context: Context) -> RookeryLogoView {
-        RookeryLogoView(timeline: timeline)
+    func makeNSView(context: Context) -> PixelAnimationView {
+        let view = PixelAnimationView()
+        view.show(PixelAnimation(
+            framesForScale: SidebarLogoArt.frames(scale:),
+            listSequence: timeline.listSequence,
+            framesPerSecond: timeline.framesPerSecond
+        ))
+        return view
     }
 
-    func updateNSView(_ nsView: RookeryLogoView, context: Context) {}
+    func updateNSView(_ nsView: PixelAnimationView, context: Context) {}
 }
 
-/// The view behind `RookeryLogoLayer`: one layer whose contents a discrete keyframe animation steps
-/// through, set up again whenever the view lands in a window or on a screen of another scale.
-final class RookeryLogoView: NSView {
+/// A looping pixel animation: its distinct frames for a screen scale, the order they show in, and how fast.
+struct PixelAnimation {
+    /// The distinct frames drawn for a screen scale, 1 or 2; art drawn once returns the same for both.
+    let framesForScale: @MainActor (Int) -> [CGImage]
+    let listSequence: [Int]
+    let framesPerSecond: Double
+}
+
+/// A view that plays a pixel animation in one layer: a discrete keyframe animation steps its contents
+/// through the frames, scaled to the view without smoothing, in the render server, so the app does no work
+/// while it loops. Set up again whenever the view lands in a window or on a screen of another scale; holds
+/// still under Reduce Motion.
+final class PixelAnimationView: NSView {
     private static let animationKey = "frames"
     private static let retinaScale = 2
 
-    private let timeline: SidebarLogoTimeline
     private let frameLayer = CALayer()
+    private var animation: PixelAnimation?
 
-    init(timeline: SidebarLogoTimeline) {
-        self.timeline = timeline
+    init() {
         super.init(frame: .zero)
         wantsLayer = true
         frameLayer.magnificationFilter = .nearest
         frameLayer.minificationFilter = .nearest
+        frameLayer.contentsGravity = .resize
         layer?.addSublayer(frameLayer)
     }
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    /// Play another animation, from its start.
+    func show(_ animation: PixelAnimation) {
+        self.animation = animation
+        play()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -142,7 +164,10 @@ final class RookeryLogoView: NSView {
 
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         frameLayer.frame = bounds
+        CATransaction.commit()
     }
 
     override func viewDidMoveToWindow() {
@@ -157,13 +182,13 @@ final class RookeryLogoView: NSView {
 
     /// Show the frames drawn for this screen's scale, looping them unless Reduce Motion is on.
     private func play() {
-        guard let window else {
+        guard let window, let animation else {
             frameLayer.removeAnimation(forKey: Self.animationKey)
             return
         }
         let scale = window.backingScaleFactor > 1 ? Self.retinaScale : 1
-        let listFrames = SidebarLogoArt.frames(scale: scale)
-        let listShown = timeline.listSequence.compactMap { listFrames.indices.contains($0) ? listFrames[$0] : nil }
+        let listFrames = animation.framesForScale(scale)
+        let listShown = animation.listSequence.compactMap { listFrames.indices.contains($0) ? listFrames[$0] : nil }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         frameLayer.contentsScale = CGFloat(scale)
@@ -172,17 +197,17 @@ final class RookeryLogoView: NSView {
         frameLayer.removeAnimation(forKey: Self.animationKey)
         guard
             listShown.count > 1,
-            timeline.framesPerSecond > 0,
+            animation.framesPerSecond > 0,
             !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         else {
             return
         }
-        let animation = CAKeyframeAnimation(keyPath: "contents")
-        animation.values = listShown
-        animation.calculationMode = .discrete
-        animation.keyTimes = (0...listShown.count).map { NSNumber(value: Double($0) / Double(listShown.count)) }
-        animation.duration = Double(listShown.count) / timeline.framesPerSecond
-        animation.repeatCount = .infinity
-        frameLayer.add(animation, forKey: Self.animationKey)
+        let keyframes = CAKeyframeAnimation(keyPath: "contents")
+        keyframes.values = listShown
+        keyframes.calculationMode = .discrete
+        keyframes.keyTimes = (0...listShown.count).map { NSNumber(value: Double($0) / Double(listShown.count)) }
+        keyframes.duration = Double(listShown.count) / animation.framesPerSecond
+        keyframes.repeatCount = .infinity
+        frameLayer.add(keyframes, forKey: Self.animationKey)
     }
 }

@@ -2,7 +2,7 @@ import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from vboxd.errors import ConfigError
+from crowd.errors import ConfigError
 
 
 @dataclass

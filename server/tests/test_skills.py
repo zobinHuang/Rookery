@@ -1,8 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
-from vboxd.errors import NotFoundError, ValidationError
-from vboxd.skills import (
+from crowd.errors import NotFoundError, ValidationError
+from crowd.skills import (
     GitRefResolver,
     SkillIndex,
     SkillRecord,

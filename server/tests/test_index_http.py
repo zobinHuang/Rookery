@@ -5,11 +5,11 @@ import threading
 import unittest
 from pathlib import Path
 from tests.test_skills import FakeResolver
-from vboxd.config import ServerConfig
-from vboxd.http import VboxdServer
-from vboxd.playbooks import PlaybookIndex
-from vboxd.skills import SkillIndex
-from vboxd.store import SessionStore
+from crowd.config import ServerConfig
+from crowd.http import CrowdServer
+from crowd.playbooks import PlaybookIndex
+from crowd.skills import SkillIndex
+from crowd.store import SessionStore
 
 
 class IndexApiTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class IndexApiTest(unittest.TestCase):
             tls_cert=None,
             tls_key=None,
         )
-        self.server = VboxdServer(
+        self.server = CrowdServer(
             config=config,
             store=SessionStore(self.root),
             skills=skills,

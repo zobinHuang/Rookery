@@ -1,4 +1,4 @@
-class VboxdError(Exception):
+class CrowdError(Exception):
     """Base class for every failure the session server reports to a client."""
 
     ERROR_HTTP_STATUS = 500
@@ -19,43 +19,43 @@ class VboxdError(Exception):
         }
 
 
-class ConfigError(VboxdError):
+class ConfigError(CrowdError):
     """The server configuration is absent, unreadable or incomplete."""
 
     ERROR_HTTP_STATUS = 500
 
 
-class AuthError(VboxdError):
+class AuthError(CrowdError):
     """The request carried no bearer token, or one that does not match."""
 
     ERROR_HTTP_STATUS = 401
 
 
-class ValidationError(VboxdError):
+class ValidationError(CrowdError):
     """A request field is missing or would not be safe to store."""
 
     ERROR_HTTP_STATUS = 400
 
 
-class NotFoundError(VboxdError):
+class NotFoundError(CrowdError):
     """The addressed route or session is unknown to this server."""
 
     ERROR_HTTP_STATUS = 404
 
 
-class PayloadTooLargeError(VboxdError):
+class PayloadTooLargeError(CrowdError):
     """The request body is larger than the configured per-request limit."""
 
     ERROR_HTTP_STATUS = 413
 
 
-class ConflictError(VboxdError):
+class ConflictError(CrowdError):
     """The request would overwrite something that already exists."""
 
     ERROR_HTTP_STATUS = 409
 
 
-class CursorConflictError(VboxdError):
+class CursorConflictError(CrowdError):
     """The client's write offset disagrees with the stored transcript."""
 
     ERROR_HTTP_STATUS = 409

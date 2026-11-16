@@ -1,7 +1,7 @@
-# vboxd HTTP API
+# crowd HTTP API
 
-Everything a reading client needs to pull agent sessions off a vboxd server. The
-write side — how a `vbox connect` client ships transcripts up — is in
+Everything a reading client needs to pull agent sessions off a crowd server. The
+write side — how a `crow connect` client ships transcripts up — is in
 [session history](../docs/sessions.md).
 
 Base path is `/v1`. Bodies and responses are JSON, except a transcript download,
@@ -12,7 +12,7 @@ server's token:
 Authorization: Bearer <token>
 ```
 
-Run `vboxd token` on the server to print it.
+Run `crowd token` on the server to print it.
 
 ## Reading
 
@@ -65,7 +65,7 @@ curl -sH "Authorization: Bearer $TOKEN" \
 
 # page through one project's history
 curl -sH "Authorization: Bearer $TOKEN" \
-  "$BASE/v1/sessions?project=vibebox&limit=50"
+  "$BASE/v1/sessions?project=crow&limit=50"
 ```
 
 ### Session metadata
@@ -87,10 +87,10 @@ curl -sH "Authorization: Bearer $TOKEN" \
     "arch": "x86_64",
     "user": "dev"
   },
-  "cwd": "/srv/vibebox",
+  "cwd": "/srv/crow",
   "git_branch": "main",
   "cli_version": null,
-  "transcript_path": "/home/dev/.claude/projects/-srv-vibebox/a07f54b5-....jsonl",
+  "transcript_path": "/home/dev/.claude/projects/-srv-crow/a07f54b5-....jsonl",
   "opened_at": "2026-11-16T09:00:00.123+00:00",
   "updated_at": "2026-11-16T09:42:10.004+00:00",
   "closed_at": null
@@ -103,7 +103,7 @@ codex. `account.uuid` is `anonymous` when the client could not determine one.
 
 ### `GET /v1/sessions/<id>/transcript`
 
-Returns the raw bytes vibebox stored, which are byte-for-byte the agent's own
+Returns the raw bytes crowd stored, which are byte-for-byte the agent's own
 JSONL transcript — one JSON object per line, in the agent's own schema.
 
 | Parameter | |
@@ -113,10 +113,10 @@ JSONL transcript — one JSON object per line, in the agent's own schema.
 
 | Response header | |
 |---|---|
-| `X-Vbox-Offset` | the byte the body starts at |
-| `X-Vbox-Total` | the whole stored transcript's length |
+| `X-Crow-Offset` | the byte the body starts at |
+| `X-Crow-Total` | the whole stored transcript's length |
 
-A transcript only grows, so a client that remembers `X-Vbox-Total` can poll for
+A transcript only grows, so a client that remembers `X-Crow-Total` can poll for
 new output without re-downloading:
 
 ```bash
@@ -132,7 +132,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ```
 
 If the agent rewrote its transcript rather than appending to it, the server moved
-the old one aside and started over, so `X-Vbox-Total` comes back smaller than
+the old one aside and started over, so `X-Crow-Total` comes back smaller than
 what the client holds. Re-fetch from offset 0 when that happens.
 
 ### `GET /v1/machines`, `GET /v1/accounts`
@@ -160,7 +160,7 @@ The two lists a UI needs to build its filters, busiest first.
 
 ## Skills
 
-vboxd keeps an index of skills, never their files: an entry records which git
+crowd keeps an index of skills, never their files: an entry records which git
 repository a skill lives in, which path inside it, and which commits its refs
 have pointed at. A client fetches the files itself from the repository.
 
@@ -193,11 +193,11 @@ so registering the same skill at another version updates one entry rather than
 creating a second. Registering resolves the ref to a commit straight away, with
 `git ls-remote`, so an entry is never stored without a usable version.
 
-`name` and `description` are whatever the registering client supplies; vboxd does
+`name` and `description` are whatever the registering client supplies; crowd does
 not read `SKILL.md`, because it does not fetch skill files at all. Without them,
 `name` falls back to the last path segment.
 
-Only repositories vboxd is willing to contact are accepted: `https`, `http`,
+Only repositories crowd is willing to contact are accepted: `https`, `http`,
 `ssh` and scp-style URLs, plus the `owner/repo` shorthand. Local paths and the
 `ext::` and `file::` transports are refused, and a `..` segment in a skill path
 is refused — the client turns that path into a checkout directory.
@@ -277,7 +277,7 @@ playbook — a client installs what it can and shows the rest.
 ## Writing
 
 A client that uploads transcripts uses these. They are documented for
-completeness; `vbox connect` is the supported way to drive them.
+completeness; `crow connect` is the supported way to drive them.
 
 | | |
 |---|---|

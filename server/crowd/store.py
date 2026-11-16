@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
-from vboxd.errors import CursorConflictError, NotFoundError, ValidationError
+from crowd.errors import CursorConflictError, NotFoundError, ValidationError
 
 
 @dataclass

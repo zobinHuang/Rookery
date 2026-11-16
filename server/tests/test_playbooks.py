@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from tests.test_skills import FakeResolver
-from vboxd.errors import ConflictError, NotFoundError, ValidationError
-from vboxd.playbooks import PlaybookIndex, PlaybookRecord, SkillPin
-from vboxd.skills import SkillIndex
+from crowd.errors import ConflictError, NotFoundError, ValidationError
+from crowd.playbooks import PlaybookIndex, PlaybookRecord, SkillPin
+from crowd.skills import SkillIndex
 
 
 class PlaybookIndexTest(unittest.TestCase):

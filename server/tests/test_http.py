@@ -4,9 +4,9 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from vboxd.config import ServerConfig
-from vboxd.http import VboxdServer
-from vboxd.store import SessionStore
+from crowd.config import ServerConfig
+from crowd.http import CrowdServer
+from crowd.store import SessionStore
 
 
 class HttpApiTest(unittest.TestCase):
@@ -31,7 +31,7 @@ class HttpApiTest(unittest.TestCase):
             tls_cert=None,
             tls_key=None,
         )
-        self.server = VboxdServer(
+        self.server = CrowdServer(
             config=config,
             store=SessionStore(self.root),
         )
@@ -254,7 +254,7 @@ class HttpApiTest(unittest.TestCase):
             "mac-claude",
             agent="claude",
             machine={"hostname": "laptop", "fqdn": "laptop.lan", "os": "Darwin"},
-            cwd="/home/dev/vibebox",
+            cwd="/home/dev/crow",
             git_branch="main",
         )
         self.seed(
@@ -290,7 +290,7 @@ class HttpApiTest(unittest.TestCase):
 
     def test_filter_by_project_is_a_substring_of_cwd(self) -> None:
         self.seed_fleet()
-        self.assertEqual(self.ids_for("project=vibebox"), ["mac-claude"])
+        self.assertEqual(self.ids_for("project=crow"), ["mac-claude"])
         self.assertEqual(sorted(self.ids_for("project=/srv")), ["box-claude", "box-codex"])
 
     def test_filters_combine(self) -> None:
@@ -355,7 +355,7 @@ class HttpApiTest(unittest.TestCase):
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
             self.assertEqual(response.getheader("Content-Type"), "application/x-ndjson")
-            self.assertEqual(response.getheader("X-Vbox-Total"), str(len(chunk)))
+            self.assertEqual(response.getheader("X-Crow-Total"), str(len(chunk)))
             self.assertEqual(response.read(), chunk)
         finally:
             connection.close()

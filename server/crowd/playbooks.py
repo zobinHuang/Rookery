@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from vboxd.errors import ConflictError, NotFoundError, ValidationError
-from vboxd.records import RecordStore
-from vboxd.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
+from crowd.errors import ConflictError, NotFoundError, ValidationError
+from crowd.records import RecordStore
+from crowd.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
 
 
 @dataclass

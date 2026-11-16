@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
-from vboxd.errors import NotFoundError, ValidationError
-from vboxd.records import RecordStore
+from crowd.errors import NotFoundError, ValidationError
+from crowd.records import RecordStore
 
 
 @dataclass

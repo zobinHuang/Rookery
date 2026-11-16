@@ -1,30 +1,30 @@
 #!/bin/sh
-# [vibebox] vbox-hooks — own the code-agent hook entries vibebox installs
+# [crow] crow-hooks — own the code-agent hook entries crow installs
 # into Claude Code and codex.
 #
-#   vbox-hooks install    merge vibebox's hooks into both agents' config
-#   vbox-hooks remove     strip vibebox's hooks back out
+#   crow-hooks install    merge crow's hooks into both agents' config
+#   crow-hooks remove     strip crow's hooks back out
 #
 # One line per agent is printed to stdout so a caller can report what
 # happened: "<agent>: merged", "<agent>: absent", "<agent>: failed".
 #
-# Every vibebox hook invokes $HOME/.local/bin/vbox-<something>, and the
+# Every crow hook invokes $HOME/.local/bin/crow-<something>, and the
 # merge strips every entry matching that marker before re-adding the
 # current set. That keeps re-runs idempotent and cleans up hooks left
-# behind by older installs (the long-dead vbox-music ones among them).
+# behind by older installs (the long-dead crow-music ones among them).
 
 set -u
 
-VBOX_OWNED_MARKER='vbox-(agent|music|session|playbook)'
-VBOX_CONNECT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/vibebox/connect.json"
+CROW_OWNED_MARKER='crow-(agent|music|session|playbook)'
+CROW_CONNECT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/crow/connect.json"
 CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 CODEX_HOOKS="${CODEX_HOME:-$HOME/.codex}/hooks.json"
 
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  vbox-hooks install    merge vibebox's code-agent hooks into place
-  vbox-hooks remove     strip vibebox's code-agent hooks back out
+  crow-hooks install    merge crow's code-agent hooks into place
+  crow-hooks remove     strip crow's code-agent hooks back out
 EOF
   exit 1
 }
@@ -51,18 +51,18 @@ EOF
 #
 # Quoted heredoc on purpose: $HOME and $TMUX_PANE must survive into the
 # settings file and be expanded by the hook's own shell at fire time.
-vbox_claude_hooks() {
+crow_claude_hooks() {
   cat <<'JSON'
 {
-  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
-  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
-  "PreToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy", "async": true } ] } ],
-  "PostToolUse":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy", "async": true } ] } ],
+  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PreToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" busy", "async": true } ] } ],
+  "PostToolUse":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" busy", "async": true } ] } ],
   "Notification":     [ { "matcher": "permission_prompt|elicitation_dialog",
-                          "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" wait" } ] } ],
-  "Stop":             [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
-  "StopFailure":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
-  "SessionEnd":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" none" } ] } ]
+                          "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" wait" } ] } ],
+  "Stop":             [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "StopFailure":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "SessionEnd":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" none" } ] } ]
 }
 JSON
 }
@@ -79,22 +79,22 @@ JSON
 #   * No "async": codex 0.132 prints `skipping async hook ... async hooks
 #     are not supported yet` and drops the hook entirely, so the tool
 #     hooks here are synchronous even though the Claude ones aren't.
-vbox_codex_hooks() {
+crow_codex_hooks() {
   cat <<'JSON'
 {
-  "SessionStart":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
-  "UserPromptSubmit":  [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
-  "PreToolUse":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
-  "PostToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" busy" } ] } ],
-  "PermissionRequest": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" wait" } ] } ],
-  "Stop":              [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" idle" } ] } ],
-  "SessionEnd":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-agent set \"$TMUX_PANE\" none" } ] } ]
+  "SessionStart":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "UserPromptSubmit":  [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PreToolUse":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PostToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" busy" } ] } ],
+  "PermissionRequest": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" wait" } ] } ],
+  "Stop":              [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" idle" } ] } ],
+  "SessionEnd":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-agent set \"$TMUX_PANE\" none" } ] } ]
 }
 JSON
 }
 
 # ─── session upload ───────────────────────────────────────────────────
-# These only go in once `vbox connect` has recorded a server, so an
+# These only go in once `crow connect` has recorded a server, so an
 # install that never connects to one keeps the agents' config free of
 # upload hooks entirely.
 #
@@ -104,25 +104,25 @@ JSON
 # touch the network. SessionStart doubles as the catch-up trigger for
 # anything a dead server or a killed agent left behind, and SessionEnd is
 # what marks a session closed on the server.
-vbox_claude_upload_hooks() {
+crow_claude_upload_hooks() {
   cat <<'JSON'
 {
-  "SessionStart": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload claude" } ] } ],
-  "Stop":         [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload claude" } ] } ],
-  "StopFailure":  [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload claude" } ] } ],
-  "PreCompact":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload claude" } ] } ],
-  "SessionEnd":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload claude" } ] } ]
+  "SessionStart": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload claude" } ] } ],
+  "Stop":         [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload claude" } ] } ],
+  "StopFailure":  [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload claude" } ] } ],
+  "PreCompact":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload claude" } ] } ],
+  "SessionEnd":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload claude" } ] } ]
 }
 JSON
 }
 
-vbox_codex_upload_hooks() {
+crow_codex_upload_hooks() {
   cat <<'JSON'
 {
-  "SessionStart": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload codex" } ] } ],
-  "Stop":         [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload codex" } ] } ],
-  "PreCompact":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload codex" } ] } ],
-  "SessionEnd":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-session upload codex" } ] } ]
+  "SessionStart": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload codex" } ] } ],
+  "Stop":         [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload codex" } ] } ],
+  "PreCompact":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload codex" } ] } ],
+  "SessionEnd":   [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-session upload codex" } ] } ]
 }
 JSON
 }
@@ -136,20 +136,20 @@ JSON
 # Neither is a tool hook, deliberately: SessionStart may put a picker on
 # screen and wait for an answer, and nothing that can block belongs on a
 # path that runs on every tool call.
-vbox_claude_playbook_hooks() {
+crow_claude_playbook_hooks() {
   cat <<'JSON'
 {
-  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-playbook session-start claude" } ] } ],
-  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-playbook context claude" } ] } ]
+  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-playbook session-start claude" } ] } ],
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-playbook context claude" } ] } ]
 }
 JSON
 }
 
-vbox_codex_playbook_hooks() {
+crow_codex_playbook_hooks() {
   cat <<'JSON'
 {
-  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-playbook session-start codex" } ] } ],
-  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/vbox-playbook context codex" } ] } ]
+  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-playbook session-start codex" } ] } ],
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/crow-playbook context codex" } ] } ]
 }
 JSON
 }
@@ -157,8 +157,8 @@ JSON
 # ─── combine two hook sets ────────────────────────────────────────────
 # Both sets are keyed by event, and an event that appears in both keeps
 # the entries of each, in order.
-vbox_json_union() {
-  # vbox_json_union <json-a> <json-b>
+crow_json_union() {
+  # crow_json_union <json-a> <json-b>
   if command -v jq >/dev/null 2>&1; then
     jq -n --argjson a "$1" --argjson b "$2" '
       reduce ($b | to_entries)[] as $e ($a; .[$e.key] = ((.[$e.key] // []) + $e.value))
@@ -178,24 +178,24 @@ sys.stdout.write(json.dumps(map_merged))
   return 2
 }
 
-vbox_hook_set() {
-  # vbox_hook_set <claude|codex> — the hooks vibebox should own right now
+crow_hook_set() {
+  # crow_hook_set <claude|codex> — the hooks crow should own right now
   case "$1" in
     claude)
-      _bar="$(vbox_claude_hooks)"
-      _up="$(vbox_claude_upload_hooks)"
-      _pb="$(vbox_claude_playbook_hooks)"
+      _bar="$(crow_claude_hooks)"
+      _up="$(crow_claude_upload_hooks)"
+      _pb="$(crow_claude_playbook_hooks)"
       ;;
     codex)
-      _bar="$(vbox_codex_hooks)"
-      _up="$(vbox_codex_upload_hooks)"
-      _pb="$(vbox_codex_playbook_hooks)"
+      _bar="$(crow_codex_hooks)"
+      _up="$(crow_codex_upload_hooks)"
+      _pb="$(crow_codex_playbook_hooks)"
       ;;
     *) return 1 ;;
   esac
-  if [ -f "$VBOX_CONNECT_FILE" ]; then
-    _merged="$(vbox_json_union "$_bar" "$_up")" || return 1
-    vbox_json_union "$_merged" "$_pb" && return 0
+  if [ -f "$CROW_CONNECT_FILE" ]; then
+    _merged="$(crow_json_union "$_bar" "$_up")" || return 1
+    crow_json_union "$_merged" "$_pb" && return 0
     return 1
   fi
   printf '%s' "$_bar"
@@ -206,8 +206,8 @@ vbox_hook_set() {
 # built in a temp file and only swapped in once it has been produced
 # cleanly and is non-empty, so a failed or malformed merge leaves the
 # original in place untouched rather than needing to be restored.
-vbox_merge_hooks() {
-  # vbox_merge_hooks <file> <json-to-add>
+crow_merge_hooks() {
+  # crow_merge_hooks <file> <json-to-add>
   _file="$1"
   _add="$2"
   mkdir -p "$(dirname "$_file")" || return 3
@@ -215,7 +215,7 @@ vbox_merge_hooks() {
   _tmp="$(mktemp)" || return 3
 
   if command -v jq >/dev/null 2>&1; then
-    jq --arg marker "$VBOX_OWNED_MARKER" --argjson add "$_add" '
+    jq --arg marker "$CROW_OWNED_MARKER" --argjson add "$_add" '
       def strip:
         with_entries(
           .value |= ( map(.hooks |= map(select((.command // "") | test($marker) | not)))
@@ -227,12 +227,12 @@ vbox_merge_hooks() {
     ' "$_file" > "$_tmp" 2>/dev/null
     _rc=$?
   elif command -v python3 >/dev/null 2>&1; then
-    VBOX_OWNED_MARKER="$VBOX_OWNED_MARKER" python3 - "$_file" "$_add" "$_tmp" <<'PY'
+    CROW_OWNED_MARKER="$CROW_OWNED_MARKER" python3 - "$_file" "$_add" "$_tmp" <<'PY'
 import json, os, re, sys
 src, add, dest = sys.argv[1], json.loads(sys.argv[2]), sys.argv[3]
 with open(src) as f:
     doc = json.load(f)
-owned = re.compile(os.environ["VBOX_OWNED_MARKER"])
+owned = re.compile(os.environ["CROW_OWNED_MARKER"])
 kept = {}
 for event, groups in (doc.get("hooks") or {}).items():
     survivors = []
@@ -267,10 +267,10 @@ PY
   return 0
 }
 
-vbox_apply() {
-  # vbox_apply <label> <file> <json-to-add>
+crow_apply() {
+  # crow_apply <label> <file> <json-to-add>
   _label="$1"
-  if vbox_merge_hooks "$2" "$3"; then
+  if crow_merge_hooks "$2" "$3"; then
     printf '%s: merged\n' "$_label"
   else
     case $? in
@@ -281,20 +281,20 @@ vbox_apply() {
 }
 
 cmd_install() {
-  vbox_apply claude "$CLAUDE_SETTINGS" "$(vbox_hook_set claude)"
+  crow_apply claude "$CLAUDE_SETTINGS" "$(crow_hook_set claude)"
   # Only wire up codex if it is actually installed, rather than creating
   # config for a tool that isn't there.
   if command -v codex >/dev/null 2>&1; then
-    vbox_apply codex "$CODEX_HOOKS" "$(vbox_hook_set codex)"
+    crow_apply codex "$CODEX_HOOKS" "$(crow_hook_set codex)"
   else
     printf 'codex: absent\n'
   fi
 }
 
 cmd_remove() {
-  vbox_apply claude "$CLAUDE_SETTINGS" '{}'
+  crow_apply claude "$CLAUDE_SETTINGS" '{}'
   if [ -f "$CODEX_HOOKS" ]; then
-    vbox_apply codex "$CODEX_HOOKS" '{}'
+    crow_apply codex "$CODEX_HOOKS" '{}'
   else
     printf 'codex: absent\n'
   fi

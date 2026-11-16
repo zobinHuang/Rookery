@@ -1,47 +1,47 @@
 # Session history
 
-`vbox connect` makes every Claude Code and codex session in your panes upload its
-own JSON transcript to a [vboxd](../server/) server as you work.
+`crow connect` makes every Claude Code and codex session in your panes upload its
+own JSON transcript to a [crowd](../server/) server as you work.
 
 ```bash
 # on the server
-curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/vibebox/contents/server/setup.sh | bash
+curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/server/setup.sh | bash
 
 # on each client, with the token the server printed
-vbox connect <host> <port> --token <token>
+crow connect <host> <port> --token <token>
 
 # don't send the login email address along with the account id
-vbox connect <host> <port> --token <token> --no-email
+crow connect <host> <port> --token <token> --no-email
 
 # serve over HTTPS with a self-signed certificate
-vbox connect <host> <port> --token <token> --insecure
+crow connect <host> <port> --token <token> --insecure
 
 # check the connection and the backlog
-vbox sessions
+crow sessions
 
 # stop uploading
-vbox disconnect
+crow disconnect
 ```
 
 Changing an agent's hook config invalidates the trust hash codex keeps for it, so
 run `/hooks` in codex once after connecting or disconnecting.
 
-## Switching uploads on under a running vbox
+## Switching uploads on under a running crow
 
 Connecting, or re-running the installer, works on a box with agents already
 running in its panes. Those sessions have nothing on the server yet, and their
-hooks alone would not push anything until you next typed — so `vbox connect` and
+hooks alone would not push anything until you next typed — so `crow connect` and
 the installer both push whatever is already under way, transcript and all.
 
 ```bash
 # push the sessions already under way; connect and the installer do this for you
-vbox-session adopt
+crow-session adopt
 
 # widen or narrow which transcripts count as under way (default: last 4 hours)
-vbox-session adopt --since-minutes 60
+crow-session adopt --since-minutes 60
 
 # upload every transcript still on this machine, however old
-vbox-session adopt --all
+crow-session adopt --all
 ```
 
 A session is judged to be under way by how recently its transcript was written,
@@ -49,7 +49,7 @@ because neither agent offers anything better: there is no reliable way back from
 a running process to its session id. A session you have had open and idle since
 this morning still counts, and one that just ended is picked up too.
 
-Without a `vbox connect`, none of this does anything at all — no files, no hooks,
+Without a `crow connect`, none of this does anything at all — no files, no hooks,
 no requests.
 
 ## What is uploaded
@@ -66,7 +66,7 @@ the session ran on: short hostname, FQDN, OS, OS release, architecture and unix
 user. The same agent account is usually logged in on several boxes, so that is
 what tells their sessions apart.
 
-To read sessions back off a server, see the [vboxd API](../server/API.md). The
+To read sessions back off a server, see the [crowd API](../server/API.md). The
 same server also indexes [playbooks](playbooks.md).
 
 ## Storage layout
@@ -105,6 +105,6 @@ whatever is still behind.
 
 A transcript holds everything the agent saw: your source, your paths, command
 output, and whatever you typed. Treat the server as holding the same secrets your
-working copy does. It stores files `0600` under `0700` directories, and `vboxd`
+working copy does. It stores files `0600` under `0700` directories, and `crowd`
 over plain HTTP sends them in the clear — give it `--tls-cert`/`--tls-key`, or keep
 it on a trusted network.

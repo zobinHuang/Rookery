@@ -11,12 +11,12 @@ info()  { echo -e "${GREEN}[✓]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 err()   { echo -e "${RED}[✗]${NC} $*"; }
 
-VBOXD_HOST="0.0.0.0"
-VBOXD_PORT="8787"
-VBOXD_DATA_ROOT="$HOME/.local/share/vboxd/data"
-VBOXD_TLS_CERT=""
-VBOXD_TLS_KEY=""
-VBOXD_DO_SERVICE=1
+CROWD_HOST="0.0.0.0"
+CROWD_PORT="8787"
+CROWD_DATA_ROOT="$HOME/.local/share/crowd/data"
+CROWD_TLS_CERT=""
+CROWD_TLS_KEY=""
+CROWD_DO_SERVICE=1
 
 usage() {
   cat >&2 <<'EOF'
@@ -34,40 +34,40 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --host)       VBOXD_HOST="${2:-}"; shift 2 ;;
-    --port)       VBOXD_PORT="${2:-}"; shift 2 ;;
-    --data-root)  VBOXD_DATA_ROOT="${2:-}"; shift 2 ;;
-    --tls-cert)   VBOXD_TLS_CERT="${2:-}"; shift 2 ;;
-    --tls-key)    VBOXD_TLS_KEY="${2:-}"; shift 2 ;;
-    --no-service) VBOXD_DO_SERVICE=0; shift ;;
+    --host)       CROWD_HOST="${2:-}"; shift 2 ;;
+    --port)       CROWD_PORT="${2:-}"; shift 2 ;;
+    --data-root)  CROWD_DATA_ROOT="${2:-}"; shift 2 ;;
+    --tls-cert)   CROWD_TLS_CERT="${2:-}"; shift 2 ;;
+    --tls-key)    CROWD_TLS_KEY="${2:-}"; shift 2 ;;
+    --no-service) CROWD_DO_SERVICE=0; shift ;;
     -h|--help)    usage ;;
     *)            err "unknown option: $1"; usage ;;
   esac
 done
 
-if { [ -n "$VBOXD_TLS_CERT" ] && [ -z "$VBOXD_TLS_KEY" ]; } ||
-   { [ -z "$VBOXD_TLS_CERT" ] && [ -n "$VBOXD_TLS_KEY" ]; }; then
+if { [ -n "$CROWD_TLS_CERT" ] && [ -z "$CROWD_TLS_KEY" ]; } ||
+   { [ -z "$CROWD_TLS_CERT" ] && [ -n "$CROWD_TLS_KEY" ]; }; then
   err "--tls-cert and --tls-key must be given together"
   exit 1
 fi
 
 # ─── fetch a file from this repo's raw API (avoids CDN cache) ────────
-VBOX_REPO_API="https://api.github.com/repos/zobinHuang/vibebox/contents"
-VBOXD_SCRIPT_DIR=""
+CROW_REPO_API="https://api.github.com/repos/zobinHuang/Rookery/contents"
+CROWD_SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-  VBOXD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  CROWD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 fi
 
-vboxd_install_file() {
-  # vboxd_install_file <repo-path> <dest>
+crowd_install_file() {
+  # crowd_install_file <repo-path> <dest>
   local src="$1" dest="$2" http_code
-  if [ -n "$VBOXD_SCRIPT_DIR" ] && [ -f "$VBOXD_SCRIPT_DIR/../$src" ]; then
-    cp "$VBOXD_SCRIPT_DIR/../$src" "$dest"
+  if [ -n "$CROWD_SCRIPT_DIR" ] && [ -f "$CROWD_SCRIPT_DIR/../$src" ]; then
+    cp "$CROWD_SCRIPT_DIR/../$src" "$dest"
     return 0
   fi
   http_code="$(curl -sSL -w '%{http_code}' \
                 -H 'Accept: application/vnd.github.v3.raw' \
-                "${VBOX_REPO_API}/${src}" -o "$dest" 2>/dev/null)" || return 1
+                "${CROW_REPO_API}/${src}" -o "$dest" 2>/dev/null)" || return 1
   case "$http_code" in
     2??) return 0 ;;
     *) rm -f "$dest"; err "HTTP $http_code fetching $src"; return 1 ;;
@@ -76,7 +76,7 @@ vboxd_install_file() {
 
 echo ""
 echo "══════════════════════════════════════════════════"
-echo "  VibeBox session server"
+echo "  Rookery session server"
 echo "══════════════════════════════════════════════════"
 
 # ─── 1. python ───────────────────────────────────────────────────────
@@ -107,29 +107,29 @@ fi
 echo ""
 echo "── install ───────────────────────────────────────"
 
-VBOXD_APP_DIR="$HOME/.local/share/vboxd/app"
-VBOXD_CONFIG="$HOME/.config/vboxd/config.json"
-VBOXD_BIN="$HOME/.local/bin/vboxd"
+CROWD_APP_DIR="$HOME/.local/share/crowd/app"
+CROWD_CONFIG="$HOME/.config/crowd/config.json"
+CROWD_BIN="$HOME/.local/bin/crowd"
 
-mkdir -p "$VBOXD_APP_DIR/vboxd" "$HOME/.local/bin"
+mkdir -p "$CROWD_APP_DIR/crowd" "$HOME/.local/bin"
 for MODULE in __init__.py __main__.py config.py errors.py http.py store.py; do
-  if ! vboxd_install_file "server/vboxd/$MODULE" "$VBOXD_APP_DIR/vboxd/$MODULE"; then
-    err "Failed to install vboxd/$MODULE"
+  if ! crowd_install_file "server/crowd/$MODULE" "$CROWD_APP_DIR/crowd/$MODULE"; then
+    err "Failed to install crowd/$MODULE"
     exit 1
   fi
 done
 # Stale bytecode from a previous version shadows the modules we just wrote.
-rm -rf "$VBOXD_APP_DIR/vboxd/__pycache__"
-info "Installed vboxd to $VBOXD_APP_DIR"
+rm -rf "$CROWD_APP_DIR/crowd/__pycache__"
+info "Installed crowd to $CROWD_APP_DIR"
 
-cat > "$VBOXD_BIN" <<LAUNCHER
+cat > "$CROWD_BIN" <<LAUNCHER
 #!/bin/sh
-# [vibebox]
-PYTHONPATH="$VBOXD_APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" \\
-  exec python3 -m vboxd --config "$VBOXD_CONFIG" "\$@"
+# [crow]
+PYTHONPATH="$CROWD_APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" \\
+  exec python3 -m crowd --config "$CROWD_CONFIG" "\$@"
 LAUNCHER
-chmod +x "$VBOXD_BIN"
-info "Installed vboxd command to $VBOXD_BIN"
+chmod +x "$CROWD_BIN"
+info "Installed crowd command to $CROWD_BIN"
 
 # ─── 3. configure ────────────────────────────────────────────────────
 echo ""
@@ -137,31 +137,31 @@ echo "── configure ───────────────────
 
 # `init` keeps the token of an existing config, so re-running this script
 # upgrades a server without invalidating the clients already connected to it.
-VBOXD_INIT_ARGS=(init --host "$VBOXD_HOST" --port "$VBOXD_PORT" --data-root "$VBOXD_DATA_ROOT")
-if [ -n "$VBOXD_TLS_CERT" ]; then
-  VBOXD_INIT_ARGS+=(--tls-cert "$VBOXD_TLS_CERT" --tls-key "$VBOXD_TLS_KEY")
+CROWD_INIT_ARGS=(init --host "$CROWD_HOST" --port "$CROWD_PORT" --data-root "$CROWD_DATA_ROOT")
+if [ -n "$CROWD_TLS_CERT" ]; then
+  CROWD_INIT_ARGS+=(--tls-cert "$CROWD_TLS_CERT" --tls-key "$CROWD_TLS_KEY")
 fi
-"$VBOXD_BIN" "${VBOXD_INIT_ARGS[@]}" >/dev/null
-VBOXD_TOKEN="$("$VBOXD_BIN" token)"
-info "Config at $VBOXD_CONFIG, data under $VBOXD_DATA_ROOT"
+"$CROWD_BIN" "${CROWD_INIT_ARGS[@]}" >/dev/null
+CROWD_TOKEN="$("$CROWD_BIN" token)"
+info "Config at $CROWD_CONFIG, data under $CROWD_DATA_ROOT"
 
 # ─── 4. service ──────────────────────────────────────────────────────
 echo ""
 echo "── service ───────────────────────────────────────"
 
-VBOXD_STARTED=0
-if [ "$VBOXD_DO_SERVICE" -eq 0 ]; then
+CROWD_STARTED=0
+if [ "$CROWD_DO_SERVICE" -eq 0 ]; then
   info "Skipped starting the service (--no-service)"
 elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-  VBOXD_UNIT_DIR="$HOME/.config/systemd/user"
-  mkdir -p "$VBOXD_UNIT_DIR"
-  cat > "$VBOXD_UNIT_DIR/vboxd.service" <<UNIT
+  CROWD_UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$CROWD_UNIT_DIR"
+  cat > "$CROWD_UNIT_DIR/crowd.service" <<UNIT
 [Unit]
-Description=VibeBox session server
+Description=Rookery session server
 After=network-online.target
 
 [Service]
-ExecStart=$VBOXD_BIN serve
+ExecStart=$CROWD_BIN serve
 Restart=on-failure
 RestartSec=2
 
@@ -169,74 +169,74 @@ RestartSec=2
 WantedBy=default.target
 UNIT
   systemctl --user daemon-reload
-  systemctl --user enable --now vboxd.service
+  systemctl --user enable --now crowd.service
   # Without lingering, a user unit dies the moment you log out.
   loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
-    warn "Could not enable lingering; vboxd will stop when you log out."
-  info "Started systemd user unit vboxd.service"
-  VBOXD_STARTED=1
+    warn "Could not enable lingering; crowd will stop when you log out."
+  info "Started systemd user unit crowd.service"
+  CROWD_STARTED=1
 elif [ "$(uname -s)" = "Darwin" ]; then
-  VBOXD_PLIST="$HOME/Library/LaunchAgents/com.vibebox.vboxd.plist"
-  mkdir -p "$(dirname "$VBOXD_PLIST")" "$HOME/.local/share/vboxd"
-  cat > "$VBOXD_PLIST" <<PLIST
+  CROWD_PLIST="$HOME/Library/LaunchAgents/io.github.zobinhuang.rookery.crowd.plist"
+  mkdir -p "$(dirname "$CROWD_PLIST")" "$HOME/.local/share/crowd"
+  cat > "$CROWD_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.vibebox.vboxd</string>
+  <key>Label</key><string>io.github.zobinhuang.rookery.crowd</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$VBOXD_BIN</string>
+    <string>$CROWD_BIN</string>
     <string>serve</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/.local/share/vboxd/vboxd.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.local/share/vboxd/vboxd.log</string>
+  <key>StandardOutPath</key><string>$HOME/.local/share/crowd/crowd.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.local/share/crowd/crowd.log</string>
 </dict>
 </plist>
 PLIST
-  launchctl bootout "gui/$(id -u)/com.vibebox.vboxd" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$VBOXD_PLIST"
-  info "Started launchd agent com.vibebox.vboxd"
-  VBOXD_STARTED=1
+  launchctl bootout "gui/$(id -u)/io.github.zobinhuang.rookery.crowd" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$CROWD_PLIST"
+  info "Started launchd agent io.github.zobinhuang.rookery.crowd"
+  CROWD_STARTED=1
 else
   warn "No systemd or launchd found. Start the server by hand:"
-  warn "  nohup $VBOXD_BIN serve > ~/.local/share/vboxd/vboxd.log 2>&1 &"
+  warn "  nohup $CROWD_BIN serve > ~/.local/share/crowd/crowd.log 2>&1 &"
 fi
 
 # ─── 5. verify ───────────────────────────────────────────────────────
-if [ "$VBOXD_STARTED" -eq 1 ]; then
+if [ "$CROWD_STARTED" -eq 1 ]; then
   echo ""
   echo "── verify ────────────────────────────────────────"
-  VBOXD_SCHEME="http"
-  [ -n "$VBOXD_TLS_CERT" ] && VBOXD_SCHEME="https"
-  VBOXD_PROBE_OK=0
+  CROWD_SCHEME="http"
+  [ -n "$CROWD_TLS_CERT" ] && CROWD_SCHEME="https"
+  CROWD_PROBE_OK=0
   for _ in 1 2 3 4 5; do
-    if curl -fsSk "$VBOXD_SCHEME://127.0.0.1:$VBOXD_PORT/v1/healthz" >/dev/null 2>&1; then
-      VBOXD_PROBE_OK=1
+    if curl -fsSk "$CROWD_SCHEME://127.0.0.1:$CROWD_PORT/v1/healthz" >/dev/null 2>&1; then
+      CROWD_PROBE_OK=1
       break
     fi
     sleep 1
   done
-  if [ "$VBOXD_PROBE_OK" -eq 1 ]; then
-    info "Health check passed on $VBOXD_SCHEME://127.0.0.1:$VBOXD_PORT"
+  if [ "$CROWD_PROBE_OK" -eq 1 ]; then
+    info "Health check passed on $CROWD_SCHEME://127.0.0.1:$CROWD_PORT"
   else
-    err "Health check failed. Logs: ~/.local/share/vboxd/vboxd.log or journalctl --user -u vboxd"
+    err "Health check failed. Logs: ~/.local/share/crowd/crowd.log or journalctl --user -u crowd"
   fi
 fi
 
 # ─── done ─────────────────────────────────────────────────────────────
-VBOXD_ADDR="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo '<host>')"
+CROWD_ADDR="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo '<host>')"
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Server ready"
 echo ""
 echo "  Run this on each client:"
 echo ""
-echo "    vbox connect $VBOXD_ADDR $VBOXD_PORT --token $VBOXD_TOKEN"
+echo "    crow connect $CROWD_ADDR $CROWD_PORT --token $CROWD_TOKEN"
 echo ""
-if [ -z "$VBOXD_TLS_CERT" ]; then
+if [ -z "$CROWD_TLS_CERT" ]; then
   echo "  This server speaks plain HTTP. Transcripts carry your source code,"
   echo "  paths and anything an agent printed — only expose it on a trusted"
   echo "  network, or re-run with --tls-cert/--tls-key."

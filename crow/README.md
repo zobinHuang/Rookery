@@ -1,4 +1,4 @@
-# VibeBox
+# crow
 
 <img src="./docs/screenshot.png" />
 
@@ -7,32 +7,32 @@
 ## Install
 
 ```bash
-curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/vibebox/contents/setup.sh | bash
+curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/crow/setup.sh | bash
 ```
 
 ## Usage
 
 ```bash
 # create a session and attach to it
-vbox new <name>
+crow new <name>
 
 # attach to an existing session
-vbox attach <name>
+crow attach <name>
 
 # list sessions
-vbox ls
+crow ls
 
 # kill a session by name
-vbox kill <name>
+crow kill <name>
 
 # kill the session you're in
-vbox exit
+crow exit
 
 # upload agent session history to a server
-vbox connect <host> <port> --token <token>
+crow connect <host> <port> --token <token>
 
 # stop uploading
-vbox disconnect
+crow disconnect
 ```
 
 See [keybindings](docs/keybindings.md), [session history](docs/sessions.md) and

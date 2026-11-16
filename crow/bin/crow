@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# [vibebox]
+# [crow]
 set -euo pipefail
 
 usage() {
   echo "Usage:"
-  echo "  vbox new <session-name>     Create and attach to a new vbox session"
-  echo "  vbox attach <name>          Attach to an existing session"
-  echo "  vbox ls                     List all vbox sessions"
-  echo "  vbox kill <name>            Kill a session by name"
-  echo "  vbox exit                   Kill current session"
+  echo "  crow new <session-name>     Create and attach to a new crow session"
+  echo "  crow attach <name>          Attach to an existing session"
+  echo "  crow ls                     List all crow sessions"
+  echo "  crow kill <name>            Kill a session by name"
+  echo "  crow exit                   Kill current session"
   echo ""
-  echo "  vbox connect <host> <port> --token <token>"
-  echo "                              Upload agent session history to a vboxd server"
-  echo "  vbox disconnect             Stop uploading session history"
-  echo "  vbox sessions               Show the upload connection and its backlog"
+  echo "  crow connect <host> <port> --token <token>"
+  echo "                              Upload agent session history to a crowd server"
+  echo "  crow disconnect             Stop uploading session history"
+  echo "  crow sessions               Show the upload connection and its backlog"
   exit 1
 }
 
@@ -34,7 +34,7 @@ case "$CMD" in
     ;;
   attach)
     if [ $# -lt 1 ]; then
-      echo "Usage: vbox attach <session-name>"
+      echo "Usage: crow attach <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$1"
@@ -71,12 +71,12 @@ case "$CMD" in
       fi
     done < <(tmux list-sessions -F "#{session_name}|#{session_created}" 2>/dev/null || true)
     if [ "$FOUND" -eq 0 ]; then
-      echo "No vbox sessions."
+      echo "No crow sessions."
     fi
     ;;
   kill)
     if [ $# -lt 1 ]; then
-      echo "Usage: vbox kill <session-name>"
+      echo "Usage: crow kill <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$1"
@@ -92,27 +92,27 @@ case "$CMD" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --) shift; NAME="${1:-}"; break ;;
-        -*) echo "vbox new: unknown flag $1" >&2; exit 1 ;;
+        -*) echo "crow new: unknown flag $1" >&2; exit 1 ;;
         *)  NAME="$1"; shift ;;
       esac
     done
     if [ -z "$NAME" ]; then
-      echo "Usage: vbox new <session-name>"
+      echo "Usage: crow new <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$NAME"
     if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      echo "Session '$SESSION_NAME' already exists. Use 'vbox attach $NAME' instead."
+      echo "Session '$SESSION_NAME' already exists. Use 'crow attach $NAME' instead."
       exit 1
     fi
     tmux new-session -d -s "$SESSION_NAME" -c "$HOME"
     tmux attach-session -t "$SESSION_NAME"
     ;;
   connect|disconnect)
-    exec "$HOME/.local/bin/vbox-session" "$CMD" "$@"
+    exec "$HOME/.local/bin/crow-session" "$CMD" "$@"
     ;;
   sessions)
-    exec "$HOME/.local/bin/vbox-session" status
+    exec "$HOME/.local/bin/crow-session" status
     ;;
   -h|--help) usage ;;
   *)         usage ;;

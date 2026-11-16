@@ -415,7 +415,7 @@ struct RookmasterBoard: View {
     private func subtitle(of resource: FleetResource, agent: FleetAgent?) -> String {
         if let agent {
             let subagentCount = fleetModel.fleet.listSubagents(of: agent.id).count
-            return subagentCount > 0 ? "\(agent.state.title) · \(subagentCount) subagents" : agent.state.title
+            return subagentCount > 0 ? "\(agent.state.title) with \(subagentCount) subagents" : agent.state.title
         }
         let relationCount = graph.listRelations(touching: FleetRef(kind: resource.kind, id: resource.id)).count
         if let description = resource.mapAttributes["description"]?.stringValue {

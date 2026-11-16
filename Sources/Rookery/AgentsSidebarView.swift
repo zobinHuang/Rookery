@@ -371,11 +371,7 @@ struct AgentsSidebarView: View {
                         .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(subtitle(of: agent, isReachable: isReachable))
-                        .font(.system(size: 11))
-                        .foregroundStyle(agent.state.needsAttention ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.secondaryText))
-                        .lineLimit(1)
-                        .contentTransition(.opacity)
+                    tags(of: agent, isReachable: isReachable)
                 }
                 Spacer(minLength: 0)
                 if subagentCount > 0 {
@@ -486,18 +482,23 @@ struct AgentsSidebarView: View {
         .help(isExpanded ? "Fold the subagents away" : "Show \(count) subagents")
     }
 
-    private func subtitle(of agent: FleetAgent, isReachable: Bool) -> String {
-        var listParts = [agent.state.title]
-        if !isReachable {
-            listParts = ["\(agent.rookName.isEmpty ? "Machine" : agent.rookName) offline"]
+    /// The agent's state, repository and branch, each in a tag of its own.
+    private func tags(of agent: FleetAgent, isReachable: Bool) -> some View {
+        HStack(spacing: 4) {
+            if isReachable {
+                InfoTag(agent.state.title, tint: agent.state.needsAttention ? .orange : nil)
+            } else {
+                InfoTag("offline", tint: .orange)
+            }
+            if !agent.projectName.isEmpty && agent.projectName != "/" {
+                InfoTag(agent.projectName)
+            }
+            if !agent.gitBranch.isEmpty {
+                InfoTag(agent.gitBranch)
+                    .layoutPriority(-1)
+            }
         }
-        if !agent.projectName.isEmpty && agent.projectName != "/" {
-            listParts.append(agent.projectName)
-        }
-        if !agent.gitBranch.isEmpty {
-            listParts.append(agent.gitBranch)
-        }
-        return listParts.joined(separator: " · ")
+        .animation(.easeOut(duration: 0.2), value: agent.state)
     }
 
     private func rowFill(isSelected: Bool, isHovered: Bool, isTargeted: Bool) -> AnyShapeStyle {

@@ -70,9 +70,14 @@ struct AgentUsagePanel: View {
         return VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .top, spacing: 5) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(([group.harness.title] + [usage?.plan?.capitalized].compactMap { $0 }).joined(separator: " · "))
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(group.harness.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                        if let plan = usage?.plan {
+                            InfoTag(plan.capitalized)
+                        }
+                    }
                     HStack(spacing: 4) {
                         if let signedInAs = usage?.signedInAs {
                             Text(signedInAs)

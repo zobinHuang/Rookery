@@ -169,7 +169,10 @@ private struct ResourceInspector: View {
                         }
                     }
                 }
-                Text("\(resource.kind) · \(resource.id)")
+                HStack(spacing: 6) {
+                    InfoTag(resource.kind, tint: RookmasterStyle.tint(of: resource.kind))
+                    Text(resource.id)
+                }
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(StageColors.secondaryText)
                     .textSelection(.enabled)
@@ -249,7 +252,10 @@ private struct ResourceInspector: View {
                         Text(fleetModel.graph.name(of: other))
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        Text("\(relation.count)× · \(RookmasterStyle.age(of: relation.lastAt, now: .now))")
+                        Text("\(relation.count)×")
+                            .monospacedDigit()
+                            .foregroundStyle(StageColors.tertiaryText)
+                        Text(RookmasterStyle.age(of: relation.lastAt, now: .now))
                             .foregroundStyle(StageColors.tertiaryText)
                     }
                     .font(.system(size: 12))

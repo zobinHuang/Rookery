@@ -177,7 +177,7 @@ struct MaintenancePanel: View {
             .font(.system(size: 11))
             .foregroundStyle(StageColors.secondaryText)
         case .finished:
-            RookeryLabel(run.costUSD.map { "Done · $\(String(format: "%.2f", $0))" } ?? "Done", icon: .check)
+            RookeryLabel(run.costUSD.map { "Done for $\(String(format: "%.2f", $0))" } ?? "Done", icon: .check)
                 .font(.system(size: 11))
                 .foregroundStyle(.green)
         case .failed(let reason):

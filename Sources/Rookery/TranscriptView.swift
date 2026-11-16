@@ -164,8 +164,6 @@ struct TranscriptView: View {
             mapCounts[name, default: 0] += 1
         }
         let listOrdered = mapCounts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }
-        let summary = listOrdered.prefix(Self.namedToolLimit).map { "\($0.key) \($0.value)" }.joined(separator: " · ")
-            + (listOrdered.count > Self.namedToolLimit ? " · …" : "")
         return VStack(alignment: .leading, spacing: 0) {
             Button {
                 toggle(blockId)
@@ -185,9 +183,12 @@ struct TranscriptView: View {
                     } else {
                         Text("\(listEntries.count) steps")
                             .font(.system(size: 11, weight: .semibold))
-                        Text(summary)
-                            .font(.system(size: 11))
-                            .foregroundStyle(StageColors.secondaryText)
+                        ForEach(listOrdered.prefix(Self.namedToolLimit), id: \.key) { name, count in
+                            InfoTag("\(name) \(count)")
+                        }
+                        if listOrdered.count > Self.namedToolLimit {
+                            InfoTag("+\(listOrdered.count - Self.namedToolLimit)")
+                        }
                     }
                     if !isOpen, let last = listEntries.last, !last.text.isEmpty {
                         Text(last.text)

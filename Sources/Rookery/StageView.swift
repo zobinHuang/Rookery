@@ -1052,7 +1052,13 @@ struct GroupSubtitleText: View {
         let countText = count == 1 ? "1 window" : "\(count) windows"
         let frontWindowName = row.frontWindowId.flatMap { model.mapWindowNames[$0] }
         if let frontWindowName, !frontWindowName.isEmpty, count > 1 {
-            Text("\(frontWindowName) · \(countText)")
+            HStack(spacing: 5) {
+                Text(frontWindowName)
+                    .lineLimit(1)
+                Text(countText)
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .layoutPriority(1)
+            }
         } else {
             Text(frontWindowName ?? countText)
         }

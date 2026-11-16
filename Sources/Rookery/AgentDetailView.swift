@@ -125,7 +125,10 @@ struct AgentDetailView: View {
                 .help(isOnline ? "\(agent.rookName) is online" : "\(agent.rookName) is offline")
             }
             if !agent.harness.isEmpty {
-                RookeryLabel(agent.model.isEmpty ? agent.harness : "\(agent.harness) · \(agent.model)", icon: .chip)
+                RookeryLabel(agent.harness, icon: .chip)
+                if !agent.model.isEmpty {
+                    InfoTag(agent.model)
+                }
             }
             if !agent.cwd.isEmpty {
                 RookeryLabel(agent.cwd.replacingOccurrences(of: "/Users/\(NSUserName())", with: "~"), icon: .folder)
@@ -241,7 +244,8 @@ struct AgentDetailView: View {
             Text(delivery.text)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Text("· \(delivery.status.capitalized)\(delivery.reason.isEmpty ? "" : ": \(delivery.reason)")")
+            InfoTag(delivery.status.capitalized, tint: tint)
+            Text(delivery.reason)
                 .foregroundStyle(StageColors.secondaryText)
                 .lineLimit(1)
         }

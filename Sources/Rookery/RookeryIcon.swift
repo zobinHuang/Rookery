@@ -324,3 +324,32 @@ struct RookeryLabel: View {
         }
     }
 }
+
+/// A short fact set apart in a thin rounded box, as a row of them stands in for words joined by dots: a
+/// state, a repository, a branch. A tint colors one that calls for attention.
+struct InfoTag: View {
+    let text: String
+    var tint: Color?
+
+    init(_ text: String, tint: Color? = nil) {
+        self.text = text
+        self.tint = tint
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium))
+            .lineLimit(1)
+            .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(StageColors.secondaryText))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(
+                (tint ?? Color.gray).opacity(0.1),
+                in: RoundedRectangle(cornerRadius: 4, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(tint.map { AnyShapeStyle($0.opacity(0.35)) } ?? AnyShapeStyle(StageColors.separator))
+            }
+    }
+}

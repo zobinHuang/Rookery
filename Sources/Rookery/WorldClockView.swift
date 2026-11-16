@@ -87,7 +87,7 @@ struct WorldClockView: View {
         else {
             return abbreviation
         }
-        return "\(abbreviation) · \(dayOffset > 0 ? "+" : "−")\(abs(dayOffset))d"
+        return "\(abbreviation) \(dayOffset > 0 ? "+" : "−")\(abs(dayOffset))d"
     }
 
     /// The date in a time zone, as "2026-10-20".

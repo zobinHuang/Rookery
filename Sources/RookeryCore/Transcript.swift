@@ -334,3 +334,42 @@ public enum MarkdownBlock: Equatable, Sendable {
         return listBlocks
     }
 }
+
+/// A prompt the user sent an agent through roost, shown at the end of its conversation until the agent's
+/// transcript records it.
+public struct OutgoingPrompt: Equatable, Identifiable, Sendable {
+    /// How much of a prompt's start must show up in a recorded prompt for the two to be the same.
+    private static let matchedPrefixLength = 60
+
+    /// The delivery roost made of it.
+    public let id: String
+    public let text: String
+    public let sentAt: Date
+    /// The entries the transcript held when it was sent; it is recorded among those after.
+    public let entryCountAtSend: Int
+
+    public init(id: String, text: String, sentAt: Date, entryCountAtSend: Int) {
+        self.id = id
+        self.text = text
+        self.sentAt = sentAt
+        self.entryCountAtSend = entryCountAtSend
+    }
+
+    /// Whether the transcript now records the prompt: a prompt after the point it was sent that holds its
+    /// start, which a harness may have framed or the reader trimmed.
+    ///
+    /// - Parameter listEntries: the transcript's entries
+    public func isRecorded(in listEntries: [TranscriptEntry]) -> Bool {
+        let needle = Self.normalized(String(text.prefix(Self.matchedPrefixLength)))
+        guard !needle.isEmpty else {
+            return true
+        }
+        return listEntries.dropFirst(min(entryCountAtSend, listEntries.count)).contains { entry in
+            entry.role == .user && Self.normalized(entry.text).contains(needle)
+        }
+    }
+
+    private static func normalized(_ text: String) -> String {
+        text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+}

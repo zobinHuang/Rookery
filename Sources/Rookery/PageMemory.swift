@@ -42,6 +42,8 @@ struct RememberedScroll: ViewModifier {
     var isReady = true
     /// Changes when content is added at the end.
     var endToken = 0
+    /// Changes when the user acts to see the end, which brings it into view wherever the area was.
+    var jumpToken = 0
 
     func body(content: Content) -> some View {
         if #available(macOS 15, *) {
@@ -50,7 +52,8 @@ struct RememberedScroll: ViewModifier {
                 memory: memory,
                 followsEnd: followsEnd,
                 isReady: isReady,
-                endToken: endToken
+                endToken: endToken,
+                jumpToken: jumpToken
             ))
         } else {
             content.defaultScrollAnchor(followsEnd ? .bottom : .topLeading)
@@ -69,6 +72,7 @@ private struct RememberedScrollPosition: ViewModifier {
     let followsEnd: Bool
     let isReady: Bool
     let endToken: Int
+    let jumpToken: Int
 
     @State private var position = ScrollPosition()
     @State private var isRestored = false
@@ -79,6 +83,7 @@ private struct RememberedScrollPosition: ViewModifier {
         content
             .scrollPosition($position)
             .defaultScrollAnchor(followsEnd ? .bottom : .topLeading, for: .initialOffset)
+            .defaultScrollAnchor(followsEnd && isAtEnd ? .bottom : .topLeading, for: .sizeChanges)
             .onScrollGeometryChange(for: ScrollGeometry.self, of: { $0 }) { _, geometry in
                 latestGeometry = geometry
                 guard isRestored else {
@@ -96,6 +101,12 @@ private struct RememberedScrollPosition: ViewModifier {
             }
             .onChange(of: endToken) {
                 if followsEnd, isRestored, isAtEnd {
+                    position.scrollTo(edge: .bottom)
+                }
+            }
+            .onChange(of: jumpToken) {
+                isAtEnd = true
+                withAnimation(.easeOut(duration: 0.25)) {
                     position.scrollTo(edge: .bottom)
                 }
             }

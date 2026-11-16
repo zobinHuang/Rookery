@@ -28,6 +28,9 @@ struct AgentDetailView: View {
     /// When each prompt was first seen settled; those settled before the page opened count as long ago.
     @State private var mapSettledAt: [String: Date] = [:]
     @State private var setDismissedDeliveries: Set<String> = []
+    /// The prompts sent from here that the transcript does not record yet.
+    @State private var listOutgoing: [OutgoingPrompt] = []
+    @State private var sendToken = 0
     @State private var now = Date()
     @State private var draft = ""
     @State private var isSending = false
@@ -154,7 +157,15 @@ struct AgentDetailView: View {
     // MARK: - Conversation
 
     private var conversation: some View {
-        TranscriptView(reader: reader, agentId: agentId, memory: fleetModel.pageMemory, hasTranscript: hasTranscript) {
+        TranscriptView(
+            reader: reader,
+            agentId: agentId,
+            memory: fleetModel.pageMemory,
+            hasTranscript: hasTranscript,
+            listOutgoing: listOutgoing,
+            mapDeliveries: Dictionary(listDeliveries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+            sendToken: sendToken
+        ) {
             fleetModel.transcripts.forget(agentId)
             reader = TranscriptReader()
         }
@@ -201,8 +212,12 @@ struct AgentDetailView: View {
 
     /// The prompts on their way, and those whose outcome came in a moment ago and was not dismissed.
     private var listShownDeliveries: [FleetDelivery] {
+        let setOutgoingIds = Set(listOutgoing.map(\.id))
         let listShown = listDeliveries.filter { delivery in
-            guard !setDismissedDeliveries.contains(delivery.id) else {
+            guard
+                !setDismissedDeliveries.contains(delivery.id)
+                && !setOutgoingIds.contains(delivery.id)
+            else {
                 return false
             }
             guard delivery.isSettled else {
@@ -282,6 +297,13 @@ struct AgentDetailView: View {
                 let delivery = try await fleetModel.send(text, to: agent.id)
                 draft = ""
                 listDeliveries.insert(delivery, at: 0)
+                listOutgoing.append(OutgoingPrompt(
+                    id: delivery.id,
+                    text: text,
+                    sentAt: .now,
+                    entryCountAtSend: reader.listEntries.count
+                ))
+                sendToken += 1
                 noteOutcomes(isOpening: false)
             } catch {
                 sendError = FleetModel.describe(error)
@@ -308,6 +330,7 @@ struct AgentDetailView: View {
         reader = TranscriptReader()
         hasTranscript = true
         listDeliveries = []
+        listOutgoing = []
         mapSettledAt = [:]
         var isOpening = true
         if let cached = await fleetModel.transcripts.reader(for: agentId) {
@@ -318,6 +341,7 @@ struct AgentDetailView: View {
         while !Task.isCancelled {
             if let client = fleetModel.client() {
                 await readTranscript(from: client)
+                listOutgoing.removeAll { $0.isRecorded(in: reader.listEntries) }
                 do {
                     listDeliveries = try await client.deliveries(to: agentId)
                     noteOutcomes(isOpening: isOpening)

@@ -16,6 +16,12 @@ struct TranscriptView: View {
     let memory: PageMemory
     /// Whether roost holds a transcript of the session at all.
     let hasTranscript: Bool
+    /// Prompts sent from Rookery that the transcript does not record yet, oldest first.
+    var listOutgoing: [OutgoingPrompt] = []
+    /// What became of each outgoing prompt's delivery, by its id.
+    var mapDeliveries: [String: FleetDelivery] = [:]
+    /// Changes when the user sends a prompt, to bring the end into view.
+    var sendToken = 0
     /// Read the conversation from its start, when the page began at its last stretch.
     let onLoadEarlier: () -> Void
 
@@ -36,7 +42,15 @@ struct TranscriptView: View {
                 ForEach(listBlocks) { block in
                     blockView(block)
                 }
+                ForEach(listOutgoing) { outgoing in
+                    outgoingPrompt(outgoing)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                }
             }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: listOutgoing)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
             .textSelection(.enabled)
@@ -46,7 +60,8 @@ struct TranscriptView: View {
             memory: memory,
             followsEnd: true,
             isReady: !reader.listEntries.isEmpty || !hasTranscript,
-            endToken: reader.listEntries.last?.id ?? 0
+            endToken: (reader.listEntries.last?.id ?? 0) &* 31 &+ listOutgoing.count,
+            jumpToken: sendToken
         ))
     }
 
@@ -110,6 +125,58 @@ struct TranscriptView: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 80)
         .padding(.top, 6)
+    }
+
+    /// A prompt on its way: as it will read once recorded, with what became of it beneath, and the agent's
+    /// answer awaited once it arrived.
+    private func outgoingPrompt(_ outgoing: OutgoingPrompt) -> some View {
+        let delivery = mapDeliveries[outgoing.id]
+        let isFailed = delivery?.isFailed == true
+        return VStack(alignment: .trailing, spacing: 5) {
+            Text(Self.time(of: outgoing.sentAt))
+                .font(.system(size: 10))
+                .foregroundStyle(StageColors.tertiaryText)
+            Text(outgoing.text)
+                .font(.system(size: 13))
+                .lineSpacing(2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    isFailed ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(Color.accentColor.opacity(0.16)),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .opacity(delivery?.status == "delivered" ? 1 : 0.75)
+            outgoingStatus(delivery)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.leading, 80)
+        .padding(.top, 6)
+    }
+
+    @ViewBuilder
+    private func outgoingStatus(_ delivery: FleetDelivery?) -> some View {
+        HStack(spacing: 5) {
+            switch delivery?.status {
+            case "delivered":
+                AwaitingDots()
+                Text("Waiting for the reply")
+            case "waiting":
+                RookeryIconView(.hourglass)
+                Text("Held until the agent stops")
+            case .some(let status) where delivery?.isFailed == true:
+                RookeryIconView(.failed)
+                    .foregroundStyle(.red)
+                Text(delivery?.reason.isEmpty == false ? "Not delivered: \(delivery?.reason ?? "")" : "Not delivered (\(status))")
+                    .foregroundStyle(.red)
+            default:
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Sending")
+            }
+        }
+        .font(.system(size: 10))
+        .foregroundStyle(StageColors.tertiaryText)
+        .animation(.easeOut(duration: 0.2), value: delivery?.status)
     }
 
     /// Where the harness compacted the conversation: a rule across the page, its summary a click away.
@@ -362,5 +429,35 @@ struct MarkdownText: View {
         let bulleted = text.replacing(#/(?m)^(\s*)[-*] /#) { match in "\(match.1)• " }
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return (try? AttributedString(markdown: bulleted, options: options)) ?? AttributedString(bulleted)
+    }
+}
+
+/// Three dots that rise in turn, while an answer is awaited.
+struct AwaitingDots: View {
+    private static let dotSize: CGFloat = 4
+    private static let period = 1.2
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
+            HStack(spacing: 3) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .frame(width: Self.dotSize, height: Self.dotSize)
+                        .offset(y: Self.lift(phase: phase, index: index))
+                        .opacity(0.45 + 0.55 * Self.lift(phase: phase, index: index) / -2)
+                }
+            }
+            .frame(height: 8)
+        }
+    }
+
+    /// How far a dot rises at a point in the loop: up and back in its third of the loop.
+    private static func lift(phase: Double, index: Int) -> CGFloat {
+        let local = phase * 3 - Double(index)
+        guard local >= 0, local < 1 else {
+            return 0
+        }
+        return -2 * CGFloat(sin(local * .pi))
     }
 }

@@ -44,6 +44,17 @@ struct FleetTests {
         #expect(fleet.lastSeq == 12)
     }
 
+    @Test func takesASentPromptAsRecordedOnceTheTranscriptHoldsItAfterItWasSent() {
+        let prompt = OutgoingPrompt(id: "d-1", text: "run the  tests\nthen push", sentAt: .now, entryCountAtSend: 1)
+        let listBefore = [TranscriptEntry(id: 0, role: .user, text: "run the tests then push")]
+        #expect(!prompt.isRecorded(in: listBefore))
+        let listAfter = listBefore + [
+            TranscriptEntry(id: 1, role: .assistant, text: "ok"),
+            TranscriptEntry(id: 2, role: .user, text: "run the tests then push"),
+        ]
+        #expect(prompt.isRecorded(in: listAfter))
+    }
+
     @Test func readsASubagentsTranscriptFromTheSessionTheHarnessWroteIt() {
         #expect(FleetAgent.transcriptSessionId(of: "6ca28427~a3c52ad0") == "agent-a3c52ad0")
         #expect(FleetAgent.transcriptSessionId(of: "6ca28427") == "6ca28427")

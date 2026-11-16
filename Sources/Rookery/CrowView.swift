@@ -4,10 +4,10 @@ import os
 import RookeryCore
 import SwiftUI
 
-/// How the crow's states play, as `branding/` writes it beside their strips: the frame size in pixels, the
-/// frame rate, and each state's frame count and order.
-struct CrowTimeline: Decodable {
-    struct StateTimeline: Decodable {
+/// How a set of looping pixel animations plays, as `branding/` writes it beside their strips: the frame
+/// size in pixels, the frame rate, and each loop's frame count and order.
+struct PixelSheetTimeline: Decodable {
+    struct LoopTimeline: Decodable {
         let frameCount: Int
         let listSequence: [Int]
 
@@ -20,63 +20,73 @@ struct CrowTimeline: Decodable {
     let frameWidth: Int
     let frameHeight: Int
     let framesPerSecond: Double
-    let mapStates: [String: StateTimeline]
+    let mapLoops: [String: LoopTimeline]
 
     enum CodingKeys: String, CodingKey {
         case frameWidth = "frame_width"
         case frameHeight = "frame_height"
         case framesPerSecond = "frames_per_second"
-        case mapStates = "states"
+        case mapLoops = "states"
     }
 }
 
-/// The crow's art in the app's resources: one strip of frames per state at a pixel a grid pixel, which the
-/// view scales without smoothing. Each strip is read once and kept.
+/// A set of named looping pixel animations in the app's resources, as `branding/` writes them: a timeline,
+/// and one strip of frames per loop at a pixel a grid pixel, which a view scales without smoothing. Each
+/// strip is read once and kept.
 @MainActor
-enum CrowArt {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "agents")
-    private static let timelineName = "Crows"
-    private static let stripPrefix = "Crow_"
-    private static var cachedTimeline: CrowTimeline??
-    private static var mapFrames: [AgentState: [CGImage]] = [:]
+final class PixelAnimationSheet {
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "stage")
+
+    private let timelineName: String
+    private let stripPrefix: String
+    private var cachedTimeline: PixelSheetTimeline??
+    private var mapFrames: [String: [CGImage]] = [:]
+
+    /// - Parameters:
+    ///   - timelineName: the timeline's resource name
+    ///   - stripPrefix: what each loop's strip is named with before the loop's name
+    init(timelineName: String, stripPrefix: String) {
+        self.timelineName = timelineName
+        self.stripPrefix = stripPrefix
+    }
 
     /// The timeline, or nil when the resources are missing.
-    static var timeline: CrowTimeline? {
+    var timeline: PixelSheetTimeline? {
         if let cachedTimeline {
             return cachedTimeline
         }
-        var timeline: CrowTimeline?
+        var timeline: PixelSheetTimeline?
         if let url = Bundle.main.url(forResource: timelineName, withExtension: "json") {
             do {
-                timeline = try JSONDecoder().decode(CrowTimeline.self, from: Data(contentsOf: url))
+                timeline = try JSONDecoder().decode(PixelSheetTimeline.self, from: Data(contentsOf: url))
             } catch {
-                logger.error("cannot read the crows' timeline: \(error)")
+                Self.logger.error("cannot read the timeline \(self.timelineName, privacy: .public): \(error)")
             }
         }
         cachedTimeline = .some(timeline)
         return timeline
     }
 
-    /// A state's loop.
-    static func animation(for state: AgentState) -> PixelAnimation? {
-        guard let timeline, let stateTimeline = timeline.mapStates[state.rawValue] else {
+    /// One loop, or nil when the resources lack it.
+    func animation(named name: String) -> PixelAnimation? {
+        guard let timeline, let loopTimeline = timeline.mapLoops[name] else {
             return nil
         }
         return PixelAnimation(
-            framesForScale: { _ in frames(for: state) },
-            listSequence: stateTimeline.listSequence,
+            framesForScale: { [self] _ in frames(of: name) },
+            listSequence: loopTimeline.listSequence,
             framesPerSecond: timeline.framesPerSecond
         )
     }
 
-    private static func frames(for state: AgentState) -> [CGImage] {
-        if let frames = mapFrames[state] {
+    private func frames(of name: String) -> [CGImage] {
+        if let frames = mapFrames[name] {
             return frames
         }
         var listFrames: [CGImage] = []
         if
             let timeline,
-            let url = Bundle.main.url(forResource: stripPrefix + state.rawValue, withExtension: "png"),
+            let url = Bundle.main.url(forResource: stripPrefix + name, withExtension: "png"),
             let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let strip = CGImageSourceCreateImageAtIndex(source, 0, nil)
         {
@@ -89,10 +99,31 @@ enum CrowArt {
                 ))
             }
         } else {
-            logger.error("cannot read the crow's frames for \(state.rawValue)")
+            Self.logger.error("cannot read the frames of \(self.stripPrefix + name, privacy: .public)")
         }
-        mapFrames[state] = listFrames
+        mapFrames[name] = listFrames
         return listFrames
+    }
+}
+
+/// The crow's art: one loop per agent state, named as roost reports the state.
+@MainActor
+enum CrowArt {
+    static let sheet = PixelAnimationSheet(timelineName: "Crows", stripPrefix: "Crow_")
+
+    /// A state's loop.
+    static func animation(for state: AgentState) -> PixelAnimation? {
+        sheet.animation(named: state.rawValue)
+    }
+}
+
+/// Raven's art: the crow facing left, outlined in white, at rest and at work.
+@MainActor
+enum RavenArt {
+    static let sheet = PixelAnimationSheet(timelineName: "Raven", stripPrefix: "Raven_")
+
+    static func animation(isWorking: Bool) -> PixelAnimation? {
+        sheet.animation(named: isWorking ? "working" : "idle")
     }
 }
 
@@ -113,41 +144,54 @@ struct CrowView: View {
         self.crowSize = crowSize
     }
 
-    private var size: CGFloat {
-        crowSize.rawValue
-    }
-
     var body: some View {
-        if CrowArt.animation(for: state) != nil {
-            CrowLayer(state: state)
-                .frame(width: size, height: size)
+        if let animation = CrowArt.animation(for: state) {
+            PixelAnimationLayer(animation: animation, loopName: state.rawValue)
+                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
                 .accessibilityElement()
                 .accessibilityLabel(state.title)
         } else {
             RookeryIconView(.agent)
-                .frame(width: size, height: size)
+                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
         }
     }
 }
 
-/// The layer behind `CrowView`, switching loops when the state changes.
-private struct CrowLayer: NSViewRepresentable {
-    let state: AgentState
+/// Raven, at rest or at work; the agent badge when the art is missing.
+struct RavenView: View {
+    let isWorking: Bool
+    var crowSize = CrowSize.regular
+
+    var body: some View {
+        if let animation = RavenArt.animation(isWorking: isWorking) {
+            PixelAnimationLayer(animation: animation, loopName: isWorking ? "working" : "idle")
+                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
+                .accessibilityElement()
+                .accessibilityLabel(isWorking ? "Raven, working" : "Raven")
+        } else {
+            RookeryIconView(.agent)
+                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
+        }
+    }
+}
+
+/// The layer that plays a pixel animation, switching loops when the loop named changes.
+private struct PixelAnimationLayer: NSViewRepresentable {
+    let animation: PixelAnimation
+    let loopName: String
 
     func makeNSView(context: Context) -> PixelAnimationView {
         let view = PixelAnimationView()
-        context.coordinator.shownState = state
-        if let animation = CrowArt.animation(for: state) {
-            view.show(animation)
-        }
+        context.coordinator.shownLoopName = loopName
+        view.show(animation)
         return view
     }
 
     func updateNSView(_ nsView: PixelAnimationView, context: Context) {
-        guard context.coordinator.shownState != state, let animation = CrowArt.animation(for: state) else {
+        guard context.coordinator.shownLoopName != loopName else {
             return
         }
-        context.coordinator.shownState = state
+        context.coordinator.shownLoopName = loopName
         nsView.show(animation)
     }
 
@@ -156,6 +200,6 @@ private struct CrowLayer: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var shownState: AgentState?
+        var shownLoopName: String?
     }
 }

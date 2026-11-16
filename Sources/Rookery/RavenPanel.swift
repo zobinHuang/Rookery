@@ -59,6 +59,13 @@ struct RavenPanel: View {
 
     private var conversationList: some View {
         VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                RavenView(isWorking: raven.isAnyRunning)
+                Text("Raven")
+                    .font(.system(size: 14, weight: .bold))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
             Button {
                 withAnimation(.easeOut(duration: 0.2)) {
                     raven.openConversationId = nil
@@ -178,8 +185,8 @@ struct RavenPanel: View {
                 }
             }
         } else {
-            Spacer(minLength: 0)
-                .frame(maxWidth: .infinity)
+            RavenView(isWorking: false, crowSize: .large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

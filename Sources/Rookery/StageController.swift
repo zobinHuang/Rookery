@@ -481,6 +481,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
 
     /// Show a page in the content area, setting the front window aside unless another page has already.
     func open(_ page: StagePage) {
+        workspaceController.cancelPendingFocus()
         guard model.shownPage == nil else {
             model.shownPage = page
             refreshScreenSaverKeyMonitor()

@@ -676,6 +676,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
+    /// Drop the focus a click asked for and has not given yet, as when the click opened a page over the
+    /// stage's front window: focusing that window would bring it back over the page.
+    func cancelPendingFocus() {
+        switchRequestCount += 1
+    }
+
     /// Make the stages' coordinator, whose stages share the drop animation with the tray.
     func makeStageCoordinator(
         mixerController: MixerController,

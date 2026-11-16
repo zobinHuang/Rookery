@@ -13,6 +13,9 @@ struct AgentDetailView: View {
     /// How much of a transcript's end is read when the page opens; the rest is a click away.
     private static let openingTailBytes = 3 * 1024 * 1024
     private static let shownDeliveryLimit = 3
+    private static let sendButtonSize: CGFloat = 26
+    /// Round enough to make a one-line box a capsule; a taller one keeps rounded corners.
+    private static let composerCornerRadius: CGFloat = 19
     private static let bottomId = "bottom"
 
     let fleetModel: FleetModel
@@ -141,7 +144,7 @@ struct AgentDetailView: View {
     // MARK: - Conversation
 
     private var conversation: some View {
-        TranscriptView(reader: reader, hasTranscript: hasTranscript) {
+        TranscriptView(reader: reader, agentId: agentId, memory: fleetModel.pageMemory, hasTranscript: hasTranscript) {
             fleetModel.transcripts.forget(agentId)
             reader = TranscriptReader()
         }
@@ -171,6 +174,7 @@ struct AgentDetailView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .lineLimit(1...8)
+                .frame(minHeight: Self.sendButtonSize)
                 .focused($isComposerFocused)
                 .disabled(!isReachable)
                 .onKeyPress(.return, phases: .down) { keyPress in
@@ -192,18 +196,19 @@ struct AgentDetailView: View {
                         }
                     }
                     .foregroundStyle(.white)
-                    .frame(width: 26, height: 26)
+                    .frame(width: Self.sendButtonSize, height: Self.sendButtonSize)
                     .background(isEmpty || !isReachable ? Color.gray.opacity(0.5) : Color.accentColor, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isEmpty || !isReachable || isSending)
                 .help("Send (Return); Shift-Return for a new line")
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(.leading, 14)
+            .padding(.trailing, 6)
+            .padding(.vertical, 6)
+            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: Self.composerCornerRadius, style: .circular))
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: Self.composerCornerRadius, style: .circular)
                     .strokeBorder(isComposerFocused ? AnyShapeStyle(Color.accentColor.opacity(0.6)) : AnyShapeStyle(StageColors.separator))
             }
         }

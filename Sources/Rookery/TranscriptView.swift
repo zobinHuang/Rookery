@@ -7,49 +7,47 @@ import SwiftUI
 /// away.
 struct TranscriptView: View {
     private static let foldAnimation = Animation.spring(response: 0.3, dampingFraction: 0.88)
-    private static let bottomId = "bottom"
     /// The most tools named in a folded run's line.
     private static let namedToolLimit = 3
 
     let reader: TranscriptReader
+    /// Whose conversation it is, which keys where the user left it.
+    let agentId: String
+    let memory: PageMemory
     /// Whether roost holds a transcript of the session at all.
     let hasTranscript: Bool
     /// Read the conversation from its start, when the page began at its last stretch.
     let onLoadEarlier: () -> Void
 
-    @State private var setOpenBlockIds: Set<Int> = []
+    private var setOpenBlockIds: Set<Int> {
+        memory.mapOpenTranscriptBlocks[agentId] ?? []
+    }
 
     var body: some View {
         let listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    if reader.startOffset > 0 {
-                        earlierButton
-                    }
-                    if listBlocks.isEmpty {
-                        empty
-                    }
-                    ForEach(listBlocks) { block in
-                        blockView(block)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.bottomId)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                if reader.startOffset > 0 {
+                    earlierButton
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-                .textSelection(.enabled)
-            }
-            .onChange(of: reader.listEntries.last?.id) {
-                withAnimation(.easeOut(duration: 0.25)) {
-                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                if listBlocks.isEmpty {
+                    empty
+                }
+                ForEach(listBlocks) { block in
+                    blockView(block)
                 }
             }
-            .onAppear {
-                proxy.scrollTo(Self.bottomId, anchor: .bottom)
-            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .textSelection(.enabled)
         }
+        .modifier(RememberedScroll(
+            key: "agent:\(agentId)",
+            memory: memory,
+            followsEnd: true,
+            isReady: !reader.listEntries.isEmpty || !hasTranscript,
+            endToken: reader.listEntries.last?.id ?? 0
+        ))
     }
 
     // MARK: - Blocks
@@ -268,11 +266,13 @@ struct TranscriptView: View {
 
     private func toggle(_ blockId: Int) {
         withAnimation(Self.foldAnimation) {
-            if setOpenBlockIds.contains(blockId) {
-                setOpenBlockIds.remove(blockId)
+            var setOpen = setOpenBlockIds
+            if setOpen.contains(blockId) {
+                setOpen.remove(blockId)
             } else {
-                setOpenBlockIds.insert(blockId)
+                setOpen.insert(blockId)
             }
+            memory.mapOpenTranscriptBlocks[agentId] = setOpen
         }
     }
 

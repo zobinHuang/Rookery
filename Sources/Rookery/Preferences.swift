@@ -62,6 +62,27 @@ enum Theme: String, CaseIterable {
     }
 }
 
+/// The clock the Rookmaster log tells times by.
+enum LogClock: String, CaseIterable {
+    /// This Mac's time zone.
+    case thisMac
+    case utc
+
+    var title: String {
+        switch self {
+        case .thisMac: "This Mac"
+        case .utc: "UTC"
+        }
+    }
+
+    var timeZone: TimeZone {
+        switch self {
+        case .thisMac: .current
+        case .utc: TimeZone(identifier: "UTC") ?? .gmt
+        }
+    }
+}
+
 /// The user's settings, kept in `UserDefaults`; every change is saved at once and announced to observers.
 @MainActor
 @Observable
@@ -84,6 +105,7 @@ final class Preferences {
     private static let clockCitiesKey = "clockCities"
     private static let agentAccountsKey = "agentAccounts"
     private static let roostAddressKey = "roostAddress"
+    private static let logClockKey = "logClock"
     /// Where Claude Code keeps its default account, which is set up for the user when present.
     private static let defaultClaudeDirectory = "~/.claude"
 
@@ -148,6 +170,13 @@ final class Preferences {
     var roostAddress: String {
         didSet {
             defaults.set(roostAddress, forKey: Self.roostAddressKey)
+        }
+    }
+
+    /// The clock the Rookmaster log tells times by.
+    var logClock: LogClock {
+        didSet {
+            defaults.set(logClock.rawValue, forKey: Self.logClockKey)
         }
     }
 
@@ -243,6 +272,7 @@ final class Preferences {
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         screenSaverText = defaults.string(forKey: Self.screenSaverTextKey) ?? ""
         roostAddress = defaults.string(forKey: Self.roostAddressKey) ?? ""
+        logClock = defaults.string(forKey: Self.logClockKey).flatMap(LogClock.init(rawValue:)) ?? .thisMac
         screenSaverTextSize = (defaults.object(forKey: Self.screenSaverTextSizeKey) as? Double)
             .map { min(max($0, Self.screenSaverTextSizeRange.lowerBound), Self.screenSaverTextSizeRange.upperBound) }
             ?? Self.defaultScreenSaverTextSize

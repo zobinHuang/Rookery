@@ -41,7 +41,6 @@ enum MaintenanceStarter: CaseIterable {
 /// words, naming resources with @ and choosing them from suggestions, a few requests to start from, and
 /// each request's conversation as the agent works through it.
 struct MaintenancePanel: View {
-    private static let bottomId = "bottom"
 
     let fleetModel: FleetModel
 
@@ -66,85 +65,57 @@ struct MaintenancePanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            title
-            Rectangle()
-                .fill(StageColors.separator)
-                .frame(height: 1)
             conversation
             composer
         }
-        .background(StageColors.sidebar)
-    }
-
-    private var title: some View {
-        HStack(spacing: 8) {
-            RookeryIconView(.sparkles)
-                .foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Maintenance")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Claude Code on this Mac, changing roost for you")
-                    .font(.system(size: 10))
-                    .foregroundStyle(StageColors.secondaryText)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
     // MARK: - Runs
 
     private var conversation: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    if maintenance.listRuns.isEmpty {
-                        starters
-                    }
-                    ForEach(maintenance.listRuns) { run in
-                        runView(run)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.bottomId)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 14) {
+                if maintenance.listRuns.isEmpty {
+                    starters
                 }
-                .padding(14)
-                .textSelection(.enabled)
-            }
-            .onChange(of: maintenance.listRuns.last?.reader.listEntries.count) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                ForEach(maintenance.listRuns) { run in
+                    runView(run)
                 }
             }
-            .onChange(of: maintenance.listRuns.count) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
-                }
-            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .textSelection(.enabled)
         }
+        .modifier(RememberedScroll(
+            key: "rookmaster.maintenance",
+            memory: fleetModel.pageMemory,
+            followsEnd: true,
+            isReady: true,
+            endToken: (maintenance.listRuns.count << 16) + (maintenance.listRuns.last?.reader.listEntries.count ?? 0)
+        ))
     }
 
     private var starters: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ask it to tidy, distill or explain anything roost holds. Name a resource with @.")
+            Text("Claude Code on this Mac tidies, distills or explains anything roost holds. Name a resource with @.")
                 .font(.system(size: 12))
                 .foregroundStyle(StageColors.secondaryText)
                 .padding(.bottom, 4)
-            ForEach(MaintenanceStarter.allCases, id: \.self) { starter in
-                Button {
-                    draft = starter.request
-                    isFocused = true
-                } label: {
-                    RookeryLabel(starter.title, icon: starter.symbol)
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .contentShape(Rectangle())
+            HStack(spacing: 8) {
+                ForEach(MaintenanceStarter.allCases, id: \.self) { starter in
+                    Button {
+                        draft = starter.request
+                        isFocused = true
+                    } label: {
+                        RookeryLabel(starter.title, icon: starter.symbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }

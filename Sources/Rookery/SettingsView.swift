@@ -17,8 +17,8 @@ struct SettingsView: View {
         [.control, .shift],
     ]
     /// How narrow a column of cards may get before the page drops to fewer columns.
-    private static let columnMinimumWidth: CGFloat = 420
-    private static let columnSpacing: CGFloat = 24
+    /// The widest the page's one column of cards gets, so rows stay easy to scan on a wide stage.
+    private static let pageMaxWidth: CGFloat = 720
     private static let pagePadding: CGFloat = 36
     private static let fieldWidth: CGFloat = 200
     /// The corner radius of a card of settings.
@@ -34,7 +34,6 @@ struct SettingsView: View {
     @State private var citySearch = WorldClockCitySearch()
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
-    @State private var pageWidth: CGFloat = 0
     @State private var roostAddressDraft = ""
     @State private var roostTokenDraft = ""
     @State private var roostTestResult: String?
@@ -59,80 +58,28 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
-                columns
+                general
+                roost
+                codeAgents
+                worldClock
+                screenSaver
+                dragging
+                shortcuts
             }
             .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
+            .frame(maxWidth: Self.pageMaxWidth)
             .padding(.horizontal, Self.pagePadding)
             .padding(.vertical, 28)
+            .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.automatic)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            pageWidth = width
-        }
         .background(onClose == nil ? StageColors.window : .clear)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, preferences.theme)
-    }
-
-    /// The cards spread over as many columns as the page is wide enough for, each column filling its share.
-    @ViewBuilder
-    private var columns: some View {
-        let columnCount = max(1, min(3, Int((pageWidth - Self.pagePadding * 2) / Self.columnMinimumWidth)))
-        switch columnCount {
-        case 1:
-            column {
-                general
-                screenSaver
-                dragging
-                worldClock
-                roost
-                codeAgents
-                shortcuts
-            }
-        case 2:
-            HStack(alignment: .top, spacing: Self.columnSpacing) {
-                column {
-                    general
-                    dragging
-                    shortcuts
-                }
-                column {
-                    roost
-                    worldClock
-                    codeAgents
-                    screenSaver
-                }
-            }
-        default:
-            HStack(alignment: .top, spacing: Self.columnSpacing) {
-                column {
-                    general
-                    dragging
-                    shortcuts
-                }
-                column {
-                    roost
-                    worldClock
-                }
-                column {
-                    codeAgents
-                    screenSaver
-                }
-            }
-        }
-    }
-
-    private func column<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 24) {
-            content()
-        }
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var general: some View {
@@ -250,6 +197,15 @@ struct SettingsView: View {
             }
             if let roostError {
                 SettingsMessage(text: roostError)
+            }
+            SettingsRow(title: "Log Times", detail: "in Rookmaster's log") {
+                Picker("", selection: $preferences.logClock) {
+                    ForEach(LogClock.allCases, id: \.self) { clock in
+                        Text(clock.title).tag(clock)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
             }
         }
         .onAppear {
@@ -483,24 +439,30 @@ private struct SettingsSection<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
                 RookeryIconView(symbol)
-                    .frame(width: 22, height: 22)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
+                Spacer(minLength: 0)
             }
-            .padding(.leading, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(StageColors.groove.opacity(0.5))
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: 1)
             VStack(spacing: 0) {
                 content
             }
             .padding(.top, -SettingsSeparator.height)
-            .background(StageColors.tile)
-            .clipShape(RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous)
-                    .strokeBorder(StageColors.separator)
-            }
+            .clipped()
+        }
+        .background(StageColors.tile)
+        .clipShape(RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous)
+                .strokeBorder(StageColors.separator)
         }
     }
 }

@@ -14,10 +14,15 @@ struct RookmasterKindList: View {
     @Binding var selectedRef: FleetRef?
     let onOpen: (FleetRef) -> Void
 
-    @State private var query = ""
+    private var query: Binding<String> {
+        Binding(
+            get: { fleetModel.pageMemory.mapListQueries[kind] ?? "" },
+            set: { fleetModel.pageMemory.mapListQueries[kind] = $0 }
+        )
+    }
 
     private var listResources: [FleetResource] {
-        let trimmed = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let trimmed = query.wrappedValue.trimmingCharacters(in: .whitespaces).lowercased()
         return fleetModel.graph.listResources(of: kind).filter { resource in
             trimmed.isEmpty || "\(resource.name) \(resource.id)".lowercased().contains(trimmed)
         }
@@ -60,7 +65,7 @@ struct RookmasterKindList: View {
             HStack(spacing: 6) {
                 RookeryIconView(.search)
                     .foregroundStyle(StageColors.secondaryText)
-                TextField("Search", text: $query)
+                TextField("Search", text: query)
                     .textFieldStyle(.plain)
             }
             .font(.system(size: 12))
@@ -77,6 +82,7 @@ struct RookmasterKindList: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
             }
+            .modifier(RememberedScroll(key: "rookmaster.list.\(kind)", memory: fleetModel.pageMemory))
         }
     }
 

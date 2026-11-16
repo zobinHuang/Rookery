@@ -2,10 +2,16 @@ import AppKit
 import RookeryCore
 import SwiftUI
 
-/// What the Rookmaster console shows above its log: the board, or one kind's list.
+/// What the Rookmaster console shows above its panel: the board, or one kind's list.
 enum RookmasterTab: Hashable {
     case board
     case kind(String)
+}
+
+/// What the panel at the bottom of the Rookmaster console shows.
+enum RookmasterPanelTab: Hashable {
+    case log
+    case maintenance
 }
 
 /// The console over everything roost manages: the board of resources and the relations between them, a
@@ -16,49 +22,35 @@ struct RookmasterView: View {
     static let setHiddenKinds: Set<String> = [AgentFleet.rookKind]
 
     let fleetModel: FleetModel
+    let logClock: LogClock
     let onOpenAgent: (String) -> Void
     let onClose: () -> Void
 
-    @State private var tab = RookmasterTab.board
-    @State private var selectedRef: FleetRef?
-    @State private var isMaintenanceShown = true
     @Namespace private var tabNamespace
+
+    private var memory: PageMemory {
+        fleetModel.pageMemory
+    }
 
     private var listKinds: [FleetKind] {
         fleetModel.graph.listKinds.filter { !Self.setHiddenKinds.contains($0.name) }
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            console
-            if isMaintenanceShown {
-                Rectangle()
-                    .fill(StageColors.separator)
-                    .frame(width: 1)
-                MaintenancePanel(fleetModel: fleetModel)
-                    .frame(width: 340)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .animation(Self.tabAnimation, value: isMaintenanceShown)
-        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
-    }
-
-    private var console: some View {
         VStack(spacing: 0) {
             header
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(height: 1)
             ZStack {
-                switch tab {
+                switch memory.rookmasterTab {
                 case .board:
                     RookmasterBoard(fleetModel: fleetModel, listKinds: listKinds) { ref in
                         open(ref)
                     }
                     .transition(.opacity)
                 case .kind(let kind):
-                    RookmasterKindList(fleetModel: fleetModel, kind: kind, selectedRef: $selectedRef) { ref in
+                    RookmasterKindList(fleetModel: fleetModel, kind: kind, selectedRef: Bindable(memory).rookmasterSelectedRef) { ref in
                         open(ref)
                     }
                     .id(kind)
@@ -66,9 +58,10 @@ struct RookmasterView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(Self.tabAnimation, value: tab)
-            RookmasterLog(graph: fleetModel.graph)
+            .animation(Self.tabAnimation, value: memory.rookmasterTab)
+            RookmasterPanel(fleetModel: fleetModel, clock: logClock)
         }
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
     }
 
     private var header: some View {
@@ -84,16 +77,6 @@ struct RookmasterView: View {
                     .foregroundStyle(.orange)
                     .lineLimit(1)
             }
-            Button {
-                isMaintenanceShown.toggle()
-            } label: {
-                RookeryIconView(.sparkles)
-                    .foregroundStyle(isMaintenanceShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
-                    .frame(width: 26, height: 26)
-                    .background(StageColors.tile, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .help(isMaintenanceShown ? "Hide the maintenance agent" : "Ask the maintenance agent")
             Button(action: onClose) {
                 RookeryIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
@@ -119,10 +102,10 @@ struct RookmasterView: View {
     }
 
     private func tabButton(_ target: RookmasterTab, title: String, symbol: RookeryIcon) -> some View {
-        let isSelected = tab == target
+        let isSelected = memory.rookmasterTab == target
         return Button {
             withAnimation(Self.tabAnimation) {
-                tab = target
+                memory.rookmasterTab = target
             }
         } label: {
             RookeryLabel(title, icon: symbol)
@@ -158,8 +141,8 @@ struct RookmasterView: View {
             return
         }
         withAnimation(Self.tabAnimation) {
-            selectedRef = ref
-            tab = .kind(ref.kind)
+            memory.rookmasterSelectedRef = ref
+            memory.rookmasterTab = .kind(ref.kind)
         }
     }
 }
@@ -214,22 +197,30 @@ enum RookmasterStyle {
     }
 }
 
-/// The console's log, after an editor's output panel: the latest events, newest at the bottom, live, with
-/// a filter; folds down to its title bar.
-struct RookmasterLog: View {
-    private static let expandedHeight: CGFloat = 190
-    private static let bottomId = "bottom"
+/// The panel at the bottom of the Rookmaster console, after an editor's: the log of the latest events,
+/// newest at the bottom, live, with a filter; and the maintenance agent beside it in a tab of its own.
+/// Folds down to its title bar.
+struct RookmasterPanel: View {
+    private static let expandedHeight: CGFloat = 260
+    private static let foldAnimation = Animation.spring(response: 0.3, dampingFraction: 0.9)
 
-    let graph: ResourceGraph
+    let fleetModel: FleetModel
+    let clock: LogClock
 
-    @State private var isExpanded = true
-    @State private var filter = ""
-    @State private var clearedThroughSeq = 0
+    @Namespace private var tabNamespace
+
+    private var memory: PageMemory {
+        fleetModel.pageMemory
+    }
+
+    private var graph: ResourceGraph {
+        fleetModel.graph
+    }
 
     private var listShown: [FleetEvent] {
-        let query = filter.trimmingCharacters(in: .whitespaces).lowercased()
+        let query = memory.logFilter.trimmingCharacters(in: .whitespaces).lowercased()
         return graph.listRecentEvents.filter { event in
-            event.seq > clearedThroughSeq && (query.isEmpty || line(of: event).lowercased().contains(query))
+            event.seq > memory.logClearedThroughSeq && (query.isEmpty || line(of: event).lowercased().contains(query))
         }
     }
 
@@ -239,41 +230,48 @@ struct RookmasterLog: View {
                 .fill(StageColors.separator)
                 .frame(height: 1)
             titleBar
-            if isExpanded {
-                rows
-                    .frame(height: Self.expandedHeight)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            if memory.isPanelExpanded {
+                Group {
+                    switch memory.panelTab {
+                    case .log:
+                        rows
+                    case .maintenance:
+                        MaintenancePanel(fleetModel: fleetModel)
+                    }
+                }
+                .frame(height: Self.expandedHeight)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(StageColors.sidebar)
-        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: isExpanded)
+        .animation(Self.foldAnimation, value: memory.isPanelExpanded)
     }
 
     private var titleBar: some View {
         HStack(spacing: 10) {
             Button {
-                isExpanded.toggle()
+                memory.isPanelExpanded.toggle()
             } label: {
-                HStack(spacing: 6) {
-                    RookeryIconView(.chevronRight)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Text("Log")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("\(listShown.count)")
-                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(StageColors.groove, in: Capsule())
-                }
-                .foregroundStyle(StageColors.secondaryText)
-                .contentShape(Rectangle())
+                RookeryIconView(.chevronRight)
+                    .rotationEffect(.degrees(memory.isPanelExpanded ? 90 : 0))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(memory.isPanelExpanded ? "Fold the panel" : "Open the panel")
+            HStack(spacing: 2) {
+                panelTab(.log, title: "Log", count: listShown.count, isBusy: false)
+                panelTab(.maintenance, title: "Maintenance", count: nil, isBusy: fleetModel.maintenance.isRunning)
+            }
+            .padding(2)
+            .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             Spacer(minLength: 8)
-            if isExpanded {
+            if memory.isPanelExpanded && memory.panelTab == .log {
                 HStack(spacing: 5) {
                     RookeryIconView(.filter)
-                    TextField("Filter", text: $filter)
+                        .foregroundStyle(StageColors.secondaryText)
+                    TextField("Filter", text: Bindable(memory).logFilter)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
                         .frame(width: 140)
@@ -282,7 +280,7 @@ struct RookmasterLog: View {
                 .padding(.vertical, 3)
                 .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Button {
-                    clearedThroughSeq = graph.lastSeq
+                    memory.logClearedThroughSeq = graph.lastSeq
                 } label: {
                     RookeryIconView(.clear)
                         .foregroundStyle(StageColors.secondaryText)
@@ -295,31 +293,60 @@ struct RookmasterLog: View {
         .padding(.vertical, 6)
     }
 
-    private var rows: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(listShown, id: \.seq) { event in
-                        row(event)
-                            .transition(.opacity)
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.bottomId)
+    private func panelTab(_ target: RookmasterPanelTab, title: String, count: Int?, isBusy: Bool) -> some View {
+        let isSelected = memory.panelTab == target
+        return Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.88)) {
+                memory.panelTab = target
+                memory.isPanelExpanded = true
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(StageColors.tertiaryText)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 6)
-                .textSelection(.enabled)
-            }
-            .onChange(of: graph.lastSeq) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo(Self.bottomId, anchor: .bottom)
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.mini)
                 }
             }
-            .onAppear {
-                proxy.scrollTo(Self.bottomId, anchor: .bottom)
+            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 3)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(StageColors.selectedSegment)
+                        .matchedGeometryEffect(id: "panelTab", in: tabNamespace)
+                }
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+
+    private var rows: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 1) {
+                ForEach(listShown, id: \.seq) { event in
+                    row(event)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+            .textSelection(.enabled)
+        }
+        .modifier(RememberedScroll(
+            key: "rookmaster.log",
+            memory: memory,
+            followsEnd: true,
+            isReady: true,
+            endToken: graph.lastSeq
+        ))
     }
 
     private func row(_ event: FleetEvent) -> some View {
@@ -350,7 +377,11 @@ struct RookmasterLog: View {
         guard let date = FleetTimestamp.date(from: event.at) else {
             return event.at
         }
-        return date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+        return date.formatted(Date.VerbatimFormatStyle(
+            format: "\(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
+            timeZone: clock.timeZone,
+            calendar: Calendar(identifier: .gregorian)
+        ))
     }
 
     private func detail(of event: FleetEvent) -> String {

@@ -38,6 +38,8 @@ final class FleetModel {
     @ObservationIgnored private(set) lazy var maintenance = MaintenanceAgent(fleetModel: self)
     /// The transcripts read so far, so an agent's page reopens at once.
     @ObservationIgnored let transcripts = TranscriptCache()
+    /// Where the user left the agents' pages and the Rookmaster console.
+    @ObservationIgnored let pageMemory = PageMemory()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var cachedToken: String??

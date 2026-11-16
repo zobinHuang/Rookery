@@ -30,6 +30,16 @@ enum BoardWindow: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The title in a segmented control's few letters.
+    var shortTitle: String {
+        switch self {
+        case .hour: "1h"
+        case .day: "1d"
+        case .week: "1w"
+        case .all: "All"
+        }
+    }
+
     var seconds: TimeInterval? {
         switch self {
         case .hour: 3600
@@ -64,26 +74,26 @@ struct RookmasterBoard: View {
     private static let columnLimit = 150
     private static let reorderAnimation = Animation.spring(response: 0.45, dampingFraction: 0.85)
     private static let boardSpace = "board"
+    private static let controlHeight: CGFloat = 26
 
     let fleetModel: FleetModel
     let listKinds: [FleetKind]
     let onOpen: (FleetRef) -> Void
 
-    @State private var query = ""
-    @State private var window = BoardWindow.all
-    @State private var isLiveOnly = true
-    @State private var setHiddenKinds: Set<String> = []
-    @State private var isLocked = false
-    @State private var mapFrozenOrder: [String: [FleetRef]] = [:]
     @State private var hoveredRef: FleetRef?
-    @State private var selectedRef: FleetRef?
+    @FocusState private var isSearchFocused: Bool
+    @Namespace private var chipNamespace
+
+    private var memory: PageMemory {
+        fleetModel.pageMemory
+    }
 
     private var graph: ResourceGraph {
         fleetModel.graph
     }
 
     private var listShownKinds: [FleetKind] {
-        listKinds.filter { !setHiddenKinds.contains($0.name) }
+        listKinds.filter { !memory.setBoardHiddenKinds.contains($0.name) }
     }
 
     var body: some View {
@@ -109,13 +119,13 @@ struct RookmasterBoard: View {
                     .frame(minWidth: viewport.size.width, minHeight: viewport.size.height, alignment: .topLeading)
                     .animation(Self.reorderAnimation, value: mapColumns.mapValues { $0.map(\.id) })
                 }
-                .defaultScrollAnchor(.topLeading)
+                .modifier(RememberedScroll(key: "rookmaster.board", memory: memory))
                 }
                 .background {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            selectedRef = nil
+                            memory.boardSelectedRef = nil
                         }
                 }
             }
@@ -127,90 +137,182 @@ struct RookmasterBoard: View {
     private func toolbar(_ mapColumns: [String: [FleetResource]]) -> some View {
         HStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
-                filters(mapColumns)
+                HStack(spacing: 8) {
+                    searchField
+                    windowPicker
+                    liveOnlyChip
+                    Rectangle()
+                        .fill(StageColors.separator)
+                        .frame(width: 1, height: 16)
+                        .padding(.horizontal, 2)
+                    ForEach(listKinds) { kind in
+                        kindChip(kind, count: mapColumns[kind.name]?.count ?? 0)
+                    }
+                }
+                .padding(.vertical, 1)
             }
-            lockButton(mapColumns)
+            lockChip(mapColumns)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
+        .animation(.easeOut(duration: 0.15), value: memory.setBoardHiddenKinds)
+        .animation(.easeOut(duration: 0.15), value: memory.isBoardLiveOnly)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: memory.boardWindow)
     }
 
-    private func filters(_ mapColumns: [String: [FleetResource]]) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                RookeryIconView(.search)
-                    .foregroundStyle(StageColors.secondaryText)
-                TextField("Filter by name", text: $query)
-                    .textFieldStyle(.plain)
-                    .frame(width: 180)
-            }
-            .font(.system(size: 12))
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            Picker("", selection: $window) {
-                ForEach(BoardWindow.allCases) { choice in
-                    Text(choice.title).tag(choice)
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            RookeryIconView(.search)
+                .foregroundStyle(StageColors.secondaryText)
+            TextField("Filter by name", text: Bindable(memory).boardQuery)
+                .textFieldStyle(.plain)
+                .focused($isSearchFocused)
+                .frame(width: 160)
+            if !memory.boardQuery.isEmpty {
+                Button {
+                    memory.boardQuery = ""
+                } label: {
+                    RookeryIconView(.close)
+                        .foregroundStyle(StageColors.tertiaryText)
                 }
+                .buttonStyle(.plain)
+                .help("Clear the filter")
             }
-            .labelsHidden()
-            .fixedSize()
-            .controlSize(.small)
-            Toggle("Live agents only", isOn: $isLiveOnly)
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .font(.system(size: 12))
-                .fixedSize()
-            Divider()
-                .frame(height: 16)
-            ForEach(listKinds) { kind in
-                kindChip(kind, count: mapColumns[kind.name]?.count ?? 0)
-            }
+        }
+        .font(.system(size: 12))
+        .padding(.horizontal, 10)
+        .frame(height: Self.controlHeight)
+        .background(StageColors.groove, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(isSearchFocused ? AnyShapeStyle(Color.accentColor.opacity(0.7)) : AnyShapeStyle(StageColors.separator))
         }
     }
 
-    private func lockButton(_ mapColumns: [String: [FleetResource]]) -> some View {
-            Button {
-                toggleLock(mapColumns)
-            } label: {
-                RookeryLabel(isLocked ? "Locked" : "Lock Order", icon: isLocked ? .lock : .unlock)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(isLocked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
-                    .contentTransition(.symbolEffect(.replace))
+    /// How far back the board looks, as a segmented capsule.
+    private var windowPicker: some View {
+        HStack(spacing: 2) {
+            ForEach(BoardWindow.allCases) { choice in
+                windowSegment(choice)
             }
-            .buttonStyle(.plain)
-            .fixedSize()
-            .help(isLocked ? "Let cards rise as they are used again" : "Hold the cards where they are")
+        }
+        .padding(2)
+        .background(StageColors.groove, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(StageColors.separator)
+        }
+    }
+
+    private func windowSegment(_ choice: BoardWindow) -> some View {
+        let isSelected = memory.boardWindow == choice
+        let textStyle = isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText)
+        return Button {
+            memory.boardWindow = choice
+        } label: {
+            Text(choice.shortTitle)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(textStyle)
+                .padding(.horizontal, 9)
+                .frame(height: Self.controlHeight - 4)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(StageColors.selectedSegment)
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                            .matchedGeometryEffect(id: "window", in: chipNamespace)
+                    }
+                }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(choice.title)
+    }
+
+    private var liveOnlyChip: some View {
+        let isOn = memory.isBoardLiveOnly
+        return Button {
+            memory.isBoardLiveOnly.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                RookeryIconView(isOn ? .check : .appPlaceholder)
+                Text("Live agents")
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+            .padding(.horizontal, 10)
+            .frame(height: Self.controlHeight)
+            .background(isOn ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColors.groove), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(isOn ? AnyShapeStyle(Color.accentColor.opacity(0.45)) : AnyShapeStyle(StageColors.separator))
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(isOn ? "Showing live agents only; click to show ended ones too" : "Showing ended agents too; click to show live ones only")
+    }
+
+    private func lockChip(_ mapColumns: [String: [FleetResource]]) -> some View {
+        let isLocked = memory.isBoardLocked
+        return Button {
+            toggleLock(mapColumns)
+        } label: {
+            RookeryLabel(isLocked ? "Locked" : "Lock Order", icon: isLocked ? .lock : .unlock, spacing: 5)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(isLocked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                .padding(.horizontal, 10)
+                .frame(height: Self.controlHeight)
+                .background(isLocked ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColors.groove), in: Capsule())
+                .overlay {
+                    Capsule()
+                        .strokeBorder(isLocked ? AnyShapeStyle(Color.accentColor.opacity(0.45)) : AnyShapeStyle(StageColors.separator))
+                }
+                .contentShape(Capsule())
+                .fixedSize()
+        }
+        .buttonStyle(.plain)
+        .help(isLocked ? "Let cards rise as they are used again" : "Hold the cards where they are")
     }
 
     private func kindChip(_ kind: FleetKind, count: Int) -> some View {
-        let isShown = !setHiddenKinds.contains(kind.name)
+        let isShown = !memory.setBoardHiddenKinds.contains(kind.name)
+        let tint = RookmasterStyle.tint(of: kind.name)
         return Button {
             withAnimation(Self.reorderAnimation) {
                 if isShown {
-                    setHiddenKinds.insert(kind.name)
+                    memory.setBoardHiddenKinds.insert(kind.name)
                 } else {
-                    setHiddenKinds.remove(kind.name)
+                    memory.setBoardHiddenKinds.remove(kind.name)
                 }
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Circle()
-                    .fill(RookmasterStyle.tint(of: kind.name))
-                    .frame(width: 7, height: 7)
+                    .fill(isShown ? AnyShapeStyle(tint) : AnyShapeStyle(StageColor.clear))
+                    .overlay {
+                        Circle()
+                            .strokeBorder(tint, lineWidth: 1.5)
+                    }
+                    .frame(width: 8, height: 8)
                 Text(kind.pluralTitle)
                 Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
                     .foregroundStyle(StageColors.tertiaryText)
             }
             .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(isShown ? AnyShapeStyle(StageColors.groove) : AnyShapeStyle(StageColor.clear), in: Capsule())
+            .foregroundStyle(isShown ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
+            .padding(.horizontal, 10)
+            .frame(height: Self.controlHeight)
+            .background(isShown ? AnyShapeStyle(tint.opacity(0.12)) : AnyShapeStyle(StageColor.clear), in: Capsule())
             .overlay {
                 Capsule()
-                    .strokeBorder(StageColors.separator)
+                    .strokeBorder(
+                        isShown ? AnyShapeStyle(tint.opacity(0.35)) : AnyShapeStyle(StageColors.separator),
+                        style: StrokeStyle(lineWidth: 1, dash: isShown ? [] : [3, 2])
+                    )
             }
-            .opacity(isShown ? 1 : 0.5)
+            .contentShape(Capsule())
             .fixedSize()
         }
         .buttonStyle(.plain)
@@ -249,7 +351,7 @@ struct RookmasterBoard: View {
 
     private func card(_ resource: FleetResource, setFocus: Set<FleetRef>?, now: Date) -> some View {
         let ref = FleetRef(kind: resource.kind, id: resource.id)
-        let isSelected = selectedRef == ref
+        let isSelected = memory.boardSelectedRef == ref
         let isDimmed = setFocus.map { !$0.contains(ref) } ?? false
         let agent = resource.kind == AgentFleet.agentKind ? fleetModel.fleet.mapAgents[resource.id] : nil
         return HStack(spacing: 8) {
@@ -264,7 +366,7 @@ struct RookmasterBoard: View {
                 Text(graph.name(of: ref))
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
                 Text(subtitle(of: resource, agent: agent))
                     .font(.system(size: 10))
                     .foregroundStyle(agent?.state.needsAttention == true ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.secondaryText))
@@ -304,7 +406,7 @@ struct RookmasterBoard: View {
         }
         .onTapGesture {
             withAnimation(.easeOut(duration: 0.2)) {
-                selectedRef = isSelected ? nil : ref
+                memory.boardSelectedRef = isSelected ? nil : ref
             }
         }
         .help("\(resource.name)\nClick to bring forward what it touches; double-click to open")
@@ -401,8 +503,8 @@ struct RookmasterBoard: View {
 
     /// Each shown kind's cards, in order, after the filters.
     private func columns(now: Date) -> [String: [FleetResource]] {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let cutoff = window.seconds.map { now.addingTimeInterval(-$0) }
+        let trimmedQuery = memory.boardQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let cutoff = memory.boardWindow.seconds.map { now.addingTimeInterval(-$0) }
         var mapColumns: [String: [FleetResource]] = [:]
         for kind in listShownKinds {
             var listResources = graph.listResources(of: kind.name).filter { resource in
@@ -411,7 +513,7 @@ struct RookmasterBoard: View {
                     if agent?.parentId != nil {
                         return false
                     }
-                    if isLiveOnly && agent?.state == .ended {
+                    if memory.isBoardLiveOnly && agent?.state == .ended {
                         return false
                     }
                 }
@@ -423,7 +525,7 @@ struct RookmasterBoard: View {
                 }
                 return true
             }
-            if isLocked, let listFrozen = mapFrozenOrder[kind.name] {
+            if memory.isBoardLocked, let listFrozen = memory.mapBoardFrozenOrder[kind.name] {
                 let mapRanks = Dictionary(listFrozen.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
                 listResources.sort { first, second in
                     let firstRank = mapRanks[FleetRef(kind: first.kind, id: first.id)] ?? Int.max
@@ -471,7 +573,7 @@ struct RookmasterBoard: View {
 
     /// The card in focus and its neighbours, or nil when no card is hovered or selected.
     private func focus(_ listEdges: [BoardEdge]) -> Set<FleetRef>? {
-        guard let center = hoveredRef ?? selectedRef else {
+        guard let center = hoveredRef ?? memory.boardSelectedRef else {
             return nil
         }
         var setFocus: Set<FleetRef> = [center]
@@ -484,8 +586,8 @@ struct RookmasterBoard: View {
 
     private func toggleLock(_ mapColumns: [String: [FleetResource]]) {
         withAnimation(.easeOut(duration: 0.2)) {
-            isLocked.toggle()
+            memory.isBoardLocked.toggle()
         }
-        mapFrozenOrder = isLocked ? mapColumns.mapValues { $0.map { FleetRef(kind: $0.kind, id: $0.id) } } : [:]
+        memory.mapBoardFrozenOrder = memory.isBoardLocked ? mapColumns.mapValues { $0.map { FleetRef(kind: $0.kind, id: $0.id) } } : [:]
     }
 }

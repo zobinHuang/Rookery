@@ -322,9 +322,9 @@ struct StageView: View {
                     HStack(spacing: 4) {
                         CloseButton(action: actions.exitStage)
                             .padding(.trailing, 4)
-                        headerButton(.sidebar, help: "Hide the sidebar", action: actions.toggleSidebar)
                         stageTools
                         Spacer(minLength: 0)
+                        headerButton(.sidebar, help: "Hide the sidebar", action: actions.toggleSidebar)
                     }
                     RookeryLogo()
                 }
@@ -862,6 +862,7 @@ struct StageView: View {
             } else if model.shownPage == .rookmaster {
                 RookmasterView(
                     fleetModel: fleetModel,
+                    logClock: preferences.logClock,
                     onOpenAgent: { agentId in
                         actions.showPage(.agent(agentId))
                     },

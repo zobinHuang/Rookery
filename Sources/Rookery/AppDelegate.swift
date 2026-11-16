@@ -11,7 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let preferences = Preferences()
     private let mixerController = MixerController()
     private lazy var agentUsageMonitor = AgentUsageMonitor(preferences: preferences)
-    private let quickNotes = QuickNotes()
     private var settingsWindowController: SettingsWindowController?
     /// Records a new shortcut in the settings, wherever they show, with the shortcuts suspended meanwhile.
     private lazy var shortcutRecorder = ShortcutRecorder(
@@ -220,7 +219,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let stages = workspace.makeStageCoordinator(
             mixerController: mixerController,
             agentUsageMonitor: agentUsageMonitor,
-            quickNotes: quickNotes,
             shortcutRecorder: shortcutRecorder
         )
         stageCoordinator = stages

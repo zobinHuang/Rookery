@@ -54,7 +54,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private let preferences: Preferences
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
-    private let quickNotes: QuickNotes
     private let ghostAnimator: DropGhostAnimator
     private let shortcutRecorder: ShortcutRecorder
     private let model = StageModel()
@@ -83,7 +82,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         preferences: Preferences,
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
-        quickNotes: QuickNotes,
         ghostAnimator: DropGhostAnimator,
         shortcutRecorder: ShortcutRecorder,
         coordinator: StageCoordinator
@@ -94,7 +92,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         self.preferences = preferences
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
-        self.quickNotes = quickNotes
         self.ghostAnimator = ghostAnimator
         self.shortcutRecorder = shortcutRecorder
         panel = StagePanel(
@@ -131,7 +128,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             shortcutRecorder: shortcutRecorder,
             mixer: mixerController,
             agentUsage: agentUsageMonitor,
-            notes: quickNotes,
             actions: self
         )
         stageView.translatesAutoresizingMaskIntoConstraints = false
@@ -304,11 +300,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         for window in (activeGroup?.listMembers ?? []) + listStageGroups.compactMap(\.listMembersFrontToBack.first) {
             mapWindowNames[window.windowId] = window.displayName
         }
-        let setLinkedIds = Set(quickNotes.listNotes.flatMap(\.listLinks).map(\.windowId))
-        var mapLinkedWindowNames: [WindowId: String] = [:]
-        for window in workspaceController.workspace.listManagedWindows where setLinkedIds.contains(window.windowId) {
-            mapLinkedWindowNames[window.windowId] = window.displayName
-        }
         let selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
         if model.shownTheme != shownTheme {
             model.shownTheme = shownTheme
@@ -325,9 +316,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         if model.mapWindowNames != mapWindowNames {
             model.mapWindowNames = mapWindowNames
         }
-        if model.mapLinkedWindowNames != mapLinkedWindowNames {
-            model.mapLinkedWindowNames = mapLinkedWindowNames
-        }
         if model.selectedWindowId != selectedWindowId {
             model.selectedWindowId = selectedWindowId
         }
@@ -340,21 +328,17 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         }
     }
 
-    /// Show a window's new title in its tab, its group's row and the notes linked to it, without rebuilding
-    /// the rest of the stage.
+    /// Show a window's new title in its tab and its group's row, without rebuilding the rest of the stage.
     func refreshWindowTitle(_ windowId: WindowId) {
         guard
             model.isVisible,
-            model.mapWindowNames[windowId] != nil || model.mapLinkedWindowNames[windowId] != nil,
+            model.mapWindowNames[windowId] != nil,
             let window = workspaceController.workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId })
         else {
             return
         }
         if let shownName = model.mapWindowNames[windowId], shownName != window.displayName {
             model.mapWindowNames[windowId] = window.displayName
-        }
-        if let linkedName = model.mapLinkedWindowNames[windowId], linkedName != window.displayName {
-            model.mapLinkedWindowNames[windowId] = window.displayName
         }
     }
 
@@ -436,55 +420,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         clearDragStateOnMouseUp()
     }
 
-    func noteDragBegan(_ noteId: NoteId) {
-        model.draggingNoteId = noteId
-        clearDragStateOnMouseUp()
-    }
-
     func dragEntered() {
         clearDragStateOnMouseUp()
-    }
-
-    func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId? {
-        guard
-            let group = workspaceController.workspace.group(containing: windowId),
-            let window = group.listMembers.first(where: { $0.windowId == windowId })
-        else {
-            return nil
-        }
-        let link = NoteLink(
-            windowId: windowId,
-            groupId: group.groupId,
-            name: window.displayName,
-            bundleId: window.application.bundleId
-        )
-        let linkedNoteId: NoteId
-        if let noteId {
-            guard quickNotes.addLink(link, to: noteId) else {
-                return nil
-            }
-            linkedNoteId = noteId
-        } else {
-            linkedNoteId = quickNotes.add(listLinks: [link])
-        }
-        coordinator?.refresh()
-        return linkedNoteId
-    }
-
-    func openLink(_ link: NoteLink) {
-        let workspace = workspaceController.workspace
-        guard let groupId = workspace.group(containing: link.windowId)?.groupId else {
-            if workspace.listGroups.contains(where: { $0.groupId == link.groupId }) {
-                selectGroup(link.groupId)
-            }
-            return
-        }
-        let isShownInFront = workspaceController.stage(showing: groupId).flatMap { shownStageId in
-            workspaceController.group(onStage: shownStageId)?.listMembersFrontToBack.first?.windowId
-        } == link.windowId
-        if !isShownInFront {
-            selectTab(link.windowId)
-        }
     }
 
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?) {

@@ -59,7 +59,6 @@ UI state is `@MainActor`; the window tracker is an actor with a run loop thread 
 | What | Where | Lifetime |
 |---|---|---|
 | Groups, managed windows, their home frames | `~/Library/Application Support/Rookery/workspace.json` | Across restarts; windows that no longer exist are dropped |
-| Quick notes in the sidebar | `~/Library/Application Support/Rookery/notes.json` | Until deleted |
 | Preferences, hotkeys, world clock cities, agent accounts | `UserDefaults` | Permanent |
 | Per-app mixer settings | `UserDefaults` key `mixerTracks` | Permanent, by bundle id |
 | Per-tab mixer settings | The extension's `chrome.storage.session` | While the tab and the browser live |

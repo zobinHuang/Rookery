@@ -18,17 +18,9 @@ protocol StageActions: AnyObject {
     func endEditing()
     func tabDragBegan()
     func groupDragBegan(_ groupId: GroupId)
-    func noteDragBegan(_ noteId: NoteId)
     /// A drag came over a drop target on the stage, from this stage or any other: its feedback is cleared once
     /// the mouse is released, wherever the drag ends.
     func dragEntered()
-    /// Make a note lead to one more tab, a managed window's, or start a new note leading to it with nil.
-    ///
-    /// - Returns: the note, or nil if the window is not managed or the note leads to it already
-    func linkNote(_ noteId: NoteId?, to windowId: WindowId) -> NoteId?
-    /// Switch to the tab a note leads to, unless a stage shows it in front already, or to its group once the
-    /// tab has closed.
-    func openLink(_ link: NoteLink)
     /// Move a group to just before another, or to the end with nil.
     func moveGroup(_ groupId: GroupId, before targetGroupId: GroupId?)
     /// Move a tab to just before another tab, or to the end with nil.
@@ -70,12 +62,11 @@ struct StageView: View {
     let shortcutRecorder: ShortcutRecorder
     let mixer: MixerController
     let agentUsage: AgentUsageMonitor
-    let notes: QuickNotes
     unowned let actions: any StageActions
     @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
     @State private var sidebarHeight: CGFloat = 0
-    /// The height of the area the groups, the mixer or the notes scroll in, which their empty space fills.
+    /// The height of the area the groups or the mixer scroll in, which their empty space fills.
     @State private var listViewportHeight: CGFloat = 0
     /// The width the tabs scroll in.
     @State private var tabBarWidth: CGFloat = 0
@@ -91,7 +82,6 @@ struct StageView: View {
         shortcutRecorder: ShortcutRecorder,
         mixer: MixerController,
         agentUsage: AgentUsageMonitor,
-        notes: QuickNotes,
         actions: any StageActions
     ) -> NSView {
         let view = NSHostingView(rootView: StageView(
@@ -100,7 +90,6 @@ struct StageView: View {
             shortcutRecorder: shortcutRecorder,
             mixer: mixer,
             agentUsage: agentUsage,
-            notes: notes,
             actions: actions
         ))
         view.sizingOptions = []
@@ -140,11 +129,11 @@ struct StageView: View {
     }
 
     /// What the sidebar shows: the groups whenever a window or tab is being dragged, so it can be dropped
-    /// on one, else the chosen mode. A tab dragged while the notes show leaves them up, to be linked to one.
+    /// on one, else the chosen mode.
     private var sidebarMode: SidebarMode {
         guard
             model.isReceivingWindow
-            || model.isDraggingTab && model.sidebarMode != .notes
+            || model.isDraggingTab
         else {
             return listShownModes.contains(model.sidebarMode) ? model.sidebarMode : .groups
         }
@@ -187,26 +176,6 @@ struct StageView: View {
                     ScrollView {
                         MixerView(mixer: mixer, isCollapsed: model.isSidebarCollapsed)
                             .padding(.vertical, 2)
-                    }
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .trailing).combined(with: .opacity)
-                    ))
-                } else {
-                    ScrollView {
-                        NotesView(
-                            notes: notes,
-                            model: model,
-                            isCollapsed: model.isSidebarCollapsed,
-                            onBeginEditing: beginEditing(note:),
-                            onFinishEditing: finishEditing,
-                            onExpand: expandSidebar,
-                            onDragBegan: actions.noteDragBegan,
-                            onLinkTab: actions.linkNote,
-                            onOpenLink: actions.openLink
-                        )
-                        .padding(.vertical, 2)
-                        .modifier(EmptySpaceTap(minHeight: listViewportHeight, action: finishEditingOnEmptySpace))
                     }
                     .transition(.asymmetric(
                         insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -294,10 +263,6 @@ struct StageView: View {
                 return false
             case .group(let groupId):
                 return dropGroup(groupId, before: nil)
-            case .note(let noteId):
-                clearDragState()
-                notes.move(noteId, before: nil)
-                return true
             case nil:
                 return false
             }
@@ -305,9 +270,7 @@ struct StageView: View {
             if isTargeted {
                 actions.dragEntered()
             }
-            if model.draggingNoteId != nil {
-                model.isNoteOverSidebarEnd = isTargeted
-            } else if model.draggingGroupId != nil {
+            if model.draggingGroupId != nil {
                 model.isGroupOverSidebarEnd = isTargeted
             }
         }
@@ -574,7 +537,7 @@ struct StageView: View {
                 return dropWindow(windowId, into: row.groupId)
             case .group(let groupId):
                 return dropGroup(groupId, before: row.groupId)
-            case .note, nil:
+            case nil:
                 return false
             }
         } isTargeted: { isTargeted in
@@ -918,50 +881,32 @@ struct StageView: View {
         }
         actions.beginEditing()
         model.editingWindowId = nil
-        model.editingNoteId = nil
         model.editingGroupId = groupId
     }
 
     private func beginRenaming(tab windowId: WindowId) {
         actions.beginEditing()
         model.editingGroupId = nil
-        model.editingNoteId = nil
         model.editingWindowId = windowId
-    }
-
-    private func beginEditing(note noteId: NoteId) {
-        actions.beginEditing()
-        model.editingGroupId = nil
-        model.editingWindowId = nil
-        model.editingNoteId = noteId
     }
 
     private func finishEditing() {
         model.editingGroupId = nil
         model.editingWindowId = nil
-        model.editingNoteId = nil
         actions.endEditing()
     }
 
-    /// Finish whatever name or note is being edited, keeping what was typed, as a click on the sidebar's
-    /// empty space does.
+    /// Finish whatever name is being edited, keeping what was typed, as a click on the sidebar's empty space
+    /// does.
     private func finishEditingOnEmptySpace() {
         guard
             model.editingGroupId != nil
             || model.editingWindowId != nil
-            || model.editingNoteId != nil
         else {
             return
         }
         model.editingGroupId = nil
         model.editingWindowId = nil
-        model.editingNoteId = nil
-    }
-
-    private func expandSidebar() {
-        if model.isSidebarCollapsed {
-            actions.toggleSidebar()
-        }
     }
 
     /// Move a dragged tab's window into a group, or into a new group with nil.

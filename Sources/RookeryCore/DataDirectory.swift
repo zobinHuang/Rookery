@@ -1,7 +1,7 @@
 import Foundation
 
 /// The directory Rookery keeps its files in, inside the user's Application Support directory: the
-/// workspace, the quick notes and the control socket.
+/// workspace and the control socket.
 public enum DataDirectory {
     /// The directory's name, the app's own.
     public static let name = "Rookery"

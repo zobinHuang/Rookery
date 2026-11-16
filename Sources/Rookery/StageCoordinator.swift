@@ -17,7 +17,6 @@ final class StageCoordinator: DropSurface {
     private let preferences: Preferences
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
-    private let quickNotes: QuickNotes
     private let ghostAnimator: DropGhostAnimator
     private let shortcutRecorder: ShortcutRecorder
     private var listStages: [StageController] = []
@@ -38,7 +37,6 @@ final class StageCoordinator: DropSurface {
         preferences: Preferences,
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
-        quickNotes: QuickNotes,
         ghostAnimator: DropGhostAnimator,
         shortcutRecorder: ShortcutRecorder
     ) {
@@ -46,7 +44,6 @@ final class StageCoordinator: DropSurface {
         self.preferences = preferences
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
-        self.quickNotes = quickNotes
         self.ghostAnimator = ghostAnimator
         self.shortcutRecorder = shortcutRecorder
         mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
@@ -119,7 +116,6 @@ final class StageCoordinator: DropSurface {
             preferences: preferences,
             mixerController: mixerController,
             agentUsageMonitor: agentUsageMonitor,
-            quickNotes: quickNotes,
             ghostAnimator: ghostAnimator,
             shortcutRecorder: shortcutRecorder,
             coordinator: self

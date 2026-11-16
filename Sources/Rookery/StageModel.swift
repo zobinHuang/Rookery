@@ -22,19 +22,15 @@ enum StageZone: Hashable {
 enum StagePayload {
     case window(WindowId)
     case group(GroupId)
-    case note(NoteId)
 
     private static let windowPrefix = "window:"
     private static let groupPrefix = "group:"
-    private static let notePrefix = "note:"
 
     init?(_ text: String) {
         if text.hasPrefix(Self.windowPrefix), let rawId = UInt32(text.dropFirst(Self.windowPrefix.count)) {
             self = .window(WindowId(rawValue: rawId))
         } else if text.hasPrefix(Self.groupPrefix) {
             self = .group(GroupId(rawValue: String(text.dropFirst(Self.groupPrefix.count))))
-        } else if text.hasPrefix(Self.notePrefix) {
-            self = .note(NoteId(rawValue: String(text.dropFirst(Self.notePrefix.count))))
         } else {
             return nil
         }
@@ -46,8 +42,6 @@ enum StagePayload {
             Self.windowPrefix + String(windowId.rawValue)
         case .group(let groupId):
             Self.groupPrefix + groupId.rawValue
-        case .note(let noteId):
-            Self.notePrefix + noteId.rawValue
         }
     }
 }
@@ -84,13 +78,11 @@ struct StageGroupRow: Identifiable, Equatable {
 enum SidebarMode: String, CaseIterable {
     case groups
     case mixer
-    case notes
 
     var title: String {
         switch self {
         case .groups: "App Groups"
         case .mixer: "Mixer"
-        case .notes: "Notes"
         }
     }
 
@@ -98,7 +90,6 @@ enum SidebarMode: String, CaseIterable {
         switch self {
         case .groups: "square.grid.2x2"
         case .mixer: "slider.vertical.3"
-        case .notes: "note.text"
         }
     }
 }
@@ -120,8 +111,6 @@ final class StageModel {
     /// application's. Kept apart from the tabs and rows, and read only by the texts showing a name, so a
     /// window retitling itself does not rebuild the stage.
     var mapWindowNames: [WindowId: String] = [:]
-    /// The names of the managed windows that notes link to; a linked window missing from it has closed.
-    var mapLinkedWindowNames: [WindowId: String] = [:]
     var selectedWindowId: WindowId?
     /// Whether a window drag is over the stage, which reveals the drop zones.
     var isReceivingWindow = false
@@ -142,8 +131,6 @@ final class StageModel {
     var editingGroupId: GroupId?
     /// The tab whose name is being edited.
     var editingWindowId: WindowId?
-    /// The quick note being edited.
-    var editingNoteId: NoteId?
     /// The group a dragged tab is over.
     var tabDropGroupId: GroupId?
     /// The drop-only zone a dragged tab is over, New Group or Release.
@@ -160,14 +147,8 @@ final class StageModel {
     var groupInsertBeforeId: GroupId?
     /// Whether a dragged group is over the sidebar's empty space, which places it last.
     var isGroupOverSidebarEnd = false
-    /// The quick note being dragged to reorder the notes.
-    var draggingNoteId: NoteId?
-    /// The note a dragged note would be placed before.
-    var noteInsertBeforeId: NoteId?
-    /// Whether a dragged note is over the sidebar's empty space, which places it last.
-    var isNoteOverSidebarEnd = false
 
-    /// Forget every drag of a tab, a group or a note, as when it drops or the mouse is released elsewhere.
+    /// Forget every drag of a tab or a group, as when it drops or the mouse is released elsewhere.
     func clearDragState() {
         isDraggingTab = false
         draggingGroupId = nil
@@ -177,9 +158,6 @@ final class StageModel {
         isTabOverTabBarEnd = false
         groupInsertBeforeId = nil
         isGroupOverSidebarEnd = false
-        draggingNoteId = nil
-        noteInsertBeforeId = nil
-        isNoteOverSidebarEnd = false
     }
 
     /// The sidebar's width as laid out now.

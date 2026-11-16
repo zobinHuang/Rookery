@@ -99,7 +99,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// ends rather than once for every window it moves.
     private var isChangePending = false
     /// The windows and pages the user went to, the most recent first, as window switcher entry ids.
-    private var listRecentPlaceIds: [String] = []
+    private var recentPlaces = RecentPlaces()
+    /// The page the stage the user works on shows, if any, which is where the user is.
+    var shownPage: @MainActor () -> StagePage? = { nil }
     /// The pages the window switcher offers beside the windows: the Rookmaster console and each live
     /// agent's page.
     var pageEntries: @MainActor () -> [SwitcherEntry] = { [] }
@@ -838,9 +840,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     var listRecentWindows: [ManagedWindow] {
         let listWindows = workspace.listManagedWindows
         let mapWindows = Dictionary(listWindows.map { ($0.windowId, $0) }) { first, _ in first }
-        let listRecent = listRecentPlaceIds.compactMap { UInt32($0).flatMap { mapWindows[WindowId(rawValue: $0)] } }
-        let setRecentIds = Set(listRecent.map(\.windowId))
-        return listRecent + listWindows.filter { !setRecentIds.contains($0.windowId) }
+        return recentPlaces
+            .ordered(listWindows.map { String($0.windowId.rawValue) }, current: nil)
+            .compactMap { UInt32($0).flatMap { mapWindows[WindowId(rawValue: $0)] } }
     }
 
     /// The group switcher's offer: every group, then every window shown at once.
@@ -911,13 +913,17 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return nil
         }
         let mapEntries = Dictionary(listAll.map { ($0.id, $0) }) { first, _ in first }
-        let listRecent = listRecentPlaceIds.compactMap { mapEntries[$0] }
-        let setRecentIds = Set(listRecent.map(\.id))
-        let listEntries = listRecent + listAll.filter { !setRecentIds.contains($0.id) }
+        let currentId = currentPlaceId()
+        if let currentId {
+            recentPlaces.note(currentId)
+        }
+        recentPlaces.prune(keeping: Set(mapEntries.keys))
+        let listEntries = recentPlaces.ordered(listAll.map(\.id), current: currentId).compactMap { mapEntries[$0] }
         return SwitcherRequest(listEntries: listEntries, currentIndex: 0, fitFrame: focusedStageFrame) { [weak self] entry in
             guard let self else {
                 return
             }
+            recentPlaces.note(entry.id)
             if let page = StagePage(switcherId: entry.id) {
                 onOpenPage(page)
                 return
@@ -942,8 +948,23 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     private func notePlace(_ placeId: String) {
-        listRecentPlaceIds.removeAll { $0 == placeId }
-        listRecentPlaceIds.insert(placeId, at: 0)
+        recentPlaces.note(placeId)
+    }
+
+    /// Where the user is now, by its switcher id: the page their stage shows, else the window in front of
+    /// it, else, with no stage open, the managed window in front.
+    private func currentPlaceId() -> String? {
+        if let switcherId = shownPage()?.switcherId {
+            return switcherId
+        }
+        if isStageOpen {
+            guard let stageId = focusedStageId(), let windowId = group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
+                return nil
+            }
+            return String(windowId.rawValue)
+        }
+        let setManagedIds = Set(workspace.listManagedWindows.map(\.windowId))
+        return WindowServer.listWindows().map(\.windowId).first { setManagedIds.contains($0) }.map { String($0.rawValue) }
     }
 
     private func noteRecentlyUsed(_ windowId: WindowId) {
@@ -980,13 +1001,30 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         try? await focus(group.listMembers[(frontIndex + 1) % group.listMembers.count].windowId)
     }
 
+    /// Whether a managed window belongs to the application in front, whose focus is the user's doing.
+    private func isInFrontmostApplication(_ windowId: WindowId) -> Bool {
+        guard
+            let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            let window = workspace.listManagedWindows.first(where: { $0.windowId == windowId })
+        else {
+            return false
+        }
+        return window.application.processId == frontmostProcessId
+    }
+
     /// Follow the user to a hidden window they focused, through Cmd-Tab, the Dock or a notification, by
     /// switching to its group. Only the application in front counts: one behind it moving its own focus is
     /// not the user's choice. Applications can report a focus change late, after a switch has hidden the
     /// window, so the switch waits until the application confirms the window still has focus; within
     /// `focusReclaimPeriod` of a switch, focus is taken back instead.
     private func handleFocus(of windowId: WindowId) {
-        if workspace.isManaged(windowId) && !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
+        if
+            workspace.isManaged(windowId)
+            && !workspace.listHiddenWindows.contains(where: { $0.windowId == windowId })
+            && !isSwitching
+            && isInFrontmostApplication(windowId)
+            && (!isStageOpen || stageShowing(windowId: windowId) != nil)
+        {
             noteRecentlyUsed(windowId)
             if let stageId = stageShowing(windowId: windowId) {
                 stageCoordinator?.keepStage(stageId, beneath: windowId)

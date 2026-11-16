@@ -141,6 +141,11 @@ final class StageCoordinator: DropSurface {
         return true
     }
 
+    /// The page the stage under the cursor, or the first open stage, shows, if any.
+    var shownPage: StagePage? {
+        (stage(at: NSEvent.mouseLocation) ?? listStages.first(where: \.isShowing))?.shownPage
+    }
+
     /// Close every stage.
     func closeAll() {
         Task { [workspaceController] in

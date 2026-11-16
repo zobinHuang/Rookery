@@ -145,6 +145,11 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         panel.delegate = self
     }
 
+    /// The page the content area shows instead of a window, if any.
+    var shownPage: StagePage? {
+        model.shownPage
+    }
+
     /// Whether the stage's window is up.
     var isShowing: Bool {
         model.isVisible

@@ -267,6 +267,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspace.onOpenPage = { [weak stages] page in
             stages?.show(page)
         }
+        workspace.shownPage = { [weak stages] in
+            stages?.shownPage
+        }
         workspace.onChange = { [weak panel, weak stages] in
             panel?.reload()
             stages?.refresh()

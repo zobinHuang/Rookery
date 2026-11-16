@@ -105,10 +105,6 @@ struct MaintenancePanel: View {
 
     private var starters: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Claude Code on this Mac tidies, distills or explains anything roost holds. Name a resource with @.")
-                .font(.system(size: 12))
-                .foregroundStyle(StageColors.secondaryText)
-                .padding(.bottom, 4)
             HStack(spacing: 8) {
                 ForEach(MaintenanceStarter.allCases, id: \.self) { starter in
                     Button {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The box to write to an agent in. At rest it is one line in a capsule, its button at the end; once the
 /// user is in it, or has written something, it opens with a spring into a taller box with the button
-/// gliding to its lower corner and a hint of the keys beside it, and closes the same way. Return sends,
+/// gliding to its lower corner, and closes the same way. Return sends,
 /// Shift-Return breaks the line; a caller may take keys first, as the maintenance agent's suggestions do.
 struct AgentComposer: View {
     private static let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.78)
@@ -46,10 +46,6 @@ struct AgentComposer: View {
             }
             if isOpen {
                 HStack(spacing: 8) {
-                    Text("Return to send, Shift-Return for a new line")
-                        .font(.system(size: 10))
-                        .foregroundStyle(StageColors.tertiaryText)
-                        .transition(.opacity)
                     Spacer(minLength: 0)
                     button
                         .matchedGeometryEffect(id: "button", in: namespace)

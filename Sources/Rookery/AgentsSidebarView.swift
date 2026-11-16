@@ -482,23 +482,41 @@ struct AgentsSidebarView: View {
         .help(isExpanded ? "Fold the subagents away" : "Show \(count) subagents")
     }
 
-    /// The agent's state, repository and branch, each in a tag of its own.
+    /// The agent's state, repository and branch, each in a tag of its own under a small caption.
     private func tags(of agent: FleetAgent, isReachable: Bool) -> some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .bottom, spacing: 4) {
             if isReachable {
-                InfoTag(agent.state.title, tint: agent.state.needsAttention ? .orange : nil)
+                captioned("status") {
+                    InfoTag(agent.state.title, tint: agent.state.needsAttention ? .orange : nil)
+                }
             } else {
-                InfoTag("offline", tint: .orange)
+                captioned("status") {
+                    InfoTag("offline", tint: .orange)
+                }
             }
             if !agent.projectName.isEmpty && agent.projectName != "/" {
-                InfoTag(agent.projectName)
+                captioned("repo") {
+                    InfoTag(agent.projectName)
+                }
             }
             if !agent.gitBranch.isEmpty {
-                InfoTag(agent.gitBranch)
-                    .layoutPriority(-1)
+                captioned("branch") {
+                    InfoTag(agent.gitBranch)
+                }
+                .layoutPriority(-1)
             }
         }
         .animation(.easeOut(duration: 0.2), value: agent.state)
+    }
+
+    private func captioned<Content: View>(_ caption: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(caption)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(StageColors.tertiaryText)
+                .padding(.leading, 2)
+            content()
+        }
     }
 
     private func rowFill(isSelected: Bool, isHovered: Bool, isTargeted: Bool) -> AnyShapeStyle {

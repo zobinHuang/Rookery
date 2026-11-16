@@ -85,7 +85,7 @@ struct AgentUsagePanel: View {
                                 .truncationMode(.middle)
                         }
                         if isDefaultMarked {
-                            RookeryIconView(.play)
+                            RookeryIconView(.play, scale: 0.5)
                             Text("default")
                         }
                     }

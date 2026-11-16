@@ -123,6 +123,7 @@ class EventLog:
         "account",
         "transcript_path",
         "model",
+        "title",
     )
     EVENT_OBJECT_ATTRIBUTE_FIELDS = ("path", "project", "text", "scope", "description")
 
@@ -329,6 +330,8 @@ class EventLog:
             if state not in AgentStates.SET_STATES:
                 raise ValidationError(f"unknown agent state: {state!r}")
             agent.map_attributes["state"] = state
+            if map_detail.get("title"):
+                agent.map_attributes["title"] = str(map_detail["title"])
             if state == AgentStates.ENDED:
                 agent.map_attributes["closed_at"] = at
         elif verb == EventVerbs.ENDED:

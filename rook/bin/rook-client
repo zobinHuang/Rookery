@@ -240,6 +240,8 @@ class HookEventMapper:
     MAPPER_FRONTMATTER_NAME_PATTERN = re.compile(r"^name:\s*(?P<name>.+?)\s*$", re.MULTILINE)
     MAPPER_LIMIT_WORDS = ("rate limit", "usage limit", "rate_limit", "quota")
     MAPPER_SUBPROCESS_TIMEOUT_SECONDS = 2
+    MAPPER_TITLE_TAIL_BYTES = 256 * 1024
+    MAPPER_TITLE_TYPES = {"custom-title": "customTitle", "ai-title": "aiTitle"}
     MAPPER_NOTIFICATION_STATES = {
         "permission_prompt": "needs_approval",
         "elicitation_dialog": "needs_input",
@@ -282,9 +284,46 @@ class HookEventMapper:
         list_events: list[dict[str, object]] = []
         state = self._state()
         if state:
-            list_events.append({"actor": actor, "verb": "state", "at": self.now(), "detail": {"state": state}})
+            map_detail: dict[str, object] = {"state": state}
+            title = self.title()
+            if title:
+                map_detail["title"] = title
+            list_events.append({"actor": actor, "verb": "state", "at": self.now(), "detail": map_detail})
         list_events.extend(self._resource_events(actor))
         return list_events
+
+    def title(self) -> str:
+        """The session's title as the harness last wrote it into the transcript: the one the user gave it,
+        else the one the harness made up; empty when there is none in the transcript's last stretch.
+
+        Returns:
+            the title
+        """
+        path = str(self._map_payload.get("transcript_path") or "")
+        if not path:
+            return ""
+        try:
+            with open(path, "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, handle.tell() - self.MAPPER_TITLE_TAIL_BYTES))
+                tail = handle.read().decode("utf-8", errors="replace")
+        except OSError:
+            return ""
+        map_found: dict[str, str] = {}
+        for line in reversed(tail.splitlines()):
+            if "-title" not in line[:40] and '"type":"custom-title"' not in line and '"type":"ai-title"' not in line:
+                continue
+            try:
+                map_line = json.loads(line)
+            except ValueError:
+                continue
+            kind = map_line.get("type") if isinstance(map_line, dict) else None
+            field = self.MAPPER_TITLE_TYPES.get(str(kind))
+            if field and kind not in map_found and map_line.get(field):
+                map_found[str(kind)] = str(map_line[field])
+            if "custom-title" in map_found:
+                break
+        return map_found.get("custom-title") or map_found.get("ai-title") or ""
 
     def started_event(self) -> dict[str, object]:
         """The `started` event of the payload's session, for one first seen partway through.
@@ -385,6 +424,7 @@ class HookEventMapper:
             "git_branch": self._git_branch(cwd),
             "transcript_path": self._map_payload.get("transcript_path"),
             "model": self._map_payload.get("model"),
+            "title": self.title(),
             "machine": {
                 "hostname": socket.gethostname().split(".")[0],
                 "os": platform.system(),

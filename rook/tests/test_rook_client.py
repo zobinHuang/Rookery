@@ -58,6 +58,17 @@ class HookEventMapperTest(RookHomeTest):
         self.assertEqual(event["detail"]["name"], "studio")
         self.assertEqual(event["detail"]["harness"], "claude")
 
+    def test_a_state_carries_the_sessions_title(self) -> None:
+        transcript = self.home / "session.jsonl"
+        transcript.write_text("\n".join(json.dumps(line) for line in [
+            {"type": "ai-title", "aiTitle": "Repo overview"},
+            {"type": "user", "message": {"content": "hi"}},
+            {"type": "custom-title", "customTitle": "G-Watch development"},
+            {"type": "ai-title", "aiTitle": "Later guess"},
+        ]) + "\n")
+        [event] = self.events("Stop", transcript_path=str(transcript))
+        self.assertEqual(event["detail"]["title"], "G-Watch development")
+
     def test_using_a_skill_is_working_and_uses_it(self) -> None:
         list_events = self.events("PreToolUse", tool_name="Skill", tool_input={"skill": "review"})
         self.assertEqual([event["verb"] for event in list_events], ["state", "uses"])

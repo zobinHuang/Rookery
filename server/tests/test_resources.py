@@ -37,6 +37,14 @@ class EventLogTest(unittest.TestCase):
         self.assertEqual(agent["attributes"]["harness"], "claude")
         self.assertEqual(agent["attributes"]["machine"], {"hostname": "studio"})
 
+    def test_a_state_carries_the_sessions_title(self) -> None:
+        self.events.record([
+            started(),
+            {"actor": AGENT, "verb": "state", "detail": {"state": "working", "title": "G-Watch development"}},
+            {"actor": AGENT, "verb": "state", "detail": {"state": "done"}},
+        ])
+        self.assertEqual(self.agent()["attributes"]["title"], "G-Watch development")
+
     def test_states_follow_the_agent_through_to_its_end(self) -> None:
         self.events.record([started(), {"actor": AGENT, "verb": "state", "detail": {"state": "working"}}])
         self.assertEqual(self.agent()["attributes"]["state"], "working")

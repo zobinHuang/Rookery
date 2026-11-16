@@ -341,9 +341,10 @@ struct RookmasterBoard: View {
                     .foregroundStyle(RookmasterStyle.tint(of: kind.name))
                 Text(kind.pluralTitle)
                     .font(.system(size: 13, weight: .semibold))
-                Text("\(listResources.count)")
+                Text(countText(shown: listResources.count, of: kind))
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.tertiaryText)
+                    .help(kind.name == AgentFleet.agentKind ? "Sessions shown after the filters, of every session roost holds; subagents fold into theirs" : "")
             }
             .padding(.leading, 4)
             .padding(.bottom, 2)
@@ -363,6 +364,15 @@ struct RookmasterBoard: View {
             }
         }
         .frame(width: Self.cardWidth, alignment: .topLeading)
+    }
+
+    /// A column's count: those shown, and of how many when the filters leave some agents out.
+    private func countText(shown: Int, of kind: FleetKind) -> String {
+        guard kind.name == AgentFleet.agentKind else {
+            return "\(shown)"
+        }
+        let total = fleetModel.fleet.listSessions.count
+        return shown == total ? "\(shown)" : "\(shown) of \(total)"
     }
 
     /// One agent's subagents, those last active first, beside the agents.

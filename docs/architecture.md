@@ -53,7 +53,7 @@ Warnings are errors and the Swift 6 language mode is on everywhere; see `Package
 - `Preferences`: everything in `UserDefaults` (`io.github.zobinhuang.rookery`), with change callbacks the controllers subscribe to.
 - `ControlServer`: serves `rookeryctl` and browser sessions.
 
-Every icon in the app is a `RookeryIcon`, drawn by `branding/src/icons.ts` in the logo's pixel style and exported to `Resources/Icons`: badges keep the logo's colors (a dark silhouette lit from the top left, outlined in yellow), glyphs are one color and take the text's. Add an icon there, run `npm run build:logo` in `branding/`, and add its case; the app uses no SF Symbols.
+Every icon in the app is a `RookeryIcon`, in the logo's colors: badges are a dark body lit from the top left inside a yellow outline, glyphs are one color and take the text's. The crow's head and the crow are its pixel art, drawn by `branding/src/icons.ts` into `Resources/Icons` like the logo and the crows; every other icon is drawn at the screen's full resolution from a system symbol. Add an icon as a case with its symbol.
 
 UI state is `@MainActor`; the window tracker is an actor with a run loop thread per application; audio callbacks run on Core Audio's threads with lock-protected shared buffers.
 

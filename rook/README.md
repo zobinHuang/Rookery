@@ -41,10 +41,15 @@ rook disconnect
 rook resource ls --kind agent
 rook resource get playbook backend-review
 rook resource update memory <id> --attr text="use cursors, not offsets"
+
+# send another agent a message, and check the live link
+rook message <agent> "the api is up"
+rook link
 ```
 
 Once connected, every agent session also reports what it is doing, and what it does to skills, playbooks
-and memory, to the server as it works; see [resources](../docs/resources.md).
+and memory, to the server as it works ([resources](../docs/resources.md)), and prompts from Rookery and
+messages from other agents reach it over the [live link](docs/link.md).
 
 See [keybindings](docs/keybindings.md), [session history](docs/sessions.md) and
 [playbooks](docs/playbooks.md).

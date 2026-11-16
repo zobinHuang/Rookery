@@ -1,0 +1,439 @@
+#!/usr/bin/env python3
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import signal
+import socket
+import ssl
+import subprocess
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+from websockets.exceptions import ConnectionClosed, InvalidHandshake
+from websockets.sync.client import ClientConnection, connect
+
+ROOK_CLIENT_LOADER = importlib.machinery.SourceFileLoader(
+    "rook_client",
+    str(Path(__file__).resolve().parent / "rook-client"),
+)
+ROOK_CLIENT_SPEC = importlib.util.spec_from_loader("rook_client", ROOK_CLIENT_LOADER)
+rook_client = importlib.util.module_from_spec(ROOK_CLIENT_SPEC)
+ROOK_CLIENT_LOADER.exec_module(rook_client)
+
+
+class RookLinkError(rook_client.RookClientError):
+    """A failure on the link, or in reaching an agent's pane."""
+
+
+class PaneTyper:
+    """Types text into an agent's tmux pane as one paste followed by Enter, as a person would."""
+
+    TYPER_TIMEOUT_SECONDS = 5
+    TYPER_SETTLE_SECONDS = 0.3
+
+    def type(self, agent_pane: "rook_client.AgentPane", buffer_name: str, text: str) -> None:
+        """Paste text into a pane and submit it.
+
+        Args:
+            agent_pane: where the agent runs
+            buffer_name: a tmux paste buffer name of its own
+            text: what to type
+
+        Raises:
+            RookLinkError: if the pane is gone or tmux refuses
+        """
+        self._tmux(agent_pane, ["display-message", "-p", "-t", agent_pane.pane, "#{pane_id}"])
+        self._tmux(agent_pane, ["load-buffer", "-b", buffer_name, "-"], text)
+        self._tmux(agent_pane, ["paste-buffer", "-p", "-d", "-b", buffer_name, "-t", agent_pane.pane])
+        time.sleep(self.TYPER_SETTLE_SECONDS)
+        self._tmux(agent_pane, ["send-keys", "-t", agent_pane.pane, "Enter"])
+
+    def _tmux(self, agent_pane: "rook_client.AgentPane", list_arguments: list[str], text: str | None = None) -> None:
+        try:
+            completed = subprocess.run(
+                ["tmux", "-S", agent_pane.tmux_socket, *list_arguments],
+                input=text,
+                capture_output=True,
+                text=True,
+                timeout=self.TYPER_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as err:
+            raise RookLinkError(f"tmux failed: {err}") from err
+        if completed.returncode != 0:
+            raise RookLinkError(f"tmux {list_arguments[0]}: {completed.stderr.strip() or 'failed'}")
+
+
+class DeliveryDesk:
+    """The deliveries this rook holds, one JSON file each, until each reaches its agent or cannot.
+
+    An agent that is ready (idle, done, stopped on an error or a limit) gets the text typed into its pane;
+    a busy one gets it in its mailbox, which its Stop hook hands over. Typing waits until the agent's state
+    has changed since the last text typed into it, so two deliveries never land in one prompt.
+    """
+
+    DESK_READY_STATES = frozenset({"idle", "done", "error", "rate_limited"})
+    DESK_KEEP_FINISHED_SECONDS = 2 * 24 * 3600
+    DESK_OPEN = "open"
+
+    def __init__(self, typer: PaneTyper) -> None:
+        self._typer = typer
+        self._map_typed_at: dict[str, float] = {}
+
+    def accept(self, map_delivery: dict[str, object]) -> None:
+        """Take a delivery the server handed over; one already held keeps its own state, and is reported
+        again so a server that lost the outcome learns it."""
+        path = self._path(str(map_delivery["id"]))
+        if path.exists():
+            map_record = json.loads(path.read_text(encoding="utf-8"))
+            map_record["is_reported"] = map_record["status"] == self.DESK_OPEN
+            self._save(map_record)
+            return
+        self._save({
+            "delivery": map_delivery,
+            "status": self.DESK_OPEN,
+            "reason": "",
+            "is_mailboxed": False,
+            "is_reported": True,
+            "updated_at": time.time(),
+        })
+
+    def process(self, accepts_prompts: bool) -> None:
+        """Move every open delivery on: type it, hold it in the mailbox, or give it up."""
+        set_received = set(rook_client.Mailbox.drain_receipts())
+        for map_record in self._records():
+            if map_record["status"] != self.DESK_OPEN:
+                continue
+            if map_record["delivery"]["id"] in set_received:
+                self._finish(map_record, "delivered", "handed over when the agent stopped")
+                continue
+            self._advance(map_record, accepts_prompts)
+
+    def unreported(self) -> list[dict[str, object]]:
+        """The outcomes the server has yet to hear, as `delivery` messages."""
+        list_reports: list[dict[str, object]] = []
+        for map_record in self._records():
+            if map_record["is_reported"]:
+                continue
+            list_reports.append({
+                "type": "delivery",
+                "id": map_record["delivery"]["id"],
+                "status": "waiting" if map_record["status"] == self.DESK_OPEN else map_record["status"],
+                "reason": map_record["reason"],
+            })
+        return list_reports
+
+    def mark_reported(self, delivery_id: str) -> None:
+        """Note that the server heard a delivery's outcome."""
+        path = self._path(delivery_id)
+        if path.exists():
+            map_record = json.loads(path.read_text(encoding="utf-8"))
+            map_record["is_reported"] = True
+            self._save(map_record)
+
+    def prune(self) -> None:
+        """Forget finished deliveries the server heard about long ago."""
+        cutoff = time.time() - self.DESK_KEEP_FINISHED_SECONDS
+        for map_record in self._records():
+            if (
+                map_record["status"] != self.DESK_OPEN
+                and map_record["is_reported"]
+                and map_record["updated_at"] < cutoff
+            ):
+                self._path(map_record["delivery"]["id"]).unlink(missing_ok=True)
+
+    @staticmethod
+    def framed(map_delivery: dict[str, object]) -> str:
+        """The text as the agent reads it: a person's as written, another agent's with who sent it and how
+        to answer."""
+        text = str(map_delivery["text"])
+        map_sender = map_delivery["sender"]
+        if map_sender.get("kind") != "agent":
+            return text
+        sender_id = map_sender["id"]
+        return f'Message from agent {sender_id}, through rook:\n\n{text}\n\nTo answer: rook message {sender_id} "..."'
+
+    def _advance(self, map_record: dict[str, object], accepts_prompts: bool) -> None:
+        map_delivery = map_record["delivery"]
+        delivery_id = str(map_delivery["id"])
+        session_id = str(map_delivery["agent_id"]).split("~")[0]
+        if not accepts_prompts:
+            self._finish(map_record, "failed", "this rook does not take prompts (rook link prompts on)")
+            return
+        agent_pane = rook_client.AgentPane.of(session_id)
+        if agent_pane is None:
+            self._finish(map_record, "failed", "this rook has no pane on record for the session")
+            return
+        if not agent_pane.is_current():
+            rook_client.Mailbox.withdraw(session_id, delivery_id)
+            self._finish(map_record, "failed", "the session's pane runs another session now")
+            return
+        state = rook_client.AgentStateMemo.current(session_id)
+        if state is None:
+            rook_client.Mailbox.withdraw(session_id, delivery_id)
+            self._finish(map_record, "failed", "the session has ended")
+            return
+        if state not in self.DESK_READY_STATES:
+            if not map_record["is_mailboxed"]:
+                rook_client.Mailbox.put(session_id, delivery_id, self.framed(map_delivery))
+                map_record["is_mailboxed"] = True
+                map_record["reason"] = f"held until the agent stops ({state})"
+                map_record["is_reported"] = False
+                self._save(map_record)
+            return
+        if self._map_typed_at.get(session_id, 0.0) >= rook_client.AgentStateMemo.changed_at(session_id):
+            return
+        if map_record["is_mailboxed"] and not rook_client.Mailbox.withdraw(session_id, delivery_id):
+            self._finish(map_record, "delivered", "handed over when the agent stopped")
+            return
+        try:
+            self._typer.type(agent_pane, f"rook-{delivery_id}", self.framed(map_delivery))
+        except RookLinkError as err:
+            self._finish(map_record, "failed", err.message)
+            return
+        self._map_typed_at[session_id] = time.time()
+        self._finish(map_record, "delivered", "typed into the pane")
+
+    def _finish(self, map_record: dict[str, object], status: str, reason: str) -> None:
+        map_record["status"] = status
+        map_record["reason"] = reason
+        map_record["is_reported"] = False
+        self._save(map_record)
+
+    def _records(self) -> list[dict[str, object]]:
+        directory = rook_client.RookPaths.deliveries_dir()
+        if not directory.is_dir():
+            return []
+        list_records: list[dict[str, object]] = []
+        for path in sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime):
+            try:
+                list_records.append(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+        list_records.sort(key=lambda map_record: str(map_record["delivery"].get("created_at") or ""))
+        return list_records
+
+    def _save(self, map_record: dict[str, object]) -> None:
+        map_record["updated_at"] = time.time()
+        path = self._path(str(map_record["delivery"]["id"]))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        staging = path.with_suffix(".tmp")
+        staging.write_text(json.dumps(map_record), encoding="utf-8")
+        os.replace(staging, path)
+
+    @staticmethod
+    def _path(delivery_id: str) -> Path:
+        return rook_client.RookPaths.deliveries_dir() / f"{rook_client.RookPaths.key_of(delivery_id)}.json"
+
+
+class RookLink:
+    """The rook's end of the live link: holds a WebSocket to rookd, sends the event queue over it, and takes
+    the deliveries for this machine's agents. Reconnects on its own, and follows `rook connect` and
+    `rook disconnect` by watching the connection file."""
+
+    LINK_PATH = "/v1/link"
+    LINK_TICK_SECONDS = 1.0
+    LINK_IDLE_SECONDS = 5.0
+    LINK_RETRY_MIN_SECONDS = 1.0
+    LINK_RETRY_MAX_SECONDS = 30.0
+    LINK_ANSWER_TIMEOUT_SECONDS = 30.0
+    LINK_PRUNE_EVERY_SECONDS = 3600.0
+
+    def __init__(self, desk: DeliveryDesk) -> None:
+        self._desk = desk
+        self._is_stopping = False
+        self._ref_count = 0
+        self._connect_stamp = 0.0
+        self._pruned_at = 0.0
+
+    def stop(self) -> None:
+        """Leave the link at the next tick."""
+        self._is_stopping = True
+
+    def run_forever(self) -> None:
+        """Hold the link open while connected, retrying with a growing pause after each failure."""
+        retry_seconds = self.LINK_RETRY_MIN_SECONDS
+        while not self._is_stopping:
+            connection = rook_client.Connection.load()
+            if connection is None:
+                self._write_status(False, "not connected; run rook connect")
+                time.sleep(self.LINK_IDLE_SECONDS)
+                continue
+            try:
+                self.run_once(connection)
+                retry_seconds = self.LINK_RETRY_MIN_SECONDS
+            except (OSError, TimeoutError, ConnectionClosed, InvalidHandshake, rook_client.RookClientError) as err:
+                message = getattr(err, "message", None) or str(err) or type(err).__name__
+                self._write_status(False, message)
+                rook_client.EventQueue.log(f"link down, retrying in {retry_seconds:.0f}s: {message}")
+                time.sleep(retry_seconds)
+                retry_seconds = min(retry_seconds * 2, self.LINK_RETRY_MAX_SECONDS)
+
+    def run_once(self, connection: "rook_client.Connection") -> None:
+        """Open the link and serve it until it drops, the connection file changes, or `stop`.
+
+        Raises:
+            RookClientError: if rookd cannot be reached or refuses the link
+            ConnectionClosed: if the link drops
+        """
+        self._connect_stamp = self._connect_file_stamp()
+        with self._open(connection) as websocket:
+            websocket.send(json.dumps({
+                "type": "hello",
+                "role": "rook",
+                "rook": rook_client.RookConfig.name(),
+                "machine": {
+                    "hostname": socket.gethostname().split(".")[0],
+                    "os": os.uname().sysname,
+                    "arch": os.uname().machine,
+                },
+                "accepts_prompts": rook_client.RookConfig.accepts_prompts(),
+            }))
+            map_welcome = self._receive(websocket, self.LINK_ANSWER_TIMEOUT_SECONDS)
+            if map_welcome.get("type") != "welcome":
+                raise RookLinkError(f"rookd did not welcome the link: {map_welcome}")
+            self._write_status(True, connection.base_url)
+            rook_client.EventQueue.log(f"link up to {connection.base_url}")
+            while not self._is_stopping and self._connect_file_stamp() == self._connect_stamp:
+                try:
+                    self._dispatch(websocket, self._receive(websocket, self.LINK_TICK_SECONDS))
+                except TimeoutError:
+                    pass
+                self._tick(websocket)
+
+    def _open(self, connection: "rook_client.Connection") -> ClientConnection:
+        map_health = connection.request("GET", "/v1/healthz")
+        link_port = map_health.get("link_port")
+        if not isinstance(link_port, int):
+            raise RookLinkError("rookd has no live link; upgrade it")
+        parts = urllib.parse.urlsplit(connection.base_url)
+        is_tls = parts.scheme == "https"
+        context = None
+        if is_tls:
+            context = ssl.create_default_context()
+            if connection.is_insecure:
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+        return connect(
+            f"{'wss' if is_tls else 'ws'}://{parts.hostname}:{link_port}{self.LINK_PATH}",
+            additional_headers={"Authorization": f"Bearer {connection.token}"},
+            ssl=context,
+            open_timeout=self.LINK_ANSWER_TIMEOUT_SECONDS,
+        )
+
+    def _tick(self, websocket: ClientConnection) -> None:
+        rook_client.EventQueue.flush(lambda batch: self._send_events(websocket, batch))
+        self._desk.process(rook_client.RookConfig.accepts_prompts())
+        for map_report in self._desk.unreported():
+            websocket.send(json.dumps(map_report))
+            self._desk.mark_reported(str(map_report["id"]))
+        if time.time() - self._pruned_at > self.LINK_PRUNE_EVERY_SECONDS:
+            self._desk.prune()
+            self._pruned_at = time.time()
+
+    def _send_events(self, websocket: ClientConnection, list_batch: list[object]) -> None:
+        self._ref_count += 1
+        ref = f"e{self._ref_count}"
+        websocket.send(json.dumps({"type": "events", "ref": ref, "events": list_batch}))
+        deadline = time.monotonic() + self.LINK_ANSWER_TIMEOUT_SECONDS
+        while True:
+            map_message = self._receive(websocket, max(0.1, deadline - time.monotonic()))
+            if map_message.get("ref") != ref:
+                self._dispatch(websocket, map_message)
+                continue
+            if map_message.get("type") == "error":
+                raise rook_client.RookClientError(f"rookd refused events: {map_message.get('message')}")
+            return
+
+    def _dispatch(self, websocket: ClientConnection, map_message: dict[str, object]) -> None:
+        if map_message.get("type") == "deliver" and isinstance(map_message.get("delivery"), dict):
+            self._desk.accept(map_message["delivery"])
+        elif map_message.get("type") == "error":
+            rook_client.EventQueue.log(f"rookd: {map_message.get('message')}")
+
+    @staticmethod
+    def _receive(websocket: ClientConnection, timeout_seconds: float) -> dict[str, object]:
+        map_message = json.loads(websocket.recv(timeout=timeout_seconds))
+        if not isinstance(map_message, dict):
+            raise RookLinkError("rookd sent something other than an object")
+        return map_message
+
+    @staticmethod
+    def _connect_file_stamp() -> float:
+        try:
+            return rook_client.RookPaths.connect_file().stat().st_mtime
+        except OSError:
+            return 0.0
+
+    @staticmethod
+    def _write_status(is_up: bool, detail: str) -> None:
+        path = rook_client.RookPaths.link_status_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"up": is_up, "detail": detail, "at": rook_client.HookEventMapper.now()}))
+
+
+class RookLinkCli:
+    """`rook-link run`, which the service manager starts, `status` and `prompts on|off`."""
+
+    @staticmethod
+    def run() -> int:
+        """Serve the link until stopped, unless another rook-link already does."""
+        if rook_client.RookLinkProcess.is_running():
+            sys.stderr.write("rook-link is already running\n")
+            return 0
+        pid_file = rook_client.RookPaths.link_pid_file()
+        pid_file.parent.mkdir(parents=True, exist_ok=True)
+        pid_file.write_text(str(os.getpid()))
+        link = RookLink(DeliveryDesk(PaneTyper()))
+        signal.signal(signal.SIGTERM, lambda signum, frame: link.stop())
+        try:
+            link.run_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            pid_file.unlink(missing_ok=True)
+        return 0
+
+    @staticmethod
+    def status() -> int:
+        """Print whether the link is running and up."""
+        if not rook_client.RookLinkProcess.is_running():
+            print("rook-link is not running")
+            return 1
+        try:
+            map_status = json.loads(rook_client.RookPaths.link_status_file().read_text())
+        except (OSError, ValueError):
+            print("rook-link is starting")
+            return 0
+        print(f"rook-link is {'up to' if map_status.get('up') else 'down:'} {map_status.get('detail')}")
+        print(f"prompts from Rookery and other agents: {'on' if rook_client.RookConfig.accepts_prompts() else 'off'}")
+        return 0
+
+    @staticmethod
+    def prompts(is_on: bool) -> int:
+        """Let prompts reach this machine's agents, or stop them."""
+        rook_client.RookConfig.update({"accepts_prompts": is_on})
+        print(f"prompts {'on' if is_on else 'off'}; rook-link tells rookd when it next connects")
+        return 0
+
+
+def main(list_argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="rook-link")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("run")
+    commands.add_parser("status")
+    prompts_parser = commands.add_parser("prompts")
+    prompts_parser.add_argument("switch", choices=("on", "off"))
+    args = parser.parse_args(list_argv)
+    if args.command == "run":
+        return RookLinkCli.run()
+    if args.command == "status":
+        return RookLinkCli.status()
+    return RookLinkCli.prompts(args.switch == "on")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

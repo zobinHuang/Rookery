@@ -14,8 +14,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -78,6 +79,41 @@ class RookPaths:
         """What the event sender did."""
         return cls.state_dir() / "events.log"
 
+    @classmethod
+    def agent_panes_dir(cls) -> Path:
+        """Where each session runs: its tmux server and pane, and which session each pane runs last."""
+        return cls.state_dir() / "agent-panes"
+
+    @classmethod
+    def mailbox_dir(cls) -> Path:
+        """Messages held for busy agents, one file a session, read by their Stop hook."""
+        return cls.state_dir() / "mailbox"
+
+    @classmethod
+    def receipts_file(cls) -> Path:
+        """The deliveries Stop hooks handed to their agents, for rook-link to report."""
+        return cls.mailbox_dir() / "receipts.jsonl"
+
+    @classmethod
+    def link_status_file(cls) -> Path:
+        """Whether rook-link's link is up, and to where or why not."""
+        return cls.state_dir() / "link.status.json"
+
+    @classmethod
+    def link_pid_file(cls) -> Path:
+        """The process id of the running rook-link."""
+        return cls.state_dir() / "link.pid"
+
+    @classmethod
+    def deliveries_dir(cls) -> Path:
+        """The deliveries rook-link holds, and what became of each."""
+        return cls.state_dir() / "deliveries"
+
+    @staticmethod
+    def key_of(text: str) -> str:
+        """A file name for a session id or a pane, which may hold characters a file name cannot."""
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
 
 class RookConfig:
     """rook's own settings."""
@@ -91,14 +127,33 @@ class RookConfig:
         Returns:
             the name
         """
-        try:
-            map_config = json.loads(RookPaths.config_file().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            map_config = {}
-        name = str(map_config.get("name") or "") if isinstance(map_config, dict) else ""
+        name = str(cls._read().get("name") or "")
         if cls.CONFIG_NAME_PATTERN.match(name):
             return name
         return socket.gethostname().split(".")[0] or "rook"
+
+    @classmethod
+    def accepts_prompts(cls) -> bool:
+        """Whether prompts from Rookery and other agents may be typed into this machine's agents; on unless
+        turned off with `rook link prompts off`."""
+        return cls._read().get("accepts_prompts") is not False
+
+    @classmethod
+    def update(cls, map_changes: dict[str, object]) -> None:
+        """Merge settings into the configuration file, keeping the others."""
+        map_config = cls._read()
+        map_config.update(map_changes)
+        path = RookPaths.config_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(map_config, indent=2) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _read() -> dict[str, object]:
+        try:
+            map_config = json.loads(RookPaths.config_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return map_config if isinstance(map_config, dict) else {}
 
 
 class Connection:
@@ -108,8 +163,8 @@ class Connection:
 
     def __init__(self, base_url: str, token: str, is_insecure: bool) -> None:
         self.base_url = base_url.rstrip("/")
-        self._token = token
-        self._is_insecure = is_insecure
+        self.token = token
+        self.is_insecure = is_insecure
 
     @classmethod
     def load(cls) -> "Connection | None":
@@ -146,11 +201,11 @@ class Connection:
         """
         data = None if map_body is None else json.dumps(map_body).encode("utf-8")
         request = urllib.request.Request(self.base_url + path, data=data, method=method)
-        request.add_header("Authorization", f"Bearer {self._token}")
+        request.add_header("Authorization", f"Bearer {self.token}")
         if data is not None:
             request.add_header("Content-Type", "application/json")
         context = None
-        if self._is_insecure:
+        if self.is_insecure:
             context = ssl.create_default_context()
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
@@ -392,22 +447,178 @@ class AgentStateMemo:
         Returns:
             True when the state differs from the last one recorded
         """
-        directory = RookPaths.agent_states_dir()
-        path = directory / hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
-        try:
-            if path.read_text(encoding="utf-8") == state:
-                return False
-        except OSError:
-            pass
-        directory.mkdir(parents=True, exist_ok=True)
+        path = AgentStateMemo._path(session_id)
+        if AgentStateMemo.current(session_id) == state:
+            return False
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(state, encoding="utf-8")
         return True
 
     @staticmethod
+    def current(session_id: str) -> str | None:
+        """The state a session reported last, or None when it reported none or ended."""
+        try:
+            return AgentStateMemo._path(session_id).read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    @staticmethod
+    def changed_at(session_id: str) -> float:
+        """When the session's state last changed, as a Unix time; 0 when unknown."""
+        try:
+            return AgentStateMemo._path(session_id).stat().st_mtime
+        except OSError:
+            return 0.0
+
+    @staticmethod
     def forget(session_id: str) -> None:
         """Drop a session that ended."""
-        path = RookPaths.agent_states_dir() / hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
-        path.unlink(missing_ok=True)
+        AgentStateMemo._path(session_id).unlink(missing_ok=True)
+
+    @staticmethod
+    def _path(session_id: str) -> Path:
+        return RookPaths.agent_states_dir() / RookPaths.key_of(session_id)
+
+
+@dataclass
+class AgentPane:
+    """Where an agent session runs: the tmux server and the pane it was started in."""
+
+    session_id: str
+    harness: str
+    tmux_socket: str
+    pane: str
+
+    @classmethod
+    def record(cls, session_id: str, harness: str) -> "AgentPane | None":
+        """Note the pane the calling hook runs in as the session's, and the session as the pane's latest.
+
+        Args:
+            session_id: the session starting
+            harness: the code agent running it
+
+        Returns:
+            the record, or None outside tmux
+        """
+        tmux = os.environ.get("TMUX", "")
+        pane = os.environ.get("TMUX_PANE", "")
+        if not tmux or not pane:
+            return None
+        agent_pane = cls(session_id=session_id, harness=harness, tmux_socket=tmux.split(",")[0], pane=pane)
+        directory = RookPaths.agent_panes_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / RookPaths.key_of(session_id)).write_text(json.dumps(asdict(agent_pane)), encoding="utf-8")
+        (directory / cls._pane_key(agent_pane.tmux_socket, pane)).write_text(session_id, encoding="utf-8")
+        return agent_pane
+
+    @classmethod
+    def of(cls, session_id: str) -> "AgentPane | None":
+        """The pane a session started in, or None when it started outside tmux or on another machine."""
+        try:
+            map_record = json.loads((RookPaths.agent_panes_dir() / RookPaths.key_of(session_id)).read_text())
+            return cls(**map_record)
+        except (OSError, ValueError, TypeError):
+            return None
+
+    @classmethod
+    def session_in(cls, tmux_socket: str, pane: str) -> str | None:
+        """The session that started last in a pane, or None."""
+        try:
+            return (RookPaths.agent_panes_dir() / cls._pane_key(tmux_socket, pane)).read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    @classmethod
+    def session_here(cls) -> str | None:
+        """The session that started last in the calling process's pane, or None outside tmux."""
+        tmux = os.environ.get("TMUX", "")
+        pane = os.environ.get("TMUX_PANE", "")
+        return cls.session_in(tmux.split(",")[0], pane) if tmux and pane else None
+
+    def is_current(self) -> bool:
+        """Whether the pane still runs this session, rather than one started in it since."""
+        return self.session_in(self.tmux_socket, self.pane) == self.session_id
+
+    @staticmethod
+    def _pane_key(tmux_socket: str, pane: str) -> str:
+        return "pane-" + RookPaths.key_of(f"{tmux_socket}\n{pane}")
+
+
+class Mailbox:
+    """Messages held for a busy agent until it stops, when its Stop hook hands them over and keeps it going.
+    rook-link puts and withdraws them; the hook takes them and leaves a receipt for each."""
+
+    @classmethod
+    def put(cls, session_id: str, delivery_id: str, text: str) -> None:
+        """Hold a message for a session, once."""
+        with cls._locked(session_id) as list_messages:
+            if all(message["delivery"] != delivery_id for message in list_messages):
+                list_messages.append({"delivery": delivery_id, "text": text})
+
+    @classmethod
+    def withdraw(cls, session_id: str, delivery_id: str) -> bool:
+        """Take one message back, to deliver another way.
+
+        Returns:
+            True when it was still held, False when the hook already handed it over
+        """
+        with cls._locked(session_id) as list_messages:
+            count = len(list_messages)
+            list_messages[:] = [message for message in list_messages if message["delivery"] != delivery_id]
+            return len(list_messages) < count
+
+    @classmethod
+    def take(cls, session_id: str) -> list[dict[str, str]]:
+        """Hand over every message held for a session, leaving a receipt for each.
+
+        Returns:
+            the messages, oldest first
+        """
+        with cls._locked(session_id) as list_messages:
+            list_taken = list(list_messages)
+            list_messages.clear()
+        if list_taken:
+            with RookPaths.receipts_file().open("a", encoding="utf-8") as handle:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                for message in list_taken:
+                    handle.write(json.dumps({"delivery": message["delivery"], "at": HookEventMapper.now()}) + "\n")
+        return list_taken
+
+    @staticmethod
+    def drain_receipts() -> list[str]:
+        """The deliveries handed over since the last call."""
+        path = RookPaths.receipts_file()
+        if not path.exists():
+            return []
+        with path.open("r+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            list_lines = handle.read().splitlines()
+            handle.seek(0)
+            handle.truncate(0)
+        list_ids: list[str] = []
+        for line in list_lines:
+            try:
+                list_ids.append(str(json.loads(line)["delivery"]))
+            except (ValueError, KeyError, TypeError):
+                continue
+        return list_ids
+
+    @staticmethod
+    @contextmanager
+    def _locked(session_id: str) -> Iterator[list[dict[str, str]]]:
+        path = RookPaths.mailbox_dir() / RookPaths.key_of(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            handle.seek(0)
+            try:
+                list_messages = json.loads(handle.read() or "[]")
+            except ValueError:
+                list_messages = []
+            yield list_messages
+            handle.seek(0)
+            handle.truncate(0)
+            handle.write(json.dumps(list_messages))
 
 
 class EventQueue:
@@ -434,11 +645,11 @@ class EventQueue:
                 handle.write(json.dumps(event) + "\n")
 
     @classmethod
-    def flush(cls, connection: Connection) -> int:
+    def flush(cls, send_batch: Callable[[list[object]], None]) -> int:
         """Send what is queued, unless another sender already is.
 
         Args:
-            connection: the server to send to
+            send_batch: sends one batch to rookd, raising RookClientError when it cannot
 
         Returns:
             how many events were sent
@@ -460,7 +671,7 @@ class EventQueue:
                         pending.write(queued)
                     handle.truncate(0)
             if sending.exists():
-                sent += cls._send_file(sending, connection)
+                sent += cls._send_file(sending, send_batch)
             return sent
 
     @classmethod
@@ -474,7 +685,7 @@ class EventQueue:
             handle.write(f"{HookEventMapper.now()} {message}\n")
 
     @classmethod
-    def _send_file(cls, path: Path, connection: Connection) -> int:
+    def _send_file(cls, path: Path, send_batch: Callable[[list[object]], None]) -> int:
         list_lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         list_events: list[object] = []
         for line in list_lines:
@@ -485,7 +696,7 @@ class EventQueue:
         sent = 0
         while sent < len(list_events):
             batch = list_events[sent: sent + cls.QUEUE_BATCH_SIZE]
-            connection.request("POST", "/v1/events", {"events": batch})
+            send_batch(batch)
             sent += len(batch)
             remaining = list_events[sent:]
             path.write_text("".join(json.dumps(event) + "\n" for event in remaining), encoding="utf-8")
@@ -618,14 +829,61 @@ class ResourceCommands:
         sys.stdout.write("\n")
 
 
+class MessageCommands:
+    """`rook message`: send text to another agent, as the agent in this pane, or as a person outside one."""
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the message arguments to a parser."""
+        parser.add_argument("agent", help="the agent's id, its session id")
+        parser.add_argument("text", nargs="+")
+        parser.add_argument("--as-person", action="store_true", help="send as a person even inside an agent's pane")
+
+    @staticmethod
+    def run(args: argparse.Namespace, connection: Connection) -> int:
+        """Send the message and print the delivery's id.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if rookd refuses it
+        """
+        map_body: dict[str, object] = {"to": args.agent, "text": " ".join(args.text)}
+        session_id = None if args.as_person else AgentPane.session_here()
+        if session_id:
+            map_body["actor"] = {"kind": "agent", "id": session_id}
+        map_delivery = connection.request("POST", "/v1/messages", map_body)
+        print(map_delivery["id"])
+        return 0
+
+
+class RookLinkProcess:
+    """Whether rook-link, which sends the queue itself, is running."""
+
+    @staticmethod
+    def is_running() -> bool:
+        """Whether the process named in rook-link's pid file is alive."""
+        try:
+            pid = int(RookPaths.link_pid_file().read_text(encoding="utf-8").strip())
+            os.kill(pid, 0)
+        except (OSError, ValueError):
+            return False
+        return True
+
+
 class RookClient:
-    """The entry points: the hooks' `event hook`, the background `event flush`, and `resource`."""
+    """The entry points: the hooks' `event hook`, the background `event flush`, `resource` and `message`."""
 
     CLIENT_SELF = Path(__file__).resolve()
+    CLIENT_STOP_HOOK = "Stop"
+    CLIENT_MESSAGE_SEPARATOR = "\n\n---\n\n"
 
     @classmethod
     def hook(cls, harness: str) -> int:
-        """Take one hook payload from stdin, queue its events, and start a sender. Never fails the agent.
+        """Take one hook payload from stdin, queue its events, and start a sender. At SessionStart, note the
+        pane the session runs in; at Stop, hand the agent the messages held for it, which keeps it going.
+        Never fails the agent.
 
         Returns:
             always 0
@@ -635,11 +893,30 @@ class RookClient:
             if not isinstance(map_payload, dict):
                 return 0
             mapper = HookEventMapper(harness, map_payload)
-            list_events = [event for event in mapper.events() if cls._is_worth_sending(mapper, event)]
+            list_events = mapper.events()
+            if (
+                list_events
+                and list_events[0]["verb"] == "started"
+                and list_events[0]["actor"]["id"] == mapper.session_id
+            ):
+                AgentPane.record(mapper.session_id, harness)
+                AgentStateMemo.is_new(mapper.session_id, "idle")
+            if map_payload.get("hook_event_name") == cls.CLIENT_STOP_HOOK and mapper.session_id:
+                list_messages = Mailbox.take(mapper.session_id)
+                if list_messages:
+                    json.dump(
+                        {
+                            "decision": "block",
+                            "reason": cls.CLIENT_MESSAGE_SEPARATOR.join(message["text"] for message in list_messages),
+                        },
+                        sys.stdout,
+                    )
+                    list_events = [cls._still_thinking(event) for event in list_events]
+            list_events = [event for event in list_events if cls._is_worth_sending(mapper, event)]
             if not list_events:
                 return 0
             EventQueue.append(list_events)
-            if RookPaths.connect_file().exists():
+            if RookPaths.connect_file().exists() and not RookLinkProcess.is_running():
                 cls.start_sender()
         except (OSError, ValueError) as err:
             EventQueue.log(f"hook {harness} could not queue its events: {err}")
@@ -660,7 +937,7 @@ class RookClient:
         list_events = PlaybookEvents.of(session_id, map_resolved if isinstance(map_resolved, dict) else {})
         if list_events:
             EventQueue.append(list_events)
-            if RookPaths.connect_file().exists():
+            if RookPaths.connect_file().exists() and not RookLinkProcess.is_running():
                 cls.start_sender()
         return 0
 
@@ -686,13 +963,19 @@ class RookClient:
         if connection is None:
             return 0
         try:
-            sent = EventQueue.flush(connection)
+            sent = EventQueue.flush(lambda batch: connection.request("POST", "/v1/events", {"events": batch}))
         except RookClientError as err:
             EventQueue.log(f"send failed, kept for the next try: {err.message}")
             return 1
         if sent:
             EventQueue.log(f"sent {sent} event(s)")
         return 0
+
+    @staticmethod
+    def _still_thinking(event: dict[str, object]) -> dict[str, object]:
+        if event["verb"] != "state":
+            return event
+        return {**event, "detail": {"state": "thinking"}}
 
     @staticmethod
     def _is_worth_sending(mapper: HookEventMapper, event: dict[str, object]) -> bool:
@@ -716,6 +999,7 @@ def main(list_argv: list[str] | None = None) -> int:
     playbook_parser.add_argument("session_id")
     playbook_parser.add_argument("resolved_path")
     ResourceCommands.build_parser(commands.add_parser("resource"))
+    MessageCommands.build_parser(commands.add_parser("message"))
     args = parser.parse_args(list_argv)
     if args.command == "event":
         if args.event_command == "hook":
@@ -728,6 +1012,8 @@ def main(list_argv: list[str] | None = None) -> int:
         sys.stderr.write("rook: not connected; run: rook connect <host> <port> --token <token>\n")
         return 1
     try:
+        if args.command == "message":
+            return MessageCommands.run(args, connection)
         return ResourceCommands.run(args, connection)
     except RookClientError as err:
         sys.stderr.write(f"rook: {err.message}\n")

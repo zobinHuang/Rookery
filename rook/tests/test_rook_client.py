@@ -136,6 +136,7 @@ class QueueAndSendTest(RookHomeTest):
             tls_key=None,
         )
         server = RookdServer(config=config, store=SessionStore(root))
+        self.addCleanup(server.resources.database.close)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         self.addCleanup(thread.join, 5)

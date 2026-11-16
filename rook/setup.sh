@@ -3,10 +3,13 @@ set -euo pipefail
 
 # --name <name> names this machine's agents (`<name>/<tab>`); otherwise the
 # installer asks, defaulting to the name set before or the short host name.
+# --no-service installs rook-link without starting it as a user service.
 ROOK_NAME="${ROOK_NAME:-}"
+ROOK_DO_SERVICE=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --name) ROOK_NAME="${2:-}"; shift 2 ;;
+    --no-service) ROOK_DO_SERVICE=0; shift ;;
     *) echo "rook setup: unknown option $1" >&2; exit 1 ;;
   esac
 done
@@ -421,6 +424,11 @@ if _rook_install_or_fail bin/rook-client "$HOME/.local/bin/rook-client" "rook-cl
   info "Installed rook-client"
 fi
 
+if _rook_install_or_fail bin/rook-link "$HOME/.local/bin/rook-link" "rook-link"; then
+  chmod +x "$HOME/.local/bin/rook-link"
+  info "Installed rook-link"
+fi
+
 if _rook_install_or_fail bin/rook-playbook "$HOME/.local/bin/rook-playbook" "rook-playbook"; then
   chmod +x "$HOME/.local/bin/rook-playbook"
   info "Installed rook-playbook"
@@ -482,7 +490,21 @@ if ! printf '%s' "$ROOK_NAME" | grep -Eq "$ROOK_NAME_PATTERN"; then
   ROOK_NAME="$ROOK_NAME_DEFAULT"
 fi
 mkdir -p "$(dirname "$ROOK_CONFIG_FILE")"
-printf '{\n  "name": "%s"\n}\n' "$ROOK_NAME" > "$ROOK_CONFIG_FILE"
+python3 - "$ROOK_CONFIG_FILE" "$ROOK_NAME" <<'PY'
+import json, sys
+path, name = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as handle:
+        config = json.load(handle)
+except (OSError, ValueError):
+    config = {}
+if not isinstance(config, dict):
+    config = {}
+config["name"] = name
+with open(path, "w") as handle:
+    json.dump(config, handle, indent=2)
+    handle.write("\n")
+PY
 info "Agents here go by $ROOK_NAME/<tab>"
 
 # ─── 5. code-agent hooks ─────────────────────────────────────────────
@@ -505,6 +527,89 @@ while IFS=: read -r ROOK_HOOK_AGENT ROOK_HOOK_RESULT; do
 done <<EOF
 $("$HOME/.local/bin/rook-hooks" install)
 EOF
+
+# ─── live link ───────────────────────────────────────────────────────
+# rook-link holds a WebSocket to rookd once `rook connect` names one: it
+# sends the agents' events and types prompts from Rookery and from other
+# agents into their panes. It needs the websockets package, installed into
+# a virtual environment of rook's own, and runs as a user service that
+# idles until connected.
+echo ""
+echo "── live link ─────────────────────────────────────"
+
+ROOK_VENV="$HOME/.local/share/rook/venv"
+ROOK_WEBSOCKETS_SPEC='websockets>=13,<17'
+ROOK_LINK_READY=1
+if [ ! -x "$ROOK_VENV/bin/python" ] && ! python3 -m venv "$ROOK_VENV"; then
+  warn "Could not create $ROOK_VENV (on Debian: apt install python3-venv); rook-link stays off"
+  ROOK_LINK_READY=0
+fi
+if [ "$ROOK_LINK_READY" -eq 1 ] &&
+  ! "$ROOK_VENV/bin/python" -m pip install --quiet --disable-pip-version-check "$ROOK_WEBSOCKETS_SPEC"; then
+  warn "Could not install $ROOK_WEBSOCKETS_SPEC into $ROOK_VENV; rook-link stays off"
+  ROOK_LINK_READY=0
+fi
+
+ROOK_LINK_LABEL="io.github.zobinhuang.rookery.rook-link"
+ROOK_LINK_LOG="$HOME/.local/state/rook/link.log"
+if [ "$ROOK_LINK_READY" -eq 0 ]; then
+  :
+elif [ "$ROOK_DO_SERVICE" -eq 0 ]; then
+  info "rook-link installed; not started as a service (--no-service)"
+elif [ "$(uname -s)" = "Darwin" ]; then
+  ROOK_LINK_PLIST="$HOME/Library/LaunchAgents/$ROOK_LINK_LABEL.plist"
+  mkdir -p "$(dirname "$ROOK_LINK_PLIST")" "$(dirname "$ROOK_LINK_LOG")"
+  cat > "$ROOK_LINK_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$ROOK_LINK_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$ROOK_VENV/bin/python</string>
+    <string>$HOME/.local/bin/rook-link</string>
+    <string>run</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>$PATH</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$ROOK_LINK_LOG</string>
+  <key>StandardErrorPath</key><string>$ROOK_LINK_LOG</string>
+</dict>
+</plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/$ROOK_LINK_LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$ROOK_LINK_PLIST"
+  info "Started launchd agent $ROOK_LINK_LABEL"
+elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  ROOK_LINK_UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$ROOK_LINK_UNIT_DIR"
+  cat > "$ROOK_LINK_UNIT_DIR/rook-link.service" <<UNIT
+[Unit]
+Description=rook's live link to rookd
+After=network-online.target
+
+[Service]
+ExecStart=$ROOK_VENV/bin/python $HOME/.local/bin/rook-link run
+Environment=PATH=$PATH
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+UNIT
+  systemctl --user daemon-reload
+  systemctl --user enable rook-link.service >/dev/null 2>&1
+  systemctl --user restart rook-link.service
+  loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
+    warn "Could not enable lingering; rook-link stops when you log out."
+  info "Started systemd user unit rook-link.service"
+else
+  warn "No launchd or systemd; start the link by hand:"
+  warn "  nohup $ROOK_VENV/bin/python $HOME/.local/bin/rook-link run >> $ROOK_LINK_LOG 2>&1 &"
+fi
 
 # ─── 6. hot reload ───────────────────────────────────────────────────
 echo ""

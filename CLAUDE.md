@@ -16,7 +16,7 @@ A macOS app that manages windows one by one inside its own stage, with a sidebar
 - [docs/development.md](docs/development.md): building, testing, installing, and how to verify each part without a person at the keyboard.
 - One document per subsystem: [windows](docs/windows.md), [audio](docs/audio.md), [Chrome extension](docs/chrome-extension.md), [agent usage](docs/agent-usage.md).
 - [docs/development-plan.md](docs/development-plan.md): the original plan and the decisions behind it, in Chinese.
-- rook and rookd: [rook/README.md](rook/README.md) and its [docs](rook/docs/) (keybindings, session upload, playbooks), [server/README.md](server/README.md) and the [HTTP API](server/API.md). Both came from the vibebox repository, whose history is merged in.
+- rook and rookd: [rook/README.md](rook/README.md) and its [docs](rook/docs/) (keybindings, session upload, playbooks, the live link), [server/README.md](server/README.md) and the [API](server/API.md). Both came from the vibebox repository, whose history is merged in.
 
 ## Everyday commands
 
@@ -41,6 +41,7 @@ A macOS app that manages windows one by one inside its own stage, with a sidebar
 ## rook and rookd
 
 - **Never touch the user's live tmux server, `~/.tmux.conf`, `~/.claude/settings.json` or `$CODEX_HOME` while testing.** Run `rook/setup.sh` and the hooks against a fake `HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME`, with `TMUX` and `TMUX_PANE` unset and `TMUX_TMPDIR` in the fake tree, so it finds no server to reload.
+- **Run `rook/setup.sh --no-service` when testing.** A fake `HOME` does not isolate launchd or systemd: without the flag, setup registers rook-link with the user's real service manager.
 - **Never run `rook-agent` outside tmux.** Its bare `tmux` calls land on the default socket and write agent state onto live sessions.
 - **A test tmux server needs a short socket path.** The scratchpad's path is longer than a unix socket allows; `cd` into the test directory and use `tmux -S ./t.sock`.
 - **The status bar renders in tmux's own format language.** A `#()` in it breaks the one-second redraw; keep rendering free of subprocesses.

@@ -14,6 +14,7 @@ usage() {
   echo "                              Upload agent session history to a rookd server"
   echo "  rook disconnect             Stop uploading session history"
   echo "  rook sessions               Show the upload connection and its backlog"
+  echo "  rook resource <command>     Read and change rookd's agents, skills, playbooks and memories"
   exit 1
 }
 
@@ -113,6 +114,9 @@ case "$CMD" in
     ;;
   sessions)
     exec "$HOME/.local/bin/rook-session" status
+    ;;
+  resource)
+    exec "$HOME/.local/bin/rook-client" resource "$@"
     ;;
   -h|--help) usage ;;
   *)         usage ;;

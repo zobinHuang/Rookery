@@ -15,7 +15,7 @@
 
 set -u
 
-ROOK_OWNED_MARKER='rook-(agent|music|session|playbook)'
+ROOK_OWNED_MARKER='rook-(agent|music|session|playbook|client)'
 ROOK_CONNECT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/rook/connect.json"
 CLAUDE_SETTINGS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json"
 CODEX_HOOKS="${CODEX_HOME:-$HOME/.codex}/hooks.json"
@@ -127,6 +127,45 @@ rook_codex_upload_hooks() {
 JSON
 }
 
+# ─── events ───────────────────────────────────────────────────────────
+# What each agent session is doing, and what it does to skills, playbooks
+# and memory, reported to rookd as events (docs/resources.md). Like the
+# upload hooks they only go in once a server is connected. The hook only
+# queues its events on disk and starts a sender, so it never waits on the
+# network; the tool hooks are async on Claude Code for the same reason the
+# status bar's are, and codex runs every hook synchronously.
+rook_claude_event_hooks() {
+  cat <<'JSON'
+{
+  "SessionStart":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "PreToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude", "async": true } ] } ],
+  "PostToolUse":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude", "async": true } ] } ],
+  "Notification":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "PreCompact":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "SubagentStart":    [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "SubagentStop":     [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "Stop":             [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "StopFailure":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ],
+  "SessionEnd":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook claude" } ] } ]
+}
+JSON
+}
+
+rook_codex_event_hooks() {
+  cat <<'JSON'
+{
+  "SessionStart":      [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ],
+  "UserPromptSubmit":  [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ],
+  "PreToolUse":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ],
+  "PostToolUse":       [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ],
+  "PermissionRequest": [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ],
+  "Stop":              [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ],
+  "SessionEnd":        [ { "hooks": [ { "type": "command", "command": "$HOME/.local/bin/rook-client event hook codex" } ] } ]
+}
+JSON
+}
+
 # ─── playbooks ────────────────────────────────────────────────────────
 # SessionStart is where a new session is offered a playbook and told what
 # it loaded; UserPromptSubmit is what carries that over to a session whose
@@ -185,17 +224,20 @@ rook_hook_set() {
       _bar="$(rook_claude_hooks)"
       _up="$(rook_claude_upload_hooks)"
       _pb="$(rook_claude_playbook_hooks)"
+      _ev="$(rook_claude_event_hooks)"
       ;;
     codex)
       _bar="$(rook_codex_hooks)"
       _up="$(rook_codex_upload_hooks)"
       _pb="$(rook_codex_playbook_hooks)"
+      _ev="$(rook_codex_event_hooks)"
       ;;
     *) return 1 ;;
   esac
   if [ -f "$ROOK_CONNECT_FILE" ]; then
     _merged="$(rook_json_union "$_bar" "$_up")" || return 1
-    rook_json_union "$_merged" "$_pb" && return 0
+    _merged="$(rook_json_union "$_merged" "$_pb")" || return 1
+    rook_json_union "$_merged" "$_ev" && return 0
     return 1
   fi
   printf '%s' "$_bar"

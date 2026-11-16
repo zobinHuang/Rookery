@@ -15,8 +15,8 @@ Rookery is one SwiftPM package with a Dock app (with a menu bar item), a command
 | `RookeryCoreTests` | tests | Swift Testing suites for Core and the wire formats. |
 | `RookeryPlatformTests` | tests | Swift Testing suites for the Platform wrappers that need no permission, such as process priority. |
 | `extensions/chrome` | npm package | The Chrome extension: background service worker, content script, offscreen capture document. |
-| `rook/` | shell | The command line around code agents in tmux: `rook` sessions, `rook-agent` (each pane's agent state and the status bar), `rook-hooks` (merges the hooks into Claude Code and codex), `rook-session` (uploads transcripts), `rook-playbook` (installs a playbook's skills), and `setup.sh`. See `rook/README.md`. |
-| `server/rookd` | Python package | The server rook uploads to: session transcripts, and the index of skills and playbooks, over HTTP with a bearer token. Standard library only. See `server/README.md` and `server/API.md`. |
+| `rook/` | shell | The command line around code agents in tmux: `rook` sessions, `rook-agent` (each pane's agent state and the status bar), `rook-hooks` (merges the hooks into Claude Code and codex), `rook-session` (uploads transcripts), `rook-playbook` (installs a playbook's skills), `rook-client` (reports agent events to rookd and backs `rook resource`), and `setup.sh`. See `rook/README.md`. |
+| `server/rookd` | Python package | The server rook reports to: session transcripts, and the resources (agents, skills, playbooks, memories), their relations and the event log, in SQLite, over HTTP with a bearer token and a live event stream. See `docs/resources.md`. Standard library only. See `server/README.md` and `server/API.md`. |
 | `branding/` | npm package | The pixel crow logo, rendered from a 3D model into the sidebar's frames and the preview page. |
 
 Warnings are errors and the Swift 6 language mode is on everywhere; see `Package.swift`.

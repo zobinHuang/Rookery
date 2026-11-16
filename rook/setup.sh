@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# --name <name> names this machine's agents (`<name>/<tab>`); otherwise the
+# installer asks, defaulting to the name set before or the short host name.
+ROOK_NAME="${ROOK_NAME:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --name) ROOK_NAME="${2:-}"; shift 2 ;;
+    *) echo "rook setup: unknown option $1" >&2; exit 1 ;;
+  esac
+done
+
 # ─── colors ───────────────────────────────────────────────────────────
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -406,6 +416,11 @@ if _rook_install_or_fail bin/rook-session "$HOME/.local/bin/rook-session" "rook-
   info "Installed rook-session"
 fi
 
+if _rook_install_or_fail bin/rook-client "$HOME/.local/bin/rook-client" "rook-client"; then
+  chmod +x "$HOME/.local/bin/rook-client"
+  info "Installed rook-client"
+fi
+
 if _rook_install_or_fail bin/rook-playbook "$HOME/.local/bin/rook-playbook" "rook-playbook"; then
   chmod +x "$HOME/.local/bin/rook-playbook"
   info "Installed rook-playbook"
@@ -444,6 +459,31 @@ for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
   sed -i.bak '/# \[rook\] vibe-hooks/,+1d' "$RC" 2>/dev/null || true
   rm -f "${RC}.bak"
 done
+
+# ─── rook name ───────────────────────────────────────────────────────
+echo ""
+echo "── rook name ─────────────────────────────────────"
+
+ROOK_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/rook/config.json"
+ROOK_NAME_PATTERN='^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
+ROOK_NAME_DEFAULT=""
+if [ -f "$ROOK_CONFIG_FILE" ]; then
+  ROOK_NAME_DEFAULT="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOK_CONFIG_FILE" | head -1)"
+fi
+[ -n "$ROOK_NAME_DEFAULT" ] || ROOK_NAME_DEFAULT="$(hostname 2>/dev/null | cut -d. -f1)"
+# Read from the terminal, not stdin: under `curl | bash` stdin is this script.
+if [ -z "$ROOK_NAME" ] && ( : < /dev/tty ) 2>/dev/null; then
+  printf '  Name this machine'"'"'s agents go by [%s]: ' "$ROOK_NAME_DEFAULT" > /dev/tty
+  read -r ROOK_NAME < /dev/tty || ROOK_NAME=""
+fi
+ROOK_NAME="${ROOK_NAME:-$ROOK_NAME_DEFAULT}"
+if ! printf '%s' "$ROOK_NAME" | grep -Eq "$ROOK_NAME_PATTERN"; then
+  warn "\"$ROOK_NAME\" is not a usable name (letters, digits, . _ -); using $ROOK_NAME_DEFAULT"
+  ROOK_NAME="$ROOK_NAME_DEFAULT"
+fi
+mkdir -p "$(dirname "$ROOK_CONFIG_FILE")"
+printf '{\n  "name": "%s"\n}\n' "$ROOK_NAME" > "$ROOK_CONFIG_FILE"
+info "Agents here go by $ROOK_NAME/<tab>"
 
 # ─── 5. code-agent hooks ─────────────────────────────────────────────
 echo ""

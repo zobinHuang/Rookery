@@ -1,0 +1,675 @@
+#!/usr/bin/env python3
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+import platform
+import re
+import socket
+import ssl
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+class RookClientError(Exception):
+    """A failure talking to rookd, or reading rook's own files."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class RookPaths:
+    """Where rook keeps its configuration and its state, following the XDG directories."""
+
+    PATHS_APP_NAME = "rook"
+
+    @classmethod
+    def config_dir(cls) -> Path:
+        """The directory of rook's configuration."""
+        return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / cls.PATHS_APP_NAME
+
+    @classmethod
+    def state_dir(cls) -> Path:
+        """The directory of rook's state: the event queue, the lock and the log."""
+        return Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / cls.PATHS_APP_NAME
+
+    @classmethod
+    def connect_file(cls) -> Path:
+        """The rookd server this machine reports to, written by `rook connect`."""
+        return cls.config_dir() / "connect.json"
+
+    @classmethod
+    def config_file(cls) -> Path:
+        """rook's own settings, such as the name setup asked for."""
+        return cls.config_dir() / "config.json"
+
+    @classmethod
+    def queue_file(cls) -> Path:
+        """Events waiting to be sent, one JSON object a line."""
+        return cls.state_dir() / "events.jsonl"
+
+    @classmethod
+    def sending_file(cls) -> Path:
+        """Events taken off the queue and being sent, kept until rookd has them."""
+        return cls.state_dir() / "events.sending.jsonl"
+
+    @classmethod
+    def flush_lock_dir(cls) -> Path:
+        """Held by the one process sending events."""
+        return cls.state_dir() / "locks" / "events"
+
+    @classmethod
+    def agent_states_dir(cls) -> Path:
+        """The last state reported for each session, so a state is sent once."""
+        return cls.state_dir() / "agent-states"
+
+    @classmethod
+    def log_file(cls) -> Path:
+        """What the event sender did."""
+        return cls.state_dir() / "events.log"
+
+
+class RookConfig:
+    """rook's own settings."""
+
+    CONFIG_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+    @classmethod
+    def name(cls) -> str:
+        """The name this machine's agents go by, as setup asked for it; the short host name otherwise.
+
+        Returns:
+            the name
+        """
+        try:
+            map_config = json.loads(RookPaths.config_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            map_config = {}
+        name = str(map_config.get("name") or "") if isinstance(map_config, dict) else ""
+        if cls.CONFIG_NAME_PATTERN.match(name):
+            return name
+        return socket.gethostname().split(".")[0] or "rook"
+
+
+class Connection:
+    """The rookd server this machine reports to."""
+
+    CONNECTION_TIMEOUT_SECONDS = 30
+
+    def __init__(self, base_url: str, token: str, is_insecure: bool) -> None:
+        self.base_url = base_url.rstrip("/")
+        self._token = token
+        self._is_insecure = is_insecure
+
+    @classmethod
+    def load(cls) -> "Connection | None":
+        """Read the connection `rook connect` wrote.
+
+        Returns:
+            the connection, or None when this machine is not connected
+        """
+        try:
+            map_connect = json.loads(RookPaths.connect_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        if not isinstance(map_connect, dict):
+            return None
+        base_url = str(map_connect.get("base_url") or "")
+        token = str(map_connect.get("token") or "")
+        if not base_url or not token:
+            return None
+        return cls(base_url, token, map_connect.get("insecure") in (True, "true", 1))
+
+    def request(self, method: str, path: str, map_body: object = None) -> dict[str, object]:
+        """Send one request to rookd.
+
+        Args:
+            method: the HTTP method
+            path: the path, starting with `/v1/`
+            map_body: the JSON body, or None for none
+
+        Returns:
+            the decoded response
+
+        Raises:
+            RookClientError: if rookd cannot be reached or refuses the request
+        """
+        data = None if map_body is None else json.dumps(map_body).encode("utf-8")
+        request = urllib.request.Request(self.base_url + path, data=data, method=method)
+        request.add_header("Authorization", f"Bearer {self._token}")
+        if data is not None:
+            request.add_header("Content-Type", "application/json")
+        context = None
+        if self._is_insecure:
+            context = ssl.create_default_context()
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+        try:
+            with urllib.request.urlopen(request, timeout=self.CONNECTION_TIMEOUT_SECONDS, context=context) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            raise RookClientError(f"rookd answered {err.code}: {detail}") from err
+        except (urllib.error.URLError, OSError) as err:
+            raise RookClientError(f"cannot reach rookd at {self.base_url}: {err}") from err
+        return json.loads(raw) if raw else {}
+
+
+class HookEventMapper:
+    """Turns one hook payload of a code agent into the events rookd takes, following docs/resources.md."""
+
+    MAPPER_MEMORY_PATTERN = re.compile(r"/projects/(?P<project>[^/]+)/memory/(?P<file>[^/]+\.md)$")
+    MAPPER_SKILL_PATTERN = re.compile(r"/\.(?:claude|agents)/skills/(?P<name>[^/]+)/")
+    MAPPER_WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+    MAPPER_SKILL_TOOL = "Skill"
+    MAPPER_MEMORY_TEXT_MAX_BYTES = 64 * 1024
+    MAPPER_FRONTMATTER_NAME_PATTERN = re.compile(r"^name:\s*(?P<name>.+?)\s*$", re.MULTILINE)
+    MAPPER_LIMIT_WORDS = ("rate limit", "usage limit", "rate_limit", "quota")
+    MAPPER_SUBPROCESS_TIMEOUT_SECONDS = 2
+    MAPPER_NOTIFICATION_STATES = {
+        "permission_prompt": "needs_approval",
+        "elicitation_dialog": "needs_input",
+    }
+    MAPPER_EVENT_STATES = {
+        "UserPromptSubmit": "thinking",
+        "PreToolUse": "working",
+        "PostToolUse": "working",
+        "PermissionRequest": "needs_approval",
+        "PreCompact": "compacting",
+        "Stop": "done",
+    }
+
+    def __init__(self, harness: str, map_payload: dict[str, object]) -> None:
+        self._harness = harness
+        self._map_payload = map_payload
+        self._session_id = str(map_payload.get("session_id") or "")
+        self._hook = str(map_payload.get("hook_event_name") or "")
+
+    @property
+    def session_id(self) -> str:
+        """The session the payload belongs to, which is the agent's id."""
+        return self._session_id
+
+    def events(self) -> list[dict[str, object]]:
+        """The events the payload stands for.
+
+        Returns:
+            the events, oldest first; none for a payload that says nothing rookd keeps
+        """
+        if not self._session_id:
+            return []
+        actor = {"kind": "agent", "id": self._session_id}
+        if self._hook == "SessionStart":
+            return [{"actor": actor, "verb": "started", "at": self.now(), "detail": self._agent_detail()}]
+        if self._hook == "SessionEnd":
+            return [{"actor": actor, "verb": "ended", "at": self.now()}]
+        if self._hook in ("SubagentStart", "SubagentStop"):
+            return self._subagent_events()
+        list_events: list[dict[str, object]] = []
+        state = self._state()
+        if state:
+            list_events.append({"actor": actor, "verb": "state", "at": self.now(), "detail": {"state": state}})
+        list_events.extend(self._resource_events(actor))
+        return list_events
+
+    @staticmethod
+    def now() -> str:
+        """The current time as rookd writes it."""
+        return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+    def _state(self) -> str | None:
+        if self._hook == "Notification":
+            kind = str(self._map_payload.get("notification_type") or self._map_payload.get("type") or "")
+            return self.MAPPER_NOTIFICATION_STATES.get(kind)
+        if self._hook == "StopFailure":
+            text = json.dumps(self._map_payload).lower()
+            return "rate_limited" if any(word in text for word in self.MAPPER_LIMIT_WORDS) else "error"
+        return self.MAPPER_EVENT_STATES.get(self._hook)
+
+    def _resource_events(self, actor: dict[str, object]) -> list[dict[str, object]]:
+        tool = str(self._map_payload.get("tool_name") or "")
+        map_input = self._map_payload.get("tool_input")
+        if not isinstance(map_input, dict):
+            return []
+        if self._hook == "PreToolUse" and tool == self.MAPPER_SKILL_TOOL:
+            name = str(map_input.get("skill") or map_input.get("command") or map_input.get("name") or "").strip()
+            if name:
+                return [{"actor": actor, "verb": "uses", "at": self.now(), "object": {"kind": "skill", "name": name}}]
+            return []
+        if self._hook != "PostToolUse" or tool not in self.MAPPER_WRITE_TOOLS:
+            return []
+        path = str(map_input.get("file_path") or map_input.get("notebook_path") or "")
+        memory = self.MAPPER_MEMORY_PATTERN.search(path)
+        if memory:
+            return [self._memory_event(actor, path, memory.group("project"))]
+        skill = self.MAPPER_SKILL_PATTERN.search(path)
+        if skill:
+            return [{
+                "actor": actor,
+                "verb": "updated",
+                "at": self.now(),
+                "object": {"kind": "skill", "name": skill.group("name")},
+                "detail": {"path": path},
+            }]
+        return []
+
+    def _memory_event(self, actor: dict[str, object], path: str, project: str) -> dict[str, object]:
+        try:
+            raw = Path(path).read_bytes()[: self.MAPPER_MEMORY_TEXT_MAX_BYTES]
+        except OSError:
+            raw = b""
+        text = raw.decode("utf-8", errors="replace")
+        heading = self.MAPPER_FRONTMATTER_NAME_PATTERN.search(text)
+        name = heading.group("name") if heading else Path(path).stem
+        return {
+            "actor": actor,
+            "verb": "wrote",
+            "at": self.now(),
+            "object": {"kind": "memory", "id": "m-" + hashlib.sha256(path.encode("utf-8")).hexdigest()[:16], "name": name},
+            "detail": {"text": text, "path": path, "project": project},
+        }
+
+    def _subagent_events(self) -> list[dict[str, object]]:
+        agent_id = str(self._map_payload.get("agent_id") or "").strip()
+        if not agent_id:
+            return []
+        child = {"kind": "agent", "id": f"{self._session_id}~{agent_id}"}
+        agent_type = str(self._map_payload.get("agent_type") or "subagent")
+        detail = {
+            "name": f"{RookConfig.name()}/{self._tab() or 'agent'}/{agent_type}",
+            "parent": self._session_id,
+            "harness": self._harness,
+        }
+        list_events: list[dict[str, object]] = [{"actor": child, "verb": "started", "at": self.now(), "detail": detail}]
+        if self._hook == "SubagentStop":
+            list_events.append({"actor": child, "verb": "ended", "at": self.now()})
+        return list_events
+
+    def _agent_detail(self) -> dict[str, object]:
+        cwd = str(self._map_payload.get("cwd") or "")
+        tab = self._tab()
+        rook_name = RookConfig.name()
+        return {
+            "name": f"{rook_name}/{tab}" if tab else rook_name,
+            "harness": self._harness,
+            "rook_name": rook_name,
+            "tab": tab,
+            "cwd": cwd,
+            "git_branch": self._git_branch(cwd),
+            "transcript_path": self._map_payload.get("transcript_path"),
+            "model": self._map_payload.get("model"),
+            "machine": {
+                "hostname": socket.gethostname().split(".")[0],
+                "os": platform.system(),
+                "arch": platform.machine(),
+                "user": os.environ.get("USER") or "",
+            },
+        }
+
+    def _tab(self) -> str:
+        pane = os.environ.get("TMUX_PANE")
+        if not pane:
+            return ""
+        return self._run(["tmux", "display-message", "-p", "-t", pane, "#W"])
+
+    def _git_branch(self, cwd: str) -> str:
+        if not cwd or not Path(cwd).is_dir():
+            return ""
+        return self._run(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"])
+
+    def _run(self, list_command: list[str]) -> str:
+        try:
+            completed = subprocess.run(
+                list_command,
+                capture_output=True,
+                text=True,
+                timeout=self.MAPPER_SUBPROCESS_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+class AgentStateMemo:
+    """The last state each session reported, so the tool hooks, which fire on every call, send a state once."""
+
+    @staticmethod
+    def is_new(session_id: str, state: str) -> bool:
+        """Record a session's state, reporting whether it changed.
+
+        Args:
+            session_id: the session
+            state: its state now
+
+        Returns:
+            True when the state differs from the last one recorded
+        """
+        directory = RookPaths.agent_states_dir()
+        path = directory / hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+        try:
+            if path.read_text(encoding="utf-8") == state:
+                return False
+        except OSError:
+            pass
+        directory.mkdir(parents=True, exist_ok=True)
+        path.write_text(state, encoding="utf-8")
+        return True
+
+    @staticmethod
+    def forget(session_id: str) -> None:
+        """Drop a session that ended."""
+        path = RookPaths.agent_states_dir() / hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+        path.unlink(missing_ok=True)
+
+
+class EventQueue:
+    """Events kept on disk until rookd has them. A hook only appends; one sender at a time moves the queue
+    behind what is already pending and posts that in batches, oldest first, keeping whatever did not go out
+    for the next try."""
+
+    QUEUE_BATCH_SIZE = 200
+    QUEUE_LOCK_STALE_SECONDS = 600
+    QUEUE_LOG_MAX_BYTES = 256 * 1024
+
+    @staticmethod
+    def append(list_events: list[dict[str, object]]) -> None:
+        """Add events to the queue.
+
+        Args:
+            list_events: the events
+        """
+        path = RookPaths.queue_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            for event in list_events:
+                handle.write(json.dumps(event) + "\n")
+
+    @classmethod
+    def flush(cls, connection: Connection) -> int:
+        """Send what is queued, unless another sender already is.
+
+        Args:
+            connection: the server to send to
+
+        Returns:
+            how many events were sent
+
+        Raises:
+            RookClientError: if rookd cannot take them; they stay queued
+        """
+        with cls._sender_lock() as is_held:
+            if not is_held:
+                return 0
+            sent = 0
+            sending = RookPaths.sending_file()
+            queue = RookPaths.queue_file()
+            if queue.exists():
+                with queue.open("r+", encoding="utf-8") as handle:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                    queued = handle.read()
+                    with sending.open("a", encoding="utf-8") as pending:
+                        pending.write(queued)
+                    handle.truncate(0)
+            if sending.exists():
+                sent += cls._send_file(sending, connection)
+            return sent
+
+    @classmethod
+    def log(cls, message: str) -> None:
+        """Note what the sender did, keeping the log short."""
+        path = RookPaths.log_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > cls.QUEUE_LOG_MAX_BYTES:
+            path.unlink()
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{HookEventMapper.now()} {message}\n")
+
+    @classmethod
+    def _send_file(cls, path: Path, connection: Connection) -> int:
+        list_lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        list_events: list[object] = []
+        for line in list_lines:
+            try:
+                list_events.append(json.loads(line))
+            except ValueError:
+                cls.log(f"dropped an unreadable queued event: {line[:120]}")
+        sent = 0
+        while sent < len(list_events):
+            batch = list_events[sent: sent + cls.QUEUE_BATCH_SIZE]
+            connection.request("POST", "/v1/events", {"events": batch})
+            sent += len(batch)
+            remaining = list_events[sent:]
+            path.write_text("".join(json.dumps(event) + "\n" for event in remaining), encoding="utf-8")
+        path.unlink(missing_ok=True)
+        return sent
+
+    @classmethod
+    @contextmanager
+    def _sender_lock(cls) -> Iterator[bool]:
+        lock = RookPaths.flush_lock_dir()
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            lock.mkdir()
+        except FileExistsError:
+            if time.time() - lock.stat().st_mtime < cls.QUEUE_LOCK_STALE_SECONDS:
+                yield False
+                return
+        try:
+            yield True
+        finally:
+            lock.rmdir()
+
+
+class ResourceCommands:
+    """`rook resource`: read and change rookd's resources from a terminal, or from an agent."""
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the resource subcommands to a parser."""
+        commands = parser.add_subparsers(dest="action", required=True)
+        list_parser = commands.add_parser("ls", help="list resources")
+        list_parser.add_argument("--kind")
+        list_parser.add_argument("--q")
+        list_parser.add_argument("--limit", type=int, default=100)
+        list_parser.add_argument("--json", action="store_true")
+        commands.add_parser("kinds", help="list the kinds of resource")
+        get_parser = commands.add_parser("get", help="show one resource")
+        get_parser.add_argument("kind")
+        get_parser.add_argument("id")
+        for action in ("create", "update"):
+            change_parser = commands.add_parser(action, help=f"{action} a resource")
+            change_parser.add_argument("kind")
+            if action == "update":
+                change_parser.add_argument("id")
+            change_parser.add_argument("--name")
+            change_parser.add_argument("--attr", action="append", default=[], metavar="KEY=VALUE")
+            change_parser.add_argument("--body", help="the whole request body as JSON")
+            change_parser.add_argument("--as-agent", help="the session id to log the change as")
+        delete_parser = commands.add_parser("delete", help="remove a resource")
+        delete_parser.add_argument("kind")
+        delete_parser.add_argument("id")
+        delete_parser.add_argument("--as-agent")
+        relations_parser = commands.add_parser("relations", help="list relations")
+        relations_parser.add_argument("kind", nargs="?")
+        relations_parser.add_argument("id", nargs="?")
+        events_parser = commands.add_parser("events", help="list recent events")
+        events_parser.add_argument("--after", type=int)
+        events_parser.add_argument("--limit", type=int, default=50)
+
+    @classmethod
+    def run(cls, args: argparse.Namespace, connection: Connection) -> int:
+        """Carry out one subcommand, printing its result.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if rookd refuses the request or the arguments are unusable
+        """
+        if args.action == "kinds":
+            cls._print_json(connection.request("GET", "/v1/kinds")["kinds"])
+        elif args.action == "ls":
+            query = urllib.parse.urlencode({
+                key: value
+                for key, value in (("kind", args.kind), ("q", args.q), ("limit", args.limit))
+                if value
+            })
+            list_resources = connection.request("GET", f"/v1/resources?{query}")["resources"]
+            if args.json:
+                cls._print_json(list_resources)
+            else:
+                for resource in list_resources:
+                    state = resource["attributes"].get("state", "")
+                    print(f"{resource['kind']:9} {resource['id'][:40]:40} {resource['name'][:40]:40} {state}")
+        elif args.action == "get":
+            cls._print_json(connection.request("GET", f"/v1/resources/{args.kind}/{args.id}"))
+        elif args.action in ("create", "update"):
+            map_body = cls._change_body(args)
+            path = f"/v1/resources/{args.kind}" + (f"/{args.id}" if args.action == "update" else "")
+            cls._print_json(connection.request("POST" if args.action == "create" else "PATCH", path, map_body))
+        elif args.action == "delete":
+            map_body = {"actor": {"kind": "agent", "id": args.as_agent}} if args.as_agent else {}
+            connection.request("DELETE", f"/v1/resources/{args.kind}/{args.id}", map_body)
+        elif args.action == "relations":
+            query = f"?kind={args.kind}&id={args.id}" if args.kind and args.id else ""
+            cls._print_json(connection.request("GET", f"/v1/relations{query}")["relations"])
+        elif args.action == "events":
+            query = f"?after={args.after}&limit={args.limit}" if args.after is not None else f"?limit={args.limit}"
+            cls._print_json(connection.request("GET", f"/v1/events{query}")["events"])
+        return 0
+
+    @staticmethod
+    def _change_body(args: argparse.Namespace) -> dict[str, object]:
+        if args.body:
+            try:
+                map_body = json.loads(args.body)
+            except ValueError as err:
+                raise RookClientError(f"--body is not JSON: {err}") from err
+            if not isinstance(map_body, dict):
+                raise RookClientError("--body must be a JSON object")
+        else:
+            map_body = {}
+        if args.name:
+            map_body["name"] = args.name
+        if args.attr:
+            map_attributes = dict(map_body.get("attributes") or {})
+            for assignment in args.attr:
+                key, separator, value = assignment.partition("=")
+                if not separator or not key:
+                    raise RookClientError(f"--attr takes KEY=VALUE, not {assignment!r}")
+                map_attributes[key] = value
+            map_body["attributes"] = map_attributes
+        if args.as_agent:
+            map_body["actor"] = {"kind": "agent", "id": args.as_agent}
+        return map_body
+
+    @staticmethod
+    def _print_json(value: object) -> None:
+        json.dump(value, sys.stdout, indent=2, ensure_ascii=False)
+        sys.stdout.write("\n")
+
+
+class RookClient:
+    """The entry points: the hooks' `event hook`, the background `event flush`, and `resource`."""
+
+    CLIENT_SELF = Path(__file__).resolve()
+
+    @classmethod
+    def hook(cls, harness: str) -> int:
+        """Take one hook payload from stdin, queue its events, and start a sender. Never fails the agent.
+
+        Returns:
+            always 0
+        """
+        try:
+            map_payload = json.loads(sys.stdin.read() or "{}")
+            if not isinstance(map_payload, dict):
+                return 0
+            mapper = HookEventMapper(harness, map_payload)
+            list_events = [event for event in mapper.events() if cls._is_worth_sending(mapper, event)]
+            if not list_events:
+                return 0
+            EventQueue.append(list_events)
+            if RookPaths.connect_file().exists():
+                cls.start_sender()
+        except (OSError, ValueError) as err:
+            EventQueue.log(f"hook {harness} could not queue its events: {err}")
+        return 0
+
+    @classmethod
+    def start_sender(cls) -> None:
+        """Send the queue from a process of its own, which outlives the hook that started it."""
+        subprocess.Popen(
+            [sys.executable, str(cls.CLIENT_SELF), "event", "flush"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    @classmethod
+    def flush(cls) -> int:
+        """Send the queued events, if connected.
+
+        Returns:
+            0, or 1 when rookd could not take them
+        """
+        connection = Connection.load()
+        if connection is None:
+            return 0
+        try:
+            sent = EventQueue.flush(connection)
+        except RookClientError as err:
+            EventQueue.log(f"send failed, kept for the next try: {err.message}")
+            return 1
+        if sent:
+            EventQueue.log(f"sent {sent} event(s)")
+        return 0
+
+    @staticmethod
+    def _is_worth_sending(mapper: HookEventMapper, event: dict[str, object]) -> bool:
+        if event["verb"] == "ended":
+            AgentStateMemo.forget(mapper.session_id)
+            return True
+        if event["verb"] != "state" or event["actor"]["id"] != mapper.session_id:
+            return True
+        return AgentStateMemo.is_new(mapper.session_id, str(event["detail"]["state"]))
+
+
+def main(list_argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="rook-client")
+    commands = parser.add_subparsers(dest="command", required=True)
+    event_parser = commands.add_parser("event")
+    event_commands = event_parser.add_subparsers(dest="event_command", required=True)
+    hook_parser = event_commands.add_parser("hook")
+    hook_parser.add_argument("harness", choices=("claude", "codex"))
+    event_commands.add_parser("flush")
+    ResourceCommands.build_parser(commands.add_parser("resource"))
+    args = parser.parse_args(list_argv)
+    if args.command == "event":
+        return RookClient.hook(args.harness) if args.event_command == "hook" else RookClient.flush()
+    connection = Connection.load()
+    if connection is None:
+        sys.stderr.write("rook: not connected; run: rook connect <host> <port> --token <token>\n")
+        return 1
+    try:
+        return ResourceCommands.run(args, connection)
+    except RookClientError as err:
+        sys.stderr.write(f"rook: {err.message}\n")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

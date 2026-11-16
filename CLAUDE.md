@@ -26,6 +26,7 @@ A macOS app that manages windows one by one inside its own stage, with a sidebar
     make chrome-extension        # npm ci + type check + bundle into extensions/chrome/dist
     .build/debug/rookeryctl ...  # talk to the running app
     cd server && python3 -m unittest   # rookd's tests, against the request handler, no network
+    python3 -m unittest discover -s rook/tests -t .   # rook-client's tests, against a rookd in the test
 
 ## Rules learned the hard way
 

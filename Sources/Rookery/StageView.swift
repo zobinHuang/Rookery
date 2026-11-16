@@ -194,6 +194,10 @@ struct StageView: View {
                         onOpenSettings: {
                             actions.showPage(.settings)
                         },
+                        isRookmasterShown: model.shownPage == .rookmaster,
+                        onOpenRookmaster: {
+                            actions.showPage(.rookmaster)
+                        },
                         onBeginEditing: actions.beginEditing,
                         onEndEditing: actions.endEditing
                     )
@@ -858,6 +862,15 @@ struct StageView: View {
                     recorder: shortcutRecorder,
                     agentUsageMonitor: agentUsage,
                     fleetModel: fleetModel,
+                    onClose: actions.closePage
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if model.shownPage == .rookmaster {
+                RookmasterView(
+                    fleetModel: fleetModel,
+                    onOpenAgent: { agentId in
+                        actions.showPage(.agent(agentId))
+                    },
                     onClose: actions.closePage
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))

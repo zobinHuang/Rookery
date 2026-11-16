@@ -26,3 +26,11 @@ The sidebar's Agents mode shows every code agent rookd knows of, one crow each p
 ## Checking it without a person
 
 Seed a rookd of your own with agents (`POST /v1/events` with `started` and `state` events, a transcript through the session upload API) and render `StageView` offscreen with a `FleetModel` given an in-memory `SecretStore`, so the render never touches the keychain; see docs/development.md for the harness.
+
+## Rookmaster
+
+The console over everything rookd manages, opened from the top of the Agents sidebar. `FleetModel` keeps a `ResourceGraph` (`RookeryCore`) beside the fleet: every kind rookd lists, all their resources, the relations between them and the latest hundred events, read in full on connecting and kept current by the same live link.
+
+- **Board** (`RookmasterBoard`): a column per kind, agents leftmost, each ordered by last use so what moved last rises, with an animation. Edges are the relations, drawn from the cards' frames (anchor preferences), thicker for relations that happened more often, coloured by verb; a subagent's edges are drawn from its session's card. Hovering or clicking a card brings forward it, its neighbours and the edges between them; double-clicking opens it. Lock freezes the order; the filters narrow by name, by time since last use, to live agents, and by kind.
+- **A list per kind** (`RookmasterKindList`): search, and beside it the resource's relations (click one to go to the other end) and attributes. Memories and any new kind are edited as a name and an attributes object and can be deleted; skills and playbooks keep their own shape and are read-only here, as agents are.
+- **Log** (`RookmasterLog`): the latest hundred events, newest at the bottom, following as they are logged, with a filter; it folds to its title bar.

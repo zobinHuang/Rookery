@@ -43,6 +43,9 @@ struct AgentsSidebarView: View {
     let selectedAgentId: String?
     let onSelect: (String) -> Void
     let onOpenSettings: () -> Void
+    /// Whether the content area shows the Rookmaster console.
+    let isRookmasterShown: Bool
+    let onOpenRookmaster: () -> Void
     /// Make the stage take typing, while a group's name is edited.
     let onBeginEditing: () -> Void
     let onEndEditing: () -> Void
@@ -59,6 +62,7 @@ struct AgentsSidebarView: View {
                 connectionBanner
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            rookmasterButton
             if isCollapsed {
                 collapsedList
             } else {
@@ -80,6 +84,38 @@ struct AgentsSidebarView: View {
     }
 
     // MARK: - Sections
+
+    private var rookmasterButton: some View {
+        Button(action: onOpenRookmaster) {
+            HStack(spacing: 8) {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Color.yellow.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                if !isCollapsed {
+                    Text("Rookmaster")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isRookmasterShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(StageColors.tertiaryText)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: isCollapsed ? .center : .leading)
+            .background {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isRookmasterShown ? AnyShapeStyle(Color.accentColor.opacity(0.15)) : AnyShapeStyle(StageColors.tile))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .help("The board of every agent, skill, playbook and memory, and the log of what they do")
+    }
 
     private var fleet: AgentFleet {
         fleetModel.fleet

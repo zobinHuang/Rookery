@@ -28,6 +28,8 @@ final class FleetModel {
 
     private(set) var connection: FleetConnection = .notConfigured
     private(set) var fleet = AgentFleet()
+    /// Every resource, relation and recent event, for the Rookmaster console.
+    private(set) var graph = ResourceGraph()
     private(set) var groups: AgentGroups
     private(set) var serverVersion: String?
 
@@ -127,6 +129,28 @@ final class FleetModel {
         }
     }
 
+    /// Change a resource as the user.
+    ///
+    /// - Throws: `RookdError`
+    func update(_ ref: FleetRef, name: String?, attributes mapAttributes: [String: JSONValue]) async throws {
+        guard let client = client() else {
+            throw RookdError.invalidAddress(preferences.rookdAddress)
+        }
+        let resource = try await client.update(ref, name: name, attributes: mapAttributes)
+        graph.put(resource)
+        fleet.put(resource)
+    }
+
+    /// Remove a resource as the user.
+    ///
+    /// - Throws: `RookdError`
+    func delete(_ ref: FleetRef) async throws {
+        guard let client = client() else {
+            throw RookdError.invalidAddress(preferences.rookdAddress)
+        }
+        try await client.delete(ref)
+    }
+
     // MARK: - Groups
 
     func addGroup(title: String, with agentId: String? = nil) {
@@ -201,16 +225,31 @@ final class FleetModel {
     private func follow(_ client: RookdClient) async throws {
         let health = try await client.health()
         serverVersion = health.version
-        let lastSeq = try await client.lastSeq()
-        async let listAgents = client.resources(kind: AgentFleet.agentKind)
-        async let listRooks = client.resources(kind: AgentFleet.rookKind)
-        let listResources = try await listAgents + listRooks
+        let listRecentEvents = try await client.latestEvents(limit: ResourceGraph.recentEventLimit)
+        let lastSeq = listRecentEvents.last?.seq ?? 0
+        let listKinds = try await client.kinds()
+        var listResources: [FleetResource] = []
+        for kind in listKinds {
+            listResources += try await client.resources(kind: kind.name)
+        }
+        let listRelations = try await client.relations()
         fleet.load(listResources, lastSeq: lastSeq)
+        graph.load(
+            kinds: listKinds,
+            resources: listResources,
+            relations: listRelations,
+            recentEvents: listRecentEvents,
+            lastSeq: lastSeq
+        )
         groups.prune(keeping: Set(fleet.mapAgents.keys))
         saveGroups()
         connection = .online
         for try await event in client.events(after: lastSeq) {
+            var setRefetch = Set(graph.apply(event))
             if case .refetch(let ref) = fleet.apply(event) {
+                setRefetch.insert(ref)
+            }
+            for ref in setRefetch {
                 await refetch(ref, from: client)
             }
         }
@@ -219,7 +258,11 @@ final class FleetModel {
 
     private func refetch(_ ref: FleetRef, from client: RookdClient) async {
         do {
-            fleet.put(try await client.resource(ref))
+            let resource = try await client.resource(ref)
+            fleet.put(resource)
+            graph.put(resource)
+        } catch RookdError.rejected(status: 404, _) {
+            return
         } catch {
             Self.logger.error("cannot read \(ref.kind) \(ref.id): \(Self.describe(error), privacy: .public)")
         }

@@ -54,8 +54,8 @@ export class CrowStates {
     /** The grid the single crow is drawn on, and how much of the world it shows. */
     static readonly GRID_SIZE = 64;
     static readonly CAMERA_ZOOM = 1.3;
-    static readonly CAMERA_CENTRE_X = 0.32;
-    static readonly CAMERA_CENTRE_Y = 0.3;
+    static readonly CAMERA_CENTRE_X = 0.1575;
+    static readonly CAMERA_CENTRE_Y = 0.2186;
 
     /** Session open, nothing asked yet or the last answer read: breathing, blinking, looking about. */
     static readonly IDLE: CrowState = {

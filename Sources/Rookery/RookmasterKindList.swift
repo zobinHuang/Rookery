@@ -1,18 +1,23 @@
 import RookeryCore
 import SwiftUI
 
-/// One kind's resources in the Rookmaster console: a searchable list, and beside it the selected one's
-/// fields, its relations and, for the kinds the console edits, its name and attributes to change or the
-/// resource to remove. Skills and playbooks keep their own shape and are changed through rook.
+/// One kind's resources in the Rookmaster console: a searchable list with a way to add one, and beside it
+/// the selected one's editor: a skill's source and description, a playbook's steps and skills, a memory's
+/// text, an agent's fields; any other kind as a name and attributes.
 struct RookmasterKindList: View {
     private static let listWidth: CGFloat = 300
     /// The kinds whose resources the console edits as a name and attributes.
-    private static let setReadOnlyKinds: Set<String> = ["skill", "playbook", "agent"]
+    private static let setReadOnlyKinds: Set<String> = ["agent"]
 
     let fleetModel: FleetModel
     let kind: String
     @Binding var selectedRef: FleetRef?
     let onOpen: (FleetRef) -> Void
+
+    @State private var isAddingSkill = false
+    @State private var skillAddress = ""
+    @State private var isCreating = false
+    @State private var createError: String?
 
     private var query: Binding<String> {
         Binding(
@@ -37,14 +42,8 @@ struct RookmasterKindList: View {
                 .frame(width: 1)
             Group {
                 if let selectedRef, selectedRef.kind == kind, let resource = fleetModel.graph.resource(selectedRef) {
-                    ResourceInspector(
-                        fleetModel: fleetModel,
-                        resource: resource,
-                        isEditable: !Self.setReadOnlyKinds.contains(kind),
-                        onOpen: onOpen,
-                        onDeleted: { self.selectedRef = nil }
-                    )
-                    .id(selectedRef)
+                    editor(for: resource)
+                        .id(selectedRef)
                 } else {
                     VStack(spacing: 8) {
                         RookeryIconView(RookeryIcon.kind(kind), scale: 3)
@@ -60,8 +59,159 @@ struct RookmasterKindList: View {
         }
     }
 
+    @ViewBuilder
+    private func editor(for resource: FleetResource) -> some View {
+        let onDeleted = { self.selectedRef = nil }
+        switch kind {
+        case "skill":
+            SkillEditor(fleetModel: fleetModel, resource: resource, onOpen: onOpen, onDeleted: onDeleted)
+        case "playbook":
+            PlaybookEditor(fleetModel: fleetModel, resource: resource, onOpen: onOpen, onDeleted: onDeleted)
+        case "memory":
+            MemoryEditor(fleetModel: fleetModel, resource: resource, onOpen: onOpen, onDeleted: onDeleted)
+        default:
+            ResourceInspector(
+                fleetModel: fleetModel,
+                resource: resource,
+                isEditable: !Self.setReadOnlyKinds.contains(kind),
+                onOpen: onOpen,
+                onDeleted: onDeleted
+            )
+        }
+    }
+
+    // MARK: - Adding
+
+    @ViewBuilder
+    private var addBar: some View {
+        switch kind {
+        case "skill":
+            VStack(alignment: .leading, spacing: 6) {
+                if isAddingSkill {
+                    HStack(spacing: 6) {
+                        TextField("github.com/owner/repo/tree/main/skill", text: $skillAddress)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12))
+                            .onSubmit(addSkill)
+                        if isCreating {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Button("Add", action: addSkill)
+                                .controlSize(.small)
+                                .disabled(skillAddress.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.5))
+                    }
+                    Text("Paste a skill's address from GitHub or GitLab, or owner/repo@path.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(StageColors.tertiaryText)
+                } else {
+                    addButton("Add Skill") {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            isAddingSkill = true
+                        }
+                    }
+                }
+            }
+        case "playbook":
+            addButton("New Playbook") {
+                create(["name": .string(uniqueName("Untitled playbook")), "prompt": .string(""), "skills": .array([])])
+            }
+        case "memory":
+            addButton("New Memory") {
+                create(["name": .string(uniqueName("Untitled memory")), "attributes": .object(["text": .string(""), "project": .string("")])])
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func addButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                RookeryIconView(.plus)
+                Text(title)
+                Spacer(minLength: 0)
+                if isCreating {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isCreating)
+    }
+
+    private func addSkill() {
+        let address = skillAddress.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty else {
+            return
+        }
+        create(["source": .string(address)]) {
+            skillAddress = ""
+            isAddingSkill = false
+        }
+    }
+
+    /// Add a resource of this kind and select it.
+    private func create(_ mapBody: [String: JSONValue], onCreated: @escaping () -> Void = {}) {
+        isCreating = true
+        createError = nil
+        Task {
+            do {
+                let resource = try await fleetModel.create(kind, body: mapBody)
+                onCreated()
+                withAnimation(.easeOut(duration: 0.15)) {
+                    selectedRef = FleetRef(kind: resource.kind, id: resource.id)
+                }
+            } catch {
+                createError = FleetModel.describe(error)
+            }
+            isCreating = false
+        }
+    }
+
+    /// A name no resource of this kind has, from a base.
+    private func uniqueName(_ base: String) -> String {
+        let setNames = Set(fleetModel.graph.listResources(of: kind).map(\.name))
+        guard setNames.contains(base) else {
+            return base
+        }
+        var count = 2
+        while setNames.contains("\(base) \(count)") {
+            count += 1
+        }
+        return "\(base) \(count)"
+    }
+
     private var list: some View {
         VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                addBar
+                if let createError {
+                    RookeryLabel(createError, icon: .warning)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
             HStack(spacing: 6) {
                 RookeryIconView(.search)
                     .foregroundStyle(StageColors.secondaryText)
@@ -313,7 +463,7 @@ private struct ResourceInspector: View {
         isSaving = true
         Task {
             do {
-                try await fleetModel.update(ref, name: nameDraft == resource.name ? nil : nameDraft, attributes: mapAttributes)
+                try await fleetModel.update(ref, body: ["name": .string(nameDraft), "attributes": .object(mapAttributes)])
                 error = nil
             } catch {
                 self.error = FleetModel.describe(error)

@@ -137,20 +137,33 @@ public final class RoostClient: Sendable {
         return try decode(EventPage.self, from: data).events
     }
 
-    /// Change a resource's name or attributes, logged as the user's doing.
+    /// Add a resource, logged as the user's doing.
+    ///
+    /// - Parameters:
+    ///   - kind: its kind
+    ///   - mapBody: what roost takes for the kind: a skill's `source`, a playbook's fields, or a `name` and
+    ///     `attributes`
+    /// - Returns: the resource as roost keeps it
+    public func create(_ kind: String, body mapBody: [String: JSONValue]) async throws -> FleetResource {
+        let body = try JSONEncoder().encode(mapBody)
+        return try decode(FleetResource.self, from: try await request("POST", path: "/v1/resources/\(kind)", body: body))
+    }
+
+    /// Change a resource, logged as the user's doing; fields left out are left alone, and `attributes`
+    /// are merged in.
     ///
     /// - Parameters:
     ///   - ref: the resource
-    ///   - name: its new name, or nil to keep it
-    ///   - mapAttributes: attributes to merge into its own
+    ///   - mapBody: the fields to change, as roost takes them for the kind
     /// - Returns: the resource as roost keeps it now
-    public func update(_ ref: FleetRef, name: String?, attributes mapAttributes: [String: JSONValue]) async throws -> FleetResource {
-        var mapBody: [String: JSONValue] = ["attributes": .object(mapAttributes)]
-        if let name {
-            mapBody["name"] = .string(name)
-        }
+    public func update(_ ref: FleetRef, body mapBody: [String: JSONValue]) async throws -> FleetResource {
         let body = try JSONEncoder().encode(mapBody)
         return try decode(FleetResource.self, from: try await request("PATCH", path: "/v1/resources/\(ref.kind)/\(ref.id)", body: body))
+    }
+
+    /// Ask roost to resolve a skill's tracked ref again and record what its repository has now.
+    public func refreshSkill(_ skillId: String) async throws {
+        _ = try await request("POST", path: "/v1/skills/\(skillId)/refresh")
     }
 
     /// Remove a resource and its relations, logged as the user's doing.

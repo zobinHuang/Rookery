@@ -135,16 +135,40 @@ final class FleetModel {
         }
     }
 
+    /// Add a resource as the user.
+    ///
+    /// - Throws: `RoostError`
+    @discardableResult
+    func create(_ kind: String, body mapBody: [String: JSONValue]) async throws -> FleetResource {
+        let resource = try await requireClient().create(kind, body: mapBody)
+        graph.put(resource)
+        fleet.put(resource)
+        return resource
+    }
+
     /// Change a resource as the user.
     ///
     /// - Throws: `RoostError`
-    func update(_ ref: FleetRef, name: String?, attributes mapAttributes: [String: JSONValue]) async throws {
+    func update(_ ref: FleetRef, body mapBody: [String: JSONValue]) async throws {
+        let resource = try await requireClient().update(ref, body: mapBody)
+        graph.put(resource)
+        fleet.put(resource)
+    }
+
+    /// Resolve a skill's tracked ref again.
+    ///
+    /// - Throws: `RoostError`
+    func refreshSkill(_ skillId: String) async throws {
+        let client = try requireClient()
+        try await client.refreshSkill(skillId)
+        graph.put(try await client.resource(FleetRef(kind: "skill", id: skillId)))
+    }
+
+    private func requireClient() throws -> RoostClient {
         guard let client = client() else {
             throw RoostError.invalidAddress(preferences.roostAddress)
         }
-        let resource = try await client.update(ref, name: name, attributes: mapAttributes)
-        graph.put(resource)
-        fleet.put(resource)
+        return client
     }
 
     /// Remove a resource as the user.

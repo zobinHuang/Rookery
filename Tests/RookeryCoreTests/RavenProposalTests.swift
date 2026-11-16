@@ -26,6 +26,26 @@ struct RavenProposalTests {
         #expect(RavenProposal.proposals(in: line).map(\.id) == ["p-1"])
     }
 
+    @Test func readsEveryActionWithItsOwnFields() throws {
+        let interrupt = try JSONDecoder().decode(
+            RavenProposal.self,
+            from: Data(#"{"id": "p-2", "action": "interrupt", "agent": "s-1", "agent_title": "Payments", "text": ""}"#.utf8)
+        )
+        #expect(interrupt.action == .interrupt)
+        let approve = try JSONDecoder().decode(
+            RavenProposal.self,
+            from: Data(#"{"id": "p-3", "action": "approve", "agent": "s-1", "agent_title": "Payments", "choice": "once"}"#.utf8)
+        )
+        #expect(approve.choice == RavenProposal.approveOnce)
+        let spawn = try JSONDecoder().decode(
+            RavenProposal.self,
+            from: Data(#"{"id": "p-4", "action": "spawn", "rook": "studio", "cwd": "/src/api", "harness": "claude", "text": "fix it", "agent_title": "claude on studio"}"#.utf8)
+        )
+        #expect(spawn.agentId == nil)
+        #expect(spawn.rook == "studio")
+        #expect(spawn.cwd == "/src/api")
+    }
+
     @Test func findsNoneInWhatTheAgentSaid() throws {
         let line = try JSONSerialization.data(withJSONObject: [
             "type": "assistant",

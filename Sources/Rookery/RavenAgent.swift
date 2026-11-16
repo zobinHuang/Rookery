@@ -169,11 +169,28 @@ final class RavenAgent {
         saveIndex()
     }
 
-    /// Carry out a proposal: send its text to its agent, as the user.
+    /// Carry out a proposal, as the user: send its text, interrupt its agent, answer the agent's approval
+    /// prompt, or start its new session.
     func approve(_ proposal: RavenProposal, in conversationId: String) async {
         mapProposalErrors[proposal.id] = nil
         do {
-            let delivery = try await fleetModel.send(proposal.text, to: proposal.agentId)
+            let client = try fleetModel.requireClient()
+            let delivery: FleetDelivery
+            switch proposal.action {
+            case .message:
+                delivery = try await client.send(proposal.text, to: proposal.agentId ?? "")
+            case .interrupt:
+                delivery = try await client.interrupt(proposal.agentId ?? "")
+            case .approve:
+                delivery = try await client.approve(proposal.agentId ?? "", choice: proposal.choice ?? RavenProposal.approveDeny)
+            case .spawn:
+                delivery = try await client.spawn(
+                    on: proposal.rook ?? "",
+                    cwd: proposal.cwd ?? "",
+                    harness: proposal.harness ?? "claude",
+                    prompt: proposal.text
+                )
+            }
             mapDeliveries[delivery.id] = delivery
             conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .sent(deliveryId: delivery.id), decidedAt: .now))
             saveIndex()
@@ -213,7 +230,7 @@ final class RavenAgent {
         saveIndex()
         let mapProposed = Dictionary((mapProposals[conversationId] ?? []).map { ($0.id, $0) }) { first, _ in first }
         return mapUnreported.keys.sorted().map { proposalId in
-            let about = mapProposed[proposalId].map { "your message to \($0.agentTitle) (\(proposalId))" } ?? proposalId
+            let about = mapProposed[proposalId].map { "your \($0.action.rawValue) for \($0.agentTitle) (\(proposalId))" } ?? proposalId
             switch mapUnreported[proposalId]?.outcome {
             case .sent(let deliveryId):
                 return "- \(about): the user sent it; delivery \(deliveryId)"

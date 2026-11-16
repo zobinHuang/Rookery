@@ -164,7 +164,10 @@ final class FleetModel {
         graph.put(try await client.resource(FleetRef(kind: "skill", id: skillId)))
     }
 
-    private func requireClient() throws -> RoostClient {
+    /// The client of the roost followed now.
+    ///
+    /// - Throws: `RoostError.invalidAddress` when no roost is set up
+    func requireClient() throws -> RoostClient {
         guard let client = client() else {
             throw RoostError.invalidAddress(preferences.roostAddress)
         }

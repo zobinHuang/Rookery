@@ -181,7 +181,34 @@ public final class RoostClient: Sendable {
     ///
     /// - Returns: the delivery, to follow
     public func send(_ text: String, to agentId: String) async throws -> FleetDelivery {
-        let body = try JSONSerialization.data(withJSONObject: ["to": agentId, "text": text])
+        try await deliver(["to": agentId, "text": text])
+    }
+
+    /// Ask an agent's rook to stop what the agent is doing.
+    public func interrupt(_ agentId: String) async throws -> FleetDelivery {
+        try await deliver(["to": agentId, "kind": "interrupt"])
+    }
+
+    /// Ask an agent's rook to answer the agent's approval prompt.
+    ///
+    /// - Parameter choice: `once`, allowing the one call, or `deny`
+    public func approve(_ agentId: String, choice: String) async throws -> FleetDelivery {
+        try await deliver(["to": agentId, "kind": "approve", "options": ["choice": choice]])
+    }
+
+    /// Ask a rook to start a new session.
+    ///
+    /// - Parameters:
+    ///   - rookName: the rook
+    ///   - cwd: the directory there, an absolute path
+    ///   - harness: `claude` or `codex`
+    ///   - prompt: the session's first prompt, or empty for none
+    public func spawn(on rookName: String, cwd: String, harness: String, prompt: String) async throws -> FleetDelivery {
+        try await deliver(["kind": "spawn", "rook": rookName, "text": prompt, "options": ["cwd": cwd, "harness": harness]])
+    }
+
+    private func deliver(_ mapBody: [String: Any]) async throws -> FleetDelivery {
+        let body = try JSONSerialization.data(withJSONObject: mapBody)
         return try decode(FleetDelivery.self, from: try await request("POST", path: "/v1/messages", body: body))
     }
 

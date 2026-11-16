@@ -13,7 +13,10 @@ Every command prints JSON unless noted. `$ROOKERY_AGENT_ID` is your own agent id
     rook-client agent status --all --json     # ended ones too, as JSON: id, title, state, needs_person, rook, rook_online, project, branch, subagents, last_used_at
     rook-client agent tail <agent id>         # what it said and did lately, as text; --steps N for more or fewer
 
-    rook-client propose message <agent id> "text"   # propose text for the user to send it; nothing is sent
+    rook-client propose message <agent id> "text"            # propose a prompt for the user to send; nothing is sent
+    rook-client propose interrupt <agent id>                 # propose stopping what it is doing (Escape in its pane)
+    rook-client propose approve <agent id> --choice once     # propose allowing, once, the call it waits to run; --choice deny declines it
+    rook-client propose spawn <rook> --cwd /abs/dir "first prompt"   # propose a new claude session on a rook; --harness codex
 
 A subagent's id is `<session id>~<agent id>`; `agent tail` reads its own transcript. States: `idle`, `thinking`, `working`, `compacting`, `done`, `needs_approval`, `needs_input`, `error`, `rate_limited`, `ended`. The first four need nothing; `needs_*` waits on a person.
 

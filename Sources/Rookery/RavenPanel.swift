@@ -212,21 +212,29 @@ struct RavenPanel: View {
         let isSending = setSendingIds.contains(proposal.id)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                RookeryIconView(.send)
-                    .foregroundStyle(Color.accentColor)
-                Text("Raven would send this to")
+                RookeryIconView(Self.icon(of: proposal))
+                    .foregroundStyle(proposal.action == .interrupt ? Color.orange : Color.accentColor)
+                Text(Self.lead(of: proposal))
                     .foregroundStyle(StageColors.secondaryText)
                 FittingText(proposal.agentTitle, size: 12, weight: .semibold)
                 Spacer(minLength: 0)
             }
             .font(.system(size: 12))
-            Text(proposal.text)
-                .font(.system(size: 12))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(StageColors.groove.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            if proposal.action == .spawn, let cwd = proposal.cwd {
+                RookeryLabel(cwd, icon: .folder)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .textSelection(.enabled)
+            }
+            if !proposal.text.isEmpty {
+                Text(proposal.text)
+                    .font(.system(size: 12))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(StageColors.groove.opacity(0.6), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
             if let error = raven.mapProposalErrors[proposal.id] {
                 RookeryLabel(error, icon: .warning)
                     .font(.system(size: 11))
@@ -234,7 +242,7 @@ struct RavenPanel: View {
             }
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                Button("Don't Send") {
+                Button("Not Now") {
                     withAnimation(.easeOut(duration: 0.2)) {
                         raven.reject(proposal, in: conversationId)
                     }
@@ -247,7 +255,7 @@ struct RavenPanel: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text("Send")
+                        Text(Self.verb(of: proposal))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -271,7 +279,7 @@ struct RavenPanel: View {
                 let delivery = raven.mapDeliveries[deliveryId]
                 RookeryIconView(delivery?.isFailed == true ? .failed : .check)
                     .foregroundStyle(delivery?.isFailed == true ? Color.red : Color.green)
-                Text("Sent to \(proposal.agentTitle)")
+                Text(Self.done(of: proposal))
                 if let delivery {
                     InfoTag(delivery.status.capitalized, tint: delivery.isFailed ? .red : nil)
                     if delivery.isFailed {
@@ -283,13 +291,58 @@ struct RavenPanel: View {
             default:
                 RookeryIconView(.close)
                     .foregroundStyle(StageColors.tertiaryText)
-                Text("Not sent to \(proposal.agentTitle)")
+                Text("Left alone: \(Self.lead(of: proposal).lowercased()) \(proposal.agentTitle)")
                     .foregroundStyle(StageColors.secondaryText)
             }
             Spacer(minLength: 0)
         }
         .font(.system(size: 11))
         .padding(.horizontal, 4)
+    }
+
+    private static func icon(of proposal: RavenProposal) -> RookeryIcon {
+        switch proposal.action {
+        case .message: .send
+        case .interrupt: .stop
+        case .approve: proposal.choice == RavenProposal.approveOnce ? .check : .close
+        case .spawn: .terminal
+        }
+    }
+
+    /// What Raven would do, leading up to the name of what it would do it to.
+    private static func lead(of proposal: RavenProposal) -> String {
+        switch proposal.action {
+        case .message: "Raven would send this to"
+        case .interrupt: "Raven would stop what this agent is doing:"
+        case .approve:
+            proposal.choice == RavenProposal.approveOnce
+                ? "Raven would allow, once, the call waiting in"
+                : "Raven would decline the call waiting in"
+        case .spawn: "Raven would start"
+        }
+    }
+
+    /// The button that carries the proposal out.
+    private static func verb(of proposal: RavenProposal) -> String {
+        switch proposal.action {
+        case .message: "Send"
+        case .interrupt: "Interrupt"
+        case .approve: proposal.choice == RavenProposal.approveOnce ? "Allow Once" : "Decline"
+        case .spawn: "Start"
+        }
+    }
+
+    /// What was done, once the user carried the proposal out.
+    private static func done(of proposal: RavenProposal) -> String {
+        switch proposal.action {
+        case .message: "Sent to \(proposal.agentTitle)"
+        case .interrupt: "Interrupted \(proposal.agentTitle)"
+        case .approve:
+            proposal.choice == RavenProposal.approveOnce
+                ? "Allowed \(proposal.agentTitle)'s call once"
+                : "Declined \(proposal.agentTitle)'s call"
+        case .spawn: "Started \(proposal.agentTitle)"
+        }
     }
 
     private func send(_ proposal: RavenProposal, in conversationId: String) {

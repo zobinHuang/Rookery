@@ -105,7 +105,10 @@ struct StageView: View {
                 .frame(width: model.sidebarWidth)
             VStack(spacing: 0) {
                 tabBar
-                    .frame(height: StageModel.tabBarHeight)
+                    .frame(height: showsTabBar ? StageModel.tabBarHeight : StageModel.contentInset)
+                    .opacity(showsTabBar ? 1 : 0)
+                    .clipped()
+                    .allowsHitTesting(showsTabBar)
                 content
                     .padding(.trailing, StageModel.contentInset)
                     .padding(.bottom, StageModel.contentInset)
@@ -123,6 +126,13 @@ struct StageView: View {
         .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
         .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
         .animation(Self.sidebarAnimation, value: sidebarMode)
+        .animation(Self.sidebarAnimation, value: showsTabBar)
+    }
+
+    /// Whether the tabs show above the content: not while a page of Rookery's own fills it, unless a window
+    /// or tab is being dragged and may be dropped among them.
+    private var showsTabBar: Bool {
+        model.shownPage == nil || showsDropZones
     }
 
     // MARK: - Sidebar

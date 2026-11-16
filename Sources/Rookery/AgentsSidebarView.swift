@@ -369,11 +369,12 @@ struct AgentsSidebarView: View {
                     FittingText(agent.displayName, size: isSubagent ? 12 : 13, weight: .semibold)
                         .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                     tags(of: agent, isReachable: isReachable)
+                    if subagentCount > 0 {
+                        subagentToggle(agent.id, count: subagentCount)
+                            .padding(.top, 3)
+                    }
                 }
                 Spacer(minLength: 0)
-                if subagentCount > 0 {
-                    subagentToggle(agent.id, count: subagentCount)
-                }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
@@ -464,16 +465,14 @@ struct AgentsSidebarView: View {
                 }
             }
         } label: {
-            HStack(spacing: 3) {
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                RookeryIconView(.chevronDown)
-                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+            HStack(spacing: 4) {
+                RookeryIconView(.chevronRight)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                Text(count == 1 ? "1 subagent" : "\(count) subagents")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
             }
             .foregroundStyle(StageColors.secondaryText)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(StageColors.groove, in: Capsule())
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(isExpanded ? "Fold the subagents away" : "Show \(count) subagents")

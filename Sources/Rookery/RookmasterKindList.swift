@@ -29,7 +29,7 @@ struct RookmasterKindList: View {
     private var listResources: [FleetResource] {
         let trimmed = query.wrappedValue.trimmingCharacters(in: .whitespaces).lowercased()
         return fleetModel.graph.listResources(of: kind).filter { resource in
-            trimmed.isEmpty || "\(resource.name) \(resource.id)".lowercased().contains(trimmed)
+            trimmed.isEmpty || "\(resource.displayName) \(resource.name) \(resource.id)".lowercased().contains(trimmed)
         }
     }
 
@@ -253,7 +253,7 @@ struct RookmasterKindList: View {
                         .frame(width: 24)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    FittingText(resource.name, size: 12, weight: .semibold)
+                    FittingText(resource.displayName, size: 12, weight: .semibold)
                     Text(resource.id)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(StageColors.secondaryText)
@@ -306,7 +306,7 @@ private struct ResourceInspector: View {
                             .textFieldStyle(.plain)
                             .font(.system(size: 18, weight: .bold))
                     } else {
-                        Text(resource.name)
+                        Text(resource.displayName)
                             .font(.system(size: 18, weight: .bold))
                             .textSelection(.enabled)
                     }
@@ -364,7 +364,7 @@ private struct ResourceInspector: View {
             .padding(24)
         }
         .onAppear(perform: load)
-        .confirmationDialog("Delete \(resource.name)?", isPresented: $isConfirmingDelete) {
+        .confirmationDialog("Delete \(resource.displayName)?", isPresented: $isConfirmingDelete) {
             Button("Delete", role: .destructive) {
                 delete()
             }

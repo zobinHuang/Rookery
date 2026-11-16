@@ -233,7 +233,7 @@ struct MaintenancePanel: View {
                         RookeryIconView(RookeryIcon.kind(resource.kind))
                             .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                             .frame(width: 16)
-                        Text(resource.name)
+                        Text(resource.displayName)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Text(resource.kind)

@@ -410,7 +410,7 @@ struct RookmasterBoard: View {
                 memory.boardSelectedRef = isSelected ? nil : ref
             }
         }
-        .help("\(resource.name)\nClick to bring forward what it touches; double-click to open")
+        .help("\(resource.displayName)\nClick to bring forward what it touches; double-click to open")
     }
 
     private func subtitle(of resource: FleetResource, agent: FleetAgent?) -> String {
@@ -518,7 +518,7 @@ struct RookmasterBoard: View {
                         return false
                     }
                 }
-                if !trimmedQuery.isEmpty && !"\(resource.name) \(resource.id)".lowercased().contains(trimmedQuery) {
+                if !trimmedQuery.isEmpty && !"\(resource.displayName) \(resource.name) \(resource.id)".lowercased().contains(trimmedQuery) {
                     return false
                 }
                 if let cutoff, let used = FleetTimestamp.date(from: resource.lastUsedAt), used < cutoff {

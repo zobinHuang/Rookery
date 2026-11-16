@@ -115,7 +115,7 @@ public struct ResourceGraph: Equatable, Sendable {
         guard let resource = resource(ref) else {
             return ref.id
         }
-        return resource.mapAttributes["title"]?.stringValue ?? resource.name
+        return resource.displayName
     }
 
     /// A kind's resources, those last used first.

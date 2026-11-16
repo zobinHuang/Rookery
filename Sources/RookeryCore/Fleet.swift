@@ -115,6 +115,14 @@ public struct FleetResource: Decodable, Equatable, Sendable {
         self.mapAttributes = mapAttributes
         self.lastUsedAt = lastUsedAt
     }
+
+    /// What the resource goes by: the title it was given, such as an agent's session title, else its name.
+    public var displayName: String {
+        guard let title = mapAttributes["title"]?.stringValue, !title.isEmpty else {
+            return name
+        }
+        return title
+    }
 }
 
 /// What a code agent session is doing, one crow animation each, as rook reports it.

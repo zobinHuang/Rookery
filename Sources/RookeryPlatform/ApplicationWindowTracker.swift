@@ -17,8 +17,9 @@ final class ApplicationWindowTracker: @unchecked Sendable {
     private static let answerWaitSeconds: TimeInterval = 8
     private static let answerPollSeconds: TimeInterval = 0.2
     /// How long a minimize or restore the application took is given to show, before it is asked once more:
-    /// one asked for just as the window comes back from the Dock is dropped.
-    private static let minimizeConfirmSeconds: TimeInterval = 1
+    /// one asked for just as the window comes back from the Dock is dropped. A slow application's animation
+    /// outlasts a second, and asking again in the middle of it left Feishu stuck half shrunk.
+    private static let minimizeConfirmSeconds: TimeInterval = 3
     private static let minimizeConfirmPollSeconds: TimeInterval = 0.1
     private static let listApplicationNotifications = [
         kAXWindowCreatedNotification,
@@ -261,9 +262,14 @@ final class ApplicationWindowTracker: @unchecked Sendable {
             }
             do {
                 if try element.isMinimized() != isMinimized {
+                    let frameBefore = try? element.frame()
                     try element.applyMinimized(isMinimized)
                     if try !confirmMinimized(isMinimized, element: element) {
-                        Self.logger.info("window \(windowId.rawValue) did not take a minimize of \(isMinimized); asking once more")
+                        guard Self.isUntouched(windowId, byMinimize: isMinimized, frameBefore: frameBefore) else {
+                            Self.logger.notice("window \(windowId.rawValue) is still on its way to minimized \(isMinimized); left to finish")
+                            return true
+                        }
+                        Self.logger.notice("window \(windowId.rawValue) dropped a minimize of \(isMinimized); asking once more")
                         try element.applyMinimized(isMinimized)
                         return try confirmMinimized(isMinimized, element: element)
                     }
@@ -326,6 +332,22 @@ final class ApplicationWindowTracker: @unchecked Sendable {
         isUnanswering = true
         Self.logger.error("window \(windowId.rawValue)'s application still does not answer; its windows are left alone until it does")
         return nil
+    }
+
+    /// Whether a request to minimize or restore a window left it exactly as it was, so asking again cannot
+    /// land in the middle of its animation: still on screen at its frame for a minimize, still off screen for
+    /// a restore. A window the window server does not list counts as moved.
+    private static func isUntouched(_ windowId: WindowId, byMinimize isMinimized: Bool, frameBefore: CGRect?) -> Bool {
+        guard let window = WindowServer.window(withId: windowId) else {
+            return false
+        }
+        guard isMinimized else {
+            return !window.isOnScreen
+        }
+        guard let frameBefore else {
+            return false
+        }
+        return window.isOnScreen && isClose(window.frame, to: frameBefore)
     }
 
     /// Whether a window reaches a minimized state soon after it was asked to.

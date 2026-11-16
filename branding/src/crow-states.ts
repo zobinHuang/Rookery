@@ -53,9 +53,11 @@ export class CrowStates {
     static readonly FRAME_COUNT = 30;
     /** The grid the single crow is drawn on, and how much of the world it shows. */
     static readonly GRID_SIZE = 64;
-    static readonly CAMERA_ZOOM = 1.3;
-    static readonly CAMERA_CENTRE_X = 0.1575;
-    static readonly CAMERA_CENTRE_Y = 0.2186;
+    static readonly CAMERA_ZOOM = 1.5;
+    static readonly CAMERA_CENTRE_X = -0.0011;
+    static readonly CAMERA_CENTRE_Y = 0.0147;
+    /** Grid pixels the marks over the head sit lower than drawn, so they stay in the frame above a centred crow. */
+    static readonly HEAD_MARK_DROP = 3;
 
     /** Session open, nothing asked yet or the last answer read: breathing, blinking, looking about. */
     static readonly IDLE: CrowState = {

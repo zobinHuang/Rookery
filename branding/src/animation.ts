@@ -71,7 +71,8 @@ export class Animator {
             for (const stamp of frame.list_stamps) {
                 const x = stamp.anchor === "head" ? anchors.head_top_x : anchors.beak_x;
                 const y = stamp.anchor === "head" ? anchors.head_top_y : anchors.beak_y;
-                Sprites.stamp(list_rows, stamp.sprite, x + stamp.dx, y + stamp.dy, tint);
+                const drop = stamp.anchor === "head" ? CrowStates.HEAD_MARK_DROP : 0;
+                Sprites.stamp(list_rows, stamp.sprite, x + stamp.dx, y + stamp.dy + drop, tint);
             }
         }
         return PixelGrid.from_keys(list_rows);

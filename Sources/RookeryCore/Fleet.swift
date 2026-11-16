@@ -239,7 +239,7 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
 
     /// The working directory's last component, which names the project.
     public var projectName: String {
-        URL(fileURLWithPath: cwd).lastPathComponent
+        cwd.isEmpty ? "" : URL(fileURLWithPath: cwd).lastPathComponent
     }
 }
 

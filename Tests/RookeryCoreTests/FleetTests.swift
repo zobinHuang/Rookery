@@ -44,6 +44,10 @@ struct FleetTests {
         #expect(fleet.lastSeq == 12)
     }
 
+    @Test func namesNoProjectWithoutAWorkingDirectory() {
+        #expect(FleetAgent(id: "a", name: "a", state: .idle).projectName == "")
+    }
+
     @Test func takesANewTitle() throws {
         var fleet = try fleet()
 

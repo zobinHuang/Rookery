@@ -359,7 +359,7 @@ struct AgentsSidebarView: View {
         let isSelected = selectedAgentId == agent.id
         let isHovered = hoveredRowId == agent.id
         let isTargeted = dropTargetId == agent.id
-        let isReachable = fleet.isOnline(agent) || agent.state == .ended
+        let isReachable = fleet.isOnline(agent) || agent.state == .ended || agent.rookName.isEmpty
         return Button {
             onSelect(agent.id)
         } label: {

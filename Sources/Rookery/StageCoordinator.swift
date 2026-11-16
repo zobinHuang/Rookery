@@ -128,14 +128,16 @@ final class StageCoordinator: DropSurface {
         stage.open(frame: frame)
     }
 
-    /// Show the settings in the content area of the stage under the cursor, or of the first open stage.
+    /// Show a page in the content area of the stage under the cursor, or of the first open stage.
     ///
-    /// - Returns: whether a stage was open to show them
-    func showSettings() -> Bool {
+    /// - Parameter page: the page
+    /// - Returns: whether a stage was open to show it
+    @discardableResult
+    func show(_ page: StagePage) -> Bool {
         guard let stage = stage(at: NSEvent.mouseLocation) ?? listStages.first(where: \.isShowing) else {
             return false
         }
-        stage.open(.settings)
+        stage.open(page)
         return true
     }
 

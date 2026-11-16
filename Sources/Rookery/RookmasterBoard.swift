@@ -261,7 +261,7 @@ struct RookmasterBoard: View {
                     .frame(width: 32, height: 32)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(resource.name)
+                Text(graph.name(of: ref))
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)

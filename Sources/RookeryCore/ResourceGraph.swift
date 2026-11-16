@@ -112,7 +112,10 @@ public struct ResourceGraph: Equatable, Sendable {
         if ref.kind == Self.personKind {
             return "you"
         }
-        return resource(ref)?.name ?? ref.id
+        guard let resource = resource(ref) else {
+            return ref.id
+        }
+        return resource.mapAttributes["title"]?.stringValue ?? resource.name
     }
 
     /// A kind's resources, those last used first.
@@ -141,6 +144,9 @@ public struct ResourceGraph: Equatable, Sendable {
                 touch(event.actor, at: event.at)
                 if event.verb == "state", let state = event.mapDetail["state"] {
                     setAttribute("state", to: state, of: event.actor)
+                    if let title = event.mapDetail["title"], title.stringValue != nil {
+                        setAttribute("title", to: title, of: event.actor)
+                    }
                 } else if event.verb == "ended" {
                     setAttribute("closed_at", to: .string(event.at), of: event.actor)
                 }

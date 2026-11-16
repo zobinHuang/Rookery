@@ -120,6 +120,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fleetModel.stop()
     }
 
+    /// The pages the window switcher offers beside the windows, once Rookery follows a roost: the
+    /// Rookmaster console, then each live agent's page, those last active first.
+    private static func switcherPages(of fleetModel: FleetModel) -> [SwitcherEntry] {
+        guard fleetModel.client() != nil else {
+            return []
+        }
+        let rookmaster = SwitcherEntry(
+            id: StagePage.rookmaster.switcherId ?? "",
+            title: "Rookmaster",
+            subtitle: "every agent, skill, playbook and memory",
+            listBundleIds: [],
+            symbolName: .crown,
+            isActive: false
+        )
+        let listAgents = fleetModel.fleet.listSessions.filter { $0.state != .ended }.map { agent in
+            SwitcherEntry(
+                id: StagePage.agent(agent.id).switcherId ?? "",
+                title: agent.displayName,
+                subtitle: "\(agent.state.title) · \(agent.name)",
+                listBundleIds: [],
+                symbolName: .agent,
+                isActive: false
+            )
+        }
+        return [rookmaster] + listAgents
+    }
+
     /// Run the mixer while the settings turn it on; stopping it gives every application its sound back.
     private func applyMixerEnabled() {
         if preferences.isMixerEnabled {
@@ -182,7 +209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Show the settings in an open stage, or in their own window when no stage is open.
     @objc private func showSettings() {
-        guard stageCoordinator?.showSettings() != true else {
+        guard stageCoordinator?.show(.settings) != true else {
             return
         }
         settingsWindowController?.show()
@@ -226,6 +253,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcutRecorder: shortcutRecorder
         )
         stageCoordinator = stages
+        workspace.pageEntries = { [fleetModel] in
+            Self.switcherPages(of: fleetModel)
+        }
+        workspace.onOpenPage = { [weak stages] page in
+            stages?.show(page)
+        }
         workspace.onChange = { [weak panel, weak stages] in
             panel?.reload()
             stages?.refresh()

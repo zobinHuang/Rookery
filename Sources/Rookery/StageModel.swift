@@ -184,7 +184,7 @@ final class StageModel {
 }
 
 /// A page the content area can show in place of the front window.
-enum StagePage: Equatable {
+enum StagePage: Hashable {
     case settings
     /// The user's text, large, until a click or a key press closes it.
     case screenSaver
@@ -192,4 +192,27 @@ enum StagePage: Equatable {
     case agent(String)
     /// The console over every resource roost manages.
     case rookmaster
+
+    private static let rookmasterId = "page:rookmaster"
+    private static let agentPrefix = "page:agent:"
+
+    /// The page as a window switcher entry's id, for the pages the switcher offers; nil for the others.
+    var switcherId: String? {
+        switch self {
+        case .rookmaster: Self.rookmasterId
+        case .agent(let agentId): Self.agentPrefix + agentId
+        case .settings, .screenSaver: nil
+        }
+    }
+
+    /// The page a window switcher entry's id names, or nil when it names a window.
+    init?(switcherId: String) {
+        if switcherId == Self.rookmasterId {
+            self = .rookmaster
+        } else if switcherId.hasPrefix(Self.agentPrefix) {
+            self = .agent(String(switcherId.dropFirst(Self.agentPrefix.count)))
+        } else {
+            return nil
+        }
+    }
 }

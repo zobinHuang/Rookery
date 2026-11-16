@@ -163,7 +163,10 @@ public enum AgentState: String, Codable, CaseIterable, Sendable {
 /// An agent: one session of a code agent, or a subagent it spawned, as the fleet keeps it.
 public struct FleetAgent: Equatable, Identifiable, Sendable {
     public let id: String
+    /// The name rook gives it: the machine's rook name and the tmux tab it runs in.
     public var name: String
+    /// The session's title as the harness keeps it, which the user may have given it; empty when unknown.
+    public var title: String
     public var state: AgentState
     public var harness: String
     public var rookName: String
@@ -179,6 +182,7 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
     public init(
         id: String,
         name: String,
+        title: String = "",
         state: AgentState,
         harness: String = "",
         rookName: String = "",
@@ -192,6 +196,7 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
     ) {
         self.id = id
         self.name = name
+        self.title = title
         self.state = state
         self.harness = harness
         self.rookName = rookName
@@ -213,6 +218,7 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
         self.init(
             id: resource.id,
             name: resource.name,
+            title: mapAttributes["title"]?.stringValue ?? "",
             state: isClosed ? .ended : AgentState(rawValue: mapAttributes["state"]?.stringValue ?? "") ?? .idle,
             harness: mapAttributes["harness"]?.stringValue ?? "",
             rookName: mapAttributes["rook_name"]?.stringValue ?? "",
@@ -224,6 +230,11 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
             parentId: mapAttributes["parent"]?.stringValue,
             lastUsedAt: resource.lastUsedAt
         )
+    }
+
+    /// What the agent goes by: its session's title, else rook's name for it.
+    public var displayName: String {
+        title.isEmpty ? name : title
     }
 
     /// The working directory's last component, which names the project.
@@ -356,6 +367,9 @@ public struct AgentFleet: Equatable, Sendable {
             }
             mapAgents[event.actor.id]?.state = state
             mapAgents[event.actor.id]?.lastUsedAt = event.at
+            if let title = event.mapDetail["title"]?.stringValue {
+                mapAgents[event.actor.id]?.title = title
+            }
             return .changed
         case (Self.agentKind, "ended"):
             guard mapAgents[event.actor.id] != nil else {

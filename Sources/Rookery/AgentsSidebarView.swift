@@ -366,7 +366,7 @@ struct AgentsSidebarView: View {
             HStack(spacing: 8) {
                 CrowView(state: agent.state)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(agent.name)
+                    Text(agent.displayName)
                         .font(.system(size: isSubagent ? 12 : 13, weight: .semibold))
                         .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                         .lineLimit(1)
@@ -402,7 +402,7 @@ struct AgentsSidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(agent.name)
+        .help(agent.title.isEmpty ? agent.name : "\(agent.title)\n\(agent.name)")
         .onHover { isInside in
             hover(agent.id, isInside: isInside)
         }
@@ -437,7 +437,7 @@ struct AgentsSidebarView: View {
         } preview: {
             HStack(spacing: 8) {
                 CrowView(state: agent.state)
-                Text(agent.name)
+                Text(agent.displayName)
                     .font(.system(size: 13, weight: .semibold))
             }
             .padding(.horizontal, 12)
@@ -541,7 +541,7 @@ struct AgentsSidebarView: View {
                 }
         }
         .buttonStyle(.plain)
-        .help("\(agent.name): \(agent.state.title)")
+        .help("\(agent.displayName): \(agent.state.title)")
     }
 
     @ViewBuilder

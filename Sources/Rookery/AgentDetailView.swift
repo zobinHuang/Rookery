@@ -59,13 +59,13 @@ struct AgentDetailView: View {
                 .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    Text(reader.title ?? agent.name)
+                    Text(reader.title ?? agent.displayName)
                         .font(.system(size: 20, weight: .bold))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     statePill(agent.state)
                 }
-                if reader.title != nil {
+                if reader.title != nil || !agent.title.isEmpty {
                     Text(agent.name)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(StageColors.secondaryText)
@@ -164,7 +164,7 @@ struct AgentDetailView: View {
             }
             HStack(alignment: .bottom, spacing: 10) {
                 TextField(
-                    isReachable ? "Message \(agent.name)" : composerHint(agent),
+                    isReachable ? "Message \(agent.displayName)" : composerHint(agent),
                     text: $draft,
                     axis: .vertical
                 )

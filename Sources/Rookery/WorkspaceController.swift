@@ -98,8 +98,13 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Whether the workspace changed during the running layout change, which tells the views once when it
     /// ends rather than once for every window it moves.
     private var isChangePending = false
-    /// Managed windows the user has used, most recent first.
-    private var listRecentWindowIds: [WindowId] = []
+    /// The windows and pages the user went to, the most recent first, as window switcher entry ids.
+    private var listRecentPlaceIds: [String] = []
+    /// The pages the window switcher offers beside the windows: the Rookmaster console and each live
+    /// agent's page.
+    var pageEntries: @MainActor () -> [SwitcherEntry] = { [] }
+    /// Show a page the window switcher chose, on the stage the user works on.
+    var onOpenPage: @MainActor (StagePage) -> Void = { _ in }
     /// The window the latest layout change brought forward, which focus a hidden window takes is given back
     /// to until `focusReclaimUntil`.
     private var broughtForwardWindowId: WindowId?
@@ -833,7 +838,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     var listRecentWindows: [ManagedWindow] {
         let listWindows = workspace.listManagedWindows
         let mapWindows = Dictionary(listWindows.map { ($0.windowId, $0) }) { first, _ in first }
-        let listRecent = listRecentWindowIds.compactMap { mapWindows[$0] }
+        let listRecent = listRecentPlaceIds.compactMap { UInt32($0).flatMap { mapWindows[WindowId(rawValue: $0)] } }
         let setRecentIds = Set(listRecent.map(\.windowId))
         return listRecent + listWindows.filter { !setRecentIds.contains($0.windowId) }
     }
@@ -888,14 +893,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// The window switcher's offer: every managed window across groups, the most recently used first, as
-    /// Cmd-Tab offers applications.
+    /// The window switcher's offer: every managed window across groups and the pages beside them, the
+    /// most recently used first, as Cmd-Tab offers applications.
     func windowSwitcherRequest() -> SwitcherRequest? {
-        let listWindows = listRecentWindows
-        guard listWindows.count > 1 else {
-            return nil
-        }
-        let listEntries = listWindows.map { window in
+        let listWindowEntries = listRecentWindows.map { window in
             SwitcherEntry(
                 id: String(window.windowId.rawValue),
                 title: window.displayName,
@@ -905,9 +906,23 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 isActive: false
             )
         }
+        let listAll = listWindowEntries + pageEntries()
+        guard listAll.count > 1 else {
+            return nil
+        }
+        let mapEntries = Dictionary(listAll.map { ($0.id, $0) }) { first, _ in first }
+        let listRecent = listRecentPlaceIds.compactMap { mapEntries[$0] }
+        let setRecentIds = Set(listRecent.map(\.id))
+        let listEntries = listRecent + listAll.filter { !setRecentIds.contains($0.id) }
         return SwitcherRequest(listEntries: listEntries, currentIndex: 0, fitFrame: focusedStageFrame) { [weak self] entry in
+            guard let self else {
+                return
+            }
+            if let page = StagePage(switcherId: entry.id) {
+                onOpenPage(page)
+                return
+            }
             guard
-                let self,
                 let rawId = UInt32(entry.id),
                 let groupId = workspace.group(containing: WindowId(rawValue: rawId))?.groupId
             else {
@@ -919,9 +934,20 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
+    /// Note that the user went to a page the window switcher offers.
+    func notePageShown(_ page: StagePage) {
+        if let switcherId = page.switcherId {
+            notePlace(switcherId)
+        }
+    }
+
+    private func notePlace(_ placeId: String) {
+        listRecentPlaceIds.removeAll { $0 == placeId }
+        listRecentPlaceIds.insert(placeId, at: 0)
+    }
+
     private func noteRecentlyUsed(_ windowId: WindowId) {
-        listRecentWindowIds.removeAll { $0 == windowId }
-        listRecentWindowIds.insert(windowId, at: 0)
+        notePlace(String(windowId.rawValue))
     }
 
     /// The active group holding the frontmost managed window, which is where the user is working.

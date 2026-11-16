@@ -366,11 +366,8 @@ struct AgentsSidebarView: View {
             HStack(spacing: 8) {
                 CrowView(state: agent.state)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(agent.displayName)
-                        .font(.system(size: isSubagent ? 12 : 13, weight: .semibold))
+                    FittingText(agent.displayName, size: isSubagent ? 12 : 13, weight: .semibold)
                         .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
                     tags(of: agent, isReachable: isReachable)
                 }
                 Spacer(minLength: 0)
@@ -398,7 +395,7 @@ struct AgentsSidebarView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(agent.title.isEmpty ? agent.name : "\(agent.title)\n\(agent.name)")
+        .help(rowHelp(of: agent))
         .onHover { isInside in
             hover(agent.id, isInside: isInside)
         }
@@ -484,29 +481,50 @@ struct AgentsSidebarView: View {
 
     /// The agent's state, repository and branch, each in a tag of its own under a small caption.
     private func tags(of agent: FleetAgent, isReachable: Bool) -> some View {
+        let hasRepo = !agent.projectName.isEmpty && agent.projectName != "/"
+        let hasBranch = !agent.gitBranch.isEmpty
+        return ViewThatFits(in: .horizontal) {
+            tagRow(of: agent, isReachable: isReachable, showsRepo: hasRepo, showsBranch: hasBranch)
+            tagRow(of: agent, isReachable: isReachable, showsRepo: hasRepo, showsBranch: false)
+            tagRow(of: agent, isReachable: isReachable, showsRepo: false, showsBranch: false)
+        }
+        .animation(.easeOut(duration: 0.2), value: agent.state)
+    }
+
+    /// The tags on one line, each whole; the row drops the branch, then the repository, where it runs out
+    /// of width.
+    private func tagRow(of agent: FleetAgent, isReachable: Bool, showsRepo: Bool, showsBranch: Bool) -> some View {
         HStack(alignment: .bottom, spacing: 4) {
-            if isReachable {
-                captioned("status") {
+            captioned("status") {
+                if isReachable {
                     InfoTag(agent.state.title, tint: agent.state.needsAttention ? .orange : nil)
-                }
-            } else {
-                captioned("status") {
+                } else {
                     InfoTag("offline", tint: .orange)
                 }
             }
-            if !agent.projectName.isEmpty && agent.projectName != "/" {
+            if showsRepo {
                 captioned("repo") {
                     InfoTag(agent.projectName)
                 }
             }
-            if !agent.gitBranch.isEmpty {
+            if showsBranch {
                 captioned("branch") {
                     InfoTag(agent.gitBranch)
                 }
-                .layoutPriority(-1)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: agent.state)
+        .fixedSize()
+    }
+
+    /// The row's tooltip: the agent's names, and where it works.
+    private func rowHelp(of agent: FleetAgent) -> String {
+        let listLines = [
+            agent.title,
+            agent.name,
+            agent.cwd,
+            agent.gitBranch.isEmpty ? "" : "branch \(agent.gitBranch)",
+        ]
+        return listLines.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     private func captioned<Content: View>(_ caption: String, @ViewBuilder content: () -> Content) -> some View {

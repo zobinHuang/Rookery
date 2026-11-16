@@ -112,6 +112,14 @@ public final class RookdClient: Sendable {
         try decode(FleetResource.self, from: try await request("GET", path: "/v1/resources/\(ref.kind)/\(ref.id)"))
     }
 
+    /// Report events, as rook does for the agents it runs.
+    ///
+    /// - Parameter listEvents: the events, each an object as `POST /v1/events` takes it
+    public func post(events listEvents: [[String: JSONValue]]) async throws {
+        let body = try JSONEncoder().encode(["events": listEvents.map { JSONValue.object($0) }])
+        _ = try await request("POST", path: "/v1/events", body: body)
+    }
+
     /// The kinds of resource rookd manages.
     public func kinds() async throws -> [FleetKind] {
         try decode(KindPage.self, from: try await request("GET", path: "/v1/kinds")).kinds

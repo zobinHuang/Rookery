@@ -6,14 +6,6 @@ import RookeryCore
 /// Rookery never handles the account's credentials; no prompt is sent, so no model is called, and the
 /// run neither saves a session nor runs the user's hooks.
 public struct ClaudeCodeUsageProvider: AgentUsageProvider {
-    private static let executableName = "claude"
-    /// Where Claude Code installs itself, as an app started from Finder does not see the shell's path.
-    private static let listSearchDirectories = [
-        "~/.local/bin",
-        "~/.claude/local",
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-    ]
     private static let listArguments = [
         "-p",
         "--input-format", "stream-json",
@@ -34,7 +26,7 @@ public struct ClaudeCodeUsageProvider: AgentUsageProvider {
     public init() {}
 
     public func usage(of account: AgentAccount) async throws -> AgentUsage {
-        guard let executable = Self.executableUrl() else {
+        guard let executable = ClaudeCodeExecutable.url() else {
             throw AgentUsageError.harnessNotFound(harness)
         }
         return try await Self.askForUsage(executable: executable, configDirectory: account.configDirectory)
@@ -48,14 +40,6 @@ public struct ClaudeCodeUsageProvider: AgentUsageProvider {
         } catch {
             throw AgentUsageError.harnessFailed("unreadable answer: \(error)")
         }
-    }
-
-    private static func executableUrl() -> URL? {
-        let listDirectories = listSearchDirectories.map { NSString(string: $0).expandingTildeInPath }
-            + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
-        return listDirectories
-            .map { URL(filePath: $0).appending(path: executableName) }
-            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
     /// Run Claude Code until it answers the usage request, and read its answers. The requests are

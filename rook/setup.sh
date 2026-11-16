@@ -597,12 +597,18 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 UNIT
-  systemctl --user daemon-reload
-  systemctl --user enable rook-link.service >/dev/null 2>&1
-  systemctl --user restart rook-link.service
-  loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
-    warn "Could not enable lingering; rook-link stops when you log out."
-  info "Started systemd user unit rook-link.service"
+  # By its full path: the user manager looks for units under the home it
+  # knows, which is not $HOME where a machine moves home elsewhere.
+  if systemctl --user daemon-reload &&
+    systemctl --user enable "$ROOK_LINK_UNIT_DIR/rook-link.service" >/dev/null 2>&1 &&
+    systemctl --user restart rook-link.service; then
+    loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
+      warn "Could not enable lingering; rook-link stops when you log out."
+    info "Started systemd user unit rook-link.service"
+  else
+    warn "Could not start rook-link as a systemd user unit; start it by hand:"
+    warn "  nohup $ROOK_VENV/bin/python $HOME/.local/bin/rook-link run >> $ROOK_LINK_LOG 2>&1 &"
+  fi
 else
   warn "No launchd or systemd; start the link by hand:"
   warn "  nohup $ROOK_VENV/bin/python $HOME/.local/bin/rook-link run >> $ROOK_LINK_LOG 2>&1 &"

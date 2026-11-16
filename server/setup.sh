@@ -182,13 +182,20 @@ RestartSec=2
 [Install]
 WantedBy=default.target
 UNIT
-  systemctl --user daemon-reload
-  systemctl --user enable --now roost.service
-  # Without lingering, a user unit dies the moment you log out.
-  loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
-    warn "Could not enable lingering; roost will stop when you log out."
-  info "Started systemd user unit roost.service"
-  ROOST_STARTED=1
+  # By its full path: the user manager looks for units under the home it
+  # knows, which is not $HOME where a machine moves home elsewhere.
+  if systemctl --user daemon-reload &&
+    systemctl --user enable "$ROOST_UNIT_DIR/roost.service" >/dev/null 2>&1 &&
+    systemctl --user restart roost.service; then
+    # Without lingering, a user unit dies the moment you log out.
+    loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
+      warn "Could not enable lingering; roost will stop when you log out."
+    info "Started systemd user unit roost.service"
+    ROOST_STARTED=1
+  else
+    warn "Could not start roost as a systemd user unit; start it by hand:"
+    warn "  nohup $ROOST_BIN serve > ~/.local/share/roost/roost.log 2>&1 &"
+  fi
 elif [ "$(uname -s)" = "Darwin" ]; then
   ROOST_PLIST="$HOME/Library/LaunchAgents/io.github.zobinhuang.rookery.roost.plist"
   mkdir -p "$(dirname "$ROOST_PLIST")" "$HOME/.local/share/roost"

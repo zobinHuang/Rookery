@@ -480,25 +480,38 @@ struct AgentsSidebarView: View {
 
     /// The agent's state, repository and branch, each in a tag of its own under a small caption.
     private func tags(of agent: FleetAgent, isReachable: Bool) -> some View {
+        let hasRook = !agent.rookName.isEmpty
         let hasRepo = !agent.projectName.isEmpty && agent.projectName != "/"
         let hasBranch = !agent.gitBranch.isEmpty
         return ViewThatFits(in: .horizontal) {
-            tagRow(of: agent, isReachable: isReachable, showsRepo: hasRepo, showsBranch: hasBranch)
-            tagRow(of: agent, isReachable: isReachable, showsRepo: hasRepo, showsBranch: false)
-            tagRow(of: agent, isReachable: isReachable, showsRepo: false, showsBranch: false)
+            tagRow(of: agent, isReachable: isReachable, showsRook: hasRook, showsRepo: hasRepo, showsBranch: hasBranch)
+            tagRow(of: agent, isReachable: isReachable, showsRook: hasRook, showsRepo: hasRepo, showsBranch: false)
+            tagRow(of: agent, isReachable: isReachable, showsRook: hasRook, showsRepo: false, showsBranch: false)
+            tagRow(of: agent, isReachable: isReachable, showsRook: false, showsRepo: false, showsBranch: false)
         }
         .animation(.easeOut(duration: 0.2), value: agent.state)
     }
 
-    /// The tags on one line, each whole; the row drops the branch, then the repository, where it runs out
-    /// of width.
-    private func tagRow(of agent: FleetAgent, isReachable: Bool, showsRepo: Bool, showsBranch: Bool) -> some View {
+    /// The tags on one line, each whole; the row drops the branch, then the repository, then the rook, where
+    /// it runs out of width.
+    private func tagRow(
+        of agent: FleetAgent,
+        isReachable: Bool,
+        showsRook: Bool,
+        showsRepo: Bool,
+        showsBranch: Bool
+    ) -> some View {
         HStack(alignment: .bottom, spacing: 4) {
             captioned("status") {
                 if isReachable {
                     InfoTag(agent.state.title, tint: agent.state.needsAttention ? .orange : nil)
                 } else {
                     InfoTag("offline", tint: .orange)
+                }
+            }
+            if showsRook {
+                captioned("rook") {
+                    InfoTag(agent.rookName)
                 }
             }
             if showsRepo {

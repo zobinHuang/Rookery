@@ -83,7 +83,7 @@ struct SwitcherView: View {
     }
 }
 
-/// One group card: its applications' icons, its name and its size.
+/// One card: its applications' icons or its symbol, and its name, with what it is in its tooltip.
 struct SwitcherCardView: View {
     private static let iconSize: CGFloat = 44
     private static let iconOverlap: CGFloat = -18
@@ -96,22 +96,19 @@ struct SwitcherCardView: View {
         VStack(spacing: 8) {
             artwork
                 .frame(height: Self.iconSize)
-            VStack(spacing: 2) {
-                HStack(spacing: 5) {
-                    if entry.isActive {
-                        Circle()
-                            .fill(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
-                            .frame(width: 6, height: 6)
-                    }
-                    Text(entry.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                if entry.isActive {
+                    Circle()
+                        .fill(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
+                        .frame(width: 6, height: 6)
                 }
-                Text(entry.subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+                Text(entry.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
             }
             .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .help(entry.subtitle)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 14)

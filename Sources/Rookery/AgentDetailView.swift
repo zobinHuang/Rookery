@@ -13,6 +13,9 @@ struct AgentDetailView: View {
     /// How much of a transcript's end is read when the page opens; the rest is a click away.
     private static let openingTailBytes = 3 * 1024 * 1024
     private static let shownDeliveryLimit = 3
+    private static let setInterruptibleStates: Set<AgentState> = [.thinking, .working, .compacting]
+    /// The harness whose approval prompt its rook knows how to answer.
+    private static let approvableHarness = "claude"
     /// How long a prompt's outcome stays above the box once it is known.
     private static let deliveredLinger: TimeInterval = 4
     private static let failedLinger: TimeInterval = 10
@@ -31,6 +34,7 @@ struct AgentDetailView: View {
     /// The prompts sent from here that the transcript does not record yet.
     @State private var listOutgoing: [OutgoingPrompt] = []
     @State private var sendToken = 0
+    @State private var isActing = false
     @State private var now = Date()
     @State private var draft = ""
     @State private var isSending = false
@@ -86,6 +90,7 @@ struct AgentDetailView: View {
                 metadata(agent)
             }
             Spacer(minLength: 12)
+            controls(agent)
             Button(action: onClose) {
                 RookeryIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
@@ -97,6 +102,67 @@ struct AgentDetailView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
+    }
+
+    /// What the user can do to the agent from here: stop it while it works, or answer the approval it waits
+    /// on, which its rook does in its pane.
+    @ViewBuilder
+    private func controls(_ agent: FleetAgent) -> some View {
+        let isReachable = agent.state != .ended && fleetModel.fleet.isOnline(agent)
+        HStack(spacing: 8) {
+            if isReachable && Self.setInterruptibleStates.contains(agent.state) {
+                Button {
+                    act { try await $0.interrupt(agent.id) }
+                } label: {
+                    Text("Interrupt")
+                }
+                .help("Stop what the agent is doing, as Escape in its pane does")
+            }
+            if isReachable && agent.state == .needsApproval && agent.harness == Self.approvableHarness {
+                Button {
+                    act { try await $0.approve(agent.id, choice: RavenProposal.approveDeny) }
+                } label: {
+                    Text("Decline")
+                }
+                .help("Decline the call it waits to run")
+                Button {
+                    act { try await $0.approve(agent.id, choice: RavenProposal.approveOnce) }
+                } label: {
+                    Text("Allow Once")
+                }
+                .buttonStyle(.borderedProminent)
+                .help("Allow the call it waits to run, this once")
+            }
+        }
+        .controlSize(.regular)
+        .disabled(isActing)
+        .animation(.easeOut(duration: 0.2), value: agent.state)
+    }
+
+    /// Carry out an action on the agent through roost, showing its delivery with the prompts'.
+    private func act(_ action: @escaping (RoostClient) async throws -> FleetDelivery) {
+        isActing = true
+        sendError = nil
+        Task {
+            do {
+                let delivery = try await action(fleetModel.requireClient())
+                listDeliveries.insert(delivery, at: 0)
+                noteOutcomes(isOpening: false)
+            } catch {
+                sendError = FleetModel.describe(error)
+            }
+            isActing = false
+        }
+    }
+
+    /// A delivery in a few words: a prompt's text, or what was done.
+    private static func summary(of delivery: FleetDelivery) -> String {
+        switch delivery.kind {
+        case "interrupt": "Interrupt"
+        case "approve": "Answer to its approval"
+        case "spawn": "New session"
+        default: delivery.text
+        }
     }
 
     private func statePill(_ state: AgentState) -> some View {
@@ -268,7 +334,7 @@ struct AgentDetailView: View {
         return HStack(spacing: 6) {
             RookeryIconView(symbol)
                 .foregroundStyle(tint)
-            Text(delivery.text)
+            Text(Self.summary(of: delivery))
                 .lineLimit(1)
                 .truncationMode(.tail)
             InfoTag(delivery.status.capitalized, tint: tint)

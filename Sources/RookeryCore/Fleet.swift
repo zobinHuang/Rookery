@@ -300,6 +300,9 @@ public struct FleetDelivery: Decodable, Equatable, Identifiable, Sendable {
     public var status: String
     public var mapDetail: [String: JSONValue]
     public let createdAt: String
+    /// `prompt`, `interrupt`, `approve` or `spawn`; a roost older than kinds sends none, and every delivery
+    /// was a prompt.
+    public let kind: String
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -309,6 +312,19 @@ public struct FleetDelivery: Decodable, Equatable, Identifiable, Sendable {
         case status
         case mapDetail = "detail"
         case createdAt = "created_at"
+        case kind
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        agentId = try container.decode(String.self, forKey: .agentId)
+        text = try container.decode(String.self, forKey: .text)
+        sender = try container.decode(FleetRef.self, forKey: .sender)
+        status = try container.decode(String.self, forKey: .status)
+        mapDetail = try container.decodeIfPresent([String: JSONValue].self, forKey: .mapDetail) ?? [:]
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? "prompt"
     }
 
     /// The outcomes a delivery ends in.

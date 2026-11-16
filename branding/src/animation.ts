@@ -1,5 +1,5 @@
 import { type CrowState, CrowStates, type FrameSpec } from "./crow-states.ts";
-import { type Backing, PixelGrid } from "./pixel-grid.ts";
+import { type Backing, type ColorKey, PixelGrid } from "./pixel-grid.ts";
 import { SceneRenderer } from "./scene-renderer.ts";
 import { Sprites } from "./sprites.ts";
 
@@ -35,7 +35,7 @@ export class Animator {
             if (known !== undefined) {
                 return known;
             }
-            list_frames.push(Animator.render_frame(frame, backing));
+            list_frames.push(Animator.render_frame(frame, backing, state.tint));
             map_frame_indices.set(key, list_frames.length - 1);
             return list_frames.length - 1;
         });
@@ -56,7 +56,7 @@ export class Animator {
      * @param backing - how the crow is set off from the background
      * @returns the frame
      */
-    static render_frame(frame: FrameSpec, backing: Backing): PixelGrid {
+    static render_frame(frame: FrameSpec, backing: Backing, tint: ColorKey = "Y"): PixelGrid {
         const scene = SceneRenderer.render({
             size: CrowStates.GRID_SIZE,
             list_crows: [{ position: { x: 0, y: 0, z: 0 }, yaw: 0, scale: 1, pose: frame.pose }],
@@ -65,13 +65,13 @@ export class Animator {
             centre_y: CrowStates.CAMERA_CENTRE_Y,
             has_shadows: true,
         });
-        const list_rows = PixelGrid.from_keys(scene.list_rows).backed(backing).list_rows.map((row) => [...row]);
+        const list_rows = PixelGrid.from_keys(scene.list_rows).backed(backing, tint).list_rows.map((row) => [...row]);
         const anchors = scene.list_anchors[0];
         if (anchors !== undefined) {
             for (const stamp of frame.list_stamps) {
                 const x = stamp.anchor === "head" ? anchors.head_top_x : anchors.beak_x;
                 const y = stamp.anchor === "head" ? anchors.head_top_y : anchors.beak_y;
-                Sprites.stamp(list_rows, stamp.sprite, x + stamp.dx, y + stamp.dy);
+                Sprites.stamp(list_rows, stamp.sprite, x + stamp.dx, y + stamp.dy, tint);
             }
         }
         return PixelGrid.from_keys(list_rows);

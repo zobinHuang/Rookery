@@ -1,4 +1,4 @@
-import { type PaletteKey, PixelGrid } from "./pixel-grid.ts";
+import { type ColorKey, type PaletteKey, PixelGrid } from "./pixel-grid.ts";
 
 /**
  * A small picture stamped over a frame, one string of palette keys per row, `.` where it lets the frame
@@ -121,14 +121,33 @@ export class Sprites {
     ];
 
     /**
+     * A sprite's key in a state's color: its yellow becomes the tint, and its light yellow white, so a mark
+     * reads in the state's color.
+     *
+     * @param key - the sprite's key
+     * @param tint - the state's color
+     * @returns the key to draw
+     */
+    static tinted(key: PaletteKey, tint: ColorKey): PaletteKey {
+        if (tint === "Y") {
+            return key;
+        }
+        if (key === "Y") {
+            return tint;
+        }
+        return key === "L" ? "W" : key;
+    }
+
+    /**
      * Stamp a sprite onto a frame, edging its yellow in black where it meets empty pixels.
      *
      * @param list_rows - the frame, changed in place
      * @param sprite - the sprite
      * @param left - the column of the sprite's left edge, rounded to a pixel
      * @param top - the row of the sprite's top edge, rounded to a pixel
+     * @param tint - the state's color, which the sprite's yellow takes
      */
-    static stamp(list_rows: PaletteKey[][], sprite: Sprite, left: number, top: number): void {
+    static stamp(list_rows: PaletteKey[][], sprite: Sprite, left: number, top: number, tint: ColorKey = "Y"): void {
         const x0 = Math.round(left);
         const y0 = Math.round(top);
         const is_inside = (x: number, y: number): boolean => (sprite[y - y0]?.[x - x0] ?? ".") !== ".";
@@ -143,7 +162,7 @@ export class Sprites {
                 }
                 const key = sprite[y - y0]?.[x - x0] ?? ".";
                 if (key !== ".") {
-                    row[x] = PixelGrid.palette_key(key);
+                    row[x] = Sprites.tinted(PixelGrid.palette_key(key), tint);
                 } else if (row[x] === "." && (is_inside(x - 1, y) || is_inside(x + 1, y) || is_inside(x, y - 1) || is_inside(x, y + 1))) {
                     row[x] = "K";
                 }

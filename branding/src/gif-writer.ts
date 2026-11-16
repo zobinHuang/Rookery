@@ -7,8 +7,8 @@ import { type ColorKey, PixelGrid } from "./pixel-grid.ts";
  */
 export class GifWriter {
     /** The global table holds this many colors: the palette, the transparent slot, and padding. */
-    static readonly TABLE_SIZE = 16;
-    static readonly TABLE_BITS = 4;
+    static readonly TABLE_SIZE = 32;
+    static readonly TABLE_BITS = 5;
     static readonly TRANSPARENT_INDEX = 0;
     static readonly MAX_CODE_SIZE = 12;
     static readonly CENTISECONDS_PER_SECOND = 100;

@@ -2,7 +2,13 @@
  * A key of the palette: `.` is transparent, `S` the ground shadow, whose color depends on what is behind it,
  * and the rest name the logo's colors.
  */
-export type PaletteKey = "." | "S" | "K" | "G" | "M" | "H" | "Y" | "L" | "W";
+export type PaletteKey = "." | "S" | "K" | "G" | "M" | "H" | "Y" | "L" | "W" | StateKey;
+
+/**
+ * The colors that tell a crow's states apart at a glance, each one a state's outline and marks: blue,
+ * teal, green, orange, purple, cyan, red, pink and grey.
+ */
+export type StateKey = "B" | "T" | "N" | "O" | "P" | "C" | "R" | "I" | "A";
 
 /** A key that stands for one fixed color. */
 export type ColorKey = Exclude<PaletteKey, "." | "S">;
@@ -58,6 +64,15 @@ export class PixelGrid {
         Y: "#FFC83D",
         L: "#FFE58A",
         W: "#FFFFFF",
+        B: "#4DA3FF",
+        T: "#2CCFB0",
+        N: "#5BD46A",
+        O: "#FF8A3D",
+        P: "#B07CFF",
+        C: "#52E0F2",
+        R: "#FF5463",
+        I: "#FF6FB8",
+        A: "#9A9AA8",
     };
     /** The tile's corner radius against the grid's size. */
     static readonly TILE_CORNER_FRACTION = 5 / 32;
@@ -205,12 +220,12 @@ export class PixelGrid {
      * @param backing - a yellow rounded tile behind it, a yellow outline around it, or none
      * @returns the backed grid
      */
-    backed(backing: Backing): PixelGrid {
+    backed(backing: Backing, outline_key: ColorKey = "Y"): PixelGrid {
         switch (backing) {
             case "tile":
                 return this._on_tile();
             case "outline":
-                return this._outlined();
+                return this._outlined(outline_key);
             case "none":
                 return new PixelGrid(this.list_rows.map((row) => row.map((key) => (key === "S" ? "G" : key))));
         }
@@ -299,7 +314,7 @@ export class PixelGrid {
     }
 
     /** A one-pixel yellow outline around the black body; the yellow beak and feet need none. */
-    private _outlined(): PixelGrid {
+    private _outlined(outline_key: ColorKey): PixelGrid {
         const list_rows = this.list_rows.map((row, y) => row.map((key, x): PaletteKey => {
             if (key === "S") {
                 return "G";
@@ -307,7 +322,7 @@ export class PixelGrid {
             if (key !== ".") {
                 return key;
             }
-            return this._touches(x, y, "KGMH", true) ? "Y" : ".";
+            return this._touches(x, y, "KGMH", true) ? outline_key : ".";
         }));
         return new PixelGrid(list_rows);
     }

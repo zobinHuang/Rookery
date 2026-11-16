@@ -1,4 +1,5 @@
 import { CrowModel, type CrowPose } from "./crow-model.ts";
+import type { ColorKey } from "./pixel-grid.ts";
 import { type Sprite, Sprites } from "./sprites.ts";
 
 /**
@@ -34,6 +35,8 @@ export interface HarnessSignal {
 export interface CrowState {
     name: string;
     title: string;
+    /** The state's color: its outline and the marks around it. */
+    tint: ColorKey;
     meaning: string;
     list_signals: readonly HarnessSignal[];
     list_frames: readonly FrameSpec[];
@@ -57,6 +60,7 @@ export class CrowStates {
     /** Session open, nothing asked yet or the last answer read: breathing, blinking, looking about. */
     static readonly IDLE: CrowState = {
         name: "idle",
+        tint: "Y",
         title: "Idle",
         meaning: "Open and waiting for a prompt.",
         list_signals: [
@@ -77,6 +81,7 @@ export class CrowStates {
     /** The model is working out its reply: looking up in thought while the dots of a thought fill in. */
     static readonly THINKING: CrowState = {
         name: "thinking",
+        tint: "B",
         title: "Thinking",
         meaning: "The model is working out a reply.",
         list_signals: [
@@ -104,6 +109,7 @@ export class CrowStates {
     /** Running a tool or editing files: pecking away, sparks flying from the beak, code above. */
     static readonly WORKING: CrowState = {
         name: "working",
+        tint: "T",
         title: "Working",
         meaning: "Running a tool or editing files.",
         list_signals: [
@@ -129,6 +135,7 @@ export class CrowStates {
     /** Waiting for the user to allow a tool: hopping and flapping under a blinking mark. */
     static readonly NEEDS_APPROVAL: CrowState = {
         name: "needs-approval",
+        tint: "O",
         title: "Needs approval",
         meaning: "Asking to be allowed to run a tool.",
         list_signals: [
@@ -152,6 +159,7 @@ export class CrowStates {
     /** Waiting for an answer to a question it asked: head tipping one way then the other. */
     static readonly NEEDS_INPUT: CrowState = {
         name: "needs-input",
+        tint: "P",
         title: "Needs input",
         meaning: "Asked a question and is waiting for the answer.",
         list_signals: [
@@ -175,6 +183,7 @@ export class CrowStates {
     /** Summarizing the conversation to free context: squeezing up tight as specks are drawn in. */
     static readonly COMPACTING: CrowState = {
         name: "compacting",
+        tint: "C",
         title: "Compacting",
         meaning: "Summarizing the conversation to free up context.",
         list_signals: [
@@ -201,6 +210,7 @@ export class CrowStates {
     /** Finished the task: a caw, a happy hop, and a tick. */
     static readonly DONE: CrowState = {
         name: "done",
+        tint: "N",
         title: "Done",
         meaning: "Finished the turn; the answer is ready to read.",
         list_signals: [
@@ -236,6 +246,7 @@ export class CrowStates {
     /** A request failed: shaking its head, feathers ruffled, under a bolt. */
     static readonly ERROR: CrowState = {
         name: "error",
+        tint: "R",
         title: "Error",
         meaning: "A request or a tool failed.",
         list_signals: [
@@ -259,6 +270,7 @@ export class CrowStates {
     /** Hit the plan's usage limit: sitting low beside an hourglass that keeps running out. */
     static readonly RATE_LIMITED: CrowState = {
         name: "rate-limited",
+        tint: "I",
         title: "Limit reached",
         meaning: "Paused until the plan's usage limit resets.",
         list_signals: [
@@ -284,6 +296,7 @@ export class CrowStates {
     /** The session has exited: asleep, with z's drifting up. */
     static readonly ENDED: CrowState = {
         name: "ended",
+        tint: "A",
         title: "Ended",
         meaning: "The session has exited.",
         list_signals: [

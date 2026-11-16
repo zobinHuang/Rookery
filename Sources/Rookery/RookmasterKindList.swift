@@ -358,7 +358,7 @@ private struct ResourceInspector: View {
                         .keyboardShortcut("s", modifiers: .command)
                     }
                 } else if resource.kind != AgentFleet.agentKind {
-                    Text("Change \(resource.kind)s with rook \(resource.kind) on a machine, or ask the maintenance agent.")
+                    Text("Change \(resource.kind)s with rook \(resource.kind) on a machine, or ask Raven.")
                         .font(.system(size: 11))
                         .foregroundStyle(StageColors.secondaryText)
                 }

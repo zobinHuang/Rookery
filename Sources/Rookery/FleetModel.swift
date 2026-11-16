@@ -34,8 +34,8 @@ final class FleetModel {
     private(set) var serverVersion: String?
 
     @ObservationIgnored private let preferences: Preferences
-    /// The maintenance agent, which works on what this model follows; it lives as long as the app.
-    @ObservationIgnored private(set) lazy var maintenance = MaintenanceAgent(fleetModel: self)
+    /// Raven, which works on what this model follows; it lives as long as the app.
+    @ObservationIgnored private(set) lazy var raven = RavenAgent(fleetModel: self)
     /// The transcripts read so far, so an agent's page reopens at once.
     @ObservationIgnored let transcripts = TranscriptCache()
     /// Where the user left the agents' pages and the Rookmaster console.

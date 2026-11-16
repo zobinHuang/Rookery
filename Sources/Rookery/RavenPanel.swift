@@ -1,8 +1,8 @@
 import RookeryCore
 import SwiftUI
 
-/// A request to start the maintenance agent from, each one of its skills.
-enum MaintenanceStarter: CaseIterable {
+/// A request to start Raven from, each one of its skills.
+enum RavenStarter: CaseIterable {
     case registerSkill
     case writePlaybook
     case distillPlaybook
@@ -45,10 +45,10 @@ enum MaintenanceStarter: CaseIterable {
     }
 }
 
-/// The Rookmaster console's maintenance column: a box to ask the maintenance agent for something in plain
+/// The Rookmaster console's Raven column: a box to ask Raven for something in plain
 /// words, naming resources with @ and choosing them from suggestions, a few requests to start from, and
 /// each request's conversation as the agent works through it.
-struct MaintenancePanel: View {
+struct RavenPanel: View {
 
     let fleetModel: FleetModel
 
@@ -57,8 +57,8 @@ struct MaintenancePanel: View {
     @State private var highlightedIndex = 0
     @FocusState private var isFocused: Bool
 
-    private var maintenance: MaintenanceAgent {
-        fleetModel.maintenance
+    private var raven: RavenAgent {
+        fleetModel.raven
     }
 
     private var listSuggestions: [FleetResource] {
@@ -83,10 +83,10 @@ struct MaintenancePanel: View {
     private var conversation: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                if maintenance.listRuns.isEmpty {
+                if raven.listRuns.isEmpty {
                     starters
                 }
-                ForEach(maintenance.listRuns) { run in
+                ForEach(raven.listRuns) { run in
                     runView(run)
                 }
             }
@@ -95,18 +95,18 @@ struct MaintenancePanel: View {
             .textSelection(.enabled)
         }
         .modifier(RememberedScroll(
-            key: "rookmaster.maintenance",
+            key: "rookmaster.raven",
             memory: fleetModel.pageMemory,
             followsEnd: true,
             isReady: true,
-            endToken: (maintenance.listRuns.count << 16) + (maintenance.listRuns.last?.reader.listEntries.count ?? 0)
+            endToken: (raven.listRuns.count << 16) + (raven.listRuns.last?.reader.listEntries.count ?? 0)
         ))
     }
 
     private var starters: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                ForEach(MaintenanceStarter.allCases, id: \.self) { starter in
+                ForEach(RavenStarter.allCases, id: \.self) { starter in
                     Button {
                         draft = starter.request
                         isFocused = true
@@ -124,7 +124,7 @@ struct MaintenancePanel: View {
         }
     }
 
-    private func runView(_ run: MaintenanceRun) -> some View {
+    private func runView(_ run: RavenRun) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Spacer(minLength: 30)
@@ -170,7 +170,7 @@ struct MaintenancePanel: View {
     }
 
     @ViewBuilder
-    private func status(of run: MaintenanceRun) -> some View {
+    private func status(of run: RavenRun) -> some View {
         switch run.status {
         case .running:
             HStack(spacing: 6) {
@@ -206,11 +206,11 @@ struct MaintenancePanel: View {
             }
             AgentComposer(
                 text: $draft,
-                placeholder: isReady ? "Ask the maintenance agent; name a resource with @" : "Connect to roost first",
+                placeholder: isReady ? "Ask Raven; name an agent or a resource with @" : "Connect to roost first",
                 isEnabled: isReady,
-                isBusy: maintenance.isRunning,
+                isBusy: raven.isRunning,
                 fontSize: 12,
-                onStop: maintenance.cancel,
+                onStop: raven.cancel,
                 onSend: send,
                 onKey: takeSuggestionKey,
                 isFocused: $isFocused
@@ -300,14 +300,14 @@ struct MaintenancePanel: View {
 
     private func send() {
         let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !request.isEmpty, !maintenance.isRunning else {
+        guard !request.isEmpty, !raven.isRunning else {
             return
         }
         let listNamed = listMentions.filter { ref in
             fleetModel.graph.resource(ref).map { request.contains(Mentions.token(for: $0)) } ?? false
         }
         withAnimation(.easeOut(duration: 0.2)) {
-            maintenance.ask(request, mentioning: listNamed)
+            raven.ask(request, mentioning: listNamed)
         }
         draft = ""
         listMentions = []

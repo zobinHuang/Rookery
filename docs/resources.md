@@ -8,7 +8,7 @@ Everything Rookery manages about code agents is a resource, of one of a few kind
 |---|---|---|---|
 | `agent` | One code agent session, or a subagent it spawned | `state`, `title`, `harness`, `rook_name`, `tab`, `machine`, `cwd`, `git_branch`, `account`, `transcript_path`, `parent`, `opened_at`, `closed_at` | rook's hooks |
 | `skill` | Instructions for using a tool | `source`, `repo_url`, `skill_path`, `default_ref`, `versions`, `description`; `discovered` when first seen in use rather than registered | the skill index; agents using or writing skills |
-| `playbook` | A standard way to solve one kind of problem | `prompt`, `skills` (pins), `description` | the playbook index; the maintenance agent |
+| `playbook` | A standard way to solve one kind of problem | `prompt`, `skills` (pins), `description` | the playbook index; Raven |
 | `memory` | Details of a particular problem an agent wrote down to keep | `text`, `path`, `project` | agents writing into their own memory directory |
 | `rook` | A machine running agents under rook | `online`, `machine`, `accepts_prompts`, `connected_at`, `disconnected_at` | the live link |
 

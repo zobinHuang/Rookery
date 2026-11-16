@@ -21,9 +21,9 @@ cp "$root"/Resources/SidebarLogo*.png "$root"/Resources/SidebarLogo.json "$app/C
 cp "$root"/Resources/Crow_*.png "$root"/Resources/Crows.json "$app/Contents/Resources/"
 rm -rf "$app/Contents/Resources/Icons"
 cp -R "$root/Resources/Icons" "$app/Contents/Resources/Icons"
-rm -rf "$app/Contents/Resources/Maintenance"
-cp -R "$root/Resources/Maintenance" "$app/Contents/Resources/Maintenance"
-cp "$root/rook/bin/rook-client" "$app/Contents/Resources/Maintenance/rook-client"
+rm -rf "$app/Contents/Resources/Raven"
+cp -R "$root/Resources/Raven" "$app/Contents/Resources/Raven"
+cp "$root/rook/bin/rook-client" "$app/Contents/Resources/Raven/rook-client"
 cp "$bin_path/Rookery" "$app/Contents/MacOS/Rookery"
 cp "$bin_path/rookery-chrome-host" "$app/Contents/MacOS/rookery-chrome-host"
 

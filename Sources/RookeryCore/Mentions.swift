@@ -1,6 +1,6 @@
 import Foundation
 
-/// The `@kind/name` mentions in a request to the maintenance agent: the one being typed, the resources
+/// The `@kind/name` mentions in a request to Raven: the one being typed, the resources
 /// it could complete to, and the mention a choice writes into the text.
 public enum Mentions {
     /// The most suggestions offered at once.

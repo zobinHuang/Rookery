@@ -11,7 +11,7 @@ enum RookmasterTab: Hashable {
 /// What the panel at the bottom of the Rookmaster console shows.
 enum RookmasterPanelTab: Hashable {
     case log
-    case maintenance
+    case raven
 }
 
 /// The console over everything roost manages: the board of resources and the relations between them, a
@@ -200,7 +200,7 @@ enum RookmasterStyle {
 }
 
 /// The panel at the bottom of the Rookmaster console, after an editor's: the log of the latest events,
-/// newest at the bottom, live, with a filter; and the maintenance agent beside it in a tab of its own; with
+/// newest at the bottom, live, with a filter; and Raven beside it in a tab of its own; with
 /// the code agents' plan limits to their right. Folds down to its title bar.
 struct RookmasterPanel: View {
     private static let expandedHeight: CGFloat = 260
@@ -240,8 +240,8 @@ struct RookmasterPanel: View {
                         switch memory.panelTab {
                         case .log:
                             rows
-                        case .maintenance:
-                            MaintenancePanel(fleetModel: fleetModel)
+                        case .raven:
+                            RavenPanel(fleetModel: fleetModel)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -280,7 +280,7 @@ struct RookmasterPanel: View {
             .help(memory.isPanelExpanded ? "Fold the panel" : "Open the panel")
             HStack(spacing: 2) {
                 panelTab(.log, title: "Log", count: listShown.count, isBusy: false)
-                panelTab(.maintenance, title: "Maintenance", count: nil, isBusy: fleetModel.maintenance.isRunning)
+                panelTab(.raven, title: "Raven", count: nil, isBusy: fleetModel.raven.isRunning)
             }
             .padding(2)
             .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))

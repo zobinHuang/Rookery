@@ -4,8 +4,8 @@ import os
 import RookeryCore
 import RookeryPlatform
 
-/// One request to the maintenance agent, and what came of it.
-struct MaintenanceRun: Identifiable {
+/// One request to Raven, and what came of it.
+struct RavenRun: Identifiable {
     enum Status: Equatable {
         case running
         case finished
@@ -24,25 +24,25 @@ struct MaintenanceRun: Identifiable {
     var costUSD: Double?
 }
 
-/// Rookery's maintenance agent: Claude Code run headless on this Mac, in a workspace of the app's own that
+/// Raven, Rookery's agent over the fleet: Claude Code run headless on this Mac, in a workspace of the app's own that
 /// holds Rookery's skills and a `rook-client` connected to the roost the app follows, allowed that
 /// command and its skills and nothing else. Each request is one session, reported to roost as the agent
-/// `rookery/maintenance`, so whatever it changes is logged as its doing; it changes without asking, as
+/// `rookery/raven`, so whatever it changes is logged as its doing; it changes without asking, as
 /// the user chose.
 @MainActor
 @Observable
-final class MaintenanceAgent {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "maintenance")
-    static let agentName = "rookery/maintenance"
+final class RavenAgent {
+    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "raven")
+    static let agentName = "rookery/raven"
     static let rookName = "rookery"
-    private static let workspaceName = "maintenance"
-    private static let resourceFolder = "Maintenance"
+    private static let workspaceName = "raven"
+    private static let resourceFolder = "Raven"
     private static let fileMode: Int = 0o600
     private static let executableMode: Int = 0o755
     /// It changes roost through rook-client alone, and reads skills' own pages to describe them.
     private static let listAllowedTools = ["Bash(rook-client:*)", "Skill", "WebFetch"]
 
-    private(set) var listRuns: [MaintenanceRun] = []
+    private(set) var listRuns: [RavenRun] = []
 
     @ObservationIgnored private unowned let fleetModel: FleetModel
     @ObservationIgnored private var runTask: Task<Void, Never>?
@@ -69,7 +69,7 @@ final class MaintenanceAgent {
             return
         }
         let sessionId = UUID().uuidString.lowercased()
-        listRuns.append(MaintenanceRun(id: sessionId, prompt: request, startedAt: .now))
+        listRuns.append(RavenRun(id: sessionId, prompt: request, startedAt: .now))
         let prompt = Self.prompt(request, listMentions: listMentions, graph: fleetModel.graph, agentId: sessionId)
         runTask = Task { [weak self] in
             await self?.perform(prompt: prompt, sessionId: sessionId, client: client)
@@ -95,7 +95,7 @@ final class MaintenanceAgent {
                 "name": .string(Self.agentName),
                 "harness": .string("claude"),
                 "rook_name": .string(Self.rookName),
-                "tab": .string("maintenance"),
+                "tab": .string("raven"),
                 "cwd": .string(workspace.path),
             ]),
             Self.event(sessionId, "state", detail: ["state": .string(AgentState.thinking.rawValue)]),
@@ -166,11 +166,11 @@ final class MaintenanceAgent {
         }
     }
 
-    private func run(_ sessionId: String) -> MaintenanceRun? {
+    private func run(_ sessionId: String) -> RavenRun? {
         listRuns.first { $0.id == sessionId }
     }
 
-    private func finish(_ sessionId: String, _ status: MaintenanceRun.Status) {
+    private func finish(_ sessionId: String, _ status: RavenRun.Status) {
         guard let runIndex = listRuns.firstIndex(where: { $0.id == sessionId }) else {
             return
         }
@@ -181,7 +181,7 @@ final class MaintenanceAgent {
         do {
             try await client.post(events: listEvents)
         } catch {
-            Self.logger.error("cannot report the maintenance agent: \(FleetModel.describe(error), privacy: .public)")
+            Self.logger.error("cannot report Raven: \(FleetModel.describe(error), privacy: .public)")
         }
     }
 

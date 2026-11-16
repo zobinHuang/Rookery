@@ -333,15 +333,12 @@ set -g pane-active-border-style "fg=#89b4fa"
 #     "running 5m 30s" relative to when this tab opened, not when the
 #     session opened. Uses run-shell + date because #{T:%s} is empty on
 #     recent tmux builds (the strftime %s format isn't reliably compiled in).
-set-hook -g after-new-window  'run-shell -b "tmux set-option -w -t #{window_id} @rook-window-created \"$(date +%s)\""'
-set-hook -g after-new-session 'run-shell -b "tmux set-option -w -t #{window_id} @rook-window-created \"$(date +%s)\""'
+#     The same hook then resyncs the agent bar (below): one hook holding
+#     both commands, as tmux before 3.0 cannot append to a hook.
+set-hook -g after-new-window  'run-shell -b "tmux set-option -w -t #{window_id} @rook-window-created \"$(date +%s)\"" ; run-shell -b "$HOME/.local/bin/rook-agent sync"'
+set-hook -g after-new-session 'run-shell -b "tmux set-option -w -t #{window_id} @rook-window-created \"$(date +%s)\"" ; run-shell -b "$HOME/.local/bin/rook-agent sync"'
 
 # ─── agent bar: keep the row count in step with windows and panes ────
-# These must come last. set-hook -g *replaces* a hook array, so an
-# appended entry placed above the uptime stamps would be silently wiped
-# by them; -ga below appends to what those two just set.
-set-hook -ga after-new-window  'run-shell -b "$HOME/.local/bin/rook-agent sync"'
-set-hook -ga after-new-session 'run-shell -b "$HOME/.local/bin/rook-agent sync"'
 # -g, not -ga, for these: nothing else writes them, and sourcing this
 # file again (which is exactly what a hot upgrade does) would otherwise
 # append a duplicate every time, so each event would fire sync N times.

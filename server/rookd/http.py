@@ -529,4 +529,5 @@ class RookdServer(ThreadingHTTPServer):
         self.socket = context.wrap_socket(
             self.socket,
             server_side=True,
+            do_handshake_on_connect=False,
         )

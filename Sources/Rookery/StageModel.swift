@@ -88,11 +88,11 @@ enum SidebarMode: String, CaseIterable {
         }
     }
 
-    var symbol: String {
+    var symbol: PixelIcon {
         switch self {
-        case .groups: "square.grid.2x2"
-        case .agents: "bird"
-        case .mixer: "slider.vertical.3"
+        case .groups: .windows
+        case .agents: .agent
+        case .mixer: .mixer
         }
     }
 }

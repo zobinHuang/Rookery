@@ -73,17 +73,13 @@ struct RookmasterView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image(systemName: "crown.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(Color.yellow.gradient, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            PixelIconView(.crown, scale: 2)
             Text("Rookmaster")
                 .font(.system(size: 18, weight: .bold))
             tabs
             Spacer(minLength: 8)
             if fleetModel.connection != .online {
-                Label(connectionText, systemImage: "antenna.radiowaves.left.and.right.slash")
+                PixelLabel(connectionText, icon: .offline)
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
                     .lineLimit(1)
@@ -91,8 +87,7 @@ struct RookmasterView: View {
             Button {
                 isMaintenanceShown.toggle()
             } label: {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
+                PixelIconView(.sparkles)
                     .foregroundStyle(isMaintenanceShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                     .frame(width: 26, height: 26)
                     .background(StageColors.tile, in: Circle())
@@ -100,8 +95,7 @@ struct RookmasterView: View {
             .buttonStyle(.plain)
             .help(isMaintenanceShown ? "Hide the maintenance agent" : "Ask the maintenance agent")
             Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                PixelIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(width: 26, height: 26)
                     .background(StageColors.tile, in: Circle())
@@ -115,23 +109,23 @@ struct RookmasterView: View {
 
     private var tabs: some View {
         HStack(spacing: 2) {
-            tabButton(.board, title: "Board", symbol: "point.3.connected.trianglepath.dotted")
+            tabButton(.board, title: "Board", symbol: .board)
             ForEach(listKinds) { kind in
-                tabButton(.kind(kind.name), title: kind.pluralTitle, symbol: RookmasterStyle.symbol(of: kind.name))
+                tabButton(.kind(kind.name), title: kind.pluralTitle, symbol: PixelIcon.kind(kind.name))
             }
         }
         .padding(3)
         .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private func tabButton(_ target: RookmasterTab, title: String, symbol: String) -> some View {
+    private func tabButton(_ target: RookmasterTab, title: String, symbol: PixelIcon) -> some View {
         let isSelected = tab == target
         return Button {
             withAnimation(Self.tabAnimation) {
                 tab = target
             }
         } label: {
-            Label(title, systemImage: symbol)
+            PixelLabel(title, icon: symbol)
                 .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .padding(.horizontal, 10)
@@ -172,18 +166,6 @@ struct RookmasterView: View {
 
 /// How the console draws each kind and verb.
 enum RookmasterStyle {
-    static func symbol(of kind: String) -> String {
-        switch kind {
-        case "agent": "bird"
-        case "skill": "wrench.adjustable"
-        case "playbook": "book.closed"
-        case "memory": "brain"
-        case "rook": "desktopcomputer"
-        case "person": "person.fill"
-        default: "cube"
-        }
-    }
-
     static func tint(of kind: String) -> Color {
         switch kind {
         case "agent": agentTint
@@ -273,8 +255,7 @@ struct RookmasterLog: View {
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
+                    PixelIconView(.chevronRight)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Text("Log")
                         .font(.system(size: 11, weight: .semibold))
@@ -291,8 +272,7 @@ struct RookmasterLog: View {
             Spacer(minLength: 8)
             if isExpanded {
                 HStack(spacing: 5) {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .font(.system(size: 10))
+                    PixelIconView(.filter)
                     TextField("Filter", text: $filter)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
@@ -304,8 +284,7 @@ struct RookmasterLog: View {
                 Button {
                     clearedThroughSeq = graph.lastSeq
                 } label: {
-                    Image(systemName: "clear")
-                        .font(.system(size: 11))
+                    PixelIconView(.clear)
                         .foregroundStyle(StageColors.secondaryText)
                 }
                 .buttonStyle(.plain)

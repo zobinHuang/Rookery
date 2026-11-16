@@ -108,8 +108,7 @@ struct CrowView: View {
                 .accessibilityElement()
                 .accessibilityLabel(state.title)
         } else {
-            Image(systemName: "bird.fill")
-                .font(.system(size: size * 0.5))
+            PixelIconView(.agent)
                 .frame(width: size, height: size)
         }
     }

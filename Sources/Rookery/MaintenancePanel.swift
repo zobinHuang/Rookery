@@ -17,12 +17,12 @@ enum MaintenanceStarter: CaseIterable {
         }
     }
 
-    var symbol: String {
+    var symbol: PixelIcon {
         switch self {
-        case .distillPlaybook: "book.closed"
-        case .tidyMemories: "brain"
-        case .describeSkills: "wrench.adjustable"
-        case .findStuckAgents: "exclamationmark.bubble"
+        case .distillPlaybook: .playbook
+        case .tidyMemories: .memory
+        case .describeSkills: .skill
+        case .findStuckAgents: .bubble
         }
     }
 
@@ -78,7 +78,7 @@ struct MaintenancePanel: View {
 
     private var title: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sparkles")
+            PixelIconView(.sparkles)
                 .foregroundStyle(Color.accentColor)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Maintenance")
@@ -136,7 +136,7 @@ struct MaintenancePanel: View {
                     draft = starter.request
                     isFocused = true
                 } label: {
-                    Label(starter.title, systemImage: starter.symbol)
+                    PixelLabel(starter.title, icon: starter.symbol)
                         .font(.system(size: 12, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -181,8 +181,7 @@ struct MaintenancePanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .tool(let name):
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Image(systemName: name == "Skill" ? "book" : "terminal")
-                    .font(.system(size: 9))
+                PixelIconView(name == "Skill" ? .book : .terminal)
                 Text(entry.text.isEmpty ? name : entry.text)
                     .lineLimit(2)
                     .truncationMode(.tail)
@@ -207,15 +206,15 @@ struct MaintenancePanel: View {
             .font(.system(size: 11))
             .foregroundStyle(StageColors.secondaryText)
         case .finished:
-            Label(run.costUSD.map { "Done · $\(String(format: "%.2f", $0))" } ?? "Done", systemImage: "checkmark.circle.fill")
+            PixelLabel(run.costUSD.map { "Done · $\(String(format: "%.2f", $0))" } ?? "Done", icon: .check)
                 .font(.system(size: 11))
                 .foregroundStyle(.green)
         case .failed(let reason):
-            Label(reason, systemImage: "xmark.octagon.fill")
+            PixelLabel(reason, icon: .failed)
                 .font(.system(size: 11))
                 .foregroundStyle(.red)
         case .cancelled:
-            Label("Stopped", systemImage: "stop.circle")
+            PixelLabel("Stopped", icon: .stop)
                 .font(.system(size: 11))
                 .foregroundStyle(StageColors.secondaryText)
         }
@@ -264,8 +263,7 @@ struct MaintenancePanel: View {
                     Button {
                         maintenance.cancel()
                     } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 10, weight: .bold))
+                        PixelIconView(.stop)
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
                             .background(Color.red, in: Circle())
@@ -274,8 +272,7 @@ struct MaintenancePanel: View {
                     .help("Stop the agent")
                 } else {
                     Button(action: send) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 11, weight: .bold))
+                        PixelIconView(.arrowUp)
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
                             .background(isEmpty || !isReady ? Color.gray.opacity(0.5) : Color.accentColor, in: Circle())
@@ -304,7 +301,7 @@ struct MaintenancePanel: View {
                     pick(resource)
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: RookmasterStyle.symbol(of: resource.kind))
+                        PixelIconView(PixelIcon.kind(resource.kind))
                             .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                             .frame(width: 16)
                         Text(resource.name)

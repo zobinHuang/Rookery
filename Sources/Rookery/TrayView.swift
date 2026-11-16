@@ -40,8 +40,7 @@ struct TrayView: View {
 
     private var pillContent: some View {
         HStack(spacing: 8) {
-            Image(systemName: "rectangle.stack.badge.plus")
-                .font(.system(size: 14, weight: .semibold))
+            PixelIconView(.newStage)
                 .foregroundStyle(.tint)
             Text(model.draggedGroupName.map { "Move from \($0)" } ?? "Add to Rookery")
                 .font(.system(size: 13, weight: .medium))
@@ -116,12 +115,10 @@ struct TrayTileView: View {
     private var artwork: some View {
         switch tile.target {
         case .newGroup:
-            Image(systemName: "plus")
-                .font(.system(size: 18, weight: .semibold))
+            PixelIconView(.plus, scale: 2)
                 .foregroundStyle(isHovered ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         case .release:
-            Image(systemName: "arrow.up.forward.square")
-                .font(.system(size: 18, weight: .semibold))
+            PixelIconView(.release, scale: 2)
                 .foregroundStyle(isHovered ? AnyShapeStyle(.white) : AnyShapeStyle(.red))
         case .group:
             HStack(spacing: 4) {
@@ -150,8 +147,7 @@ struct TrayTileView: View {
                 .frame(width: Self.iconSize, height: Self.iconSize)
                 .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
         } else {
-            Image(systemName: "macwindow")
-                .font(.system(size: 20))
+            PixelIconView(.window, scale: 2)
                 .frame(width: Self.iconSize, height: Self.iconSize)
         }
     }

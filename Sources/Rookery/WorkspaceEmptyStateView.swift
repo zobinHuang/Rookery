@@ -10,10 +10,8 @@ struct WorkspaceEmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "rectangle.stack.badge.plus")
-                .font(.system(size: 38, weight: .regular))
+            PixelIconView(.newStage, scale: 3)
                 .foregroundStyle(.tint)
-                .symbolRenderingMode(.hierarchical)
             Text("No Managed Windows")
                 .font(.system(size: 15, weight: .semibold))
             Text("Drag any window toward the top of the screen and drop it on a group.")

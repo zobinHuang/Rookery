@@ -138,7 +138,7 @@ struct RookmasterBoard: View {
     private func filters(_ mapColumns: [String: [FleetResource]]) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
+                PixelIconView(.search)
                     .foregroundStyle(StageColors.secondaryText)
                 TextField("Filter by name", text: $query)
                     .textFieldStyle(.plain)
@@ -173,7 +173,7 @@ struct RookmasterBoard: View {
             Button {
                 toggleLock(mapColumns)
             } label: {
-                Label(isLocked ? "Locked" : "Lock Order", systemImage: isLocked ? "lock.fill" : "lock.open")
+                PixelLabel(isLocked ? "Locked" : "Lock Order", icon: isLocked ? .lock : .unlock)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(isLocked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                     .contentTransition(.symbolEffect(.replace))
@@ -222,7 +222,7 @@ struct RookmasterBoard: View {
     private func column(_ kind: FleetKind, listResources: [FleetResource], setFocus: Set<FleetRef>?, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: RookmasterStyle.symbol(of: kind.name))
+                PixelIconView(PixelIcon.kind(kind.name))
                     .foregroundStyle(RookmasterStyle.tint(of: kind.name))
                 Text(kind.pluralTitle)
                     .font(.system(size: 13, weight: .semibold))
@@ -256,11 +256,9 @@ struct RookmasterBoard: View {
             if let agent {
                 CrowView(state: agent.state, size: 28)
             } else {
-                Image(systemName: RookmasterStyle.symbol(of: resource.kind))
-                    .font(.system(size: 13))
+                PixelIconView(PixelIcon.kind(resource.kind))
                     .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                     .frame(width: 28, height: 28)
-                    .background(RookmasterStyle.tint(of: resource.kind).opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(resource.name)

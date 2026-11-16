@@ -70,8 +70,7 @@ struct AgentDetailView: View {
             }
             Spacer(minLength: 12)
             Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                PixelIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(width: 26, height: 26)
                     .background(StageColors.tile, in: Circle())
@@ -119,15 +118,15 @@ struct AgentDetailView: View {
                 .help(isOnline ? "\(agent.rookName) is online" : "\(agent.rookName) is offline")
             }
             if !agent.harness.isEmpty {
-                Label(agent.model.isEmpty ? agent.harness : "\(agent.harness) · \(agent.model)", systemImage: "cpu")
+                PixelLabel(agent.model.isEmpty ? agent.harness : "\(agent.harness) · \(agent.model)", icon: .chip)
             }
             if !agent.cwd.isEmpty {
-                Label(agent.cwd.replacingOccurrences(of: "/Users/\(NSUserName())", with: "~"), systemImage: "folder")
+                PixelLabel(agent.cwd.replacingOccurrences(of: "/Users/\(NSUserName())", with: "~"), icon: .folder)
                     .lineLimit(1)
                     .truncationMode(.head)
             }
             if !agent.gitBranch.isEmpty {
-                Label(agent.gitBranch, systemImage: "arrow.triangle.branch")
+                PixelLabel(agent.gitBranch, icon: .branch)
             }
         }
         .font(.system(size: 12))
@@ -177,8 +176,7 @@ struct AgentDetailView: View {
 
     private var emptyConversation: some View {
         VStack(spacing: 8) {
-            Image(systemName: hasTranscript ? "text.bubble" : "icloud.slash")
-                .font(.system(size: 28))
+            PixelIconView(hasTranscript ? .bubble : .offline, scale: 3)
                 .foregroundStyle(StageColors.tertiaryText)
             Text(hasTranscript ? "Nothing said yet" : "roost has no transcript of this session")
                 .font(.system(size: 13, weight: .semibold))
@@ -211,8 +209,7 @@ struct AgentDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .tool(let name):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "wrench.and.screwdriver")
-                    .font(.system(size: 10))
+                PixelIconView(.tool)
                     .foregroundStyle(StageColors.tertiaryText)
                 Text(name)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -244,7 +241,7 @@ struct AgentDetailView: View {
                 deliveryLine(delivery)
             }
             if let sendError {
-                Label(sendError, systemImage: "exclamationmark.triangle.fill")
+                PixelLabel(sendError, icon: .warning)
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
             }
@@ -274,8 +271,7 @@ struct AgentDetailView: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 12, weight: .bold))
+                            PixelIconView(.arrowUp)
                         }
                     }
                     .foregroundStyle(.white)
@@ -305,14 +301,20 @@ struct AgentDetailView: View {
     }
 
     private func deliveryLine(_ delivery: FleetDelivery) -> some View {
-        let (symbol, tint): (String, Color) = switch delivery.status {
-        case "delivered": ("checkmark.circle.fill", .green)
-        case "failed", "expired": ("xmark.octagon.fill", .red)
-        case "waiting": ("hourglass", .orange)
-        default: ("paperplane", .secondary)
+        let symbol: PixelIcon = switch delivery.status {
+        case "delivered": .check
+        case "failed", "expired": .failed
+        case "waiting": .hourglass
+        default: .send
+        }
+        let tint: Color = switch delivery.status {
+        case "delivered": .green
+        case "failed", "expired": .red
+        case "waiting": .orange
+        default: .secondary
         }
         return HStack(spacing: 6) {
-            Image(systemName: symbol)
+            PixelIconView(symbol)
                 .foregroundStyle(tint)
             Text(delivery.text)
                 .lineLimit(1)
@@ -346,8 +348,7 @@ struct AgentDetailView: View {
 
     private var missing: some View {
         VStack(spacing: 10) {
-            Image(systemName: "bird")
-                .font(.system(size: 36))
+            PixelIconView(.agent, scale: 3)
                 .foregroundStyle(StageColors.tertiaryText)
             Text("This agent is gone from roost")
                 .font(.system(size: 14, weight: .semibold))

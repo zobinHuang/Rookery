@@ -48,9 +48,7 @@ struct AgentUsagePanel: View {
             Button(action: monitor.requestRefresh) {
                 HStack(spacing: 3) {
                     SpinningSymbol(
-                        systemName: "arrow.clockwise",
-                        pointSize: 8,
-                        weight: .bold,
+                        icon: .refresh,
                         isSpinning: monitor.isRefreshing
                     )
                     Text(Self.nextRefreshText(monitor.nextRefreshAt, isRefreshing: monitor.isRefreshing, at: date))
@@ -82,8 +80,7 @@ struct AgentUsagePanel: View {
                                 .truncationMode(.middle)
                         }
                         if isDefaultMarked {
-                            Image(systemName: "arrowtriangle.right.fill")
-                                .font(.system(size: 6))
+                            PixelIconView(.play)
                             Text("default")
                         }
                     }

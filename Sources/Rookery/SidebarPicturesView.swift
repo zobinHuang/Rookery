@@ -103,8 +103,7 @@ private struct SidebarPictureTile: View {
                 hoverOverlay
                     .transition(.opacity)
             } else if picture.isPaused {
-                Image(systemName: "pause.fill")
-                    .font(.system(size: 9, weight: .bold))
+                PixelIconView(.pause)
                     .foregroundStyle(.white)
                     .padding(4)
                     .background(.black.opacity(0.5), in: Circle())
@@ -140,8 +139,7 @@ private struct SidebarPictureTile: View {
             Button {
                 onPlay(picture.isPaused)
             } label: {
-                Image(systemName: picture.isPaused ? "play.fill" : "pause.fill")
-                    .font(.system(size: width >= Self.playMinimumWidth ? 16 : 10, weight: .bold))
+                PixelIconView(picture.isPaused ? .play : .pause)
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -149,8 +147,7 @@ private struct SidebarPictureTile: View {
             .buttonStyle(.plain)
             .help(picture.isPaused ? "Play" : "Pause")
             Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .heavy))
+                PixelIconView(.close)
                     .foregroundStyle(.white)
                     .frame(width: 16, height: 16)
                     .background(.black.opacity(0.45), in: Circle())

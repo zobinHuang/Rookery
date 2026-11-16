@@ -136,7 +136,7 @@ struct SettingsView: View {
     }
 
     private var general: some View {
-        SettingsSection(title: "General", symbol: "gearshape.fill", tint: .gray) {
+        SettingsSection(title: "General", symbol: .gear) {
             SettingsRow(title: "Open at Login") {
                 Toggle("", isOn: $isLaunchingAtLogin)
                     .onChange(of: isLaunchingAtLogin) { _, isEnabled in
@@ -162,7 +162,7 @@ struct SettingsView: View {
     }
 
     private var screenSaver: some View {
-        SettingsSection(title: "Screen Saver", symbol: "sparkles.tv.fill", tint: .indigo) {
+        SettingsSection(title: "Screen Saver", symbol: .screenSaver) {
             SettingsRow(title: "Text") {
                 TextField(Preferences.defaultScreenSaverText, text: $preferences.screenSaverText)
                     .textFieldStyle(.roundedBorder)
@@ -177,7 +177,7 @@ struct SettingsView: View {
     }
 
     private var dragging: some View {
-        SettingsSection(title: "Dragging", symbol: "hand.point.up.left.fill", tint: .blue) {
+        SettingsSection(title: "Dragging", symbol: .hand) {
             SettingsRow(title: "Show Groups While Dragging") {
                 Toggle("", isOn: $preferences.isDropTrayEnabled)
             }
@@ -189,24 +189,24 @@ struct SettingsView: View {
     }
 
     private var worldClock: some View {
-        SettingsSection(title: "World Clock", symbol: "globe.asia.australia.fill", tint: .teal) {
+        SettingsSection(title: "World Clock", symbol: .globe) {
             clockCities
         }
     }
 
     private var codeAgents: some View {
-        SettingsSection(title: "Code Agents", symbol: "gauge.with.dots.needle.67percent", tint: .orange) {
+        SettingsSection(title: "Code Agents", symbol: .gauge) {
             ForEach($preferences.listAgentAccounts) { $account in
                 AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
                     preferences.listAgentAccounts.removeAll { $0.id == account.id }
                 }
             }
-            SettingsActionRow(title: "Add Account…", symbol: "plus", action: addAgentAccount)
+            SettingsActionRow(title: "Add Account…", symbol: .plus, action: addAgentAccount)
         }
     }
 
     private var roost: some View {
-        SettingsSection(title: "Roost", symbol: "bird.fill", tint: .yellow) {
+        SettingsSection(title: "Roost", symbol: .agent) {
             SettingsRow(title: "Address") {
                 TextField("roost.example.com:8787", text: $roostAddressDraft)
                     .textFieldStyle(.roundedBorder)
@@ -240,7 +240,7 @@ struct SettingsView: View {
                 }
             }
             if let roostTestResult {
-                Label(roostTestResult, systemImage: "stethoscope")
+                PixelLabel(roostTestResult, icon: .bubble)
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -286,7 +286,7 @@ struct SettingsView: View {
     }
 
     private var shortcuts: some View {
-        SettingsSection(title: "Shortcuts", symbol: "command", tint: .purple) {
+        SettingsSection(title: "Shortcuts", symbol: .command) {
             SettingsRow(title: "Switch to Group") {
                 Picker("", selection: groupModifiersBinding) {
                     ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
@@ -300,7 +300,7 @@ struct SettingsView: View {
             recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
             recorderRow("Group Switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
             recorderRow("Next Window in Group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
-            SettingsActionRow(title: "Restore Default Shortcuts", symbol: "arrow.uturn.backward") {
+            SettingsActionRow(title: "Restore Default Shortcuts", symbol: .undo) {
                 preferences.restoreDefaultShortcuts()
             }
         }
@@ -322,13 +322,13 @@ struct SettingsView: View {
     private var clockCities: some View {
         ForEach(preferences.listClockCities) { city in
             SettingsRow(title: city.name, detail: city.timeZoneId) {
-                SettingsIconButton(symbol: "minus.circle.fill", help: "Remove \(city.name)") {
+                SettingsIconButton(symbol: .minus, help: "Remove \(city.name)") {
                     preferences.listClockCities.removeAll { $0 == city }
                 }
             }
         }
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
+            PixelIconView(.search)
                 .foregroundStyle(StageColors.secondaryText)
             TextField("Add City or Time Zone", text: $citySearch.query)
                 .textFieldStyle(.plain)
@@ -340,17 +340,17 @@ struct SettingsView: View {
         ForEach(WorldClock.searchTimeZoneCities(matching: citySearch.query).filter {
             !preferences.listClockCities.contains($0)
         }) { city in
-            SettingsResultRow(title: city.name, detail: city.timeZoneId, symbol: "plus.circle.fill") {
+            SettingsResultRow(title: city.name, detail: city.timeZoneId, symbol: .plus) {
                 addClockCity(city)
             }
         }
         ForEach(listTimeZoneResults) { city in
-            SettingsResultRow(title: city.name, detail: city.timeZoneId, symbol: "clock.fill") {
+            SettingsResultRow(title: city.name, detail: city.timeZoneId, symbol: .clock) {
                 addClockCity(city)
             }
         }
         ForEach(Array(citySearch.listCompletions.enumerated()), id: \.offset) { _, completion in
-            SettingsResultRow(title: completion.title, detail: completion.subtitle, symbol: "mappin.circle.fill") {
+            SettingsResultRow(title: completion.title, detail: completion.subtitle, symbol: .pin) {
                 addClockCity(from: completion)
             }
         }
@@ -479,18 +479,14 @@ struct SettingsView: View {
 /// A titled card of settings rows, with a hairline between rows.
 private struct SettingsSection<Content: View>: View {
     let title: String
-    let symbol: String
-    let tint: Color
+    let symbol: PixelIcon
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                PixelIconView(symbol)
                     .frame(width: 22, height: 22)
-                    .background(tint.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
             }
@@ -554,15 +550,14 @@ private struct SettingsSeparator: ViewModifier {
 /// A row that does something when clicked, in the accent color, lit while the pointer is over it.
 private struct SettingsActionRow: View {
     let title: String
-    let symbol: String
+    let symbol: PixelIcon
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
+                PixelIconView(symbol)
                     .frame(width: 16)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
@@ -585,16 +580,14 @@ private struct SettingsActionRow: View {
 private struct SettingsResultRow: View {
     let title: String
     let detail: String
-    let symbol: String
+    let symbol: PixelIcon
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 14))
-                    .symbolRenderingMode(.hierarchical)
+                PixelIconView(symbol)
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 18)
                 Text(title)
@@ -620,15 +613,14 @@ private struct SettingsResultRow: View {
 
 /// A borderless symbol button that darkens while the pointer is over it.
 private struct SettingsIconButton: View {
-    let symbol: String
+    let symbol: PixelIcon
     let help: String
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 14))
+            PixelIconView(symbol)
                 .foregroundStyle(isHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
                 .contentTransition(.symbolEffect(.replace))
         }
@@ -644,7 +636,7 @@ private struct SettingsMessage: View {
     let text: String
 
     var body: some View {
-        Label(text, systemImage: "exclamationmark.triangle.fill")
+        PixelLabel(text, icon: .warning)
             .font(.system(size: 12))
             .foregroundStyle(.orange)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -661,8 +653,7 @@ private struct SettingsCloseButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: 12, weight: .bold))
+            PixelIconView(.close)
                 .foregroundStyle(isHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(width: 28, height: 28)
                 .background(isHovered ? StageColors.groove : StageColors.idleTab, in: Circle())
@@ -698,14 +689,13 @@ private struct AgentAccountRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let sameLogin = monitor.listSameLoginAccounts(as: account).first {
-                    Image(systemName: "link")
-                        .font(.system(size: 11))
+                    PixelIconView(.link)
                         .foregroundStyle(StageColors.secondaryText)
                         .help("Same Account as \(sameLogin.configDirectory ?? "~/.claude")")
                 }
                 Spacer(minLength: 8)
                 status
-                SettingsIconButton(symbol: "minus.circle.fill", help: "Remove Account", action: onRemove)
+                SettingsIconButton(symbol: .minus, help: "Remove Account", action: onRemove)
             }
             signInCommand
         }
@@ -717,12 +707,12 @@ private struct AgentAccountRow: View {
     @ViewBuilder
     private var status: some View {
         if let signedInAs = monitor.mapUsage[account.id]?.signedInAs {
-            Label(signedInAs, systemImage: "checkmark.circle.fill")
+            PixelLabel(signedInAs, icon: .check)
                 .font(.system(size: 12))
                 .foregroundStyle(.green)
                 .lineLimit(1)
         } else if let error = monitor.mapErrors[account.id] {
-            Label("Not Signed In", systemImage: "exclamationmark.triangle.fill")
+            PixelLabel("Not Signed In", icon: .warning)
                 .font(.system(size: 12))
                 .foregroundStyle(.orange)
                 .help(error)
@@ -746,7 +736,7 @@ private struct AgentAccountRow: View {
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(StageColors.idleTab, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            SettingsIconButton(symbol: isCopied ? "checkmark" : "doc.on.doc", help: "Copy Sign-In Command") {
+            SettingsIconButton(symbol: isCopied ? .check : .copy, help: "Copy Sign-In Command") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(command, forType: .string)
                 isCopied = true
@@ -757,7 +747,7 @@ private struct AgentAccountRow: View {
                 }
                 isCopied = false
             }
-            SettingsIconButton(symbol: "arrow.clockwise", help: "Check Again", action: monitor.refreshNow)
+            SettingsIconButton(symbol: .refresh, help: "Check Again", action: monitor.refreshNow)
         }
     }
 }

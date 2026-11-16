@@ -222,9 +222,9 @@ struct StageView: View {
             }
             if showsDropZones {
                 VStack(spacing: 6) {
-                    dropZone(.newGroup, title: "New Group", symbol: "plus", tint: .accentColor)
+                    dropZone(.newGroup, title: "New Group", symbol: .plus, tint: .accentColor)
                     if model.isDraggingManagedWindow || model.isDraggingTab {
-                        dropZone(.release, title: "Release", symbol: "arrow.up.forward.square", tint: .red)
+                        dropZone(.release, title: "Release", symbol: .release, tint: .red)
                     }
                 }
                 .padding(.horizontal, 8)
@@ -312,7 +312,7 @@ struct StageView: View {
                 VStack(spacing: 12) {
                     CloseButton(action: actions.exitStage)
                     VStack(spacing: 6) {
-                        headerButton("sidebar.left", help: "Show the sidebar", action: actions.toggleSidebar)
+                        headerButton(.sidebar, help: "Show the sidebar", action: actions.toggleSidebar)
                         stageTools
                     }
                 }
@@ -322,7 +322,7 @@ struct StageView: View {
                     HStack(spacing: 4) {
                         CloseButton(action: actions.exitStage)
                             .padding(.trailing, 4)
-                        headerButton("sidebar.left", help: "Hide the sidebar", action: actions.toggleSidebar)
+                        headerButton(.sidebar, help: "Hide the sidebar", action: actions.toggleSidebar)
                         stageTools
                         Spacer(minLength: 0)
                     }
@@ -359,8 +359,7 @@ struct StageView: View {
                         Button {
                             model.sidebarMode = mode
                         } label: {
-                            Image(systemName: mode.symbol)
-                                .font(.system(size: 12, weight: .semibold))
+                            PixelIconView(mode.symbol)
                                 .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                                 .frame(width: 34, height: 26)
                                 .background {
@@ -384,8 +383,7 @@ struct StageView: View {
                             model.sidebarMode = mode
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: mode.symbol)
-                                    .font(.system(size: 10, weight: .semibold))
+                                PixelIconView(mode.symbol)
                                 Text(mode.title)
                                     .font(.system(size: 11.5, weight: .semibold))
                             }
@@ -423,24 +421,23 @@ struct StageView: View {
     /// saver and the settings.
     @ViewBuilder
     private var stageTools: some View {
-        headerButton("plus", help: "New Rookery window", action: actions.newStage)
+        headerButton(.plus, help: "New Rookery window", action: actions.newStage)
         headerButton(
-            model.shownTheme.isDark ? "sun.max" : "moon",
+            model.shownTheme.isDark ? .sun : .moon,
             help: "Switch to the \(model.shownTheme.opposite.title) theme",
             action: actions.toggleTheme
         )
-        headerButton("sparkles.tv", help: "Screen saver") {
+        headerButton(.screenSaver, help: "Screen saver") {
             actions.showPage(.screenSaver)
         }
-        headerButton("gearshape", help: "Settings") {
+        headerButton(.gear, help: "Settings") {
             actions.showPage(.settings)
         }
     }
 
-    private func headerButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+    private func headerButton(_ symbol: PixelIcon, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
+            PixelIconView(symbol)
                 .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 22, height: 22)
         }
@@ -599,8 +596,7 @@ struct StageView: View {
                 beginRenaming(group: row.groupId)
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .bold))
+            PixelIconView(.ellipsis)
                 .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -614,8 +610,7 @@ struct StageView: View {
     /// The row a new group would take, shown while a drop would start one.
     private var newGroupPlaceholder: some View {
         HStack(spacing: 10) {
-            Image(systemName: "plus")
-                .font(.system(size: 13, weight: .semibold))
+            PixelIconView(.plus)
                 .frame(width: 22, height: 22)
             Text("New Group")
                 .font(.system(size: 13, weight: .semibold))
@@ -635,11 +630,10 @@ struct StageView: View {
         .modifier(ZoneFrameReporter(zone: .newGroupRow, model: model))
     }
 
-    private func dropZone(_ zone: StageZone, title: String, symbol: String, tint: Color) -> some View {
+    private func dropZone(_ zone: StageZone, title: String, symbol: PixelIcon, tint: Color) -> some View {
         let isHovered = model.highlightedZone == zone
         return HStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
+            PixelIconView(symbol)
             if !model.isSidebarCollapsed {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -886,9 +880,7 @@ struct StageView: View {
                 .transition(.opacity)
             } else if model.selectedWindowId == nil {
                 VStack(spacing: 10) {
-                    Image(systemName: "macwindow.badge.plus")
-                        .font(.system(size: 40, weight: .regular))
-                        .symbolRenderingMode(.hierarchical)
+                    PixelIconView(.newStage, scale: 3)
                         .foregroundStyle(.tint)
                     Text("Drag a window here")
                         .font(.system(size: 15, weight: .semibold))
@@ -985,8 +977,7 @@ struct CloseButton: View {
                 }
                 .overlay {
                     if isHovered {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 7, weight: .black))
+                        PixelIconView(.close)
                             .foregroundStyle(.black.opacity(0.55))
                     }
                 }
@@ -1158,7 +1149,7 @@ struct IconStack: View {
                         .frame(width: iconSize, height: iconSize)
                         .shadow(color: .black.opacity(0.15), radius: 1.5, y: 1)
                 } else {
-                    Image(systemName: "macwindow")
+                    PixelIconView(.window)
                         .frame(width: iconSize, height: iconSize)
                 }
             }

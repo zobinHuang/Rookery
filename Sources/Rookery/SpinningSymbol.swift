@@ -1,17 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// A symbol in the secondary label color that turns while something is in progress and finishes its turn
+/// A pixel glyph in the secondary label color that turns while something is in progress and finishes its turn
 /// when it ends. Core Animation turns it, so the stage draws nothing while it spins: a SwiftUI animation
 /// redraws the whole stage on every frame, a full core's worth while the limits are read.
 struct SpinningSymbol: NSViewRepresentable {
-    let systemName: String
-    let pointSize: CGFloat
-    let weight: NSFont.Weight
+    let icon: PixelIcon
     let isSpinning: Bool
 
     func makeNSView(context: Context) -> SpinningSymbolView {
-        SpinningSymbolView(systemName: systemName, pointSize: pointSize, weight: weight)
+        SpinningSymbolView(image: PixelIconArt.image(icon))
     }
 
     func updateNSView(_ nsView: SpinningSymbolView, context: Context) {
@@ -23,7 +21,8 @@ struct SpinningSymbol: NSViewRepresentable {
     }
 }
 
-/// The view behind `SpinningSymbol`: a layer in the label color, masked to the symbol's shape.
+/// The view behind `SpinningSymbol`: a layer in the label color, masked to the glyph's shape, its pixels
+/// kept sharp.
 final class SpinningSymbolView: NSView {
     private static let turnSeconds: CFTimeInterval = 1
     private static let fullTurn = -2 * CGFloat.pi
@@ -48,16 +47,16 @@ final class SpinningSymbolView: NSView {
         }
     }
 
-    init(systemName: String, pointSize: CGFloat, weight: NSFont.Weight) {
-        let image = NSImage(systemSymbolName: systemName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight))
-        symbolSize = image?.size ?? .zero
+    init(image: NSImage) {
+        symbolSize = image.size
         super.init(frame: CGRect(origin: .zero, size: symbolSize))
         wantsLayer = true
         let mask = CALayer()
         mask.frame = CGRect(origin: .zero, size: symbolSize)
         mask.contents = image
         mask.contentsGravity = .resizeAspect
+        mask.magnificationFilter = .nearest
+        mask.minificationFilter = .nearest
         symbol.frame = CGRect(origin: .zero, size: symbolSize)
         symbol.mask = mask
         layer?.addSublayer(symbol)

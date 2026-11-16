@@ -123,8 +123,7 @@ struct SwitcherCardView: View {
     @ViewBuilder
     private var artwork: some View {
         if let symbolName = entry.symbolName {
-            Image(systemName: symbolName)
-                .font(.system(size: 28, weight: .medium))
+            PixelIconView(symbolName, scale: 3)
                 .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         } else {
             HStack(spacing: Self.iconOverlap) {
@@ -135,8 +134,7 @@ struct SwitcherCardView: View {
                             .frame(width: Self.iconSize, height: Self.iconSize)
                             .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                     } else {
-                        Image(systemName: "macwindow")
-                            .font(.system(size: 28))
+                        PixelIconView(.window, scale: 3)
                             .frame(width: Self.iconSize, height: Self.iconSize)
                     }
                 }

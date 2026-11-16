@@ -150,9 +150,7 @@ struct ContentDropPillView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbolName)
-                .font(.system(size: 20, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
+            PixelIconView(symbolName, scale: 2)
                 .foregroundStyle(isLit ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 26)
@@ -196,11 +194,11 @@ struct ContentDropPillView: View {
         model.isHovered || model.isLanded
     }
 
-    private var symbolName: String {
+    private var symbolName: PixelIcon {
         if model.isLanded {
-            return "checkmark.circle.fill"
+            return .check
         }
-        return model.isHovered ? "arrow.down.circle.fill" : "plus.rectangle.on.rectangle"
+        return model.isHovered ? .drop : .plus
     }
 
     private var title: String {

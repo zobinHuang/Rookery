@@ -42,8 +42,7 @@ struct RookmasterKindList: View {
                     .id(selectedRef)
                 } else {
                     VStack(spacing: 8) {
-                        Image(systemName: RookmasterStyle.symbol(of: kind))
-                            .font(.system(size: 30))
+                        PixelIconView(PixelIcon.kind(kind), scale: 3)
                             .foregroundStyle(StageColors.tertiaryText)
                         Text(listResources.isEmpty ? "Nothing here yet" : "Choose one to see it")
                             .font(.system(size: 13, weight: .semibold))
@@ -59,7 +58,7 @@ struct RookmasterKindList: View {
     private var list: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
+                PixelIconView(.search)
                     .foregroundStyle(StageColors.secondaryText)
                 TextField("Search", text: $query)
                     .textFieldStyle(.plain)
@@ -93,7 +92,7 @@ struct RookmasterKindList: View {
                 if let agent = fleetModel.fleet.mapAgents[resource.id], resource.kind == AgentFleet.agentKind {
                     CrowView(state: agent.state, size: 24)
                 } else {
-                    Image(systemName: RookmasterStyle.symbol(of: resource.kind))
+                    PixelIconView(PixelIcon.kind(resource.kind))
                         .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                         .frame(width: 24)
                 }
@@ -146,8 +145,7 @@ private struct ResourceInspector: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 10) {
-                    Image(systemName: RookmasterStyle.symbol(of: resource.kind))
-                        .font(.system(size: 16))
+                    PixelIconView(PixelIcon.kind(resource.kind))
                         .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                     if isEditable {
                         TextField("Name", text: $nameDraft)
@@ -172,7 +170,7 @@ private struct ResourceInspector: View {
                 relations
                 attributes
                 if let error {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                    PixelLabel(error, icon: .warning)
                         .font(.system(size: 12))
                         .foregroundStyle(.orange)
                 }
@@ -236,12 +234,11 @@ private struct ResourceInspector: View {
                     onOpen(other)
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: isOutgoing ? "arrow.right" : "arrow.left")
-                            .font(.system(size: 10, weight: .bold))
+                        PixelIconView(isOutgoing ? .arrowRight : .arrowLeft)
                             .foregroundStyle(StageColors.tertiaryText)
                         Text(relation.verb)
                             .foregroundStyle(RookmasterStyle.tint(ofVerb: relation.verb))
-                        Image(systemName: RookmasterStyle.symbol(of: other.kind))
+                        PixelIconView(PixelIcon.kind(other.kind))
                             .foregroundStyle(RookmasterStyle.tint(of: other.kind))
                         Text(fleetModel.graph.name(of: other))
                             .lineLimit(1)

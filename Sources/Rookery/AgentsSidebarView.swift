@@ -88,18 +88,14 @@ struct AgentsSidebarView: View {
     private var rookmasterButton: some View {
         Button(action: onOpenRookmaster) {
             HStack(spacing: 8) {
-                Image(systemName: "crown.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white)
+                PixelIconView(.crown)
                     .frame(width: 22, height: 22)
-                    .background(Color.yellow.gradient, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 if !isCollapsed {
                     Text("Rookmaster")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(isRookmasterShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
+                    PixelIconView(.chevronRight)
                         .foregroundStyle(StageColors.tertiaryText)
                 }
             }
@@ -172,8 +168,7 @@ struct AgentsSidebarView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
+                    PixelIconView(.chevronRight)
                         .rotationEffect(.degrees(isEndedExpanded ? 90 : 0))
                     Text("Ended")
                         .font(.system(size: 11, weight: .semibold))
@@ -203,7 +198,7 @@ struct AgentsSidebarView: View {
             fleetModel.addGroup(title: "New Group")
             startRenamingNewestGroup()
         } label: {
-            Label("New Group", systemImage: "plus")
+            PixelLabel("New Group", icon: .plus)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isTargeted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -239,8 +234,7 @@ struct AgentsSidebarView: View {
         let isTargeted = dropTargetId == group.id
         let isHovered = hoveredRowId == group.id
         return HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .bold))
+            PixelIconView(.chevronRight)
                 .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
                 .foregroundStyle(StageColors.secondaryText)
             if editingGroupId == group.id {
@@ -269,8 +263,7 @@ struct AgentsSidebarView: View {
                         fleetModel.removeGroup(group.id)
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11, weight: .semibold))
+                    PixelIconView(.ellipsis)
                         .foregroundStyle(StageColors.secondaryText)
                 }
                 .menuStyle(.borderlessButton)
@@ -484,8 +477,7 @@ struct AgentsSidebarView: View {
             HStack(spacing: 3) {
                 Text("\(count)")
                     .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                PixelIconView(.chevronDown)
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }
             .foregroundStyle(StageColors.secondaryText)
@@ -561,7 +553,7 @@ struct AgentsSidebarView: View {
         HStack(spacing: 8) {
             switch fleetModel.connection {
             case .notConfigured:
-                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                PixelIconView(.offline)
                 if !isCollapsedBanner {
                     Text("Connect Rookery to roost to see your agents.")
                     Spacer(minLength: 0)
@@ -576,7 +568,7 @@ struct AgentsSidebarView: View {
                     Spacer(minLength: 0)
                 }
             case .offline(let reason):
-                Image(systemName: "exclamationmark.triangle.fill")
+                PixelIconView(.warning)
                     .foregroundStyle(.orange)
                 if !isCollapsedBanner {
                     Text(reason)

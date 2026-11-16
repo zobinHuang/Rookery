@@ -5,7 +5,6 @@ import RookeryPlatform
 /// The menu bar item: shows whether Rookery can manage windows and offers the way to grant access.
 @MainActor
 final class StatusMenuController: NSObject, NSMenuDelegate {
-    private static let symbolName = "rectangle.stack"
     private static let permissionPollInterval = Duration.seconds(1)
 
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -56,10 +55,8 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Install the menu and start tracking the Accessibility permission.
     func start() {
-        statusItem.button?.image = NSImage(
-            systemSymbolName: Self.symbolName,
-            accessibilityDescription: "Rookery"
-        )
+        statusItem.button?.image = PixelIconArt.menuBarImage()
+        statusItem.button?.setAccessibilityLabel("Rookery")
 
         permissionItem.isEnabled = false
         grantItem.title = "Grant Accessibility Access…"

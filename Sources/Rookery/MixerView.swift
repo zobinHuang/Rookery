@@ -104,8 +104,7 @@ struct MixerView: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            Image(systemName: "speaker.wave.2")
-                .font(.system(size: 22, weight: .light))
+            PixelIconView(.speaker, scale: 2)
                 .foregroundStyle(StageColors.tertiaryText)
             Text("No app is using sound")
                 .font(.system(size: 12, weight: .medium))
@@ -188,8 +187,7 @@ struct MixerView: View {
                     .opacity(track.settings.isMuted ? 0.45 : 1)
                     .overlay(alignment: .bottomTrailing) {
                         if track.settings.isMuted {
-                            Image(systemName: "speaker.slash.fill")
-                                .font(.system(size: 8, weight: .bold))
+                            PixelIconView(.speakerOff)
                                 .foregroundStyle(.white)
                                 .frame(width: 15, height: 15)
                                 .background(Color.red, in: Circle())
@@ -297,8 +295,7 @@ struct MixerStripIconView: View {
                     .resizable()
                     .interpolation(.high)
             } placeholder: {
-                Image(systemName: "globe")
-                    .font(.system(size: 14))
+                PixelIconView(.globe)
                     .foregroundStyle(StageColors.secondaryText)
             }
             .frame(width: 16, height: 16)
@@ -405,9 +402,9 @@ private struct MixerStrip: View {
 
     private func pictureButton(_ toggle: MixerPictureToggle) -> some View {
         Button(action: toggle.action) {
-            Label(
+            PixelLabel(
                 toggle.isShowing ? "Showing in Sidebar" : "Show in Sidebar",
-                systemImage: toggle.isShowing ? "pip.fill" : "pip.enter"
+                icon: toggle.isShowing ? .pip : .pipEnter
             )
             .font(.system(size: 10.5, weight: .semibold))
             .foregroundStyle(toggle.isShowing ? AnyShapeStyle(.white) : AnyShapeStyle(StageColors.secondaryText))
@@ -423,12 +420,12 @@ private struct MixerStrip: View {
         .help(toggle.isShowing ? "Stop showing this tab's video in the sidebar" : "Show this tab's video in the sidebar")
     }
 
-    private var volumeSymbol: String {
+    private var volumeSymbol: PixelIcon {
         switch settings.volume {
-        case 0: "speaker.slash.fill"
-        case ..<0.4: "speaker.wave.1.fill"
-        case ..<1.1: "speaker.wave.2.fill"
-        default: "speaker.wave.3.fill"
+        case 0: .speakerOff
+        case ..<0.4: .speakerLow
+        case ..<1.1: .speaker
+        default: .speaker
         }
     }
 
@@ -437,8 +434,7 @@ private struct MixerStrip: View {
             HStack(spacing: 4) {
                 Text(isExpanded ? "Less" : "Pan, Stereo, EQ, Reverb")
                     .font(.system(size: 10.5, weight: .medium))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                PixelIconView(.chevronDown)
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }
             .foregroundStyle(StageColors.secondaryText)
@@ -454,14 +450,14 @@ private struct MixerStrip: View {
         VStack(alignment: .leading, spacing: 12) {
             section("Pan & Stereo") {
                 labeledSlider(
-                    symbol: "arrow.left.and.right",
+                    symbol: .width,
                     value: binding(\.pan),
                     range: MixerTrackSettings.panRange,
                     restValue: 0,
                     valueText: panText
                 )
                 labeledSlider(
-                    symbol: "arrow.left.and.right.square",
+                    symbol: .width,
                     value: binding(\.width),
                     range: MixerTrackSettings.widthRange,
                     restValue: 1,
@@ -497,7 +493,7 @@ private struct MixerStrip: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 labeledSlider(
-                    symbol: "dot.radiowaves.left.and.right",
+                    symbol: .radio,
                     value: binding(\.reverbMix),
                     range: MixerTrackSettings.reverbMixRange,
                     restValue: 0,
@@ -541,9 +537,9 @@ private struct MixerStrip: View {
         }
     }
 
-    private static func symbol(of preset: EqualizerPreset) -> String {
+    private static func symbol(of preset: EqualizerPreset) -> PixelIcon {
         switch preset {
-        case .walkieTalkie: "antenna.radiowaves.left.and.right"
+        case .walkieTalkie: .radio
         }
     }
 
@@ -604,15 +600,14 @@ private struct MixerStrip: View {
     }
 
     private func labeledSlider(
-        symbol: String,
+        symbol: PixelIcon,
         value: Binding<Float>,
         range: ClosedRange<Float>,
         restValue: Float,
         valueText: String
     ) -> some View {
         HStack(spacing: 7) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
+            PixelIconView(symbol)
                 .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 16)
             MixerSlider(value: value, range: range, restValue: restValue)
@@ -643,8 +638,7 @@ struct ApplicationIconView: View {
                 .resizable()
                 .frame(width: size, height: size)
         } else {
-            Image(systemName: "app.dashed")
-                .font(.system(size: size * 0.7))
+            PixelIconView(.appPlaceholder)
                 .frame(width: size, height: size)
                 .foregroundStyle(StageColors.secondaryText)
         }

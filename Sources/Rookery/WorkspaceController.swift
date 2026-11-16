@@ -870,7 +870,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             title: "All Windows",
             subtitle: isStageOpen ? "close the stages" : "show everything",
             listBundleIds: [],
-            symbolName: "square.grid.2x2",
+            symbolName: .windows,
             isActive: false
         )]
         let currentIndex = listEntries.firstIndex { $0.id == currentGroupId?.rawValue } ?? listEntries.count - 1

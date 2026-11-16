@@ -2,7 +2,7 @@ import AppKit
 import os
 import SwiftUI
 
-/// Rookery's interface icons. A badge keeps the logo's colors, a dark body in a yellow outline; a glyph is
+/// Rookery's interface icons. A badge keeps the logo's colors, a dark body in a white outline; a glyph is
 /// one color, tinted like text. The crow's head and the crow are the crow's pixel art; the rest are drawn.
 enum RookeryIcon: String, CaseIterable {
     // Badges, 16 pixels square.
@@ -238,11 +238,11 @@ enum RookeryIconArt {
 }
 
 /// One of Rookery's icons. The crow's are its pixel art, never smoothed. The rest are drawn at the screen's
-/// full resolution: a badge in the logo's colors, a dark body lit from the top left inside a yellow
+/// full resolution: a badge in the logo's colors, a dark body lit from the top left inside a white
 /// outline, so it reads on light and dark alike; a glyph in one color, the text's.
 struct RookeryIconView: View {
-    /// The badge's yellow, the logo's.
-    private static let outlineColor = Color(red: 1, green: 0.784, blue: 0.239)
+    /// The badge's outline, white as the logo's.
+    private static let outlineColor = Color.white
     private static let bodyGradient = LinearGradient(
         colors: [Color(white: 0.42), Color(white: 0.16)],
         startPoint: .topLeading,

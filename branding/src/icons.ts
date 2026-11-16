@@ -97,7 +97,7 @@ export class Icons {
                     return ".";
             }
         }));
-        return PixelGrid.from_keys(list_keys).backed("outline");
+        return PixelGrid.from_keys(list_keys).backed("outline", "W");
     }
 
     /**

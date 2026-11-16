@@ -1157,10 +1157,14 @@ class AgentCommands:
 
 
 class ProposeCommands:
-    """`rook-client propose`: what an overseeing agent would do to another agent, put to the person for a
-    decision rather than done. It prints the proposal, which the app shows with a button to carry it out."""
+    """`rook-client propose`: what an overseeing agent would do to another agent, or on a rook, put to the
+    person for a decision rather than done. It prints the proposal, which the app shows with a button to
+    carry it out."""
 
     PROPOSE_ID_BYTES = 6
+    PROPOSE_APPROVAL_STATE = "needs_approval"
+    PROPOSE_APPROVAL_CHOICES = ("once", "deny")
+    PROPOSE_HARNESSES = ("claude", "codex")
 
     @staticmethod
     def build_parser(parser: argparse.ArgumentParser) -> None:
@@ -1169,6 +1173,16 @@ class ProposeCommands:
         message_parser = commands.add_parser("message", help="propose text to send an agent")
         message_parser.add_argument("agent", help="the agent's id")
         message_parser.add_argument("text", nargs="+")
+        interrupt_parser = commands.add_parser("interrupt", help="propose stopping what an agent is doing")
+        interrupt_parser.add_argument("agent")
+        approve_parser = commands.add_parser("approve", help="propose answering an agent's approval prompt")
+        approve_parser.add_argument("agent")
+        approve_parser.add_argument("--choice", choices=ProposeCommands.PROPOSE_APPROVAL_CHOICES, required=True)
+        spawn_parser = commands.add_parser("spawn", help="propose starting a new session on a rook")
+        spawn_parser.add_argument("rook", help="the rook's name")
+        spawn_parser.add_argument("--cwd", required=True, help="the directory on the rook, an absolute path")
+        spawn_parser.add_argument("--harness", choices=ProposeCommands.PROPOSE_HARNESSES, default="claude")
+        spawn_parser.add_argument("prompt", nargs="*", help="its first prompt")
 
     @classmethod
     def run(cls, args: argparse.Namespace, connection: Connection) -> int:
@@ -1178,21 +1192,39 @@ class ProposeCommands:
             the process exit status
 
         Raises:
-            RookClientError: if the agent is unknown or has ended
+            RookClientError: if the agent or the rook cannot take it
         """
-        agent = connection.request("GET", f"/v1/resources/agent/{urllib.parse.quote(args.agent, safe='')}")
-        map_attributes = agent.get("attributes") or {}
-        if map_attributes.get("state") == "ended":
-            raise RookClientError(f"agent {args.agent} has ended; it can no longer take a message")
-        proposal = {
-            "id": "p-" + secrets.token_hex(cls.PROPOSE_ID_BYTES),
-            "action": "message",
-            "agent": args.agent,
-            "agent_title": str(map_attributes.get("title") or agent.get("name") or args.agent),
-            "text": " ".join(args.text),
-        }
+        proposal: dict[str, object] = {"id": "p-" + secrets.token_hex(cls.PROPOSE_ID_BYTES), "action": args.action}
+        if args.action == "spawn":
+            rook = connection.request("GET", f"/v1/resources/rook/{urllib.parse.quote(args.rook, safe='')}")
+            if not (rook.get("attributes") or {}).get("online"):
+                raise RookClientError(f"rook {args.rook} is offline; it cannot start a session now")
+            if not args.cwd.startswith("/"):
+                raise RookClientError("--cwd must be an absolute path on the rook")
+            proposal.update({
+                "rook": args.rook,
+                "cwd": args.cwd,
+                "harness": args.harness,
+                "text": " ".join(args.prompt),
+                "agent_title": f"{args.harness} on {args.rook}",
+            })
+        else:
+            agent = connection.request("GET", f"/v1/resources/agent/{urllib.parse.quote(args.agent, safe='')}")
+            map_attributes = agent.get("attributes") or {}
+            state = str(map_attributes.get("state") or "")
+            if state == "ended":
+                raise RookClientError(f"agent {args.agent} has ended")
+            if args.action == "approve" and state != cls.PROPOSE_APPROVAL_STATE:
+                raise RookClientError(f"agent {args.agent} is not waiting for an approval ({state})")
+            proposal.update({
+                "agent": args.agent,
+                "agent_title": str(map_attributes.get("title") or agent.get("name") or args.agent),
+                "text": " ".join(args.text) if args.action == "message" else "",
+            })
+            if args.action == "approve":
+                proposal["choice"] = args.choice
         json.dump({"proposal": proposal}, sys.stdout, ensure_ascii=False)
-        sys.stdout.write("\nProposed. The user decides in Rookery; nothing was sent. Do not send it another way.\n")
+        sys.stdout.write("\nProposed. The user decides in Rookery; nothing was done. Do not do it another way.\n")
         return 0
 
 

@@ -289,6 +289,29 @@ class AgentCommandsTest(QueueAndSendTest):
         self.assertTrue(proposal["id"].startswith("p-"))
         self.assertEqual(self.server.deliveries.list_recent(agent_id="busy", limit=10), [])
 
+    def test_an_approval_is_proposed_only_while_the_agent_waits_on_one(self) -> None:
+        self.start_agent("busy", "working", "2026-11-16T10:00:00.000+00:00")
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "approve", "busy", "--choice", "once"]), 1)
+        self.assertIn("not waiting for an approval", stderr.getvalue())
+        self.start_agent("asking", "needs_approval", "2026-11-16T10:00:00.000+00:00")
+        proposal = json.loads(self.run_client(["propose", "approve", "asking", "--choice", "deny"]).splitlines()[0])["proposal"]
+        self.assertEqual((proposal["action"], proposal["choice"]), ("approve", "deny"))
+
+    def test_a_new_session_is_proposed_on_an_online_rook(self) -> None:
+        self.report([{"actor": {"kind": "rook", "id": "studio"}, "verb": "connected"}])
+        output = self.run_client(["propose", "spawn", "studio", "--cwd", "/src/api", "fix", "the", "flaky", "test"])
+        proposal = json.loads(output.splitlines()[0])["proposal"]
+        self.assertEqual(proposal["rook"], "studio")
+        self.assertEqual(proposal["cwd"], "/src/api")
+        self.assertEqual(proposal["text"], "fix the flaky test")
+        self.report([{"actor": {"kind": "rook", "id": "studio"}, "verb": "disconnected"}])
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "spawn", "studio", "--cwd", "/src/api"]), 1)
+        self.assertIn("offline", stderr.getvalue())
+
     def test_an_ended_agent_takes_no_proposal(self) -> None:
         self.start_agent("gone", "ended", "2026-11-16T10:00:00.000+00:00")
         stderr = io.StringIO()

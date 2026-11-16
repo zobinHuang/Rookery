@@ -274,6 +274,36 @@ A skill that has since been removed from the index, or whose repository cannot b
 reached, lands in `unresolved` with the reason instead of failing the whole
 playbook — a client installs what it can and shows the rest.
 
+## Resources
+
+Agents, skills, playbooks and memories are all resources; the model, the verbs and the states are in [docs/resources.md](../docs/resources.md).
+
+| | |
+|---|---|
+| `GET /v1/kinds` | the kinds of resource this server manages |
+| `GET /v1/resources` | resources of every kind, or of one with `kind`; `q` matches name or id, `since` keeps those used since then, `order` is `last_used` (default), `updated`, `created` or `name`, `limit` up to 1000 |
+| `POST /v1/resources/<kind>` | add one; a skill or a playbook takes the body its own route takes, any other kind a `name` and `attributes` |
+| `GET /v1/resources/<kind>/<id>` | one resource |
+| `PATCH /v1/resources/<kind>/<id>` | change it; `attributes` are merged in |
+| `DELETE /v1/resources/<kind>/<id>` | remove it and its relations |
+| `GET /v1/relations` | every relation, or those touching one resource with `kind` and `id` |
+
+A write may carry `"actor": {"kind": "agent", "id": "<session id>"}`; it is logged as that agent's doing, and otherwise as a person's.
+
+## Events
+
+| | |
+|---|---|
+| `POST /v1/events` | `{"events": [...]}`, up to 500, applied all or none; answers with them as logged |
+| `GET /v1/events` | the latest events, or those after `after=<seq>`; `limit` up to 1000 |
+| `GET /v1/events/stream` | server-sent events: everything after `after=<seq>`, then each new event as it is logged, with a `: keepalive` comment every 15 seconds; each message's `id` is its `seq`. At most 32 streams are open at once, beyond which it answers `503` |
+
+```
+id: 18342
+event: event
+data: {"seq": 18342, "at": "...", "actor": {"kind": "agent", "id": "..."}, "verb": "uses", ...}
+```
+
 ## Writing
 
 A client that uploads transcripts uses these. They are documented for
@@ -305,4 +335,5 @@ Every failure answers with the status below and a body of
 | `404` | no such route, or no such session |
 | `409` | a `PUT` offset disagrees with the stored length; the body carries the real `cursor` |
 | `413` | the body is over the server's per-request limit |
+| `503` | too many event streams are open |
 | `500` | the store could not be read or written |

@@ -9,6 +9,7 @@ enum WindowActionError: Error, CustomStringConvertible {
     case cannotMinimize(windowId: WindowId)
     case stuckInFullscreen(windowId: WindowId)
     case noDisplay(windowId: WindowId)
+    case applicationHidden(windowId: WindowId)
 
     var description: String {
         switch self {
@@ -26,6 +27,8 @@ enum WindowActionError: Error, CustomStringConvertible {
             "window \(windowId) did not leave full screen"
         case .noDisplay(let windowId):
             "window \(windowId) is on no display"
+        case .applicationHidden(let windowId):
+            "window \(windowId)'s application stays hidden"
         }
     }
 }

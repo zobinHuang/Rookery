@@ -41,7 +41,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let reopenTimeout = Duration.seconds(2)
     /// How often, and for how long, an application asked to unhide is checked until it is shown.
     private static let unhidePollInterval = Duration.milliseconds(10)
-    private static let unhideTimeout = Duration.milliseconds(500)
+    /// How long an application asked to unhide is waited on, and again after it is activated when the ask
+    /// was not enough, as for Telegram, which ignored an unhide for over half a second.
+    private static let unhideTimeout = Duration.seconds(2)
     /// When, after displays change or wake, to put the stages back on a display and minimize again the
     /// hidden windows: macOS goes on moving windows for a few seconds after the change.
     private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
@@ -609,7 +611,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                     continue
                 }
                 taskGroup.addTask {
-                    await self.revealApplication(of: window.windowId)
+                    _ = await self.revealApplication(of: window.windowId)
                     _ = await self.applyShownFrame(frame, to: window.windowId, isRestoring: window.isHidden)
                 }
             }
@@ -1228,7 +1230,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                     && mapRecords[window.windowId]?.isMinimized != true
             }
         for (windowId, contentFrame) in mapShownFrames {
-            await revealApplication(of: windowId)
+            guard await revealApplication(of: windowId) else {
+                Self.logger.error("cannot show \(windowId.rawValue) on its stage: its application stays hidden")
+                continue
+            }
             let restoreFrame = workspace.markShown(windowId)
             guard await applyShownFrame(contentFrame, to: windowId, isRestoring: restoreFrame != nil) == nil else {
                 continue
@@ -1315,7 +1320,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     private func show(_ windowId: WindowId) async throws {
-        await revealApplication(of: windowId)
+        guard await revealApplication(of: windowId) else {
+            throw WindowActionError.applicationHidden(windowId: windowId)
+        }
         guard let restoreFrame = workspace.markShown(windowId) else {
             throw WindowActionError.notHidden(windowId: windowId)
         }
@@ -1551,11 +1558,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Bring back the application of a window about to be shown, if it is hidden, and put it back to normal.
     /// Unhiding finishes later and puts the application's windows back in its own order, and a hidden
     /// application's windows cannot be moved, so this waits until the application is shown.
-    private func revealApplication(of windowId: WindowId) async {
+    /// - Returns: whether the application shows, so its windows can be moved: a hidden application's cannot
+    private func revealApplication(of windowId: WindowId) async -> Bool {
         guard
             let window = workspace.group(containing: windowId)?.listMembers.first(where: { $0.windowId == windowId })
         else {
-            return
+            return true
         }
         throttle.release(window.application.processId)
         setHiddenProcessIds.remove(window.application.processId)
@@ -1563,20 +1571,32 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             let running = NSRunningApplication(processIdentifier: window.application.processId),
             running.isHidden
         else {
-            return
+            return true
         }
         running.unhide()
+        if await waitUntilShown(running) {
+            return true
+        }
+        Self.logger.notice("\(running.localizedName ?? "", privacy: .public) is still hidden after asking it to unhide; activating it")
+        running.activate()
+        if await waitUntilShown(running) {
+            return true
+        }
+        Self.logger.error("\(running.localizedName ?? "", privacy: .public) stays hidden; its window is left where it is")
+        return false
+    }
+
+    /// Wait, up to `unhideTimeout`, for an application to stop being hidden.
+    private func waitUntilShown(_ running: NSRunningApplication) async -> Bool {
         let deadline = ContinuousClock.now + Self.unhideTimeout
         while running.isHidden && ContinuousClock.now < deadline {
             do {
                 try await Task.sleep(for: Self.unhidePollInterval)
             } catch {
-                return
+                return false
             }
         }
-        if running.isHidden {
-            Self.logger.error("\(running.localizedName ?? "", privacy: .public) is still hidden after asking it to unhide")
-        }
+        return !running.isHidden
     }
 
     private func maximize(_ windowId: WindowId) async throws {

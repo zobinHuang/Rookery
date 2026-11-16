@@ -95,8 +95,36 @@ fi
 # ─── patch tmux config ────────────────────────────────────────────────
 TMUX_CONF="$HOME/.tmux.conf"
 
-cat > "$TMUX_CONF" <<'TMUX'
-# [crow] patched
+# crow owns one block of each dotfile it configures, between these markers,
+# and rewrites only that block: whatever else is in the file is the user's and
+# stays as it was. The block goes at the end, so where a line of the user's and
+# one of crow's set the same option, crow's wins, as it did when crow wrote
+# the whole file.
+crow_write_block() {
+  # crow_write_block <file> <comment-leader> — the block's lines come on stdin
+  local file="$1" leader="$2" begin end kept
+  begin="$leader >>> crow >>>"
+  end="$leader <<< crow <<<"
+  kept="$(mktemp)"
+  if [ -f "$file" ]; then
+    awk -v begin="$begin" -v end="$end" '
+      $0 == begin { inside = 1; next }
+      $0 == end   { inside = 0; next }
+      !inside
+    ' "$file" > "$kept"
+  fi
+  {
+    cat "$kept"
+    [ -s "$kept" ] && [ -n "$(tail -c 1 "$kept")" ] && echo ""
+    echo "$begin"
+    cat
+    echo "$end"
+  } > "$file.crow-tmp"
+  rm -f "$kept"
+  mv "$file.crow-tmp" "$file"
+}
+
+crow_write_block "$TMUX_CONF" "#" <<'TMUX'
 
 # ─── clipboard & input ───────────────────────────────────────────────
 set -g default-terminal "xterm-256color"
@@ -316,7 +344,7 @@ set-hook -g  pane-exited       'run-shell -b "$HOME/.local/bin/crow-agent sync"'
 set-hook -g  after-kill-pane   'run-shell -b "$HOME/.local/bin/crow-agent sync"'
 set-hook -g  pane-died         'run-shell -b "$HOME/.local/bin/crow-agent sync"'
 TMUX
-info "Patched .tmux.conf (tabs, panes, Alt keybindings, status bar)"
+info "Updated crow's block of .tmux.conf (tabs, panes, Alt keybindings, status bar)"
 
 # ─── install OSC 52 clipboard helper ─────────────────────────────────
 mkdir -p "$HOME/.local/bin"
@@ -336,12 +364,11 @@ info "Installed osc52-copy helper"
 # ─── patch vimrc ──────────────────────────────────────────────────────
 VIMRC="$HOME/.vimrc"
 
-cat > "$VIMRC" <<'VIM'
-" [crow] patched
+crow_write_block "$VIMRC" '"' <<'VIM'
 syntax on
 set number
 VIM
-info "Patched .vimrc (line numbers + syntax highlighting)"
+info "Updated crow's block of .vimrc (line numbers + syntax highlighting)"
 
 # ─── 3. helper scripts ───────────────────────────────────────────────
 echo ""

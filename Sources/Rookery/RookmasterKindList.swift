@@ -253,9 +253,7 @@ struct RookmasterKindList: View {
                         .frame(width: 24)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(resource.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
+                    FittingText(resource.name, size: 12, weight: .semibold)
                     Text(resource.id)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(StageColors.secondaryText)
@@ -399,8 +397,7 @@ private struct ResourceInspector: View {
                             .foregroundStyle(RookmasterStyle.tint(ofVerb: relation.verb))
                         RookeryIconView(RookeryIcon.kind(other.kind))
                             .foregroundStyle(RookmasterStyle.tint(of: other.kind))
-                        Text(fleetModel.graph.name(of: other))
-                            .lineLimit(1)
+                        FittingText(fleetModel.graph.name(of: other), size: 12)
                         Spacer(minLength: 0)
                         Text("\(relation.count)×")
                             .monospacedDigit()

@@ -137,37 +137,80 @@ struct RookmasterBoard: View {
     private func toolbar(_ mapColumns: [String: [FleetResource]]) -> some View {
         HStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     searchField
-                    windowPicker
-                    liveOnlyChip
-                    Rectangle()
-                        .fill(StageColors.separator)
-                        .frame(width: 1, height: 16)
-                        .padding(.horizontal, 2)
-                    ForEach(listKinds) { kind in
-                        kindChip(kind, count: mapColumns[kind.name]?.count ?? 0)
+                    well {
+                        ForEach(BoardWindow.allCases) { choice in
+                            windowSegment(choice)
+                        }
+                    }
+                    well {
+                        liveOnlySegment
+                    }
+                    well {
+                        ForEach(listKinds) { kind in
+                            kindSegment(kind, count: mapColumns[kind.name]?.count ?? 0)
+                        }
                     }
                 }
-                .padding(.vertical, 1)
+                .padding(.vertical, 2)
             }
-            lockChip(mapColumns)
+            well {
+                lockSegment(mapColumns)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
-        .animation(.easeOut(duration: 0.15), value: memory.setBoardHiddenKinds)
-        .animation(.easeOut(duration: 0.15), value: memory.isBoardLiveOnly)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: memory.boardWindow)
+        .animation(Self.segmentAnimation, value: memory.setBoardHiddenKinds)
+        .animation(Self.segmentAnimation, value: memory.isBoardLiveOnly)
+        .animation(Self.segmentAnimation, value: memory.isBoardLocked)
+        .animation(Self.segmentAnimation, value: memory.boardWindow)
+    }
+
+    private static let segmentAnimation = Animation.spring(response: 0.3, dampingFraction: 0.85)
+
+    /// A recessed capsule that holds a group of segments.
+    private func well<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 2) {
+            content()
+        }
+        .padding(2)
+        .frame(height: Self.controlHeight)
+        .background(StageColors.groove.opacity(0.7), in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(StageColors.contrastBorder)
+        }
+    }
+
+    /// One segment of a well: raised and in full ink when on, flat and quiet when off.
+    private func segment<Label: View>(isOn: Bool, @ViewBuilder label: () -> Label) -> some View {
+        label()
+            .font(.system(size: 11, weight: isOn ? .semibold : .medium))
+            .foregroundStyle(isOn ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
+            .padding(.horizontal, 9)
+            .frame(height: Self.controlHeight - 4)
+            .background {
+                if isOn {
+                    Capsule()
+                        .fill(StageColors.selectedSegment)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                        .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
+            }
+            .contentShape(Capsule())
+            .fixedSize()
     }
 
     private var searchField: some View {
         HStack(spacing: 6) {
             RookeryIconView(.search)
-                .foregroundStyle(StageColors.secondaryText)
+                .foregroundStyle(StageColors.tertiaryText)
             TextField("Filter by name", text: Bindable(memory).boardQuery)
                 .textFieldStyle(.plain)
                 .focused($isSearchFocused)
-                .frame(width: 160)
+                .frame(width: 150)
             if !memory.boardQuery.isEmpty {
                 Button {
                     memory.boardQuery = ""
@@ -177,105 +220,74 @@ struct RookmasterBoard: View {
                 }
                 .buttonStyle(.plain)
                 .help("Clear the filter")
+                .transition(.opacity)
             }
         }
         .font(.system(size: 12))
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 11)
         .frame(height: Self.controlHeight)
-        .background(StageColors.groove, in: Capsule())
+        .background(StageColors.groove.opacity(0.7), in: Capsule())
         .overlay {
             Capsule()
-                .strokeBorder(isSearchFocused ? AnyShapeStyle(Color.accentColor.opacity(0.7)) : AnyShapeStyle(StageColors.separator))
+                .strokeBorder(
+                    isSearchFocused ? AnyShapeStyle(Color.accentColor.opacity(0.7)) : AnyShapeStyle(StageColors.contrastBorder),
+                    lineWidth: isSearchFocused ? 1.5 : 1
+                )
         }
-    }
-
-    /// How far back the board looks, as a segmented capsule.
-    private var windowPicker: some View {
-        HStack(spacing: 2) {
-            ForEach(BoardWindow.allCases) { choice in
-                windowSegment(choice)
-            }
-        }
-        .padding(2)
-        .background(StageColors.groove, in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(StageColors.separator)
-        }
+        .animation(.easeOut(duration: 0.15), value: isSearchFocused)
+        .animation(.easeOut(duration: 0.15), value: memory.boardQuery.isEmpty)
     }
 
     private func windowSegment(_ choice: BoardWindow) -> some View {
         let isSelected = memory.boardWindow == choice
-        let textStyle = isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText)
         return Button {
             memory.boardWindow = choice
         } label: {
-            Text(choice.shortTitle)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(textStyle)
-                .padding(.horizontal, 9)
-                .frame(height: Self.controlHeight - 4)
-                .background {
-                    if isSelected {
-                        Capsule()
-                            .fill(StageColors.selectedSegment)
-                            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
-                            .matchedGeometryEffect(id: "window", in: chipNamespace)
-                    }
-                }
-                .contentShape(Capsule())
+            segment(isOn: isSelected) {
+                Text(choice.shortTitle)
+                    .monospacedDigit()
+            }
         }
         .buttonStyle(.plain)
         .help(choice.title)
     }
 
-    private var liveOnlyChip: some View {
+    private var liveOnlySegment: some View {
         let isOn = memory.isBoardLiveOnly
         return Button {
             memory.isBoardLiveOnly.toggle()
         } label: {
-            HStack(spacing: 5) {
-                RookeryIconView(isOn ? .check : .appPlaceholder)
-                Text("Live agents")
+            segment(isOn: isOn) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(isOn ? Color.green : Color.clear)
+                        .overlay {
+                            Circle()
+                                .strokeBorder(isOn ? Color.green : Color.secondary.opacity(0.6), lineWidth: 1.2)
+                        }
+                        .frame(width: 7, height: 7)
+                    Text("Live only")
+                }
             }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(isOn ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
-            .padding(.horizontal, 10)
-            .frame(height: Self.controlHeight)
-            .background(isOn ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColors.groove), in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(isOn ? AnyShapeStyle(Color.accentColor.opacity(0.45)) : AnyShapeStyle(StageColors.separator))
-            }
-            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .help(isOn ? "Showing live agents only; click to show ended ones too" : "Showing ended agents too; click to show live ones only")
     }
 
-    private func lockChip(_ mapColumns: [String: [FleetResource]]) -> some View {
+    private func lockSegment(_ mapColumns: [String: [FleetResource]]) -> some View {
         let isLocked = memory.isBoardLocked
         return Button {
             toggleLock(mapColumns)
         } label: {
-            RookeryLabel(isLocked ? "Locked" : "Lock Order", icon: isLocked ? .lock : .unlock, spacing: 5)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isLocked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
-                .padding(.horizontal, 10)
-                .frame(height: Self.controlHeight)
-                .background(isLocked ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColors.groove), in: Capsule())
-                .overlay {
-                    Capsule()
-                        .strokeBorder(isLocked ? AnyShapeStyle(Color.accentColor.opacity(0.45)) : AnyShapeStyle(StageColors.separator))
-                }
-                .contentShape(Capsule())
-                .fixedSize()
+            segment(isOn: isLocked) {
+                RookeryLabel(isLocked ? "Locked" : "Lock", icon: isLocked ? .lock : .unlock, spacing: 4)
+            }
         }
         .buttonStyle(.plain)
         .help(isLocked ? "Let cards rise as they are used again" : "Hold the cards where they are")
     }
 
-    private func kindChip(_ kind: FleetKind, count: Int) -> some View {
+    private func kindSegment(_ kind: FleetKind, count: Int) -> some View {
         let isShown = !memory.setBoardHiddenKinds.contains(kind.name)
         let tint = RookmasterStyle.tint(of: kind.name)
         return Button {
@@ -287,33 +299,22 @@ struct RookmasterBoard: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(isShown ? AnyShapeStyle(tint) : AnyShapeStyle(StageColor.clear))
-                    .overlay {
-                        Circle()
-                            .strokeBorder(tint, lineWidth: 1.5)
-                    }
-                    .frame(width: 8, height: 8)
-                Text(kind.pluralTitle)
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(StageColors.tertiaryText)
+            segment(isOn: isShown) {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(isShown ? AnyShapeStyle(tint) : AnyShapeStyle(StageColor.clear))
+                        .overlay {
+                            Circle()
+                                .strokeBorder(isShown ? AnyShapeStyle(tint) : AnyShapeStyle(tint.opacity(0.55)), lineWidth: 1.2)
+                        }
+                        .frame(width: 7, height: 7)
+                    Text(kind.pluralTitle)
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .foregroundStyle(StageColors.tertiaryText)
+                        .contentTransition(.numericText())
+                }
             }
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(isShown ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
-            .padding(.horizontal, 10)
-            .frame(height: Self.controlHeight)
-            .background(isShown ? AnyShapeStyle(tint.opacity(0.12)) : AnyShapeStyle(StageColor.clear), in: Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(
-                        isShown ? AnyShapeStyle(tint.opacity(0.35)) : AnyShapeStyle(StageColors.separator),
-                        style: StrokeStyle(lineWidth: 1, dash: isShown ? [] : [3, 2])
-                    )
-            }
-            .contentShape(Capsule())
-            .fixedSize()
         }
         .buttonStyle(.plain)
         .help(isShown ? "Hide \(kind.pluralTitle)" : "Show \(kind.pluralTitle)")
@@ -366,10 +367,7 @@ struct RookmasterBoard: View {
                     .frame(width: 32, height: 32)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(graph.name(of: ref))
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                FittingText(graph.name(of: ref), size: 12, weight: .semibold)
                 Text(subtitle(of: resource, agent: agent))
                     .font(.system(size: 10))
                     .foregroundStyle(agent?.state.needsAttention == true ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.secondaryText))
@@ -584,10 +582,9 @@ struct RookmasterBoard: View {
 
     private func teamHeader(_ title: String) -> some View {
         HStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
+            FittingText(title, size: 11, weight: .semibold)
                 .foregroundStyle(StageColors.secondaryText)
-                .lineLimit(1)
+                .layoutPriority(1)
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(height: 1)

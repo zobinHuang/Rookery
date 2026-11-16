@@ -90,7 +90,7 @@ struct RookmasterKindList: View {
         } label: {
             HStack(spacing: 8) {
                 if let agent = fleetModel.fleet.mapAgents[resource.id], resource.kind == AgentFleet.agentKind {
-                    CrowView(state: agent.state, size: 24)
+                    CrowView(state: agent.state)
                 } else {
                     PixelIconView(PixelIcon.kind(resource.kind))
                         .foregroundStyle(RookmasterStyle.tint(of: resource.kind))

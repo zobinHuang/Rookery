@@ -96,10 +96,26 @@ enum CrowArt {
     }
 }
 
-/// One agent's crow, playing the loop of its state; a bird symbol when the art is missing.
+/// How large a crow is drawn: always a whole number of screen pixels a pixel of its art, so no pixel is
+/// dropped or smeared; on a Retina screen the regular crow is its art pixel for pixel.
+enum CrowSize: CGFloat {
+    case regular = 32
+    case large = 64
+}
+
+/// One agent's crow, playing the loop of its state; the agent badge when the art is missing.
 struct CrowView: View {
     let state: AgentState
-    let size: CGFloat
+    let crowSize: CrowSize
+
+    init(state: AgentState, size crowSize: CrowSize = .regular) {
+        self.state = state
+        self.crowSize = crowSize
+    }
+
+    private var size: CGFloat {
+        crowSize.rawValue
+    }
 
     var body: some View {
         if CrowArt.animation(for: state) != nil {

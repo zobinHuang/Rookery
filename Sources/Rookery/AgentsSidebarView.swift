@@ -33,9 +33,6 @@ enum AgentPayload {
 struct AgentsSidebarView: View {
     private static let rowAnimation = Animation.spring(response: 0.3, dampingFraction: 0.85)
     private static let endedShownLimit = 30
-    private static let crowSize: CGFloat = 32
-    private static let subagentCrowSize: CGFloat = 24
-    private static let collapsedCrowSize: CGFloat = 36
 
     let fleetModel: FleetModel
     let isCollapsed: Bool
@@ -367,7 +364,7 @@ struct AgentsSidebarView: View {
             onSelect(agent.id)
         } label: {
             HStack(spacing: 8) {
-                CrowView(state: agent.state, size: isSubagent ? Self.subagentCrowSize : Self.crowSize)
+                CrowView(state: agent.state)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(agent.name)
                         .font(.system(size: isSubagent ? 12 : 13, weight: .semibold))
@@ -439,7 +436,7 @@ struct AgentsSidebarView: View {
             NSItemProvider(object: AgentPayload.agent(isSubagent ? (agent.parentId ?? agent.id) : agent.id).text as NSString)
         } preview: {
             HStack(spacing: 8) {
-                CrowView(state: agent.state, size: 24)
+                CrowView(state: agent.state)
                 Text(agent.name)
                     .font(.system(size: 13, weight: .semibold))
             }
@@ -532,7 +529,7 @@ struct AgentsSidebarView: View {
         return Button {
             onSelect(agent.id)
         } label: {
-            CrowView(state: agent.state, size: Self.collapsedCrowSize)
+            CrowView(state: agent.state)
                 .padding(3)
                 .background(fill, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(alignment: .topTrailing) {

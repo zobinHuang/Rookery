@@ -254,11 +254,11 @@ struct RookmasterBoard: View {
         let agent = resource.kind == AgentFleet.agentKind ? fleetModel.fleet.mapAgents[resource.id] : nil
         return HStack(spacing: 8) {
             if let agent {
-                CrowView(state: agent.state, size: 28)
+                CrowView(state: agent.state)
             } else {
                 PixelIconView(PixelIcon.kind(resource.kind))
                     .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
-                    .frame(width: 28, height: 28)
+                    .frame(width: 32, height: 32)
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(resource.name)

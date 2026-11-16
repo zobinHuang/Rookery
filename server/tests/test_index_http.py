@@ -5,9 +5,11 @@ import threading
 import unittest
 from pathlib import Path
 from tests.test_skills import FakeResolver
+from rookd.database import Database
 from rookd.config import ServerConfig
 from rookd.http import RookdServer
 from rookd.playbooks import PlaybookIndex
+from rookd.resources import ResourceStore
 from rookd.skills import SkillIndex
 from rookd.store import SessionStore
 
@@ -20,7 +22,9 @@ class IndexApiTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         self.resolver = FakeResolver()
-        skills = SkillIndex(self.root, self.resolver)
+        resources = ResourceStore(Database(self.root))
+        self.addCleanup(resources.database.close)
+        skills = SkillIndex(resources, self.resolver)
         config = ServerConfig(
             data_root=self.root,
             host="127.0.0.1",
@@ -33,8 +37,9 @@ class IndexApiTest(unittest.TestCase):
         self.server = RookdServer(
             config=config,
             store=SessionStore(self.root),
+            resources=resources,
             skills=skills,
-            playbooks=PlaybookIndex(self.root, skills),
+            playbooks=PlaybookIndex(resources, skills),
         )
         self.port = self.server.bound_port()
         thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -247,15 +252,8 @@ class IndexApiTest(unittest.TestCase):
         one = self.add_skill("owner/repo@one")
         self.add_playbook(skills=[one["id"]])
         self.request("GET", "/v1/playbooks/backend-review/resolve")
-        set_names = {
-            path.name
-            for path in self.root.rglob("*")
-            if path.is_file() and path.name != ".lock"
-        }
-        self.assertEqual(
-            set_names,
-            {"github-com-owner-repo-one.json", "backend-review.json"},
-        )
+        set_names = {path.name for path in self.root.rglob("*") if path.is_file()}
+        self.assertLessEqual(set_names, {"rookd.db", "rookd.db-wal", "rookd.db-shm"})
         self.assertEqual(list(self.root.rglob("SKILL.md")), [])
 
 

@@ -1,28 +1,24 @@
-import fcntl
-import json
 import re
+from collections.abc import Iterator
 from contextlib import contextmanager
-from pathlib import Path
-from typing import Iterator
-from rookd.errors import NotFoundError, ValidationError
+from rookd.errors import ValidationError
+from rookd.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
 
 
 class RecordStore:
-    """A directory of JSON records on the local disk, one file per record."""
+    """The records of one kind of resource, each a JSON object, kept as resources in the database: the
+    record is the resource's attributes, and its `name` field the resource's name."""
 
     RECORD_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
     RECORD_SLUG_SANITIZE_PATTERN = re.compile(r"[^a-z0-9]+")
-    RECORD_LOCK_NAME = ".lock"
-    RECORD_DIR_MODE = 0o700
-    RECORD_FILE_MODE = 0o600
 
-    def __init__(self, directory: Path, kind: str) -> None:
-        self._directory = directory
+    def __init__(self, resources: ResourceStore, kind: str) -> None:
+        self._resources = resources
         self._kind = kind
 
     @classmethod
     def slugify(cls, text: str, fallback: str) -> str:
-        """Render free text as an identifier that is safe to use as a file name.
+        """Render free text as an identifier that is safe to use as a record id.
 
         Args:
             text: the text to render
@@ -36,7 +32,7 @@ class RecordStore:
         return slug if cls.RECORD_ID_PATTERN.match(slug) else fallback
 
     def validate_id(self, record_id: str) -> str:
-        """Check that an identifier is safe to join onto the store's directory.
+        """Check that an identifier is a usable record id.
 
         Args:
             record_id: the identifier taken from a request path or body
@@ -45,7 +41,7 @@ class RecordStore:
             the identifier unchanged
 
         Raises:
-            ValidationError: if it could address a file outside the store
+            ValidationError: if it is not
         """
         if not self.RECORD_ID_PATTERN.match(record_id):
             raise ValidationError(f"unusable {self._kind} id: {record_id!r}")
@@ -60,7 +56,7 @@ class RecordStore:
         Returns:
             True when the record exists
         """
-        return self._path_of(record_id).is_file()
+        return self._resources.exists(self._ref(record_id))
 
     def read(self, record_id: str) -> dict[str, object]:
         """Read one stored record.
@@ -69,23 +65,13 @@ class RecordStore:
             record_id: the record to read
 
         Returns:
-            the decoded record
+            the record
 
         Raises:
             ValidationError: if the identifier is unusable
             NotFoundError: if no such record is stored
         """
-        path = self._path_of(record_id)
-        try:
-            with path.open(encoding="utf-8") as handle:
-                map_record = json.load(handle)
-        except FileNotFoundError as err:
-            raise NotFoundError(f"no such {self._kind}: {record_id}") from err
-        except json.JSONDecodeError as err:
-            raise NotFoundError(f"malformed {self._kind}: {record_id}") from err
-        if not isinstance(map_record, dict):
-            raise NotFoundError(f"malformed {self._kind}: {record_id}")
-        return map_record
+        return dict(self._resources.get(self._ref(record_id)).map_attributes)
 
     def write(self, record_id: str, map_record: dict[str, object]) -> None:
         """Store one record, replacing any earlier version of it.
@@ -94,13 +80,12 @@ class RecordStore:
             record_id: the record to write
             map_record: the record body
         """
-        path = self._path_of(record_id)
-        self._directory.mkdir(parents=True, exist_ok=True)
-        self._directory.chmod(self.RECORD_DIR_MODE)
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(map_record, handle, indent=2)
-            handle.write("\n")
-        path.chmod(self.RECORD_FILE_MODE)
+        self._resources.put(Resource(
+            kind=self._kind,
+            id=self.validate_id(record_id),
+            name=str(map_record.get("name") or record_id),
+            map_attributes=dict(map_record),
+        ))
 
     def delete(self, record_id: str) -> None:
         """Remove one stored record.
@@ -112,47 +97,28 @@ class RecordStore:
             ValidationError: if the identifier is unusable
             NotFoundError: if no such record is stored
         """
-        path = self._path_of(record_id)
-        try:
-            path.unlink()
-        except FileNotFoundError as err:
-            raise NotFoundError(f"no such {self._kind}: {record_id}") from err
+        self._resources.delete(self._ref(record_id))
 
     def list_all(self) -> list[dict[str, object]]:
-        """Read every stored record.
+        """Read every stored record of this kind.
 
         Returns:
-            the decoded records, in no particular order
+            the records, in no particular order
         """
-        if not self._directory.is_dir():
-            return []
-        list_record: list[dict[str, object]] = []
-        for path in self._directory.iterdir():
-            if path.suffix != ".json" or not path.is_file():
-                continue
-            try:
-                with path.open(encoding="utf-8") as handle:
-                    map_record = json.load(handle)
-            except (OSError, json.JSONDecodeError):
-                continue
-            if isinstance(map_record, dict):
-                list_record.append(map_record)
-        return list_record
+        return [
+            dict(resource.map_attributes)
+            for resource in self._resources.query(ResourceQuery(kind=self._kind, limit=ResourceQuery.QUERY_MAX_LIMIT))
+        ]
 
     @contextmanager
     def locked(self) -> Iterator[None]:
-        """Hold the store's write lock for the duration of the block.
+        """Hold the database for the duration of the block, so a read and the write after it are one step.
 
         Yields:
-            nothing; the lock is released when the block ends
+            nothing; the database is released when the block ends
         """
-        self._directory.mkdir(parents=True, exist_ok=True)
-        handle = (self._directory / self.RECORD_LOCK_NAME).open("a+")
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        with self._resources.database.reading():
             yield
-        finally:
-            handle.close()
 
-    def _path_of(self, record_id: str) -> Path:
-        return self._directory / f"{self.validate_id(record_id)}.json"
+    def _ref(self, record_id: str) -> ResourceRef:
+        return ResourceRef(kind=self._kind, id=self.validate_id(record_id))

@@ -14,7 +14,9 @@ from rookd.errors import (
     ValidationError,
     RookdError,
 )
+from rookd.database import Database
 from rookd.playbooks import PlaybookIndex
+from rookd.resources import ResourceStore
 from rookd.skills import SkillIndex
 from rookd.store import SessionMeta, SessionQuery, SessionStore
 
@@ -488,7 +490,7 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
 
 
 class RookdServer(ThreadingHTTPServer):
-    """A threaded HTTP server that carries the configuration and the session store."""
+    """A threaded HTTP server that carries the configuration, the session store and the resources."""
 
     daemon_threads = True
     allow_reuse_address = True
@@ -497,19 +499,34 @@ class RookdServer(ThreadingHTTPServer):
         self,
         config: ServerConfig,
         store: SessionStore,
+        resources: ResourceStore | None = None,
         skills: SkillIndex | None = None,
         playbooks: PlaybookIndex | None = None,
     ) -> None:
         self.config = config
         self.store = store
-        self.skills = skills or SkillIndex(config.data_root)
-        self.playbooks = playbooks or PlaybookIndex(config.data_root, self.skills)
+        self.resources = resources or ResourceStore(Database(config.data_root))
+        self.skills = skills or SkillIndex(self.resources)
+        self.playbooks = playbooks or PlaybookIndex(self.resources, self.skills)
         super().__init__(
             (config.host, config.port),
             RookdRequestHandler,
         )
         if config.is_tls_enabled():
             self._wrap_tls()
+
+    def handle_error(self, request: object, client_address: tuple[str, int]) -> None:
+        """Log a client that dropped its connection in one line, and anything else in full.
+
+        Args:
+            request: the connection the failure happened on
+            client_address: the client's address and port
+        """
+        error = sys.exc_info()[1]
+        if isinstance(error, (ConnectionError, TimeoutError, ssl.SSLError)):
+            sys.stderr.write(f"rookd {client_address[0]} dropped the connection: {error}\n")
+            return
+        super().handle_error(request, client_address)
 
     def bound_port(self) -> int:
         """Report the port the server actually bound.

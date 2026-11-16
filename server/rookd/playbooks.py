@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
-from pathlib import Path
 from rookd.errors import ConflictError, NotFoundError, ValidationError
 from rookd.records import RecordStore
+from rookd.resources import ResourceStore
 from rookd.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
 
 
@@ -271,12 +271,11 @@ class ResolvedPlaybook:
 class PlaybookIndex:
     """The index of playbooks this server holds."""
 
-    INDEX_DIR_NAME = "playbooks"
     INDEX_KIND = "playbook"
     INDEX_QUERY_DEFAULT_LIMIT = 200
 
-    def __init__(self, data_root: Path, skills: SkillIndex) -> None:
-        self._store = RecordStore(data_root / self.INDEX_DIR_NAME, self.INDEX_KIND)
+    def __init__(self, resources: ResourceStore, skills: SkillIndex) -> None:
+        self._store = RecordStore(resources, self.INDEX_KIND)
         self._skills = skills
 
     def create(self, map_body: dict[str, object]) -> PlaybookRecord:

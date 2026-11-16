@@ -1,7 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
+from rookd.database import Database
 from rookd.errors import NotFoundError, ValidationError
+from rookd.resources import ResourceQuery, ResourceStore
 from rookd.skills import (
     GitRefResolver,
     SkillIndex,
@@ -105,7 +107,9 @@ class SkillIndexTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         self.resolver = FakeResolver()
-        self.index = SkillIndex(self.root, self.resolver)
+        self.resources = ResourceStore(Database(self.root))
+        self.addCleanup(self.resources.database.close)
+        self.index = SkillIndex(self.resources, self.resolver)
 
     def test_registering_resolves_a_version_immediately(self) -> None:
         record = self.index.register({"source": "owner/repo@one"})
@@ -124,8 +128,9 @@ class SkillIndexTest(unittest.TestCase):
 
     def test_no_file_contents_are_stored(self) -> None:
         self.index.register({"source": "owner/repo@one"})
-        list_files = sorted(path.name for path in (self.root / "skills").iterdir())
-        self.assertEqual(list_files, [".lock", "github-com-owner-repo-one.json"])
+        list_ids = [resource.id for resource in self.resources.query(ResourceQuery(kind="skill"))]
+        self.assertEqual(list_ids, ["github-com-owner-repo-one"])
+        self.assertLessEqual({path.name for path in self.root.iterdir()}, {"rookd.db", "rookd.db-wal", "rookd.db-shm"})
 
     def test_registering_needs_a_source(self) -> None:
         with self.assertRaises(ValidationError):

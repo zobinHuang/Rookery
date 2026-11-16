@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from rookd.errors import NotFoundError, ValidationError
 from rookd.records import RecordStore
+from rookd.resources import ResourceStore
 
 
 @dataclass
@@ -462,13 +463,12 @@ class SkillRecord:
 class SkillIndex:
     """The index of skills this server knows about; it holds no skill files."""
 
-    INDEX_DIR_NAME = "skills"
     INDEX_KIND = "skill"
     INDEX_PIN_LATEST = "latest"
     INDEX_QUERY_DEFAULT_LIMIT = 200
 
-    def __init__(self, data_root: Path, resolver: GitRefResolver | None = None) -> None:
-        self._store = RecordStore(data_root / self.INDEX_DIR_NAME, self.INDEX_KIND)
+    def __init__(self, resources: ResourceStore, resolver: GitRefResolver | None = None) -> None:
+        self._store = RecordStore(resources, self.INDEX_KIND)
         self._resolver = resolver or GitRefResolver()
 
     def register(self, map_body: dict[str, object]) -> SkillRecord:

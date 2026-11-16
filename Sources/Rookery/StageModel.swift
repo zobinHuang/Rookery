@@ -194,14 +194,16 @@ enum StagePage: Hashable {
     case rookmaster
 
     private static let rookmasterId = "page:rookmaster"
+    private static let settingsId = "page:settings"
     private static let agentPrefix = "page:agent:"
 
     /// The page as a window switcher entry's id, for the pages the switcher offers; nil for the others.
     var switcherId: String? {
         switch self {
         case .rookmaster: Self.rookmasterId
+        case .settings: Self.settingsId
         case .agent(let agentId): Self.agentPrefix + agentId
-        case .settings, .screenSaver: nil
+        case .screenSaver: nil
         }
     }
 
@@ -209,6 +211,8 @@ enum StagePage: Hashable {
     init?(switcherId: String) {
         if switcherId == Self.rookmasterId {
             self = .rookmaster
+        } else if switcherId == Self.settingsId {
+            self = .settings
         } else if switcherId.hasPrefix(Self.agentPrefix) {
             self = .agent(String(switcherId.dropFirst(Self.agentPrefix.count)))
         } else {

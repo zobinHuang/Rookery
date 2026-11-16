@@ -120,11 +120,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fleetModel.stop()
     }
 
-    /// The pages the window switcher offers beside the windows, once Rookery follows a roost: the
-    /// Rookmaster console, then each live agent's page, those last active first.
+    /// The pages the window switcher offers beside the windows: the settings, and once Rookery follows a
+    /// roost the Rookmaster console and each live agent's page, those last active first.
     private static func switcherPages(of fleetModel: FleetModel) -> [SwitcherEntry] {
+        let settings = SwitcherEntry(
+            id: StagePage.settings.switcherId ?? "",
+            title: "Settings",
+            subtitle: "Rookery",
+            listBundleIds: [],
+            symbolName: .gear,
+            isActive: false
+        )
         guard fleetModel.client() != nil else {
-            return []
+            return [settings]
         }
         let rookmaster = SwitcherEntry(
             id: StagePage.rookmaster.switcherId ?? "",
@@ -138,13 +146,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SwitcherEntry(
                 id: StagePage.agent(agent.id).switcherId ?? "",
                 title: agent.displayName,
-                subtitle: "\(agent.state.title) · \(agent.name)",
+                subtitle: agent.rookName.isEmpty ? agent.state.title : "\(agent.state.title) on \(agent.rookName)",
                 listBundleIds: [],
                 symbolName: .agent,
                 isActive: false
             )
         }
-        return [rookmaster] + listAgents
+        return [rookmaster] + listAgents + [settings]
     }
 
     /// Run the mixer while the settings turn it on; stopping it gives every application its sound back.

@@ -1,8 +1,9 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Animation, Animator } from "./animation.ts";
 import { type CrowState, CrowStates } from "./crow-states.ts";
+import { Icons } from "./icons.ts";
 import { PixelGrid } from "./pixel-grid.ts";
 import { PngWriter } from "./png-writer.ts";
 import { type Lockup, RookeryMark } from "./rookery-mark.ts";
@@ -19,6 +20,8 @@ class LogoBuild {
     /** The crows the app's Agents list shows, one strip per state, and the timeline of all of them. */
     static readonly CROW_STRIP_PREFIX = "Crow_";
     static readonly CROW_TIMELINE_NAME = "Crows";
+    /** The interface icons' folder in the app's resources. */
+    static readonly ICON_DIRECTORY_NAME = "Icons";
     /** The still logo the repository's README shows, each pixel a block of this many. */
     static readonly README_LOGO_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "images", "rookery-logo.png");
     static readonly README_LOGO_SCALE = 2;
@@ -50,7 +53,25 @@ class LogoBuild {
         console.log(path);
         LogoBuild._write_sidebar_logo();
         LogoBuild._write_crows();
+        LogoBuild._write_icons();
         LogoBuild._write_readme_logo();
+    }
+
+    /**
+     * The interface icons, for the app: one PNG each at a pixel a grid pixel, badges in their colors and
+     * glyphs in black for the app to tint, named `<name>.png` in a folder of their own.
+     */
+    private static _write_icons(): void {
+        const directory = join(LogoBuild.APP_RESOURCES_DIRECTORY, LogoBuild.ICON_DIRECTORY_NAME);
+        rmSync(directory, { recursive: true, force: true });
+        mkdirSync(directory, { recursive: true });
+        for (const icon of Icons.LIST_BADGES) {
+            writeFileSync(join(directory, `${icon.name}.png`), PngWriter.encode(Icons.badge_grid(icon)));
+        }
+        for (const icon of Icons.LIST_GLYPHS) {
+            writeFileSync(join(directory, `${icon.name}.png`), PngWriter.encode(Icons.glyph_grid(icon)));
+        }
+        console.log(directory, `${Icons.LIST_BADGES.length} badges, ${Icons.LIST_GLYPHS.length} glyphs`);
     }
 
     /**

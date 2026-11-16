@@ -62,7 +62,7 @@ export class CrowStates {
     /** Session open, nothing asked yet or the last answer read: breathing, blinking, looking about. */
     static readonly IDLE: CrowState = {
         name: "idle",
-        tint: "Y",
+        tint: "W",
         title: "Idle",
         meaning: "Open and waiting for a prompt.",
         list_signals: [

@@ -1,7 +1,7 @@
 import type { Animation } from "./animation.ts";
 import { CrowModel, type CrowPose } from "./crow-model.ts";
 import { CrowStates } from "./crow-states.ts";
-import { type Backing, PixelGrid } from "./pixel-grid.ts";
+import { type Backing, type ColorKey, PixelGrid } from "./pixel-grid.ts";
 import { type CrowPlacement, SceneRenderer } from "./scene-renderer.ts";
 import { Wordmark } from "./wordmark.ts";
 
@@ -33,6 +33,9 @@ export class RookeryMark {
     static readonly SIDEBAR_RETINA_SIZE: MarkSize = { grid_size: 80, font_scale: 4 };
     /** Pixels between the crows and the name. */
     static readonly LOCKUP_GAP = 6;
+    /** The colour of the outline round the crows and the name: white, which reads on dark and light alike
+     * without the yellow competing with the beaks. */
+    static readonly OUTLINE_KEY: ColorKey = "W";
     /** Room around the name for its outline. */
     static readonly WORDMARK_MARGIN = 1;
     private static readonly _ZOOM = 1.62;
@@ -103,7 +106,7 @@ export class RookeryMark {
             if (known !== undefined) {
                 return known;
             }
-            list_crow_frames.push(RookeryMark.render_crows(list_poses, size.grid_size).backed(backing));
+            list_crow_frames.push(RookeryMark.render_crows(list_poses, size.grid_size).backed(backing, RookeryMark.OUTLINE_KEY));
             map_frame_indices.set(key, list_crow_frames.length - 1);
             return list_crow_frames.length - 1;
         });
@@ -162,7 +165,7 @@ export class RookeryMark {
         const bare = Wordmark.grid(font_scale);
         const margin = RookeryMark.WORDMARK_MARGIN;
         return PixelGrid.compose(bare.width + margin * 2, bare.height + margin * 2, [{ grid: bare, left: margin, top: margin }])
-            .backed(backing === "tile" ? "outline" : backing);
+            .backed(backing === "tile" ? "outline" : backing, RookeryMark.OUTLINE_KEY);
     }
 
     /** The crows and the name placed in a layout. */

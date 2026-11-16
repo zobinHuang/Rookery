@@ -21,6 +21,8 @@ class LogoBuild {
     /** The crows the app's Agents list shows, one strip per state, and the timeline of all of them. */
     static readonly CROW_STRIP_PREFIX = "Crow_";
     static readonly CROW_TIMELINE_NAME = "Crows";
+    static readonly RAVEN_STRIP_PREFIX = "Raven_";
+    static readonly RAVEN_TIMELINE_NAME = "Raven";
     /** The logo's files for use outside the app. */
     static readonly EXPORT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "exports");
     /** How many file pixels a grid pixel becomes in the exported PNGs and GIFs. */
@@ -57,6 +59,7 @@ class LogoBuild {
         console.log(path);
         LogoBuild._write_sidebar_logo();
         LogoBuild._write_crows();
+        LogoBuild._write_raven();
         LogoBuild._write_icons();
         LogoBuild._write_exports();
         LogoBuild._write_readme_logo();
@@ -116,27 +119,60 @@ class LogoBuild {
      * with nearest-neighbour filtering, so a 64-pixel crow fills 32 points on a Retina screen exactly.
      */
     private static _write_crows(): void {
-        const map_states: Record<string, { frame_count: number; sequence: readonly number[] }> = {};
+        LogoBuild._write_sheet(
+            LogoBuild.CROW_TIMELINE_NAME,
+            LogoBuild.CROW_STRIP_PREFIX,
+            CrowStates.LIST_STATES.map((state) => ({
+                name: state.name.replaceAll("-", "_"),
+                animation: Animator.animate(state, LogoBuild.BACKING),
+            })),
+        );
+    }
+
+    /**
+     * Raven, Rookery's agent over the fleet: the crow facing left, toward the conversation, outlined in
+     * white, at rest and at work, in strips and a timeline as the crows'.
+     */
+    private static _write_raven(): void {
+        const list_loops = [
+            { name: "idle", state: CrowStates.IDLE },
+            { name: "working", state: CrowStates.THINKING },
+        ];
+        LogoBuild._write_sheet(
+            LogoBuild.RAVEN_TIMELINE_NAME,
+            LogoBuild.RAVEN_STRIP_PREFIX,
+            list_loops.map(({ name, state }) => {
+                const animation = Animator.animate({ ...state, tint: "W" }, LogoBuild.BACKING);
+                return { name, animation: { ...animation, list_frames: animation.list_frames.map((frame) => frame.mirrored()) } };
+            }),
+        );
+    }
+
+    /** Named loops of one size, each a PNG strip of its distinct frames, and one timeline for all of them. */
+    private static _write_sheet(
+        timeline_name: string,
+        strip_prefix: string,
+        list_loops: readonly { name: string; animation: Animation }[],
+    ): void {
+        const map_loops: Record<string, { frame_count: number; sequence: readonly number[] }> = {};
         let width = 0;
         let height = 0;
         let frames_per_second = 0;
-        for (const state of CrowStates.LIST_STATES) {
-            const animation = Animator.animate(state, LogoBuild.BACKING);
+        for (const { name, animation } of list_loops) {
             const strip = PixelGrid.compose(
                 animation.width * animation.list_frames.length,
                 animation.height,
                 animation.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * animation.width, top: 0 })),
             );
-            const name = state.name.replaceAll("-", "_");
-            writeFileSync(join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.CROW_STRIP_PREFIX}${name}.png`), PngWriter.encode(strip));
-            map_states[name] = { frame_count: animation.list_frames.length, sequence: animation.list_sequence };
+            writeFileSync(join(LogoBuild.APP_RESOURCES_DIRECTORY, `${strip_prefix}${name}.png`), PngWriter.encode(strip));
+            map_loops[name] = { frame_count: animation.list_frames.length, sequence: animation.list_sequence };
             width = animation.width;
             height = animation.height;
             frames_per_second = animation.frames_per_second;
         }
-        const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.CROW_TIMELINE_NAME}.json`);
-        writeFileSync(path, `${JSON.stringify({ frame_width: width, frame_height: height, frames_per_second, states: map_states }, undefined, 4)}\n`);
-        console.log(path, `${CrowStates.LIST_STATES.length} states, ${width} × ${height}`);
+        const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${timeline_name}.json`);
+        writeFileSync(path, `${JSON.stringify({ frame_width: width, frame_height: height, frames_per_second, states: map_loops }, undefined, 4)}\n`);
+        console.log(path, `${list_loops.length} loops, ${width} × ${height}`);
     }
 
     /** The full-size horizontal mark's first frame, for the README. */

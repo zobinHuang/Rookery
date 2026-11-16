@@ -215,6 +215,15 @@ export class PixelGrid {
     }
 
     /**
+     * The grid mirrored left to right, for a crow that faces the other way.
+     *
+     * @returns the mirrored grid
+     */
+    mirrored(): PixelGrid {
+        return new PixelGrid(this.list_rows.map((row) => [...row].reverse()));
+    }
+
+    /**
      * The grid with a backing that keeps the black crow visible on a dark background.
      *
      * @param backing - a yellow rounded tile behind it, a yellow outline around it, or none

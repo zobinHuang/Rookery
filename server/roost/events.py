@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from roost.errors import ValidationError
 from roost.records import RecordStore
@@ -55,6 +56,7 @@ class EventVerbs:
     DISCONNECTED = "disconnected"
     DELIVERED = "delivered"
     UNDELIVERED = "undelivered"
+    RENAMED = "renamed"
     SET_RELATION_VERBS = frozenset({
         CREATED,
         UPDATED,
@@ -75,6 +77,7 @@ class EventVerbs:
         DISCONNECTED,
         DELIVERED,
         UNDELIVERED,
+        RENAMED,
     }
 
 
@@ -127,8 +130,15 @@ class EventLog:
     )
     EVENT_OBJECT_ATTRIBUTE_FIELDS = ("path", "project", "text", "scope", "description")
 
-    def __init__(self, resources: ResourceStore) -> None:
+    def __init__(self, resources: ResourceStore, title_of: Callable[[str], str | None] | None = None) -> None:
+        """Keep the log of what happens to the resources.
+
+        Args:
+            resources: where the resources are kept
+            title_of: a session's title from its stored transcript, for an agent that starts without one
+        """
         self._resources = resources
+        self._title_of = title_of
         self._condition = threading.Condition()
         self._last_seq = self._read_last_seq()
 
@@ -209,6 +219,21 @@ class EventLog:
         """Release every reader waiting for events, as the server stops."""
         with self._condition:
             self._condition.notify_all()
+
+    def rename(self, agent_id: str, title: str) -> Event | None:
+        """Give an agent its session's title, logging it, unless it has that title already or is unknown.
+
+        Args:
+            agent_id: the agent
+            title: its session's title
+
+        Returns:
+            the event, or None when nothing changed
+        """
+        ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=agent_id)
+        if not self._resources.exists(ref) or self._resources.get(ref).map_attributes.get("title") == title:
+            return None
+        return self.record([{"actor": ref.as_payload(), "verb": EventVerbs.RENAMED, "detail": {"title": title}}])[0]
 
     def record_change(self, actor: ResourceRef | None, verb: str, target: ResourceRef) -> Event:
         """Log a change made through the resource API, by an agent or by a person.
@@ -316,6 +341,10 @@ class EventLog:
                 if name in map_detail:
                     agent.map_attributes[name] = map_detail[name]
             agent.name = str(map_detail.get("name") or agent.name)
+            if not agent.map_attributes.get("title") and self._title_of is not None:
+                title = self._title_of(actor.id)
+                if title:
+                    agent.map_attributes["title"] = title
             agent.map_attributes["state"] = AgentStates.IDLE
             agent.map_attributes["closed_at"] = None
             parent_id = map_detail.get("parent")
@@ -334,6 +363,8 @@ class EventLog:
                 agent.map_attributes["title"] = str(map_detail["title"])
             if state == AgentStates.ENDED:
                 agent.map_attributes["closed_at"] = at
+        elif verb == EventVerbs.RENAMED:
+            agent.map_attributes["title"] = str(map_detail.get("title") or "")
         elif verb == EventVerbs.ENDED:
             agent.map_attributes["state"] = AgentStates.ENDED
             agent.map_attributes["closed_at"] = at

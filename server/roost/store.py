@@ -488,6 +488,43 @@ class AccountSummary:
         }
 
 
+class TranscriptTitles:
+    """A session's title as its harness writes it into the transcript: the one the user gave it, else the
+    one the harness made up, the latest of each."""
+
+    TITLE_TAIL_BYTES = 256 * 1024
+    MAP_TITLE_FIELDS = {"custom-title": "customTitle", "ai-title": "aiTitle"}
+    TITLE_MARKER = b"-title"
+
+    @classmethod
+    def latest(cls, data: bytes) -> str | None:
+        """The title the latest title lines in some of a transcript give.
+
+        Args:
+            data: the transcript's bytes, or its last stretch
+
+        Returns:
+            the title, or None when the bytes hold none
+        """
+        map_found: dict[str, str] = {}
+        for line in reversed(data.split(b"\n")):
+            if cls.TITLE_MARKER not in line[:64] and cls.TITLE_MARKER not in line:
+                continue
+            try:
+                map_line = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(map_line, dict):
+                continue
+            kind = str(map_line.get("type") or "")
+            field_name = cls.MAP_TITLE_FIELDS.get(kind)
+            if field_name and kind not in map_found and map_line.get(field_name):
+                map_found[kind] = str(map_line[field_name])
+            if "custom-title" in map_found:
+                break
+        return map_found.get("custom-title") or map_found.get("ai-title")
+
+
 @dataclass
 class TranscriptChunk:
     """A slice of one stored transcript, with the whole file's length."""
@@ -804,6 +841,22 @@ class SessionStore:
                 continue
             list_meta.append(self._read_meta(path_meta))
         return list_meta
+
+    def title_of(self, session_id: str) -> str | None:
+        """The session's title from the last stretch of its stored transcript.
+
+        Args:
+            session_id: the session
+
+        Returns:
+            the title, or None when the session or its title is not stored
+        """
+        try:
+            total = self.read_transcript(session_id, 0, 0).total
+            chunk = self.read_transcript(session_id, max(0, total - TranscriptTitles.TITLE_TAIL_BYTES), None)
+        except (NotFoundError, ValidationError):
+            return None
+        return TranscriptTitles.latest(chunk.data)
 
     def _resolve(self, session_id: str) -> Path:
         SessionMeta.validate_session_id(session_id)

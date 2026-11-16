@@ -24,7 +24,7 @@ from roost.messages import DeliveryStore
 from roost.playbooks import PlaybookIndex
 from roost.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
 from roost.skills import SkillIndex
-from roost.store import SessionMeta, SessionQuery, SessionStore
+from roost.store import SessionMeta, SessionQuery, SessionStore, TranscriptTitles
 
 
 class RoostRequestHandler(BaseHTTPRequestHandler):
@@ -471,12 +471,17 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
     ) -> None:
         offset = self._query_int(map_query, "offset")
         do_reset = self._query_flag(map_query, "reset")
+        chunk = self._read_body()
         cursor = self._store().append(
             session_id=session_id,
             offset=offset,
-            chunk=self._read_body(),
+            chunk=chunk,
             do_reset=do_reset,
         )
+        if TranscriptTitles.TITLE_MARKER in chunk:
+            title = self._store().title_of(session_id)
+            if title:
+                self.server.events.rename(session_id, title)
         self._respond_json(HTTPStatus.OK, cursor.as_payload())
 
     def _handle_close(self, session_id: str) -> None:
@@ -671,10 +676,11 @@ class RoostServer(ThreadingHTTPServer):
         self.resources = resources or ResourceStore(Database(config.data_root))
         self.skills = skills or SkillIndex(self.resources)
         self.playbooks = playbooks or PlaybookIndex(self.resources, self.skills)
-        self.events = EventLog(self.resources)
+        self.events = EventLog(self.resources, store.title_of)
         self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)
         self.deliveries = DeliveryStore(self.resources, self.events)
         self.link = LinkHub(config, self.resources, self.events, self.deliveries)
+        self._name_untitled_agents()
         self.stream_slots = threading.BoundedSemaphore(self.SERVER_STREAMS_MAX)
         self.is_stopping = False
         super().__init__(
@@ -683,6 +689,14 @@ class RoostServer(ThreadingHTTPServer):
         )
         if config.is_tls_enabled():
             self._wrap_tls()
+
+    def _name_untitled_agents(self) -> None:
+        for agent in self.resources.query(ResourceQuery(kind=ResourceKinds.AGENT.name, limit=ResourceQuery.QUERY_MAX_LIMIT)):
+            if agent.map_attributes.get("title"):
+                continue
+            title = self.store.title_of(agent.id)
+            if title:
+                self.events.rename(agent.id, title)
 
     def handle_error(self, request: object, client_address: tuple[str, int]) -> None:
         """Log a client that dropped its connection in one line, and anything else in full.

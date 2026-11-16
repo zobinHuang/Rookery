@@ -6,7 +6,7 @@ Everything Rookery manages about code agents is a resource, of one of a few kind
 
 | Kind | What it is | Its attributes | Where it comes from |
 |---|---|---|---|
-| `agent` | One code agent session, or a subagent it spawned | `state`, `harness`, `rook_name`, `tab`, `machine`, `cwd`, `git_branch`, `account`, `transcript_path`, `parent`, `opened_at`, `closed_at` | rook's hooks |
+| `agent` | One code agent session, or a subagent it spawned | `state`, `title`, `harness`, `rook_name`, `tab`, `machine`, `cwd`, `git_branch`, `account`, `transcript_path`, `parent`, `opened_at`, `closed_at` | rook's hooks |
 | `skill` | Instructions for using a tool | `source`, `repo_url`, `skill_path`, `default_ref`, `versions`, `description`; `discovered` when first seen in use rather than registered | the skill index; agents using or writing skills |
 | `playbook` | A standard way to solve one kind of problem | `prompt`, `skills` (pins), `description` | the playbook index; the maintenance agent |
 | `memory` | Details of a particular problem an agent wrote down to keep | `text`, `path`, `project` | agents writing into their own memory directory |
@@ -35,7 +35,8 @@ Events only ever append, and `seq` only grows, so a reader resumes after the las
 | Verb | Object | Effect |
 |---|---|---|
 | `started` | — | creates or refreshes the agent from `detail` (the attribute fields above, `name`, `parent`); state `idle` |
-| `state` | — | sets the agent's state from `detail.state` |
+| `state` | — | sets the agent's state from `detail.state`, and its title from `detail.title` when given |
+| `renamed` | — | sets the agent's `title`, the session's title as its transcript gives it (a title the user gave, else one the harness made up); roost logs it whenever an uploaded transcript names its session anew, and fills it in when an agent starts after its transcript arrived |
 | `ended` | — | state `ended`, `closed_at` set |
 | `uses`, `mounts`, `follows`, `spawned`, `wrote`, `created`, `updated`, `depends_on` | required | draws or counts the relation from actor to object, and marks the object used |
 | `created`, `updated`, `deleted` by a person | required | logged with the actor `{"kind": "person", "id": "user"}`; no relation |

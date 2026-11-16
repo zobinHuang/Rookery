@@ -78,6 +78,40 @@ class ResourceApiTest(unittest.TestCase):
         self.assertEqual(status, 200, map_body)
         return map_body["events"]
 
+    def upload(self, session_id: str, list_lines: list[dict[str, object]]) -> None:
+        status, map_body = self.request("POST", f"/v1/sessions/{session_id}/begin", {"agent": "claude", "session_id": session_id})
+        self.assertEqual(status, 200, map_body)
+        body = "".join(json.dumps(line) + "\n" for line in list_lines).encode("utf-8")
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=self.TEST_TIMEOUT_SECONDS)
+        try:
+            connection.request(
+                "PUT",
+                f"/v1/sessions/{session_id}/data?offset={map_body['cursor']}",
+                body=body,
+                headers={"Authorization": f"Bearer {self.TEST_TOKEN}", "Content-Length": str(len(body))},
+            )
+            self.assertEqual(connection.getresponse().status, 200)
+        finally:
+            connection.close()
+
+    def test_an_uploaded_transcript_names_its_agent(self) -> None:
+        self.report({"actor": self.TEST_AGENT, "verb": "started", "detail": {"name": "studio/bash"}})
+        self.upload("s-1", [
+            {"type": "ai-title", "aiTitle": "Repo overview"},
+            {"type": "user", "message": {"content": "hi"}},
+            {"type": "custom-title", "customTitle": "G-Watch development"},
+        ])
+        _, agent = self.request("GET", "/v1/resources/agent/s-1")
+        self.assertEqual(agent["attributes"]["title"], "G-Watch development")
+        _, map_events = self.request("GET", "/v1/events?limit=1")
+        self.assertEqual(map_events["events"][0]["verb"], "renamed")
+
+    def test_an_agent_that_starts_after_its_transcript_takes_its_title(self) -> None:
+        self.upload("s-1", [{"type": "ai-title", "aiTitle": "Repo overview"}])
+        self.report({"actor": self.TEST_AGENT, "verb": "started", "detail": {"name": "studio/bash"}})
+        _, agent = self.request("GET", "/v1/resources/agent/s-1")
+        self.assertEqual(agent["attributes"]["title"], "Repo overview")
+
     def test_the_kinds_are_listed(self) -> None:
         status, map_body = self.request("GET", "/v1/kinds")
         self.assertEqual(status, 200)

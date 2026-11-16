@@ -388,6 +388,12 @@ public struct AgentFleet: Equatable, Sendable {
             return .unchanged
         }
         lastSeq = event.seq
+        if event.verb == "deleted", let object = event.object, object.kind == Self.agentKind {
+            guard mapAgents.removeValue(forKey: object.id) != nil else {
+                return .unchanged
+            }
+            return .changed
+        }
         switch (event.actor.kind, event.verb) {
         case (Self.agentKind, "started"):
             return .refetch(event.actor)

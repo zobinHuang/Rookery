@@ -44,6 +44,19 @@ struct FleetTests {
         #expect(fleet.lastSeq == 12)
     }
 
+    @Test func dropsAnAgentDeletedOnRoost() throws {
+        var fleet = try fleet()
+        let deletion = FleetEvent(
+            seq: 11,
+            at: "t",
+            actor: FleetRef(kind: "person", id: "user"),
+            verb: "deleted",
+            object: FleetRef(kind: "agent", id: "s-1")
+        )
+        #expect(fleet.apply(deletion) == .changed)
+        #expect(fleet.mapAgents["s-1"] == nil)
+    }
+
     @Test func takesASentPromptAsRecordedOnceTheTranscriptHoldsItAfterItWasSent() {
         let prompt = OutgoingPrompt(id: "d-1", text: "run the  tests\nthen push", sentAt: .now, entryCountAtSend: 1)
         let listBefore = [TranscriptEntry(id: 0, role: .user, text: "run the tests then push")]
@@ -53,6 +66,20 @@ struct FleetTests {
             TranscriptEntry(id: 2, role: .user, text: "run the tests then push"),
         ]
         #expect(prompt.isRecorded(in: listAfter))
+    }
+
+    @Test func namesAGoneSubagentAfterItsSession() {
+        var graph = ResourceGraph()
+        graph.load(
+            kinds: [],
+            resources: [
+                FleetResource(kind: "agent", id: "s-1", name: "box/bash", mapAttributes: ["title": .string("G-Watch")], lastUsedAt: ""),
+            ],
+            relations: [],
+            recentEvents: [],
+            lastSeq: 0
+        )
+        #expect(graph.name(of: FleetRef(kind: "agent", id: "s-1~a3c5")) == "G-Watch › subagent")
     }
 
     @Test func readsASubagentsTranscriptFromTheSessionTheHarnessWroteIt() {

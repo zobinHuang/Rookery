@@ -113,6 +113,10 @@ public struct ResourceGraph: Equatable, Sendable {
             return "you"
         }
         guard let resource = resource(ref) else {
+            if ref.kind == AgentFleet.agentKind, let separator = ref.id.firstIndex(of: "~") {
+                let parent = FleetRef(kind: ref.kind, id: String(ref.id[..<separator]))
+                return "\(name(of: parent)) › subagent"
+            }
             return ref.id
         }
         return resource.displayName

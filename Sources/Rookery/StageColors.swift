@@ -7,40 +7,40 @@ import SwiftUI
 enum StageColors {
     /// Behind everything, around the content area.
     static let window = StageColor(
-        light: NSColor(white: 0.965, alpha: 1),
-        dark: NSColor(white: 0.035, alpha: 1),
+        light: slate(0xF4F5F8),
+        dark: slate(0x0A0B0E),
         highContrastLight: .white,
         highContrastDark: .black
     )
     static let sidebar = StageColor(
-        light: NSColor(white: 0.935, alpha: 1),
-        dark: NSColor(white: 0.06, alpha: 1),
+        light: slate(0xEDEFF3),
+        dark: slate(0x0D0F13),
         highContrastLight: .white,
         highContrastDark: .black
     )
     /// The empty content area, before a window covers it.
     static let content = StageColor(
-        light: NSColor(white: 0.9, alpha: 1),
-        dark: NSColor(white: 0.08, alpha: 1),
+        light: slate(0xE7E9EE),
+        dark: slate(0x111318),
         highContrastLight: .white,
         highContrastDark: .black
     )
     static let selectedTab = StageColor(
         light: .white,
-        dark: NSColor(white: 0.13, alpha: 1),
+        dark: slate(0x1E222B),
         highContrastLight: .white,
         highContrastDark: .black
     )
     static let idleTab = StageColor(
-        light: NSColor(white: 0, alpha: 0.05),
-        dark: NSColor(white: 1, alpha: 0.05),
+        light: slate(0x1A2233, alpha: 0.05),
+        dark: slate(0xC8D2E6, alpha: 0.05),
         highContrastLight: .clear,
         highContrastDark: .clear
     )
     /// Lines between and around panels: faint in the regular themes, the outline in the high-contrast ones.
     static let separator = StageColor(
-        light: NSColor(white: 0, alpha: 0.08),
-        dark: NSColor(white: 1, alpha: 0.07),
+        light: slate(0x1A2233, alpha: 0.09),
+        dark: slate(0xC8D2E6, alpha: 0.08),
         highContrastLight: contrastBorderLight,
         highContrastDark: contrastBorderDark
     )
@@ -61,36 +61,36 @@ enum StageColors {
     /// The chosen segment of a segmented switch.
     static let selectedSegment = StageColor(
         light: .white,
-        dark: NSColor(white: 0.22, alpha: 1),
+        dark: slate(0x2A2F3A),
         highContrastLight: .white,
         highContrastDark: .black
     )
     /// A sidebar row under the pointer: a faint wash, tinted with the selected outline's color in the
     /// high-contrast themes.
     static let hoveredRow = StageColor(
-        light: NSColor(white: 0, alpha: 0.045),
-        dark: NSColor(white: 1, alpha: 0.05),
+        light: slate(0x1A2233, alpha: 0.05),
+        dark: slate(0xC8D2E6, alpha: 0.055),
         highContrastLight: contrastActiveBorderLight.withAlphaComponent(0.14),
         highContrastDark: contrastActiveBorderDark.withAlphaComponent(0.22)
     )
     /// The square a group's application icons sit in.
     static let tile = StageColor(
         light: NSColor(white: 1, alpha: 0.9),
-        dark: NSColor(white: 1, alpha: 0.07),
+        dark: slate(0xC8D2E6, alpha: 0.07),
         highContrastLight: .white,
         highContrastDark: .black
     )
     /// A raised panel in the sidebar, such as a mixer track.
     static let card = StageColor(
         light: NSColor(white: 1, alpha: 0.75),
-        dark: NSColor(white: 1, alpha: 0.045),
+        dark: slate(0xC8D2E6, alpha: 0.05),
         highContrastLight: .white,
         highContrastDark: .black
     )
     /// The groove of a slider or a meter.
     static let groove = StageColor(
-        light: NSColor(white: 0, alpha: 0.1),
-        dark: NSColor(white: 1, alpha: 0.1),
+        light: slate(0x1A2233, alpha: 0.1),
+        dark: slate(0xC8D2E6, alpha: 0.1),
         highContrastLight: NSColor(white: 0, alpha: 0.45),
         highContrastDark: NSColor(white: 1, alpha: 0.45)
     )
@@ -116,6 +116,17 @@ enum StageColors {
     static let clockSegment = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? clockSegmentDark : clockSegmentLight
     })
+
+    /// A grey of the stage's: a neutral leaning faintly blue, so surfaces read cool and clean rather than
+    /// flat, from its sRGB hex.
+    private static func slate(_ hex: Int, alpha: CGFloat = 1) -> NSColor {
+        NSColor(
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: alpha
+        )
+    }
 
     private static let clockSegmentLight = NSColor(srgbRed: 0.62, green: 0.07, blue: 0.07, alpha: 1)
     private static let clockSegmentDark = NSColor(srgbRed: 1, green: 0.78, blue: 0.12, alpha: 1)

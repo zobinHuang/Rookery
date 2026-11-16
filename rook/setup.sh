@@ -591,6 +591,7 @@ After=network-online.target
 [Service]
 ExecStart=$ROOK_VENV/bin/python $HOME/.local/bin/rook-link run
 Environment=PATH=$PATH
+Environment=HOME=$HOME
 Restart=always
 RestartSec=2
 

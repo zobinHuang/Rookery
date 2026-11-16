@@ -176,6 +176,7 @@ After=network-online.target
 
 [Service]
 ExecStart=$ROOST_BIN serve
+Environment=HOME=$HOME
 Restart=on-failure
 RestartSec=2
 

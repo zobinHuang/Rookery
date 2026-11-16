@@ -2,7 +2,12 @@
  * A key of the palette: `.` is transparent, `S` the ground shadow, whose color depends on what is behind it,
  * and the rest name the logo's colors.
  */
-export type PaletteKey = "." | "S" | "K" | "G" | "M" | "H" | "Y" | "L" | "W" | StateKey;
+export type PaletteKey = "." | "S" | "K" | "G" | "M" | "H" | "Y" | "L" | "W" | StateKey | SheenKey;
+
+/**
+ * The violet sheen of a raven's feathers, in place of the crow's greys: its mid tone and its highlight.
+ */
+export type SheenKey = "U" | "V";
 
 /**
  * The colors that tell a crow's states apart at a glance, each one a state's outline and marks: blue,
@@ -73,6 +78,8 @@ export class PixelGrid {
         R: "#FF5463",
         I: "#FF6FB8",
         A: "#9A9AA8",
+        U: "#3F3570",
+        V: "#7B63D6",
     };
     /** The tile's corner radius against the grid's size. */
     static readonly TILE_CORNER_FRACTION = 5 / 32;
@@ -212,6 +219,16 @@ export class PixelGrid {
             const wide = row.flatMap((key) => Array.from({ length: factor }, () => key));
             return Array.from({ length: factor }, () => [...wide]);
         }));
+    }
+
+    /**
+     * The grid with some keys swapped for others, as a raven's sheen for a crow's greys.
+     *
+     * @param map_swaps - the key each swapped key becomes
+     * @returns the recoloured grid
+     */
+    recolored(map_swaps: Partial<Record<PaletteKey, PaletteKey>>): PixelGrid {
+        return new PixelGrid(this.list_rows.map((row) => row.map((key) => map_swaps[key] ?? key)));
     }
 
     /**

@@ -2,11 +2,12 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Animation, Animator } from "./animation.ts";
-import { type CrowState, CrowStates } from "./crow-states.ts";
+import { type CrowState, CrowStates, type SpriteStamp } from "./crow-states.ts";
 import { GifWriter } from "./gif-writer.ts";
 import { Icons } from "./icons.ts";
-import { PixelGrid } from "./pixel-grid.ts";
+import { type PaletteKey, PixelGrid } from "./pixel-grid.ts";
 import { PngWriter } from "./png-writer.ts";
+import { Sprites } from "./sprites.ts";
 import { type Lockup, RookeryMark } from "./rookery-mark.ts";
 
 /**
@@ -23,6 +24,10 @@ class LogoBuild {
     static readonly CROW_TIMELINE_NAME = "Crows";
     static readonly RAVEN_STRIP_PREFIX = "Raven_";
     static readonly RAVEN_TIMELINE_NAME = "Raven";
+    /** The raven's sheen in place of the crow's mid grey and highlight. */
+    static readonly RAVEN_SHEEN: Partial<Record<PaletteKey, PaletteKey>> = { M: "U", H: "V" };
+    /** The letter Raven holds, its corner at the beak's tip. */
+    static readonly RAVEN_LETTER: SpriteStamp = { sprite: Sprites.LETTER, anchor: "beak", dx: -2, dy: -2 };
     /** The logo's files for use outside the app. */
     static readonly EXPORT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "exports");
     /** How many file pixels a grid pixel becomes in the exported PNGs and GIFs. */
@@ -130,8 +135,9 @@ class LogoBuild {
     }
 
     /**
-     * Raven, Rookery's agent over the fleet: the crow facing left, toward the conversation, outlined in
-     * white, at rest and at work, in strips and a timeline as the crows'.
+     * Raven, Rookery's agent over the fleet, told from the agents' crows at a glance: a raven's violet sheen
+     * on its feathers, a sealed letter in its beak, facing left toward the conversation, outlined in white;
+     * at rest and at work, in strips and a timeline as the crows'.
      */
     private static _write_raven(): void {
         const list_loops = [
@@ -142,8 +148,22 @@ class LogoBuild {
             LogoBuild.RAVEN_TIMELINE_NAME,
             LogoBuild.RAVEN_STRIP_PREFIX,
             list_loops.map(({ name, state }) => {
-                const animation = Animator.animate({ ...state, tint: "W" }, LogoBuild.BACKING);
-                return { name, animation: { ...animation, list_frames: animation.list_frames.map((frame) => frame.mirrored()) } };
+                const raven: CrowState = {
+                    ...state,
+                    tint: "W",
+                    list_frames: state.list_frames.map((frame) => ({
+                        ...frame,
+                        list_stamps: [...frame.list_stamps, LogoBuild.RAVEN_LETTER],
+                    })),
+                };
+                const animation = Animator.animate(raven, LogoBuild.BACKING);
+                return {
+                    name,
+                    animation: {
+                        ...animation,
+                        list_frames: animation.list_frames.map((frame) => frame.recolored(LogoBuild.RAVEN_SHEEN).mirrored()),
+                    },
+                };
             }),
         );
     }

@@ -116,6 +116,16 @@ export class Sprites {
         "Y.",
     ];
     /** A speck being drawn in as the context is compacted. */
+    /** A sealed letter, which Raven carries in its beak. */
+    static readonly LETTER: Sprite = [
+        "WWWWWWWWW",
+        "WKWWWWWKW",
+        "WWKWWWKWW",
+        "WWWKWKWWW",
+        "WWWWKWWWW",
+        "WWWWWWWWW",
+    ];
+
     static readonly SPECK: Sprite = [
         "L",
     ];

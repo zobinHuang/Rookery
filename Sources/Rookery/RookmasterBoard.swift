@@ -75,6 +75,8 @@ struct RookmasterBoard: View {
     private static let reorderAnimation = Animation.spring(response: 0.45, dampingFraction: 0.85)
     private static let boardSpace = "board"
     private static let controlHeight: CGFloat = 26
+    /// The key the open subagent column's cards go under among the columns.
+    private static let subagentColumnKey = "rookmaster.subagents"
 
     let fleetModel: FleetModel
     let listKinds: [FleetKind]
@@ -108,6 +110,15 @@ struct RookmasterBoard: View {
                     HStack(alignment: .top, spacing: Self.columnSpacing) {
                         ForEach(listShownKinds) { kind in
                             column(kind, listResources: mapColumns[kind.name] ?? [], setFocus: setFocus, now: context.date)
+                            if kind.name == AgentFleet.agentKind, let parentId = memory.boardSubagentsOf {
+                                subagentColumn(
+                                    of: parentId,
+                                    listSubagents: mapColumns[Self.subagentColumnKey] ?? [],
+                                    setFocus: setFocus,
+                                    now: context.date
+                                )
+                                .transition(.move(edge: .leading).combined(with: .opacity))
+                            }
                         }
                     }
                     .padding(24)
@@ -118,6 +129,7 @@ struct RookmasterBoard: View {
                     }
                     .frame(minWidth: viewport.size.width, minHeight: viewport.size.height, alignment: .topLeading)
                     .animation(Self.reorderAnimation, value: mapColumns.mapValues { $0.map(\.id) })
+                    .animation(Self.reorderAnimation, value: memory.boardSubagentsOf)
                 }
                 .modifier(RememberedScroll(key: "rookmaster.board", memory: memory))
                 }
@@ -353,6 +365,73 @@ struct RookmasterBoard: View {
         .frame(width: Self.cardWidth, alignment: .topLeading)
     }
 
+    /// One agent's subagents, those last active first, beside the agents.
+    private func subagentColumn(of parentId: String, listSubagents: [FleetResource], setFocus: Set<FleetRef>?, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                RookeryIconView(.agent)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Text("Subagents")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("\(listSubagents.count)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(StageColors.tertiaryText)
+                    }
+                    FittingText("of \(graph.name(of: FleetRef(kind: AgentFleet.agentKind, id: parentId)))", size: 10)
+                        .foregroundStyle(StageColors.secondaryText)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    withAnimation(Self.reorderAnimation) {
+                        memory.boardSubagentsOf = nil
+                    }
+                } label: {
+                    RookeryIconView(.close)
+                        .foregroundStyle(StageColors.tertiaryText)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Fold the subagents away")
+            }
+            .padding(.leading, 4)
+            .padding(.bottom, 2)
+            if listSubagents.isEmpty {
+                Text("None")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .padding(.leading, 4)
+            }
+            ForEach(listSubagents, id: \.id) { subagent in
+                card(subagent, setFocus: setFocus, now: now)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+            }
+        }
+        .frame(width: Self.cardWidth, alignment: .topLeading)
+    }
+
+    /// The fold that lays out an agent's subagents in a column of their own.
+    private func subagentToggle(of agentId: String, count: Int) -> some View {
+        let isOpen = memory.boardSubagentsOf == agentId
+        return Button {
+            withAnimation(Self.reorderAnimation) {
+                memory.boardSubagentsOf = isOpen ? nil : agentId
+            }
+        } label: {
+            HStack(spacing: 4) {
+                RookeryIconView(.chevronRight)
+                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                Text(count == 1 ? "1 subagent" : "\(count) subagents")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+            }
+            .foregroundStyle(isOpen ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isOpen ? "Fold the subagents away" : "Show the subagents beside the agents")
+    }
+
     private func card(_ resource: FleetResource, setFocus: Set<FleetRef>?, now: Date) -> some View {
         let ref = FleetRef(kind: resource.kind, id: resource.id)
         let isSelected = memory.boardSelectedRef == ref
@@ -367,11 +446,18 @@ struct RookmasterBoard: View {
                     .frame(width: 32, height: 32)
             }
             VStack(alignment: .leading, spacing: 1) {
-                FittingText(graph.name(of: ref), size: 12, weight: .semibold)
+                FittingText(cardName(of: resource, agent: agent), size: 12, weight: .semibold)
                 Text(subtitle(of: resource, agent: agent))
                     .font(.system(size: 10))
                     .foregroundStyle(agent?.state.needsAttention == true ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.secondaryText))
                     .lineLimit(1)
+                if let agent, agent.parentId == nil {
+                    let subagentCount = fleetModel.fleet.listSubagents(of: agent.id).count
+                    if subagentCount > 0 {
+                        subagentToggle(of: agent.id, count: subagentCount)
+                            .padding(.top, 2)
+                    }
+                }
             }
             Spacer(minLength: 0)
             Text(RookmasterStyle.age(of: resource.lastUsedAt, now: now))
@@ -413,10 +499,17 @@ struct RookmasterBoard: View {
         .help("\(resource.displayName)\nClick to bring forward what it touches; double-click to open")
     }
 
+    /// What a card is called: a subagent by its kind of agent, as Explore, anything else by its name.
+    private func cardName(of resource: FleetResource, agent: FleetAgent?) -> String {
+        guard agent?.parentId != nil, let agentType = resource.name.split(separator: "/").last else {
+            return graph.name(of: FleetRef(kind: resource.kind, id: resource.id))
+        }
+        return String(agentType)
+    }
+
     private func subtitle(of resource: FleetResource, agent: FleetAgent?) -> String {
         if let agent {
-            let subagentCount = fleetModel.fleet.listSubagents(of: agent.id).count
-            return subagentCount > 0 ? "\(agent.state.title) with \(subagentCount) subagents" : agent.state.title
+            return agent.state.title
         }
         let relationCount = graph.listRelations(touching: FleetRef(kind: resource.kind, id: resource.id)).count
         if let description = resource.mapAttributes["description"]?.stringValue {
@@ -433,7 +526,6 @@ struct RookmasterBoard: View {
         proxy: GeometryProxy,
         setFocus: Set<FleetRef>?
     ) -> some View {
-        let mapColumnIndices = Dictionary(uniqueKeysWithValues: listShownKinds.enumerated().map { ($1.name, $0) })
         let mapFrames = mapAnchors.mapValues { proxy[$0] }
         return Canvas { context, _ in
             for edge in listEdges {
@@ -442,8 +534,8 @@ struct RookmasterBoard: View {
                 }
                 let isFocused = setFocus.map { $0.contains(edge.source) && $0.contains(edge.target) } ?? true
                 let isQuiet = setFocus == nil
-                let sourceColumn = mapColumnIndices[edge.source.kind] ?? 0
-                let targetColumn = mapColumnIndices[edge.target.kind] ?? 0
+                let sourceColumn = Int(sourceFrame.minX.rounded())
+                let targetColumn = Int(targetFrame.minX.rounded())
                 let path = Self.path(from: sourceFrame, to: targetFrame, sourceColumn: sourceColumn, targetColumn: targetColumn)
                 let tint = RookmasterStyle.tint(ofVerb: edge.listVerbs.first ?? "")
                 let opacity = isQuiet ? 0.4 : (isFocused ? 0.95 : 0.06)
@@ -539,6 +631,11 @@ struct RookmasterBoard: View {
             }
             mapColumns[kind.name] = Array(listResources.prefix(Self.columnLimit))
         }
+        if listShownKinds.contains(where: { $0.name == AgentFleet.agentKind }), let parentId = memory.boardSubagentsOf {
+            mapColumns[Self.subagentColumnKey] = graph.listResources(of: AgentFleet.agentKind).filter { resource in
+                fleetModel.fleet.mapAgents[resource.id]?.parentId == parentId
+            }
+        }
         return mapColumns
     }
 
@@ -598,8 +695,8 @@ struct RookmasterBoard: View {
         let setShown = Set(mapColumns.values.flatMap { $0.map { FleetRef(kind: $0.kind, id: $0.id) } })
         var mapEdges: [String: BoardEdge] = [:]
         for relation in graph.mapRelations.values {
-            let source = shownRef(of: relation.source)
-            let target = shownRef(of: relation.target)
+            let source = shownRef(of: relation.source, among: setShown)
+            let target = shownRef(of: relation.target, among: setShown)
             guard source != target, setShown.contains(source), setShown.contains(target) else {
                 continue
             }
@@ -618,9 +715,13 @@ struct RookmasterBoard: View {
         return mapEdges.values.sorted { $0.lastAt < $1.lastAt }
     }
 
-    /// The card a resource shows on: its own, or its session's for a subagent.
-    private func shownRef(of ref: FleetRef) -> FleetRef {
-        guard ref.kind == AgentFleet.agentKind, let parentId = fleetModel.fleet.mapAgents[ref.id]?.parentId else {
+    /// The card a resource shows on: its own, or its session's for a subagent whose own is not laid out.
+    private func shownRef(of ref: FleetRef, among setShown: Set<FleetRef>) -> FleetRef {
+        guard
+            ref.kind == AgentFleet.agentKind,
+            !setShown.contains(ref),
+            let parentId = fleetModel.fleet.mapAgents[ref.id]?.parentId
+        else {
             return ref
         }
         return FleetRef(kind: ref.kind, id: parentId)

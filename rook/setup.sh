@@ -279,7 +279,7 @@ set -g status-left-length 80
 # `#h` is tmux's short hostname (no domain). A bright yellow [PASSTHRU]
 # block appears when F12 has switched the active key-table to "off"
 # (nested-tmux passthrough mode).
-set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] Rookery [#h] #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default]#{?#{==:#{client_key_table},off}, #[bg=#f9e2af]#[fg=#1e1e2e]#[bold] PASSTHRU #[default],} "
+set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] rook [#h] #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default]#{?#{==:#{client_key_table},off}, #[bg=#f9e2af]#[fg=#1e1e2e]#[bold] PASSTHRU #[default],} "
 set -g status-right-length 80
 # Per-tab uptime (#(rook-uptime)) + clock. rook-uptime prints the elapsed
 # time since the current window (tab) was created, falling back to session

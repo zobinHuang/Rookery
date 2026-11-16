@@ -118,6 +118,9 @@ class HookEventMapperTest(RookHomeTest):
         self.assertEqual(list_events[0]["actor"]["id"], f"{SESSION}~explore-1")
         self.assertEqual(list_events[0]["detail"]["parent"], SESSION)
 
+    def test_a_harness_helper_without_an_agent_type_is_not_a_subagent(self) -> None:
+        self.assertEqual(self.events("SubagentStop", agent_id="a3c52ad0"), [])
+
     def test_a_payload_without_a_session_says_nothing(self) -> None:
         self.assertEqual(rook_client.HookEventMapper("claude", {"hook_event_name": "Stop"}).events(), [])
 

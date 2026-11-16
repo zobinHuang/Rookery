@@ -397,10 +397,10 @@ class HookEventMapper:
 
     def _subagent_events(self) -> list[dict[str, object]]:
         agent_id = str(self._map_payload.get("agent_id") or "").strip()
-        if not agent_id:
+        agent_type = str(self._map_payload.get("agent_type") or "").strip()
+        if not agent_id or not agent_type:
             return []
         child = {"kind": "agent", "id": f"{self._session_id}~{agent_id}"}
-        agent_type = str(self._map_payload.get("agent_type") or "subagent")
         detail = {
             "name": f"{RookConfig.name()}/{self._tab() or 'agent'}/{agent_type}",
             "parent": self._session_id,

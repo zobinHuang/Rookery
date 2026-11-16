@@ -112,7 +112,7 @@ CROWD_CONFIG="$HOME/.config/crowd/config.json"
 CROWD_BIN="$HOME/.local/bin/crowd"
 
 mkdir -p "$CROWD_APP_DIR/crowd" "$HOME/.local/bin"
-for MODULE in __init__.py __main__.py config.py errors.py http.py store.py; do
+for MODULE in __init__.py __main__.py config.py errors.py http.py playbooks.py records.py skills.py store.py; do
   if ! crowd_install_file "server/crowd/$MODULE" "$CROWD_APP_DIR/crowd/$MODULE"; then
     err "Failed to install crowd/$MODULE"
     exit 1

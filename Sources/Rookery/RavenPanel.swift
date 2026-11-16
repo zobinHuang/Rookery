@@ -1,58 +1,9 @@
 import RookeryCore
 import SwiftUI
 
-/// A request to start Raven from, each one of its skills.
-enum RavenStarter: CaseIterable {
-    case fleetStatus
-    case inspectAgent
-    case registerSkill
-    case writePlaybook
-    case distillPlaybook
-    case tidyMemories
-    case describeSkills
-
-    var title: String {
-        switch self {
-        case .fleetStatus: "How are my agents?"
-        case .inspectAgent: "What is an agent doing?"
-        case .registerSkill: "Register a skill"
-        case .writePlaybook: "Write a playbook"
-        case .distillPlaybook: "Distill a playbook"
-        case .tidyMemories: "Tidy memories"
-        case .describeSkills: "Describe skills"
-        }
-    }
-
-    var symbol: RookeryIcon {
-        switch self {
-        case .fleetStatus: .agent
-        case .inspectAgent: .bubble
-        case .registerSkill: .skill
-        case .writePlaybook: .playbook
-        case .distillPlaybook: .playbook
-        case .tidyMemories: .memory
-        case .describeSkills: .skill
-        }
-    }
-
-    /// The request it fills in, for the user to finish or send.
-    var request: String {
-        switch self {
-        case .fleetStatus: "How are my agents? Who needs me, and for what?"
-        case .inspectAgent: "What is @agent/"
-        case .registerSkill: "Register the skill at "
-        case .writePlaybook: "Write a playbook for "
-        case .distillPlaybook: "Distill a playbook from how @"
-        case .tidyMemories: "Tidy the memories: merge duplicates and drop what nothing needs."
-        case .describeSkills: "Write the missing descriptions of the registered skills."
-        }
-    }
-}
-
 /// The Rookmaster console's Raven column: the conversations with Raven, the one last active first, beside
 /// the one open, read as an agent's conversation is, and a box to ask in plain words, naming agents and
-/// resources with @ and choosing them from suggestions; a new conversation offers a few requests to start
-/// from.
+/// resources with @ and choosing them from suggestions.
 struct RavenPanel: View {
     private static let listWidth: CGFloat = 220
     private static let deliveryPollInterval: Duration = .seconds(3)
@@ -227,15 +178,8 @@ struct RavenPanel: View {
                 }
             }
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Ask Raven about your agents and everything roost holds.")
-                        .font(.system(size: 13, weight: .semibold))
-                    starters
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(20)
-            }
+            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity)
         }
     }
 
@@ -358,25 +302,6 @@ struct RavenPanel: View {
         }
     }
 
-    private var starters: some View {
-        FlowRow(spacing: 8) {
-            ForEach(RavenStarter.allCases, id: \.self) { starter in
-                Button {
-                    draft = starter.request
-                    isFocused = true
-                } label: {
-                    RookeryLabel(starter.title, icon: starter.symbol)
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     @ViewBuilder
     private func status(of conversationId: String) -> some View {
         switch raven.mapStatuses[conversationId] {
@@ -410,7 +335,7 @@ struct RavenPanel: View {
             }
             AgentComposer(
                 text: $draft,
-                placeholder: isReady ? "Ask Raven; name an agent or a resource with @" : "Connect to roost first",
+                placeholder: isReady ? "Ask Raven" : "Connect to roost first",
                 isEnabled: isReady,
                 isBusy: raven.isRunning(openId),
                 fontSize: 12,

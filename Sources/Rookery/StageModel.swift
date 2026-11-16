@@ -81,7 +81,7 @@ enum SidebarMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .groups: "App Groups"
+        case .groups: "Windows"
         case .mixer: "Mixer"
         }
     }

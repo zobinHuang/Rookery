@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Rookery's interface icons, drawn by `branding/` in the logo's pixel style, one point a pixel. A badge
 /// keeps the logo's colors, a dark silhouette in a yellow outline; a glyph is one color, tinted like text.
-enum PixelIcon: String, CaseIterable {
+enum RookeryIcon: String, CaseIterable {
     // Badges, 16 pixels square.
     case agent
     case board
@@ -79,7 +79,7 @@ enum PixelIcon: String, CaseIterable {
     case width
     case window
 
-    private static let setBadges: Set<PixelIcon> = [
+    private static let setBadges: Set<RookeryIcon> = [
         .agent, .board, .command, .crown, .gauge, .gear, .globe, .hand, .machine, .memory, .mixer, .moon,
         .newStage, .person, .playbook, .roost, .screenSaver, .sidebar, .skill, .sparkles, .sun, .windows,
     ]
@@ -97,7 +97,7 @@ enum PixelIcon: String, CaseIterable {
     }
 
     /// The badge for a kind of resource rookd manages.
-    static func kind(_ kind: String) -> PixelIcon {
+    static func kind(_ kind: String) -> RookeryIcon {
         switch kind {
         case "agent": .agent
         case "skill": .skill
@@ -112,13 +112,13 @@ enum PixelIcon: String, CaseIterable {
 
 /// The icons' images in the app's resources, read once each.
 @MainActor
-enum PixelIconArt {
+enum RookeryIconArt {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "stage")
     private static let directory = "Icons"
-    private static var mapImages: [PixelIcon: NSImage] = [:]
+    private static var mapImages: [RookeryIcon: NSImage] = [:]
 
     /// The icon's image, a template for a glyph; an empty image when the resource is missing.
-    static func image(_ icon: PixelIcon) -> NSImage {
+    static func image(_ icon: RookeryIcon) -> NSImage {
         if let image = mapImages[icon] {
             return image
         }
@@ -149,18 +149,18 @@ enum PixelIconArt {
 }
 
 /// An icon at a whole number of points a pixel, never smoothed; a glyph takes the foreground style.
-struct PixelIconView: View {
-    let icon: PixelIcon
+struct RookeryIconView: View {
+    let icon: RookeryIcon
     /// Points a pixel: 1 for the interface, 2 for a large mark.
     var scale: CGFloat = 1
 
-    init(_ icon: PixelIcon, scale: CGFloat = 1) {
+    init(_ icon: RookeryIcon, scale: CGFloat = 1) {
         self.icon = icon
         self.scale = scale
     }
 
     var body: some View {
-        Image(nsImage: PixelIconArt.image(icon))
+        Image(nsImage: RookeryIconArt.image(icon))
             .renderingMode(icon.isBadge ? .original : .template)
             .interpolation(.none)
             .resizable()
@@ -170,12 +170,12 @@ struct PixelIconView: View {
 }
 
 /// A label with a pixel icon before its title, as `Label` lays out a symbol.
-struct PixelLabel: View {
+struct RookeryLabel: View {
     let title: String
-    let icon: PixelIcon
+    let icon: RookeryIcon
     var spacing: CGFloat = 6
 
-    init(_ title: String, icon: PixelIcon, spacing: CGFloat = 6) {
+    init(_ title: String, icon: RookeryIcon, spacing: CGFloat = 6) {
         self.title = title
         self.icon = icon
         self.spacing = spacing
@@ -183,7 +183,7 @@ struct PixelLabel: View {
 
     var body: some View {
         HStack(spacing: spacing) {
-            PixelIconView(icon)
+            RookeryIconView(icon)
             Text(title)
         }
     }

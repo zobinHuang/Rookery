@@ -124,7 +124,7 @@ struct CrowView: View {
                 .accessibilityElement()
                 .accessibilityLabel(state.title)
         } else {
-            PixelIconView(.agent)
+            RookeryIconView(.agent)
                 .frame(width: size, height: size)
         }
     }

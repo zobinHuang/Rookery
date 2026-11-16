@@ -74,7 +74,7 @@ struct TranscriptView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .command(let command):
             HStack(spacing: 6) {
-                PixelIconView(.terminal)
+                RookeryIconView(.terminal)
                 Text(command)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 if let timestamp = entry.timestamp {
@@ -126,7 +126,7 @@ struct TranscriptView: View {
                         .fill(StageColors.separator)
                         .frame(height: 1)
                     HStack(spacing: 5) {
-                        PixelIconView(isOpen ? .chevronDown : .chevronRight)
+                        RookeryIconView(isOpen ? .chevronDown : .chevronRight)
                         Text("Context compacted")
                             .font(.system(size: 11, weight: .semibold))
                         if let timestamp = entry.timestamp {
@@ -173,11 +173,11 @@ struct TranscriptView: View {
                 toggle(blockId)
             } label: {
                 HStack(spacing: 8) {
-                    PixelIconView(isOpen ? .chevronDown : .chevronRight)
+                    RookeryIconView(isOpen ? .chevronDown : .chevronRight)
                         .foregroundStyle(StageColors.tertiaryText)
                     HStack(spacing: 3) {
                         ForEach(listOrdered.prefix(Self.namedToolLimit), id: \.key) { name, _ in
-                            PixelIconView(Self.icon(ofTool: name))
+                            RookeryIconView(Self.icon(ofTool: name))
                         }
                     }
                     .foregroundStyle(StageColors.secondaryText)
@@ -222,7 +222,7 @@ struct TranscriptView: View {
     private func toolLine(_ entry: TranscriptEntry) -> some View {
         let name = Self.toolName(of: entry) ?? "Tool"
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
-            PixelIconView(Self.icon(ofTool: name))
+            RookeryIconView(Self.icon(ofTool: name))
                 .foregroundStyle(StageColors.tertiaryText)
             Text(name)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -239,7 +239,7 @@ struct TranscriptView: View {
 
     private var earlierButton: some View {
         Button(action: onLoadEarlier) {
-            PixelLabel("Read the whole conversation, from \(Self.megabytes(reader.startOffset)) earlier", icon: .arrowUp)
+            RookeryLabel("Read the whole conversation, from \(Self.megabytes(reader.startOffset)) earlier", icon: .arrowUp)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.accentColor)
         }
@@ -250,7 +250,7 @@ struct TranscriptView: View {
 
     private var empty: some View {
         VStack(spacing: 8) {
-            PixelIconView(hasTranscript ? .bubble : .offline, scale: 3)
+            RookeryIconView(hasTranscript ? .bubble : .offline, scale: 3)
                 .foregroundStyle(StageColors.tertiaryText)
             Text(hasTranscript ? "Nothing said yet" : "roost has no transcript of this session")
                 .font(.system(size: 13, weight: .semibold))
@@ -284,7 +284,7 @@ struct TranscriptView: View {
     }
 
     /// The glyph for a tool, by what it does.
-    static func icon(ofTool name: String) -> PixelIcon {
+    static func icon(ofTool name: String) -> RookeryIcon {
         switch name {
         case "Bash", "shell", "exec_command", "BashOutput", "KillShell": .terminal
         case "Read", "NotebookRead", "view_image": .book

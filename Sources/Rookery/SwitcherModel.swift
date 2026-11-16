@@ -9,7 +9,7 @@ struct SwitcherEntry: Identifiable {
     /// The applications to show, front to back.
     let listBundleIds: [String?]
     /// A symbol shown in place of application icons.
-    let symbolName: PixelIcon?
+    let symbolName: RookeryIcon?
     let isActive: Bool
 }
 

@@ -262,7 +262,7 @@ struct MixerMuteButton: View {
 
     var body: some View {
         Button(action: action) {
-            PixelIconView(isMuted ? .speakerOff : .speaker)
+            RookeryIconView(isMuted ? .speakerOff : .speaker)
                 .foregroundStyle(isMuted ? AnyShapeStyle(Color.red) : AnyShapeStyle(StageColors.secondaryText))
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: Self.diameter, height: Self.diameter)
@@ -282,14 +282,14 @@ struct MixerMuteButton: View {
 /// A capsule naming an equalizer preset, lit in the accent color while the equalizer is set to it.
 struct EqualizerPresetChip: View {
     let title: String
-    let symbol: PixelIcon
+    let symbol: RookeryIcon
     let isSelected: Bool
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            PixelLabel(title, icon: symbol)
+            RookeryLabel(title, icon: symbol)
                 .font(.system(size: 10.5, weight: .semibold))
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)

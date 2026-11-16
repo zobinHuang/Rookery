@@ -85,14 +85,14 @@ struct AgentsSidebarView: View {
     private var rookmasterButton: some View {
         Button(action: onOpenRookmaster) {
             HStack(spacing: 8) {
-                PixelIconView(.crown)
+                RookeryIconView(.crown)
                     .frame(width: 22, height: 22)
                 if !isCollapsed {
                     Text("Rookmaster")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(isRookmasterShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                     Spacer(minLength: 0)
-                    PixelIconView(.chevronRight)
+                    RookeryIconView(.chevronRight)
                         .foregroundStyle(StageColors.tertiaryText)
                 }
             }
@@ -165,7 +165,7 @@ struct AgentsSidebarView: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    PixelIconView(.chevronRight)
+                    RookeryIconView(.chevronRight)
                         .rotationEffect(.degrees(isEndedExpanded ? 90 : 0))
                     Text("Ended")
                         .font(.system(size: 11, weight: .semibold))
@@ -195,7 +195,7 @@ struct AgentsSidebarView: View {
             fleetModel.addGroup(title: "New Group")
             startRenamingNewestGroup()
         } label: {
-            PixelLabel("New Group", icon: .plus)
+            RookeryLabel("New Group", icon: .plus)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isTargeted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -231,7 +231,7 @@ struct AgentsSidebarView: View {
         let isTargeted = dropTargetId == group.id
         let isHovered = hoveredRowId == group.id
         return HStack(spacing: 6) {
-            PixelIconView(.chevronRight)
+            RookeryIconView(.chevronRight)
                 .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
                 .foregroundStyle(StageColors.secondaryText)
             if editingGroupId == group.id {
@@ -260,7 +260,7 @@ struct AgentsSidebarView: View {
                         fleetModel.removeGroup(group.id)
                     }
                 } label: {
-                    PixelIconView(.ellipsis)
+                    RookeryIconView(.ellipsis)
                         .foregroundStyle(StageColors.secondaryText)
                 }
                 .menuStyle(.borderlessButton)
@@ -474,7 +474,7 @@ struct AgentsSidebarView: View {
             HStack(spacing: 3) {
                 Text("\(count)")
                     .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                PixelIconView(.chevronDown)
+                RookeryIconView(.chevronDown)
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }
             .foregroundStyle(StageColors.secondaryText)
@@ -550,7 +550,7 @@ struct AgentsSidebarView: View {
         HStack(spacing: 8) {
             switch fleetModel.connection {
             case .notConfigured:
-                PixelIconView(.offline)
+                RookeryIconView(.offline)
                 if !isCollapsedBanner {
                     Text("Connect Rookery to roost to see your agents.")
                     Spacer(minLength: 0)
@@ -565,7 +565,7 @@ struct AgentsSidebarView: View {
                     Spacer(minLength: 0)
                 }
             case .offline(let reason):
-                PixelIconView(.warning)
+                RookeryIconView(.warning)
                     .foregroundStyle(.orange)
                 if !isCollapsedBanner {
                     Text(reason)

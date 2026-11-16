@@ -150,7 +150,7 @@ struct ContentDropPillView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            PixelIconView(symbolName, scale: 2)
+            RookeryIconView(symbolName, scale: 2)
                 .foregroundStyle(isLit ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 26)
@@ -194,7 +194,7 @@ struct ContentDropPillView: View {
         model.isHovered || model.isLanded
     }
 
-    private var symbolName: PixelIcon {
+    private var symbolName: RookeryIcon {
         if model.isLanded {
             return .check
         }

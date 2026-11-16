@@ -88,7 +88,7 @@ enum SidebarMode: String, CaseIterable {
         }
     }
 
-    var symbol: PixelIcon {
+    var symbol: RookeryIcon {
         switch self {
         case .groups: .windows
         case .agents: .agent

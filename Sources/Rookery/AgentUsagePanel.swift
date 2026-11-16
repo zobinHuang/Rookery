@@ -80,7 +80,7 @@ struct AgentUsagePanel: View {
                                 .truncationMode(.middle)
                         }
                         if isDefaultMarked {
-                            PixelIconView(.play)
+                            RookeryIconView(.play)
                             Text("default")
                         }
                     }

@@ -138,7 +138,7 @@ struct RookmasterBoard: View {
     private func filters(_ mapColumns: [String: [FleetResource]]) -> some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                PixelIconView(.search)
+                RookeryIconView(.search)
                     .foregroundStyle(StageColors.secondaryText)
                 TextField("Filter by name", text: $query)
                     .textFieldStyle(.plain)
@@ -173,7 +173,7 @@ struct RookmasterBoard: View {
             Button {
                 toggleLock(mapColumns)
             } label: {
-                PixelLabel(isLocked ? "Locked" : "Lock Order", icon: isLocked ? .lock : .unlock)
+                RookeryLabel(isLocked ? "Locked" : "Lock Order", icon: isLocked ? .lock : .unlock)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(isLocked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                     .contentTransition(.symbolEffect(.replace))
@@ -222,7 +222,7 @@ struct RookmasterBoard: View {
     private func column(_ kind: FleetKind, listResources: [FleetResource], setFocus: Set<FleetRef>?, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                PixelIconView(PixelIcon.kind(kind.name))
+                RookeryIconView(RookeryIcon.kind(kind.name))
                     .foregroundStyle(RookmasterStyle.tint(of: kind.name))
                 Text(kind.pluralTitle)
                     .font(.system(size: 13, weight: .semibold))
@@ -256,7 +256,7 @@ struct RookmasterBoard: View {
             if let agent {
                 CrowView(state: agent.state)
             } else {
-                PixelIconView(PixelIcon.kind(resource.kind))
+                RookeryIconView(RookeryIcon.kind(resource.kind))
                     .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                     .frame(width: 32, height: 32)
             }

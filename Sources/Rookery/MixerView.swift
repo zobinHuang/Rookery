@@ -104,7 +104,7 @@ struct MixerView: View {
 
     private var emptyState: some View {
         VStack(spacing: 8) {
-            PixelIconView(.speaker, scale: 2)
+            RookeryIconView(.speaker, scale: 2)
                 .foregroundStyle(StageColors.tertiaryText)
             Text("No app is using sound")
                 .font(.system(size: 12, weight: .medium))
@@ -187,7 +187,7 @@ struct MixerView: View {
                     .opacity(track.settings.isMuted ? 0.45 : 1)
                     .overlay(alignment: .bottomTrailing) {
                         if track.settings.isMuted {
-                            PixelIconView(.speakerOff)
+                            RookeryIconView(.speakerOff)
                                 .foregroundStyle(.white)
                                 .frame(width: 15, height: 15)
                                 .background(Color.red, in: Circle())
@@ -295,7 +295,7 @@ struct MixerStripIconView: View {
                     .resizable()
                     .interpolation(.high)
             } placeholder: {
-                PixelIconView(.globe)
+                RookeryIconView(.globe)
                     .foregroundStyle(StageColors.secondaryText)
             }
             .frame(width: 16, height: 16)
@@ -402,7 +402,7 @@ private struct MixerStrip: View {
 
     private func pictureButton(_ toggle: MixerPictureToggle) -> some View {
         Button(action: toggle.action) {
-            PixelLabel(
+            RookeryLabel(
                 toggle.isShowing ? "Showing in Sidebar" : "Show in Sidebar",
                 icon: toggle.isShowing ? .pip : .pipEnter
             )
@@ -420,7 +420,7 @@ private struct MixerStrip: View {
         .help(toggle.isShowing ? "Stop showing this tab's video in the sidebar" : "Show this tab's video in the sidebar")
     }
 
-    private var volumeSymbol: PixelIcon {
+    private var volumeSymbol: RookeryIcon {
         switch settings.volume {
         case 0: .speakerOff
         case ..<0.4: .speakerLow
@@ -434,7 +434,7 @@ private struct MixerStrip: View {
             HStack(spacing: 4) {
                 Text(isExpanded ? "Less" : "Pan, Stereo, EQ, Reverb")
                     .font(.system(size: 10.5, weight: .medium))
-                PixelIconView(.chevronDown)
+                RookeryIconView(.chevronDown)
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
             }
             .foregroundStyle(StageColors.secondaryText)
@@ -537,7 +537,7 @@ private struct MixerStrip: View {
         }
     }
 
-    private static func symbol(of preset: EqualizerPreset) -> PixelIcon {
+    private static func symbol(of preset: EqualizerPreset) -> RookeryIcon {
         switch preset {
         case .walkieTalkie: .radio
         }
@@ -600,14 +600,14 @@ private struct MixerStrip: View {
     }
 
     private func labeledSlider(
-        symbol: PixelIcon,
+        symbol: RookeryIcon,
         value: Binding<Float>,
         range: ClosedRange<Float>,
         restValue: Float,
         valueText: String
     ) -> some View {
         HStack(spacing: 7) {
-            PixelIconView(symbol)
+            RookeryIconView(symbol)
                 .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 16)
             MixerSlider(value: value, range: range, restValue: restValue)
@@ -638,7 +638,7 @@ struct ApplicationIconView: View {
                 .resizable()
                 .frame(width: size, height: size)
         } else {
-            PixelIconView(.appPlaceholder)
+            RookeryIconView(.appPlaceholder)
                 .frame(width: size, height: size)
                 .foregroundStyle(StageColors.secondaryText)
         }

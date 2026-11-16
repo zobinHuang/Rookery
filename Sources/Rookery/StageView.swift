@@ -359,7 +359,7 @@ struct StageView: View {
                         Button {
                             model.sidebarMode = mode
                         } label: {
-                            PixelIconView(mode.symbol)
+                            RookeryIconView(mode.symbol)
                                 .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                                 .frame(width: 34, height: 26)
                                 .background {
@@ -383,7 +383,7 @@ struct StageView: View {
                             model.sidebarMode = mode
                         } label: {
                             HStack(spacing: 4) {
-                                PixelIconView(mode.symbol)
+                                RookeryIconView(mode.symbol)
                                 Text(mode.title)
                                     .font(.system(size: 11.5, weight: .semibold))
                             }
@@ -435,9 +435,9 @@ struct StageView: View {
         }
     }
 
-    private func headerButton(_ symbol: PixelIcon, help: String, action: @escaping () -> Void) -> some View {
+    private func headerButton(_ symbol: RookeryIcon, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            PixelIconView(symbol)
+            RookeryIconView(symbol)
                 .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 22, height: 22)
         }
@@ -596,7 +596,7 @@ struct StageView: View {
                 beginRenaming(group: row.groupId)
             }
         } label: {
-            PixelIconView(.ellipsis)
+            RookeryIconView(.ellipsis)
                 .foregroundStyle(StageColors.secondaryText)
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
@@ -610,7 +610,7 @@ struct StageView: View {
     /// The row a new group would take, shown while a drop would start one.
     private var newGroupPlaceholder: some View {
         HStack(spacing: 10) {
-            PixelIconView(.plus)
+            RookeryIconView(.plus)
                 .frame(width: 22, height: 22)
             Text("New Group")
                 .font(.system(size: 13, weight: .semibold))
@@ -630,10 +630,10 @@ struct StageView: View {
         .modifier(ZoneFrameReporter(zone: .newGroupRow, model: model))
     }
 
-    private func dropZone(_ zone: StageZone, title: String, symbol: PixelIcon, tint: Color) -> some View {
+    private func dropZone(_ zone: StageZone, title: String, symbol: RookeryIcon, tint: Color) -> some View {
         let isHovered = model.highlightedZone == zone
         return HStack(spacing: 8) {
-            PixelIconView(symbol)
+            RookeryIconView(symbol)
             if !model.isSidebarCollapsed {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
@@ -880,7 +880,7 @@ struct StageView: View {
                 .transition(.opacity)
             } else if model.selectedWindowId == nil {
                 VStack(spacing: 10) {
-                    PixelIconView(.newStage, scale: 3)
+                    RookeryIconView(.newStage, scale: 3)
                         .foregroundStyle(.tint)
                     Text("Drag a window here")
                         .font(.system(size: 15, weight: .semibold))
@@ -977,7 +977,7 @@ struct CloseButton: View {
                 }
                 .overlay {
                     if isHovered {
-                        PixelIconView(.close)
+                        RookeryIconView(.close)
                             .foregroundStyle(.black.opacity(0.55))
                     }
                 }
@@ -1149,7 +1149,7 @@ struct IconStack: View {
                         .frame(width: iconSize, height: iconSize)
                         .shadow(color: .black.opacity(0.15), radius: 1.5, y: 1)
                 } else {
-                    PixelIconView(.window)
+                    RookeryIconView(.window)
                         .frame(width: iconSize, height: iconSize)
                 }
             }

@@ -240,7 +240,7 @@ struct SettingsView: View {
                 }
             }
             if let roostTestResult {
-                PixelLabel(roostTestResult, icon: .bubble)
+                RookeryLabel(roostTestResult, icon: .bubble)
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -328,7 +328,7 @@ struct SettingsView: View {
             }
         }
         HStack(spacing: 8) {
-            PixelIconView(.search)
+            RookeryIconView(.search)
                 .foregroundStyle(StageColors.secondaryText)
             TextField("Add City or Time Zone", text: $citySearch.query)
                 .textFieldStyle(.plain)
@@ -479,13 +479,13 @@ struct SettingsView: View {
 /// A titled card of settings rows, with a hairline between rows.
 private struct SettingsSection<Content: View>: View {
     let title: String
-    let symbol: PixelIcon
+    let symbol: RookeryIcon
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                PixelIconView(symbol)
+                RookeryIconView(symbol)
                     .frame(width: 22, height: 22)
                 Text(title)
                     .font(.system(size: 14, weight: .semibold))
@@ -550,14 +550,14 @@ private struct SettingsSeparator: ViewModifier {
 /// A row that does something when clicked, in the accent color, lit while the pointer is over it.
 private struct SettingsActionRow: View {
     let title: String
-    let symbol: PixelIcon
+    let symbol: RookeryIcon
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                PixelIconView(symbol)
+                RookeryIconView(symbol)
                     .frame(width: 16)
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
@@ -580,14 +580,14 @@ private struct SettingsActionRow: View {
 private struct SettingsResultRow: View {
     let title: String
     let detail: String
-    let symbol: PixelIcon
+    let symbol: RookeryIcon
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                PixelIconView(symbol)
+                RookeryIconView(symbol)
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 18)
                 Text(title)
@@ -613,14 +613,14 @@ private struct SettingsResultRow: View {
 
 /// A borderless symbol button that darkens while the pointer is over it.
 private struct SettingsIconButton: View {
-    let symbol: PixelIcon
+    let symbol: RookeryIcon
     let help: String
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            PixelIconView(symbol)
+            RookeryIconView(symbol)
                 .foregroundStyle(isHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
                 .contentTransition(.symbolEffect(.replace))
         }
@@ -636,7 +636,7 @@ private struct SettingsMessage: View {
     let text: String
 
     var body: some View {
-        PixelLabel(text, icon: .warning)
+        RookeryLabel(text, icon: .warning)
             .font(.system(size: 12))
             .foregroundStyle(.orange)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -653,7 +653,7 @@ private struct SettingsCloseButton: View {
 
     var body: some View {
         Button(action: action) {
-            PixelIconView(.close)
+            RookeryIconView(.close)
                 .foregroundStyle(isHovered ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .frame(width: 28, height: 28)
                 .background(isHovered ? StageColors.groove : StageColors.idleTab, in: Circle())
@@ -689,7 +689,7 @@ private struct AgentAccountRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let sameLogin = monitor.listSameLoginAccounts(as: account).first {
-                    PixelIconView(.link)
+                    RookeryIconView(.link)
                         .foregroundStyle(StageColors.secondaryText)
                         .help("Same Account as \(sameLogin.configDirectory ?? "~/.claude")")
                 }
@@ -707,12 +707,12 @@ private struct AgentAccountRow: View {
     @ViewBuilder
     private var status: some View {
         if let signedInAs = monitor.mapUsage[account.id]?.signedInAs {
-            PixelLabel(signedInAs, icon: .check)
+            RookeryLabel(signedInAs, icon: .check)
                 .font(.system(size: 12))
                 .foregroundStyle(.green)
                 .lineLimit(1)
         } else if let error = monitor.mapErrors[account.id] {
-            PixelLabel("Not Signed In", icon: .warning)
+            RookeryLabel("Not Signed In", icon: .warning)
                 .font(.system(size: 12))
                 .foregroundStyle(.orange)
                 .help(error)

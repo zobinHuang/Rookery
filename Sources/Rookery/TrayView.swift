@@ -40,7 +40,7 @@ struct TrayView: View {
 
     private var pillContent: some View {
         HStack(spacing: 8) {
-            PixelIconView(.newStage)
+            RookeryIconView(.newStage)
                 .foregroundStyle(.tint)
             Text(model.draggedGroupName.map { "Move from \($0)" } ?? "Add to Rookery")
                 .font(.system(size: 13, weight: .medium))
@@ -115,10 +115,10 @@ struct TrayTileView: View {
     private var artwork: some View {
         switch tile.target {
         case .newGroup:
-            PixelIconView(.plus, scale: 2)
+            RookeryIconView(.plus, scale: 2)
                 .foregroundStyle(isHovered ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
         case .release:
-            PixelIconView(.release, scale: 2)
+            RookeryIconView(.release, scale: 2)
                 .foregroundStyle(isHovered ? AnyShapeStyle(.white) : AnyShapeStyle(.red))
         case .group:
             HStack(spacing: 4) {
@@ -147,7 +147,7 @@ struct TrayTileView: View {
                 .frame(width: Self.iconSize, height: Self.iconSize)
                 .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
         } else {
-            PixelIconView(.window, scale: 2)
+            RookeryIconView(.window, scale: 2)
                 .frame(width: Self.iconSize, height: Self.iconSize)
         }
     }

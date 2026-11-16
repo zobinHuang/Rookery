@@ -74,7 +74,7 @@ struct AgentDetailView: View {
             }
             Spacer(minLength: 12)
             Button(action: onClose) {
-                PixelIconView(.close)
+                RookeryIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(width: 26, height: 26)
                     .background(StageColors.tile, in: Circle())
@@ -122,15 +122,15 @@ struct AgentDetailView: View {
                 .help(isOnline ? "\(agent.rookName) is online" : "\(agent.rookName) is offline")
             }
             if !agent.harness.isEmpty {
-                PixelLabel(agent.model.isEmpty ? agent.harness : "\(agent.harness) · \(agent.model)", icon: .chip)
+                RookeryLabel(agent.model.isEmpty ? agent.harness : "\(agent.harness) · \(agent.model)", icon: .chip)
             }
             if !agent.cwd.isEmpty {
-                PixelLabel(agent.cwd.replacingOccurrences(of: "/Users/\(NSUserName())", with: "~"), icon: .folder)
+                RookeryLabel(agent.cwd.replacingOccurrences(of: "/Users/\(NSUserName())", with: "~"), icon: .folder)
                     .lineLimit(1)
                     .truncationMode(.head)
             }
             if !agent.gitBranch.isEmpty {
-                PixelLabel(agent.gitBranch, icon: .branch)
+                RookeryLabel(agent.gitBranch, icon: .branch)
             }
         }
         .font(.system(size: 12))
@@ -158,7 +158,7 @@ struct AgentDetailView: View {
                 deliveryLine(delivery)
             }
             if let sendError {
-                PixelLabel(sendError, icon: .warning)
+                RookeryLabel(sendError, icon: .warning)
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
             }
@@ -188,7 +188,7 @@ struct AgentDetailView: View {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
-                            PixelIconView(.arrowUp)
+                            RookeryIconView(.arrowUp)
                         }
                     }
                     .foregroundStyle(.white)
@@ -218,7 +218,7 @@ struct AgentDetailView: View {
     }
 
     private func deliveryLine(_ delivery: FleetDelivery) -> some View {
-        let symbol: PixelIcon = switch delivery.status {
+        let symbol: RookeryIcon = switch delivery.status {
         case "delivered": .check
         case "failed", "expired": .failed
         case "waiting": .hourglass
@@ -231,7 +231,7 @@ struct AgentDetailView: View {
         default: .secondary
         }
         return HStack(spacing: 6) {
-            PixelIconView(symbol)
+            RookeryIconView(symbol)
                 .foregroundStyle(tint)
             Text(delivery.text)
                 .lineLimit(1)
@@ -265,7 +265,7 @@ struct AgentDetailView: View {
 
     private var missing: some View {
         VStack(spacing: 10) {
-            PixelIconView(.agent, scale: 3)
+            RookeryIconView(.agent, scale: 3)
                 .foregroundStyle(StageColors.tertiaryText)
             Text("This agent is gone from roost")
                 .font(.system(size: 14, weight: .semibold))

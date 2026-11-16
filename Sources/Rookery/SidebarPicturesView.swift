@@ -103,7 +103,7 @@ private struct SidebarPictureTile: View {
                 hoverOverlay
                     .transition(.opacity)
             } else if picture.isPaused {
-                PixelIconView(.pause)
+                RookeryIconView(.pause)
                     .foregroundStyle(.white)
                     .padding(4)
                     .background(.black.opacity(0.5), in: Circle())
@@ -139,7 +139,7 @@ private struct SidebarPictureTile: View {
             Button {
                 onPlay(picture.isPaused)
             } label: {
-                PixelIconView(picture.isPaused ? .play : .pause)
+                RookeryIconView(picture.isPaused ? .play : .pause)
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())
@@ -147,7 +147,7 @@ private struct SidebarPictureTile: View {
             .buttonStyle(.plain)
             .help(picture.isPaused ? "Play" : "Pause")
             Button(action: onClose) {
-                PixelIconView(.close)
+                RookeryIconView(.close)
                     .foregroundStyle(.white)
                     .frame(width: 16, height: 16)
                     .background(.black.opacity(0.45), in: Circle())

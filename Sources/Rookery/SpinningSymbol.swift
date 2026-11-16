@@ -5,11 +5,11 @@ import SwiftUI
 /// when it ends. Core Animation turns it, so the stage draws nothing while it spins: a SwiftUI animation
 /// redraws the whole stage on every frame, a full core's worth while the limits are read.
 struct SpinningSymbol: NSViewRepresentable {
-    let icon: PixelIcon
+    let icon: RookeryIcon
     let isSpinning: Bool
 
     func makeNSView(context: Context) -> SpinningSymbolView {
-        SpinningSymbolView(image: PixelIconArt.image(icon))
+        SpinningSymbolView(image: RookeryIconArt.image(icon))
     }
 
     func updateNSView(_ nsView: SpinningSymbolView, context: Context) {

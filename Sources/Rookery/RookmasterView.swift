@@ -73,13 +73,13 @@ struct RookmasterView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            PixelIconView(.crown, scale: 2)
+            RookeryIconView(.crown, scale: 2)
             Text("Rookmaster")
                 .font(.system(size: 18, weight: .bold))
             tabs
             Spacer(minLength: 8)
             if fleetModel.connection != .online {
-                PixelLabel(connectionText, icon: .offline)
+                RookeryLabel(connectionText, icon: .offline)
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
                     .lineLimit(1)
@@ -87,7 +87,7 @@ struct RookmasterView: View {
             Button {
                 isMaintenanceShown.toggle()
             } label: {
-                PixelIconView(.sparkles)
+                RookeryIconView(.sparkles)
                     .foregroundStyle(isMaintenanceShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
                     .frame(width: 26, height: 26)
                     .background(StageColors.tile, in: Circle())
@@ -95,7 +95,7 @@ struct RookmasterView: View {
             .buttonStyle(.plain)
             .help(isMaintenanceShown ? "Hide the maintenance agent" : "Ask the maintenance agent")
             Button(action: onClose) {
-                PixelIconView(.close)
+                RookeryIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(width: 26, height: 26)
                     .background(StageColors.tile, in: Circle())
@@ -111,21 +111,21 @@ struct RookmasterView: View {
         HStack(spacing: 2) {
             tabButton(.board, title: "Board", symbol: .board)
             ForEach(listKinds) { kind in
-                tabButton(.kind(kind.name), title: kind.pluralTitle, symbol: PixelIcon.kind(kind.name))
+                tabButton(.kind(kind.name), title: kind.pluralTitle, symbol: RookeryIcon.kind(kind.name))
             }
         }
         .padding(3)
         .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private func tabButton(_ target: RookmasterTab, title: String, symbol: PixelIcon) -> some View {
+    private func tabButton(_ target: RookmasterTab, title: String, symbol: RookeryIcon) -> some View {
         let isSelected = tab == target
         return Button {
             withAnimation(Self.tabAnimation) {
                 tab = target
             }
         } label: {
-            PixelLabel(title, icon: symbol)
+            RookeryLabel(title, icon: symbol)
                 .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .padding(.horizontal, 10)
@@ -255,7 +255,7 @@ struct RookmasterLog: View {
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: 6) {
-                    PixelIconView(.chevronRight)
+                    RookeryIconView(.chevronRight)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     Text("Log")
                         .font(.system(size: 11, weight: .semibold))
@@ -272,7 +272,7 @@ struct RookmasterLog: View {
             Spacer(minLength: 8)
             if isExpanded {
                 HStack(spacing: 5) {
-                    PixelIconView(.filter)
+                    RookeryIconView(.filter)
                     TextField("Filter", text: $filter)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11))
@@ -284,7 +284,7 @@ struct RookmasterLog: View {
                 Button {
                     clearedThroughSeq = graph.lastSeq
                 } label: {
-                    PixelIconView(.clear)
+                    RookeryIconView(.clear)
                         .foregroundStyle(StageColors.secondaryText)
                 }
                 .buttonStyle(.plain)

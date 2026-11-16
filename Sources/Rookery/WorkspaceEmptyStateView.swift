@@ -10,7 +10,7 @@ struct WorkspaceEmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            PixelIconView(.newStage, scale: 3)
+            RookeryIconView(.newStage, scale: 3)
                 .foregroundStyle(.tint)
             Text("No Managed Windows")
                 .font(.system(size: 15, weight: .semibold))

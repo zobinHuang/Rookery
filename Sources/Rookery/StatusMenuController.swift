@@ -55,7 +55,7 @@ final class StatusMenuController: NSObject, NSMenuDelegate {
 
     /// Install the menu and start tracking the Accessibility permission.
     func start() {
-        statusItem.button?.image = PixelIconArt.menuBarImage()
+        statusItem.button?.image = RookeryIconArt.menuBarImage()
         statusItem.button?.setAccessibilityLabel("Rookery")
 
         permissionItem.isEnabled = false

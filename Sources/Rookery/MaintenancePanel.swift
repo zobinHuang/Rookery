@@ -17,7 +17,7 @@ enum MaintenanceStarter: CaseIterable {
         }
     }
 
-    var symbol: PixelIcon {
+    var symbol: RookeryIcon {
         switch self {
         case .distillPlaybook: .playbook
         case .tidyMemories: .memory
@@ -78,7 +78,7 @@ struct MaintenancePanel: View {
 
     private var title: some View {
         HStack(spacing: 8) {
-            PixelIconView(.sparkles)
+            RookeryIconView(.sparkles)
                 .foregroundStyle(Color.accentColor)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Maintenance")
@@ -136,7 +136,7 @@ struct MaintenancePanel: View {
                     draft = starter.request
                     isFocused = true
                 } label: {
-                    PixelLabel(starter.title, icon: starter.symbol)
+                    RookeryLabel(starter.title, icon: starter.symbol)
                         .font(.system(size: 12, weight: .medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 10)
@@ -181,7 +181,7 @@ struct MaintenancePanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .tool(let name):
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                PixelIconView(TranscriptView.icon(ofTool: name))
+                RookeryIconView(TranscriptView.icon(ofTool: name))
                 Text(entry.text.isEmpty ? name : entry.text)
                     .lineLimit(2)
                     .truncationMode(.tail)
@@ -206,15 +206,15 @@ struct MaintenancePanel: View {
             .font(.system(size: 11))
             .foregroundStyle(StageColors.secondaryText)
         case .finished:
-            PixelLabel(run.costUSD.map { "Done · $\(String(format: "%.2f", $0))" } ?? "Done", icon: .check)
+            RookeryLabel(run.costUSD.map { "Done · $\(String(format: "%.2f", $0))" } ?? "Done", icon: .check)
                 .font(.system(size: 11))
                 .foregroundStyle(.green)
         case .failed(let reason):
-            PixelLabel(reason, icon: .failed)
+            RookeryLabel(reason, icon: .failed)
                 .font(.system(size: 11))
                 .foregroundStyle(.red)
         case .cancelled:
-            PixelLabel("Stopped", icon: .stop)
+            RookeryLabel("Stopped", icon: .stop)
                 .font(.system(size: 11))
                 .foregroundStyle(StageColors.secondaryText)
         }
@@ -263,7 +263,7 @@ struct MaintenancePanel: View {
                     Button {
                         maintenance.cancel()
                     } label: {
-                        PixelIconView(.stop)
+                        RookeryIconView(.stop)
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
                             .background(Color.red, in: Circle())
@@ -272,7 +272,7 @@ struct MaintenancePanel: View {
                     .help("Stop the agent")
                 } else {
                     Button(action: send) {
-                        PixelIconView(.arrowUp)
+                        RookeryIconView(.arrowUp)
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 24)
                             .background(isEmpty || !isReady ? Color.gray.opacity(0.5) : Color.accentColor, in: Circle())
@@ -301,7 +301,7 @@ struct MaintenancePanel: View {
                     pick(resource)
                 } label: {
                     HStack(spacing: 8) {
-                        PixelIconView(PixelIcon.kind(resource.kind))
+                        RookeryIconView(RookeryIcon.kind(resource.kind))
                             .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                             .frame(width: 16)
                         Text(resource.name)

@@ -6,13 +6,13 @@ Rookery watches over your code agents. `rook` runs them in tmux on each of your 
 
 **roost**, on a server the other machines can reach (Python 3.10+). It listens on a port and the next one, for its API and its live link; open both. A certificate is optional but recommended.
 
-    git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+    git clone https://github.com/zobinHuang/Rookery.git ~/Rookery
     bash ~/Rookery/server/setup.sh --port 8787 --tls-cert <cert> --tls-key <key>
     ~/.local/bin/roost token        # the token every client needs
 
 **rook**, on each machine where your agents run (tmux, Python 3.10+):
 
-    git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+    git clone https://github.com/zobinHuang/Rookery.git ~/Rookery
     bash ~/Rookery/rook/setup.sh
     rook connect <roost host> 8787 --token <token> --tls
 

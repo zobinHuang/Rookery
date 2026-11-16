@@ -7,7 +7,7 @@
 ## Install
 
 ```bash
-git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+git clone https://github.com/zobinHuang/Rookery.git ~/Rookery
 bash ~/Rookery/rook/setup.sh
 
 # or name this machine's agents up front (they go by <name>/<tab>)

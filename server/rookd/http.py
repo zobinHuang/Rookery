@@ -19,6 +19,8 @@ from rookd.errors import (
     ValidationError,
 )
 from rookd.events import EventLog
+from rookd.link import LinkHub
+from rookd.messages import DeliveryStore
 from rookd.playbooks import PlaybookIndex
 from rookd.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
 from rookd.skills import SkillIndex
@@ -97,6 +99,7 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
                 {
                     "ok": True,
                     "version": ROOKD_VERSION,
+                    "link_port": self.server.link.bound_port(),
                 },
             )
             return
@@ -114,6 +117,8 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
             self._route_resources(method, list_segments, map_query)
         elif collection == "events":
             self._route_events(method, list_segments, map_query)
+        elif collection == "messages":
+            self._route_messages(method, list_segments, map_query)
         else:
             raise NotFoundError(self._no_such_route(method, list_segments))
 
@@ -383,6 +388,38 @@ class RookdRequestHandler(BaseHTTPRequestHandler):
             return
         raise NotFoundError(self._no_such_route(method, list_segments))
 
+    def _route_messages(
+        self,
+        method: str,
+        list_segments: list[str],
+        map_query: dict[str, list[str]],
+    ) -> None:
+        if list_segments == ["messages"] and method == "POST":
+            map_body = self._read_json_body()
+            map_actor = map_body.get("actor")
+            sender = ResourceRef.from_payload(map_actor) if map_actor else EventLog.EVENT_PERSON
+            delivery = self.server.link.send_to_agent(
+                sender,
+                str(map_body.get("to") or ""),
+                str(map_body.get("text") or ""),
+            )
+            self._respond_json(HTTPStatus.CREATED, delivery.as_payload())
+            return
+        if list_segments == ["messages"] and method == "GET":
+            list_deliveries = self.server.deliveries.list_recent(
+                self._query_text(map_query, "agent"),
+                self._index_limit(map_query, DeliveryStore.DELIVERY_LIST_MAX),
+            )
+            self._respond_json(
+                HTTPStatus.OK,
+                {"messages": [delivery.as_payload() for delivery in list_deliveries]},
+            )
+            return
+        if len(list_segments) == 2 and method == "GET":
+            self._respond_json(HTTPStatus.OK, self.server.deliveries.get(list_segments[1]).as_payload())
+            return
+        raise NotFoundError(self._no_such_route(method, list_segments))
+
     def _stream_events(self, after: int) -> None:
         """Send every event after a sequence number as server-sent events, then each new one as it is
         logged, with a comment now and then so idle proxies keep the connection open, until the client
@@ -636,6 +673,8 @@ class RookdServer(ThreadingHTTPServer):
         self.playbooks = playbooks or PlaybookIndex(self.resources, self.skills)
         self.events = EventLog(self.resources)
         self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)
+        self.deliveries = DeliveryStore(self.resources, self.events)
+        self.link = LinkHub(config, self.resources, self.events, self.deliveries)
         self.stream_slots = threading.BoundedSemaphore(self.SERVER_STREAMS_MAX)
         self.is_stopping = False
         super().__init__(
@@ -659,9 +698,9 @@ class RookdServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
     def shutdown(self) -> None:
-        """Stop serving, ending the event streams too."""
+        """Stop serving, ending the event streams and the link too."""
         self.is_stopping = True
-        self.events.wake()
+        self.link.shutdown()
         super().shutdown()
 
     def bound_port(self) -> int:

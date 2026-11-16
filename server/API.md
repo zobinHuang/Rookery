@@ -1,4 +1,4 @@
-# rookd HTTP API
+# rookd API
 
 Everything a reading client needs to pull agent sessions off a rookd server. The
 write side — how a `rook connect` client ships transcripts up — is in
@@ -303,6 +303,46 @@ id: 18342
 event: event
 data: {"seq": 18342, "at": "...", "actor": {"kind": "agent", "id": "..."}, "verb": "uses", ...}
 ```
+
+## Messages
+
+Text on its way to an agent: a prompt from a person, or a message from another agent. The server holds it until the rook the agent runs under takes it over the live link; a subagent is reached through its parent's rook. A delivery is `pending` until handed to the rook, `sent` once handed, `waiting` while the rook holds it for the agent to be ready, then `delivered` or `failed`; one still open after a day is `expired`. Each is logged: `messaged` from the sender to the agent, then `delivered` or `undelivered` from the rook.
+
+| | |
+|---|---|
+| `POST /v1/messages` | `{"to": "<agent id>", "text": "..."}`, with `actor` as for resources; answers `201` with the delivery |
+| `GET /v1/messages` | the latest deliveries, or one agent's with `agent=<id>`; `limit` up to 500 |
+| `GET /v1/messages/<id>` | one delivery |
+
+```json
+{"id": "d-Qm9x3kTq", "agent_id": "a07f54b5-…", "rook_name": "studio", "text": "run the tests",
+ "sender": {"kind": "person", "id": "user"}, "status": "delivered", "detail": {"reason": "typed into the pane"},
+ "created_at": "...", "updated_at": "..."}
+```
+
+## The live link
+
+A WebSocket at `/v1/link` on the link port, which `GET /v1/healthz` reports as `link_port` (by default the HTTP port plus one; `wss` when the server has TLS). The handshake carries the same bearer token. Every message is one JSON object with a `type`; a request may carry a `ref`, which its answer repeats.
+
+The client speaks first:
+
+| `hello` field | |
+|---|---|
+| `role` | `rook` for a machine running agents, `desktop` for a viewer such as Rookery |
+| `rook` | a rook's name; a second connection under the same name replaces the first (closed with code 4000) |
+| `machine`, `accepts_prompts` | a rook's machine, and whether it lets prompts be typed into its agents (default yes) |
+| `after` | subscribe to the event log after this `seq` (0 for all) |
+
+The server answers `{"type": "welcome", "version": "...", "last_seq": N}`. A rook is online from then until it disconnects, logged as `connected` and `disconnected` and kept as the rook resource's `online` attribute.
+
+| Type | From | |
+|---|---|---|
+| `event` | server | `{"event": {...}}`, each event after `after`, in order, as it is logged |
+| `send` | either | `{"to": "<agent id>", "text": "..."}`; a rook may add `"as": {"kind": "agent", "id": "..."}` for one of its own agents, otherwise it is from a person. Answered with `sent` and the delivery |
+| `deliver` | server | `{"delivery": {...}}` to the agent's rook, at once or when it next connects; again after a reconnect until reported |
+| `delivery` | rook | `{"id": "...", "status": "waiting" \| "delivered" \| "failed", "reason": "..."}` |
+| `events` | rook | `{"events": [...]}`, as `POST /v1/events`; answered with `recorded` and the `count` |
+| `error` | server | `{"status": 400, "message": "..."}` for the request named by `ref` |
 
 ## Writing
 

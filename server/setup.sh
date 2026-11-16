@@ -112,7 +112,7 @@ ROOKD_CONFIG="$HOME/.config/rookd/config.json"
 ROOKD_BIN="$HOME/.local/bin/rookd"
 
 mkdir -p "$ROOKD_APP_DIR/rookd" "$HOME/.local/bin"
-for MODULE in __init__.py __main__.py catalog.py config.py database.py errors.py events.py http.py playbooks.py records.py resources.py skills.py store.py; do
+for MODULE in __init__.py __main__.py catalog.py config.py database.py errors.py events.py http.py link.py messages.py playbooks.py records.py resources.py skills.py store.py; do
   if ! rookd_install_file "server/rookd/$MODULE" "$ROOKD_APP_DIR/rookd/$MODULE"; then
     err "Failed to install rookd/$MODULE"
     exit 1
@@ -122,11 +122,25 @@ done
 rm -rf "$ROOKD_APP_DIR/rookd/__pycache__"
 info "Installed rookd to $ROOKD_APP_DIR"
 
+# The live link needs the websockets package; it goes into a virtual
+# environment of rookd's own, so the system's Python is left as it is.
+ROOKD_VENV="$HOME/.local/share/rookd/venv"
+ROOKD_WEBSOCKETS_SPEC='websockets>=13,<17'
+if [ ! -x "$ROOKD_VENV/bin/python" ] && ! python3 -m venv "$ROOKD_VENV"; then
+  err "Could not create a virtual environment at $ROOKD_VENV (on Debian: apt install python3-venv)"
+  exit 1
+fi
+if ! "$ROOKD_VENV/bin/python" -m pip install --quiet --disable-pip-version-check "$ROOKD_WEBSOCKETS_SPEC"; then
+  err "Could not install $ROOKD_WEBSOCKETS_SPEC into $ROOKD_VENV"
+  exit 1
+fi
+info "websockets $("$ROOKD_VENV/bin/python" -c 'import websockets; print(websockets.__version__)') in $ROOKD_VENV"
+
 cat > "$ROOKD_BIN" <<LAUNCHER
 #!/bin/sh
 # [rook]
 PYTHONPATH="$ROOKD_APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" \\
-  exec python3 -m rookd --config "$ROOKD_CONFIG" "\$@"
+  exec "$ROOKD_VENV/bin/python" -m rookd --config "$ROOKD_CONFIG" "\$@"
 LAUNCHER
 chmod +x "$ROOKD_BIN"
 info "Installed rookd command to $ROOKD_BIN"
@@ -235,6 +249,8 @@ echo ""
 echo "  Run this on each client:"
 echo ""
 echo "    rook connect $ROOKD_ADDR $ROOKD_PORT --token $ROOKD_TOKEN"
+echo ""
+echo "  Open port $ROOKD_PORT and the live link's port $((ROOKD_PORT + 1)) to them."
 echo ""
 if [ -z "$ROOKD_TLS_CERT" ]; then
   echo "  This server speaks plain HTTP. Transcripts carry your source code,"

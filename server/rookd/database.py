@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 class Database:
-    """The server's SQLite database: the resources, the relations between them, and the event log.
+    """The server's SQLite database: the resources, the relations between them, the event log, and the
+    messages waiting to reach agents.
 
     One connection serves every request thread, behind one lock: the server's load is a few agents and a
     few desktops, and a single writer keeps every change and the event that announces it in one order.
@@ -46,6 +47,21 @@ class Database:
         )
         """,
         "CREATE INDEX IF NOT EXISTS relations_by_target ON relations (target_kind, target_id)",
+        """
+        CREATE TABLE IF NOT EXISTS deliveries (
+            id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            rook_name TEXT NOT NULL,
+            text TEXT NOT NULL,
+            sender_kind TEXT NOT NULL,
+            sender_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            detail TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS deliveries_by_rook ON deliveries (rook_name, status)",
         """
         CREATE TABLE IF NOT EXISTS events (
             seq INTEGER PRIMARY KEY AUTOINCREMENT,

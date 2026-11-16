@@ -16,6 +16,7 @@ class ServerConfig:
     max_body_bytes: int
     tls_cert: Path | None
     tls_key: Path | None
+    link_port: int | None = None
 
     CONFIG_DEFAULT_HOST = "0.0.0.0"
     CONFIG_DEFAULT_PORT = 8787
@@ -72,6 +73,7 @@ class ServerConfig:
             ),
             tls_cert=Path(tls_cert).expanduser() if tls_cert else None,
             tls_key=Path(tls_key).expanduser() if tls_key else None,
+            link_port=int(map_raw["link_port"]) if map_raw.get("link_port") is not None else None,
         )
 
     def write_to(self, path: Path) -> None:
@@ -88,12 +90,23 @@ class ServerConfig:
             "max_body_bytes": self.max_body_bytes,
             "tls_cert": str(self.tls_cert) if self.tls_cert else None,
             "tls_key": str(self.tls_key) if self.tls_key else None,
+            "link_port": self.link_port,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
             json.dump(map_raw, handle, indent=2)
             handle.write("\n")
         path.chmod(self.CONFIG_FILE_MODE)
+
+    def effective_link_port(self) -> int:
+        """The port the live link listens on: the one configured, or the one after the HTTP port.
+
+        Returns:
+            the port, 0 to let the system pick one
+        """
+        if self.link_port is not None:
+            return self.link_port
+        return self.port + 1 if self.port else 0
 
     def is_tls_enabled(self) -> bool:
         """Report whether the server should wrap its socket in TLS.

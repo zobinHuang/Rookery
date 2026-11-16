@@ -2,8 +2,10 @@
 
 The server side of Rookery. It stores the JSON transcripts that Claude Code and
 codex write while you work, split by agent and by the account that was logged in,
-and it keeps an index of the skills and playbooks your agents load. It is Python
-standard library only — no virtualenv, no packages to install.
+and it keeps the agents, skills, playbooks and memories they use, holding a live
+link to every machine so Rookery can watch them and talk to them. It needs Python
+3.10 and the `websockets` package, which setup installs into a virtual
+environment of its own.
 
 ## Usage
 

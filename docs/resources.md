@@ -10,6 +10,7 @@ Everything Rookery manages about code agents is a resource, of one of a few kind
 | `skill` | Instructions for using a tool | `source`, `repo_url`, `skill_path`, `default_ref`, `versions`, `description`; `discovered` when first seen in use rather than registered | the skill index; agents using or writing skills |
 | `playbook` | A standard way to solve one kind of problem | `prompt`, `skills` (pins), `description` | the playbook index; the maintenance agent |
 | `memory` | Details of a particular problem an agent wrote down to keep | `text`, `path`, `project` | agents writing into their own memory directory |
+| `rook` | A machine running agents under rook | `online`, `machine`, `accepts_prompts`, `connected_at`, `disconnected_at` | the live link |
 
 `GET /v1/kinds` lists them; a new kind is one more entry in `ResourceKinds` (`server/rookd/resources.py`), and the generic API, the board and the lists take it from there.
 
@@ -38,6 +39,9 @@ Events only ever append, and `seq` only grows, so a reader resumes after the las
 | `ended` | — | state `ended`, `closed_at` set |
 | `uses`, `mounts`, `follows`, `spawned`, `wrote`, `created`, `updated`, `depends_on` | required | draws or counts the relation from actor to object, and marks the object used |
 | `created`, `updated`, `deleted` by a person | required | logged with the actor `{"kind": "person", "id": "user"}`; no relation |
+| `messaged` | the agent | a person or an agent sent the agent text (`detail.delivery`, `detail.preview`); a relation when an agent sent it |
+| `connected`, `disconnected` | — | a rook opened or lost the live link; sets its `online` |
+| `delivered`, `undelivered` | the agent | the rook got a delivery to the agent, or could not (`detail.reason`) |
 
 A change made through the resource API is logged as `created`, `updated` or `deleted`, by the agent the request names as `actor`, or else by a person.
 

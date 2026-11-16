@@ -50,8 +50,32 @@ class EventVerbs:
     SPAWNED = "spawned"
     WROTE = "wrote"
     DEPENDS_ON = "depends_on"
-    SET_RELATION_VERBS = frozenset({CREATED, UPDATED, USES, MOUNTS, FOLLOWS, SPAWNED, WROTE, DEPENDS_ON})
-    SET_VERBS = SET_RELATION_VERBS | {STARTED, STATE, ENDED, DELETED}
+    MESSAGED = "messaged"
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    DELIVERED = "delivered"
+    UNDELIVERED = "undelivered"
+    SET_RELATION_VERBS = frozenset({
+        CREATED,
+        UPDATED,
+        USES,
+        MOUNTS,
+        FOLLOWS,
+        SPAWNED,
+        WROTE,
+        DEPENDS_ON,
+        MESSAGED,
+    })
+    SET_VERBS = SET_RELATION_VERBS | {
+        STARTED,
+        STATE,
+        ENDED,
+        DELETED,
+        CONNECTED,
+        DISCONNECTED,
+        DELIVERED,
+        UNDELIVERED,
+    }
 
 
 @dataclass
@@ -217,6 +241,8 @@ class EventLog:
             raise ValidationError(f"a {verb} event needs an object")
         if actor.kind == ResourceKinds.AGENT.name:
             self._apply_to_agent(actor, verb, map_detail, at, connection)
+        if actor.kind == ResourceKinds.ROOK.name and verb in (EventVerbs.CONNECTED, EventVerbs.DISCONNECTED):
+            self._apply_to_rook(actor, verb, map_detail, at, connection)
         if target is not None and verb in EventVerbs.SET_RELATION_VERBS and actor != self.EVENT_PERSON:
             self._resources.relate(actor, verb, target, at, connection)
         if target is not None and verb != EventVerbs.DELETED:
@@ -249,6 +275,25 @@ class EventLog:
         if isinstance(map_actor, dict) and map_actor.get("kind") == self.EVENT_PERSON.kind:
             return self.EVENT_PERSON
         return ResourceRef.from_payload(map_actor)
+
+    def _apply_to_rook(
+        self,
+        actor: ResourceRef,
+        verb: str,
+        map_detail: dict[str, object],
+        at: str,
+        connection: sqlite3.Connection,
+    ) -> None:
+        if self._resources.exists(actor):
+            rook = self._resources.get(actor)
+        else:
+            rook = Resource(kind=actor.kind, id=actor.id, name=actor.id)
+        rook.map_attributes["online"] = verb == EventVerbs.CONNECTED
+        rook.map_attributes["connected_at" if verb == EventVerbs.CONNECTED else "disconnected_at"] = at
+        for key in ("machine", "accepts_prompts"):
+            if key in map_detail:
+                rook.map_attributes[key] = map_detail[key]
+        self._resources.put(rook, connection)
 
     def _apply_to_agent(
         self,

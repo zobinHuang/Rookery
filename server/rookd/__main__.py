@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+import threading
 from pathlib import Path
 from rookd import ROOKD_VERSION
 from rookd.config import ServerConfig
@@ -66,16 +67,22 @@ class ServerCli:
             config=config,
             store=SessionStore(config.data_root),
         )
+        server.link.listen()
+        link_thread = threading.Thread(target=server.link.serve_forever, daemon=True)
+        link_thread.start()
         scheme = "https" if config.is_tls_enabled() else "http"
+        link_scheme = "wss" if config.is_tls_enabled() else "ws"
         sys.stderr.write(
             f"rookd {ROOKD_VERSION} serving {config.data_root} on "
-            f"{scheme}://{config.host}:{server.bound_port()}\n"
+            f"{scheme}://{config.host}:{server.bound_port()}, "
+            f"the live link on {link_scheme}://{config.host}:{server.link.bound_port()}\n"
         )
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             sys.stderr.write("rookd stopping\n")
         finally:
+            server.link.shutdown()
             server.server_close()
         return 0
 

@@ -1334,7 +1334,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Move a window being shown into place and, if Rookery hid it, restore it from the Dock there: a
     /// minimized window takes a new frame, so it opens straight into place. An application that ordered the
     /// window out while it was hidden, as WeChat does, is asked to reopen, as a click on its Dock icon would,
-    /// and the window is moved once it is back.
+    /// and the window is moved once it is back; unless Rookery holds other windows of it hidden, which a
+    /// reopen would restore from the Dock in its place, as Chrome does.
     ///
     /// - Parameters:
     ///   - frame: where the window goes
@@ -1354,6 +1355,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             let processId = await tracker.processId(of: windowId),
             let bundleUrl = NSRunningApplication(processIdentifier: processId)?.bundleURL
         else {
+            return nil
+        }
+        let hasHiddenSiblings = workspace.listHiddenWindows.contains { window in
+            window.windowId != windowId && window.application.processId == processId
+        }
+        guard !hasHiddenSiblings else {
+            Self.logger.info("""
+                window \(windowId.rawValue) was ordered out by its application, which is not asked to reopen: \
+                that would bring back one of its hidden windows instead
+                """)
             return nil
         }
         Self.logger.info("window \(windowId.rawValue) was ordered out by its application, which is asked to reopen")

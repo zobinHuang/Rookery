@@ -42,7 +42,7 @@ final class FleetModel {
     @ObservationIgnored let pageMemory = PageMemory()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
-    @ObservationIgnored private var cachedToken: String??
+    private var cachedToken: String??
 
     init(preferences: Preferences, tokenStore: any SecretStore = FleetModel.keychainToken) {
         self.preferences = preferences
@@ -63,18 +63,27 @@ final class FleetModel {
         runTask = nil
     }
 
-    /// The token kept for roost, or empty.
+    /// The token kept for roost, or empty until it is read. It is read off the main thread when the model
+    /// starts: the first read after the app is signed anew waits on the keychain's prompt to allow it, which
+    /// froze the app on the main thread.
     var token: String {
-        if let cachedToken {
-            return cachedToken ?? ""
+        (cachedToken ?? nil) ?? ""
+    }
+
+    /// Read the token kept for roost, once, on a background thread.
+    private func loadTokenIfNeeded() async {
+        guard cachedToken == nil else {
+            return
         }
+        let store = tokenStore
         do {
-            let token = try tokenStore.read()
+            let token = try await Task.detached(priority: .userInitiated) {
+                try store.read()
+            }.value
             cachedToken = .some(token)
-            return token ?? ""
         } catch {
             Self.logger.error("cannot read roost's token: \(error, privacy: .public)")
-            return ""
+            cachedToken = .some(nil)
         }
     }
 
@@ -222,6 +231,7 @@ final class FleetModel {
     // MARK: - Following roost
 
     private func run() async {
+        await loadTokenIfNeeded()
         var retryDelay = Self.firstRetryDelay
         while !Task.isCancelled {
             guard let client = client() else {

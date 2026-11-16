@@ -635,6 +635,18 @@ pick_pause() {
   read -r _ || true
 }
 
+# ─── tell rookd which playbook a session follows ──────────────────────
+# Reported when the agent is told about the playbook, which is when the
+# session's id is at hand in the hook's payload; rook-client queues the
+# events and sends them in the background.
+report_playbook() {
+  # report_playbook <payload-file> <playbook-id>
+  _rp_session="$(json_scalar "$1" session_id)"
+  [ -n "$_rp_session" ] || return 0
+  "$HOME/.local/bin/rook-client" event playbook "$_rp_session" "$ROOK_RESOLVED_DIR/$2.json" \
+    >/dev/null 2>&1 || true
+}
+
 # ─── hook entry points ────────────────────────────────────────────────
 cmd_session_start() {
   _ss_agent="${1:-}"
@@ -659,6 +671,7 @@ cmd_session_start() {
     ''|"$ROOK_PICK_NONE") exit 0 ;;
   esac
   emit_context SessionStart "$_ss_current" "$_ss_agent" "$_ss_project" || exit 0
+  report_playbook "$_ss_payload" "$_ss_current"
   tmux set-option -p -t "$_ss_pane" "$ROOK_INJECTED_OPT" "$_ss_current" 2>/dev/null || true
   exit 0
 }
@@ -709,6 +722,7 @@ cmd_context() {
   [ -n "$_cx_project" ] || _cx_project="$PWD"
   _cx_project="$(project_root_of "$_cx_project")"
   emit_context UserPromptSubmit "$_cx_current" "$_cx_agent" "$_cx_project" || exit 0
+  report_playbook "$_cx_payload" "$_cx_current"
   tmux set-option -p -t "$_cx_pane" "$ROOK_INJECTED_OPT" "$_cx_current" 2>/dev/null || true
   exit 0
 }

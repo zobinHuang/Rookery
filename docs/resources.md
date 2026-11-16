@@ -68,4 +68,4 @@ A harness without an event for a state simply never reports it; the crow stays i
 | PostToolUse of Write or Edit into the agent's memory directory (`~/.claude/projects/<project>/memory/`) | agent `wrote` the memory, with its text and path |
 | PostToolUse of Write or Edit under `.claude/skills/<name>/` or `.agents/skills/<name>/` | agent `updated` the skill named by the directory |
 | SubagentStart, SubagentStop | a subagent `started` with its parent; `ended` when it stops |
-| `rook-playbook install` in a pane | agent `follows` the playbook, `mounts` each skill |
+| A playbook told to a session (at SessionStart, or the first prompt after one is picked with `Ctrl+t` `p`) | agent `follows` the playbook, `mounts` each of its skills |

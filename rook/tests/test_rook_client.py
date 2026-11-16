@@ -111,6 +111,16 @@ class HookEventMapperTest(RookHomeTest):
         self.assertEqual(rook_client.HookEventMapper("claude", {"hook_event_name": "Stop"}).events(), [])
 
 
+class PlaybookEventsTest(unittest.TestCase):
+    def test_a_loaded_playbook_is_followed_and_its_skills_mounted(self) -> None:
+        map_resolved = {"id": "backend-review", "skills": [{"skill_id": "review"}, {"skill_id": "lint"}]}
+        list_events = rook_client.PlaybookEvents.of(SESSION, map_resolved)
+        self.assertEqual(
+            [(event["verb"], event["object"]["id"]) for event in list_events],
+            [("follows", "backend-review"), ("mounts", "review"), ("mounts", "lint")],
+        )
+
+
 class QueueAndSendTest(RookHomeTest):
     TEST_TOKEN = "test-token"
 

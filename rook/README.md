@@ -7,11 +7,14 @@
 ## Install
 
 ```bash
-curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/rook/setup.sh | bash
+git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+bash ~/Rookery/rook/setup.sh
 
 # or name this machine's agents up front (they go by <name>/<tab>)
-curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/rook/setup.sh | bash -s -- --name studio
+bash ~/Rookery/rook/setup.sh --name studio
 ```
+
+To upgrade, `git pull` and run it again.
 
 ## Usage
 
@@ -31,8 +34,8 @@ rook kill <name>
 # kill the session you're in
 rook exit
 
-# upload agent session history to a server
-rook connect <host> <port> --token <token>
+# report agents and upload their sessions to a roost server (--tls for HTTPS)
+rook connect <host> <port> --token <token> --tls
 
 # stop uploading
 rook disconnect

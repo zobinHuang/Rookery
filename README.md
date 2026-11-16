@@ -1,25 +1,34 @@
 # <img src="docs/images/rookery-logo.png" alt="Rookery" width="258">
 
-Rookery is a macOS app that gathers your windows into a stage of its own: drag a window in and it is grouped with others, shown one at a time and switched as tabs and groups, without full-screen Spaces. A sidebar keeps your tools beside it: a world clock, how much of your code agents' plan limits is left, and an optional mixer for each app's and each Chrome tab's sound. Alongside it, `rook` keeps your code agents running in tmux and shows what each is doing, and `roost` collects their sessions on a server. It is for people who keep many windows and agents going across several tasks.
+Rookery watches over your code agents. `rook` runs them in tmux on each of your machines and reports what each is doing; `roost`, a server, gathers their sessions, skills, playbooks and memories; and Rookery, a macOS app, shows every agent as a crow you can read, prompt and organize, beside a stage for your windows.
 
-## Usage
+## Deploy
 
-Requires macOS 14.2 or later and the Swift 6.2 toolchain (the Command Line Tools are enough).
+**roost**, on a server the other machines can reach (Python 3.10+). It listens on a port and the next one, for its API and its live link; open both. A certificate is optional but recommended.
 
-    scripts/create-dev-certificate.sh   # once: a stable signing identity, so permissions survive rebuilds
-    make install                        # build, install to /Applications and open
+    git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+    bash ~/Rookery/server/setup.sh --port 8787 --tls-cert <cert> --tls-key <key>
+    ~/.local/bin/roost token        # the token every client needs
 
-Grant Accessibility access when asked, then drag a window into the stage. Switch with the tabs and the sidebar, ⌃⌥1–9, or ⌘⇥ while the stage is in front; the settings are behind the gear at the bottom of the sidebar.
+**rook**, on each machine where your agents run (tmux, Python 3.10+):
 
-The mixer is off until you turn it on under General in the settings. To mix Chrome tabs one by one and show their videos in the sidebar, build the extension and load `extensions/chrome/dist` unpacked in `chrome://extensions` with Developer mode on:
+    git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+    bash ~/Rookery/rook/setup.sh
+    rook connect <roost host> 8787 --token <token> --tls
 
-    make chrome-extension
+**Rookery**, on your Mac (macOS 14.2+, the Swift 6.2 toolchain):
 
-`swift build` also builds `rookeryctl`, which drives the running app from a terminal, as in `.build/debug/rookeryctl list`.
+    scripts/create-dev-certificate.sh   # once, so permissions survive rebuilds
+    make install
 
-On each machine where your code agents run, install `rook` and start a session; Claude Code and codex in its panes show up in the status bar as busy, waiting on you or idle:
+Then in Rookery's settings, under Roost, enter `https://<roost host>:8787` and the token, and connect. To upgrade any of them, `git pull` and run the same command again.
 
-    curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/rook/setup.sh | bash
-    rook new <name>
+## Use
 
-See [rook/](rook/README.md) for its keys and for uploading sessions to a [roost](server/README.md) server, [docs/](docs/) for how the app works and how to develop it, and [branding/](branding/) for the pixel crow logo.
+    rook new <name>                   # a tmux session; start Claude Code or codex in its panes
+    rook message <agent> "..."        # tell another agent something, from an agent's pane
+    rook resource ls --kind agent     # what roost knows
+
+In Rookery, the sidebar's Agents mode lists every agent as a crow playing its state; click one to read its conversation and prompt it, and drag agents into groups. Rookmaster, at the top of that list, shows every resource and what used what, the live log, and an agent on your Mac that tidies roost's skills, playbooks and memories when you ask.
+
+More in [rook/](rook/README.md), [server/](server/README.md) and [docs/](docs/).

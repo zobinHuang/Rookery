@@ -10,11 +10,11 @@ environment of its own.
 ## Usage
 
 ```bash
-# deploy, start and health-check in one shot; prints the client command to run
-curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/server/setup.sh | bash -s -- --port 8787
+# deploy, start and health-check in one shot, over HTTPS; prints the client command to run
+git clone git@github.com:zobinHuang/Rookery.git ~/Rookery
+bash ~/Rookery/server/setup.sh --port 8787 --tls-cert /etc/ssl/roost.crt --tls-key /etc/ssl/roost.key
 
-# serve over HTTPS instead of plain HTTP
-server/setup.sh --port 8787 --tls-cert /etc/ssl/roost.crt --tls-key /etc/ssl/roost.key
+# open the port and the next one (the live link); without a certificate it serves plain HTTP
 
 # show the token clients need
 roost token

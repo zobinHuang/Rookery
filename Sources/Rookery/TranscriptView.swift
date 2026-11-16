@@ -25,6 +25,10 @@ struct TranscriptView: View {
     /// Read the conversation from its start, when the page began at its last stretch.
     let onLoadEarlier: () -> Void
 
+    private var isSubagent: Bool {
+        FleetAgent.transcriptSessionId(of: agentId) != agentId
+    }
+
     private var setOpenBlockIds: Set<Int> {
         memory.mapOpenTranscriptBlocks[agentId] ?? []
     }
@@ -321,7 +325,9 @@ struct TranscriptView: View {
             Text(hasTranscript ? "Nothing said yet" : "roost has no transcript of this session")
                 .font(.system(size: 13, weight: .semibold))
             if !hasTranscript {
-                Text("Transcripts arrive once the agent's machine uploads them with rook connect.")
+                Text(isSubagent
+                    ? "This subagent left no transcript for rook to upload."
+                    : "Transcripts arrive once the agent's machine uploads them with rook connect.")
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.secondaryText)
             }

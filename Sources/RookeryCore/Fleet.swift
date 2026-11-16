@@ -372,3 +372,17 @@ public struct AgentFleet: Equatable, Sendable {
         mapRooksOnline[agent.rookName] ?? false
     }
 }
+
+/// rookd's timestamps: ISO 8601 in UTC, with milliseconds.
+public enum FleetTimestamp {
+    /// The moment a timestamp names, or nil when it is not one.
+    public static func date(from text: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: text) {
+            return date
+        }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: text)
+    }
+}

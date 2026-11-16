@@ -49,6 +49,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let listDisplaySettleDelays = [Duration.seconds(1), Duration.seconds(4)]
     /// How far a managed window may be from where its stage keeps it and still count as there.
     private static let placementTolerance: CGFloat = 2
+    /// How long a window brought forward is given to show on screen and hold still, to be checked where it
+    /// is drawn.
+    private static let drawnFrameTimeout = Duration.milliseconds(1500)
+    private static let drawnFramePollInterval = Duration.milliseconds(60)
     /// How often putting back a displaced window checks whether the mouse is up and layout is idle.
     private static let putBackPollInterval = Duration.milliseconds(100)
 
@@ -1110,6 +1114,54 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Raise a window and activate its application.
+    /// Make sure a window brought onto its stage is drawn where the stage put it, as the window server
+    /// shows it rather than as its application reports it. Telegram, back from the Dock, draws its window
+    /// where it last was on screen while reporting the frame it was given meanwhile, and then takes that
+    /// same frame again as no change; a frame one point off and then the right one moves it.
+    private func settleOnWindowServer(_ windowId: WindowId, at frame: CGRect) async {
+        guard
+            let shownFrame = await drawnFrame(of: windowId),
+            !Self.isFrame(shownFrame, closeTo: frame)
+        else {
+            return
+        }
+        Self.logger.notice("""
+            window \(windowId.rawValue) is drawn at \(String(describing: shownFrame), privacy: .public) though placed \
+            at \(String(describing: frame), privacy: .public); placing it again
+            """)
+        let nudgedFrame = CGRect(origin: frame.origin, size: CGSize(width: frame.width - 1, height: frame.height))
+        _ = await tracker.applyFrame(nudgedFrame, to: windowId)
+        _ = await tracker.applyFrame(frame, to: windowId)
+        if let settledFrame = await drawnFrame(of: windowId), !Self.isFrame(settledFrame, closeTo: frame) {
+            Self.logger.error("""
+                window \(windowId.rawValue) stays drawn at \(String(describing: settledFrame), privacy: .public)
+                """)
+        }
+    }
+
+    /// Where the window server draws a window once it is on screen and holds still, or nil if it does not
+    /// show within `drawnFrameTimeout`.
+    private func drawnFrame(of windowId: WindowId) async -> CGRect? {
+        let deadline = ContinuousClock.now + Self.drawnFrameTimeout
+        var previousFrame: CGRect?
+        while ContinuousClock.now < deadline {
+            if let window = WindowServer.window(withId: windowId), window.isOnScreen {
+                if previousFrame == window.frame {
+                    return window.frame
+                }
+                previousFrame = window.frame
+            } else {
+                previousFrame = nil
+            }
+            do {
+                try await Task.sleep(for: Self.drawnFramePollInterval)
+            } catch {
+                return nil
+            }
+        }
+        return nil
+    }
+
     private func bringForward(_ windowId: WindowId) async {
         _ = await tracker.raise(windowId)
         if let processId = await tracker.processId(of: windowId) {
@@ -1251,6 +1303,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             broughtForwardWindowId = selected.windowId
             await bringForward(selected.windowId)
+            if let contentFrame = mapShownFrames[selected.windowId] {
+                await settleOnWindowServer(selected.windowId, at: contentFrame)
+            }
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
         await run(showing: [], hiding: listToHide)

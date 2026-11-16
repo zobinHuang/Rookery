@@ -1,0 +1,731 @@
+#!/bin/sh
+# [vibebox] vbox-playbook — load a server-side playbook into this project.
+#
+#   vbox-playbook list                     playbooks the server holds
+#   vbox-playbook install <id> [options]   fetch its skills and bind them here
+#   vbox-playbook uninstall [options]      remove what a previous install left
+#   vbox-playbook current                  which playbook this pane is on
+#   vbox-playbook resolve <id>             print what the server resolved
+#
+# A playbook lives on the server as an index; the skill files themselves are
+# fetched straight from their git repositories, pinned to the commit the server
+# resolved. Fetched trees are cached by commit, so switching back and forth
+# between playbooks costs nothing after the first time.
+#
+# Skills are installed per project, into the directory the agent in question
+# actually reads — those differ, and there is no single directory all of them
+# scan, so the table below is the whole of it.
+
+set -u
+
+VBOX_CONNECT_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/vibebox/connect.json"
+VBOX_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/vibebox"
+VBOX_CACHE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/vibebox/skills"
+VBOX_RESOLVED_DIR="$VBOX_STATE_DIR/playbooks"
+VBOX_INSTALLED_DIR="$VBOX_STATE_DIR/installed"
+VBOX_LOG="$VBOX_STATE_DIR/playbook.log"
+VBOX_PANE_OPT='@vbox-playbook-pane'
+VBOX_INJECTED_OPT='@vbox-playbook-injected'
+VBOX_AGENTS='claude codex gemini'
+VBOX_HTTP_TIMEOUT=60
+VBOX_GIT_TIMEOUT=120
+VBOX_LOG_MAX_LINES=2000
+VBOX_PICK_WAIT_SECONDS=30
+VBOX_PICK_NONE='-'
+VBOX_SELF="$HOME/.local/bin/vbox-playbook"
+
+# The log is opened by redirection in several places, and a redirection
+# that cannot be opened makes the command it is attached to fail without
+# running — which on a machine where this directory does not exist yet
+# turned every server request into a bogus "http 0". Settle it once, here,
+# and fall back to discarding rather than failing.
+if mkdir -p "$VBOX_STATE_DIR" 2>/dev/null && : >> "$VBOX_LOG" 2>/dev/null; then
+  :
+else
+  VBOX_LOG=/dev/null
+fi
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  vbox-playbook list
+  vbox-playbook install <playbook-id> [--agent <a>] [--project <dir>] [--pane <%n>]
+  vbox-playbook uninstall [--agent <a>] [--project <dir>] [--pane <%n>]
+  vbox-playbook current [--pane <%n>]
+  vbox-playbook resolve <playbook-id>
+  vbox-playbook pick [--pane <%n>] [--agent <a>] [--project <dir>] [--done <file>]
+  vbox-playbook pick-here <pane-id> <dir>   raise the picker over a pane
+  vbox-playbook session-start <agent>   hook entry point; payload on stdin
+  vbox-playbook context <agent>         hook entry point; payload on stdin
+EOF
+  exit 1
+}
+
+# ─── where each agent reads project skills from ───────────────────────
+# claude code scans .claude/skills. codex scans .agents/skills, from the
+# working directory up to the repository root — .codex/skills is its old
+# path and is no longer read. gemini-cli scans .gemini/skills and also
+# honours .agents/skills as an alias of the same standard, so it shares
+# codex's directory rather than getting a second copy.
+agent_skills_dir() {
+  case "$1" in
+    claude) printf '.claude/skills' ;;
+    codex)  printf '.agents/skills' ;;
+    gemini) printf '.agents/skills' ;;
+    *)      return 1 ;;
+  esac
+}
+
+log() {
+  mkdir -p "$VBOX_STATE_DIR" 2>/dev/null || return 0
+  printf '%s %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >> "$VBOX_LOG" 2>/dev/null || true
+}
+
+die() {
+  printf 'vbox-playbook: %s\n' "$*" >&2
+  exit 1
+}
+
+# ─── JSON ─────────────────────────────────────────────────────────────
+# A resolved playbook is a nested document, so unlike the single scalars
+# vbox-session reads, this genuinely needs a JSON parser. jq is preferred
+# and python3 is the fallback; there is no third option, and saying so is
+# better than a grep that silently mangles a skill list.
+json_tool() {
+  if command -v jq >/dev/null 2>&1; then printf 'jq'; return 0; fi
+  if command -v python3 >/dev/null 2>&1; then printf 'python3'; return 0; fi
+  return 1
+}
+
+json_scalar() {
+  # json_scalar <file> <dotted.path>
+  case "$(json_tool)" in
+    jq) jq -r --arg p "$2" '
+          try (getpath($p | split(".")) | select(. != null) | tostring) catch empty
+        ' "$1" 2>/dev/null ;;
+    python3) VBOX_JSON_PATH="$2" python3 -c '
+import json, os, sys
+value = json.load(open(sys.argv[1]))
+for key in os.environ["VBOX_JSON_PATH"].split("."):
+    if not isinstance(value, dict):
+        raise SystemExit(0)
+    value = value.get(key)
+if value is None or isinstance(value, (dict, list)):
+    raise SystemExit(0)
+sys.stdout.write(str(value))
+' "$1" 2>/dev/null ;;
+  esac
+}
+
+json_rows() {
+  # json_rows <file> <array-key> <field>...
+  # Prints one tab-separated row per array element. A field holding a tab or
+  # a newline would break the row, so both are stripped.
+  _jr_file="$1"; _jr_key="$2"; shift 2
+  case "$(json_tool)" in
+    jq)
+      # The document goes in on stdin and --args comes last, both on purpose:
+      # anything after the filter when --args is in play is read as a
+      # positional argument, so passing the file there leaves jq with no
+      # input and blocks it forever on stdin.
+      jq -r --arg key "$_jr_key" '
+        def clean: tostring | gsub("[\t\n\r]"; " ");
+        (.[$key] // [])[] as $row
+        | [$ARGS.positional[] | $row[.] // "" | clean]
+        | @tsv
+      ' --args "$@" < "$_jr_file" 2>/dev/null
+      ;;
+    python3)
+      VBOX_JSON_KEY="$_jr_key" python3 -c '
+import json, os, sys
+doc = json.load(open(sys.argv[1]))
+list_fields = sys.argv[2:]
+for row in doc.get(os.environ["VBOX_JSON_KEY"]) or []:
+    if not isinstance(row, dict):
+        continue
+    list_cells = []
+    for name in list_fields:
+        value = row.get(name)
+        text = "" if value is None else str(value)
+        list_cells.append(text.replace("\t", " ").replace("\n", " ").replace("\r", " "))
+    sys.stdout.write("\t".join(list_cells) + "\n")
+' "$_jr_file" "$@" 2>/dev/null
+      ;;
+  esac
+}
+
+json_escape() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+# ─── server ───────────────────────────────────────────────────────────
+load_connection() {
+  [ -f "$VBOX_CONNECT_FILE" ] || return 1
+  VBOX_BASE_URL="$(json_scalar "$VBOX_CONNECT_FILE" base_url)"
+  VBOX_TOKEN="$(json_scalar "$VBOX_CONNECT_FILE" token)"
+  case "$(json_scalar "$VBOX_CONNECT_FILE" insecure)" in
+    true|True|1) VBOX_INSECURE=1 ;;
+    *)           VBOX_INSECURE=0 ;;
+  esac
+  [ -n "$VBOX_BASE_URL" ] && [ -n "$VBOX_TOKEN" ]
+}
+
+api_get() {
+  # api_get <path> <dest-file>
+  set -- -sS -H "Authorization: Bearer $VBOX_TOKEN" \
+    -o "$2" -w '%{http_code}' --max-time "$VBOX_HTTP_TIMEOUT" "$VBOX_BASE_URL$1"
+  [ "$VBOX_INSECURE" = 1 ] && set -- -k "$@"
+  VBOX_STATUS="$(curl "$@" 2>>"$VBOX_LOG")" || VBOX_STATUS=0
+  [ "$VBOX_STATUS" = 200 ]
+}
+
+# ─── fetching one skill at one commit ─────────────────────────────────
+# Cached by commit and path, so a tree is fetched once however many
+# playbooks pin it.
+#
+# Three attempts, narrowest first: a blobless partial fetch of the exact
+# commit is cheapest, but it needs a server that supports both filtering
+# and fetching an arbitrary commit, and not every git host does. Falling
+# back to the ref and checking what came back keeps self-hosted remotes
+# working at the cost of a little more download.
+checkout_skill() {
+  # checkout_skill <repo-url> <skill-path> <commit> <ref> <dest>
+  _co_repo="$1"; _co_path="$2"; _co_commit="$3"; _co_ref="$4"; _co_dest="$5"
+  case "$_co_repo" in
+    https://*|http://*|ssh://*|git://*) ;;
+    *@*:*) ;;
+    *) log "refusing repository $_co_repo"; return 1 ;;
+  esac
+
+  _co_work="$(mktemp -d "${TMPDIR:-/tmp}/vbox-skill.XXXXXX")" || return 1
+  git -C "$_co_work" init -q 2>>"$VBOX_LOG" || { rm -rf "$_co_work"; return 1; }
+  git -C "$_co_work" remote add origin "$_co_repo" 2>>"$VBOX_LOG" || { rm -rf "$_co_work"; return 1; }
+
+  _co_got=0
+  for _co_attempt in blobless plain ref; do
+    case "$_co_attempt" in
+      blobless) set -- fetch -q --depth 1 --filter=blob:none origin "$_co_commit" ;;
+      plain)    set -- fetch -q --depth 1 origin "$_co_commit" ;;
+      ref)      [ -n "$_co_ref" ] || continue
+                set -- fetch -q --depth 1 origin "$_co_ref" ;;
+    esac
+    if GIT_TERMINAL_PROMPT=0 timeout_git "$_co_work" "$@"; then
+      _co_got=1
+      break
+    fi
+  done
+  [ "$_co_got" -eq 1 ] || { rm -rf "$_co_work"; log "could not fetch $_co_repo"; return 1; }
+
+  # A ref fetch can land on a different commit than the server resolved;
+  # taking it anyway would install something nobody asked for.
+  _co_head="$(git -C "$_co_work" rev-parse FETCH_HEAD 2>/dev/null)" || _co_head=""
+  if [ "$_co_attempt" = ref ] && [ "$_co_head" != "$_co_commit" ]; then
+    rm -rf "$_co_work"
+    log "$_co_repo ref $_co_ref is at $_co_head, not $_co_commit"
+    return 1
+  fi
+
+  if [ -n "$_co_path" ]; then
+    git -C "$_co_work" checkout -q FETCH_HEAD -- "$_co_path" 2>>"$VBOX_LOG" || {
+      rm -rf "$_co_work"; log "no path $_co_path at $_co_commit"; return 1; }
+    _co_src="$_co_work/$_co_path"
+  else
+    git -C "$_co_work" checkout -q FETCH_HEAD 2>>"$VBOX_LOG" || {
+      rm -rf "$_co_work"; return 1; }
+    rm -rf "$_co_work/.git"
+    _co_src="$_co_work"
+  fi
+
+  mkdir -p "$(dirname "$_co_dest")" || { rm -rf "$_co_work"; return 1; }
+  rm -rf "$_co_dest.partial"
+  if [ -d "$_co_src" ]; then
+    cp -R "$_co_src" "$_co_dest.partial" || { rm -rf "$_co_work"; return 1; }
+  else
+    # A skill cited as a single file still becomes a directory on disk,
+    # because that is the shape every agent looks for.
+    mkdir -p "$_co_dest.partial" &&
+      cp "$_co_src" "$_co_dest.partial/" || { rm -rf "$_co_work"; return 1; }
+  fi
+  rm -rf "$_co_work"
+  rm -rf "$_co_dest"
+  mv "$_co_dest.partial" "$_co_dest" || return 1
+  return 0
+}
+
+timeout_git() {
+  # timeout_git <repo-dir> <git-args>... — bounded, never prompting
+  _tg_dir="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then
+    GIT_TERMINAL_PROMPT=0 timeout "$VBOX_GIT_TIMEOUT" git -C "$_tg_dir" "$@" 2>>"$VBOX_LOG"
+  else
+    GIT_TERMINAL_PROMPT=0 git -C "$_tg_dir" "$@" 2>>"$VBOX_LOG"
+  fi
+}
+
+cache_path_of() {
+  # cache_path_of <commit> <skill-id>
+  printf '%s/%s/%s' "$VBOX_CACHE_DIR" "$1" "$2"
+}
+
+# ─── where "this project" is ──────────────────────────────────────────
+# The repository root, when there is one: codex looks for .agents/skills
+# from the working directory up to the repository root, so installing at
+# the root is what makes a skill visible from anywhere inside the project.
+project_root_of() {
+  # project_root_of <start-dir>
+  _pr_start="$1"
+  [ -d "$_pr_start" ] || { printf '%s' "$_pr_start"; return 0; }
+  _pr_top="$(git -C "$_pr_start" rev-parse --show-toplevel 2>/dev/null)" || _pr_top=""
+  if [ -n "$_pr_top" ] && [ -d "$_pr_top" ]; then
+    printf '%s' "$_pr_top"
+  else
+    printf '%s' "$_pr_start"
+  fi
+}
+
+manifest_path_of() {
+  # manifest_path_of <project> <skills-dir>
+  _mp_key="$1|$2"
+  if command -v shasum >/dev/null 2>&1; then
+    _mp_hash="$(printf '%s' "$_mp_key" | shasum -a 256 | cut -c1-16)"
+  else
+    _mp_hash="$(printf '%s' "$_mp_key" | sha256sum | cut -c1-16)"
+  fi
+  printf '%s/%s.list' "$VBOX_INSTALLED_DIR" "$_mp_hash"
+}
+
+# ─── remove only what a previous install of ours put there ────────────
+remove_installed() {
+  # remove_installed <manifest>
+  [ -f "$1" ] || return 0
+  while IFS= read -r _ri_dir; do
+    [ -n "$_ri_dir" ] || continue
+    case "$_ri_dir" in /*) ;; *) continue ;; esac
+    [ -d "$_ri_dir" ] || continue
+    # Only ever a directory this script created, named in its own manifest;
+    # never a path derived from whatever the server just said.
+    rm -rf "$_ri_dir"
+  done < "$1"
+  rm -f "$1"
+}
+
+sanitize_name() {
+  printf '%s' "$1" | tr 'A-Z' 'a-z' | sed -e 's/[^a-z0-9._-]/-/g' -e 's/^[-._]*//' -e 's/[-._]*$//' | cut -c1-64
+}
+
+# ─── install ──────────────────────────────────────────────────────────
+cmd_install() {
+  [ $# -ge 1 ] || usage
+  _in_id="$1"; shift
+  _in_agents=""
+  _in_project=""
+  _in_pane=""
+  _in_quiet=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --agent)   _in_agents="${2:-}"; shift 2 ;;
+      --project) _in_project="${2:-}"; shift 2 ;;
+      --pane)    _in_pane="${2:-}"; shift 2 ;;
+      --quiet)   _in_quiet=1; shift ;;
+      *) die "unknown flag $1" ;;
+    esac
+  done
+  json_tool >/dev/null || die "needs jq or python3 to read the server's reply"
+  load_connection || die "not connected; run: vbox connect <host> <port> --token <token>"
+  [ -n "$_in_project" ] || _in_project="$PWD"
+  _in_project="$(project_root_of "$_in_project")"
+  [ -n "$_in_agents" ] || _in_agents="$VBOX_AGENTS"
+
+  _in_work="$(mktemp -d "${TMPDIR:-/tmp}/vbox-playbook.XXXXXX")" || die "no temp dir"
+  trap 'rm -rf "$_in_work"' EXIT HUP INT TERM
+
+  if ! api_get "/v1/playbooks/$_in_id/resolve" "$_in_work/resolved.json"; then
+    die "server would not resolve playbook '$_in_id' (http $VBOX_STATUS)"
+  fi
+  json_rows "$_in_work/resolved.json" skills \
+    repo_url skill_path commit ref name skill_id > "$_in_work/skills.tsv"
+
+  # Cached so the hook that injects this playbook never needs the network.
+  mkdir -p "$VBOX_RESOLVED_DIR" "$VBOX_INSTALLED_DIR" "$VBOX_CACHE_DIR"
+  cp "$_in_work/resolved.json" "$VBOX_RESOLVED_DIR/$_in_id.json"
+  chmod 600 "$VBOX_RESOLVED_DIR/$_in_id.json" 2>/dev/null || true
+
+  _in_fetched=0
+  _in_failed=0
+  : > "$_in_work/ready.tsv"
+  while IFS='	' read -r _s_repo _s_path _s_commit _s_ref _s_name _s_id; do
+    [ -n "${_s_commit:-}" ] || continue
+    _s_cache="$(cache_path_of "$_s_commit" "$_s_id")"
+    if [ ! -d "$_s_cache" ]; then
+      if ! checkout_skill "$_s_repo" "$_s_path" "$_s_commit" "$_s_ref" "$_s_cache"; then
+        _in_failed=$((_in_failed + 1))
+        [ "$_in_quiet" -eq 1 ] || printf '  could not fetch %s from %s\n' "$_s_name" "$_s_repo" >&2
+        continue
+      fi
+    fi
+    _in_fetched=$((_in_fetched + 1))
+    printf '%s\t%s\n' "$(sanitize_name "${_s_name:-$_s_id}")" "$_s_cache" >> "$_in_work/ready.tsv"
+  done < "$_in_work/skills.tsv"
+
+  _in_dirs=""
+  for _in_agent in $_in_agents; do
+    _in_rel="$(agent_skills_dir "$_in_agent")" || die "unknown agent '$_in_agent'"
+    _in_dir="$_in_project/$_in_rel"
+    case " $_in_dirs " in *" $_in_dir "*) continue ;; esac
+    _in_dirs="$_in_dirs $_in_dir"
+
+    _in_manifest="$(manifest_path_of "$_in_project" "$_in_rel")"
+    remove_installed "$_in_manifest"
+    mkdir -p "$_in_dir" || die "cannot create $_in_dir"
+    : > "$_in_manifest"
+    _in_used=""
+    while IFS='	' read -r _r_name _r_cache; do
+      [ -n "${_r_name:-}" ] || continue
+      _r_target="$_r_name"
+      # Two skills of the same name from different repositories must not
+      # overwrite each other.
+      _r_n=2
+      while :; do
+        case " $_in_used " in *" $_r_target "*) _r_target="$_r_name-$_r_n"; _r_n=$((_r_n + 1)) ;; *) break ;; esac
+      done
+      _in_used="$_in_used $_r_target"
+      rm -rf "$_in_dir/$_r_target"
+      cp -R "$_r_cache" "$_in_dir/$_r_target" || die "cannot install into $_in_dir"
+      printf '%s\n' "$_in_dir/$_r_target" >> "$_in_manifest"
+    done < "$_in_work/ready.tsv"
+  done
+
+  bind_pane "$_in_pane" "$_in_id"
+  log "installed $_in_id into $_in_project ($_in_fetched skills, $_in_failed failed)"
+  trim_log
+  if [ "$_in_quiet" -eq 0 ]; then
+    printf 'Loaded playbook %s: %s skill(s) into %s\n' \
+      "$_in_id" "$_in_fetched" "$_in_project"
+    [ "$_in_failed" -eq 0 ] || printf '%s skill(s) could not be fetched.\n' "$_in_failed" >&2
+  fi
+  exit 0
+}
+
+cmd_uninstall() {
+  _un_agents=""
+  _un_project=""
+  _un_pane=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --agent)   _un_agents="${2:-}"; shift 2 ;;
+      --project) _un_project="${2:-}"; shift 2 ;;
+      --pane)    _un_pane="${2:-}"; shift 2 ;;
+      *) die "unknown flag $1" ;;
+    esac
+  done
+  [ -n "$_un_project" ] || _un_project="$PWD"
+  _un_project="$(project_root_of "$_un_project")"
+  [ -n "$_un_agents" ] || _un_agents="$VBOX_AGENTS"
+  for _un_agent in $_un_agents; do
+    _un_rel="$(agent_skills_dir "$_un_agent")" || die "unknown agent '$_un_agent'"
+    remove_installed "$(manifest_path_of "$_un_project" "$_un_rel")"
+  done
+  unbind_pane "$_un_pane"
+  printf 'Unloaded.\n'
+  exit 0
+}
+
+# ─── which playbook a pane is on ──────────────────────────────────────
+# Kept in a tmux pane option, like the agent state is: it dies with the
+# pane, so there is never stale state to clean up, and a pane that is not
+# inside tmux simply has none.
+bind_pane() {
+  # bind_pane <pane> <playbook-id>
+  _bp_pane="${1:-${TMUX_PANE:-}}"
+  [ -n "$_bp_pane" ] || return 0
+  tmux set-option -p -t "$_bp_pane" "$VBOX_PANE_OPT" "$2" 2>/dev/null || true
+}
+
+unbind_pane() {
+  _up_pane="${1:-${TMUX_PANE:-}}"
+  [ -n "$_up_pane" ] || return 0
+  tmux set-option -p -t "$_up_pane" -u "$VBOX_PANE_OPT" 2>/dev/null || true
+  tmux set-option -p -t "$_up_pane" -u "$VBOX_INJECTED_OPT" 2>/dev/null || true
+}
+
+cmd_current() {
+  _cu_pane=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pane) _cu_pane="${2:-}"; shift 2 ;;
+      *) die "unknown flag $1" ;;
+    esac
+  done
+  _cu_pane="${_cu_pane:-${TMUX_PANE:-}}"
+  [ -n "$_cu_pane" ] || exit 0
+  tmux display-message -p -t "$_cu_pane" "#{$VBOX_PANE_OPT}" 2>/dev/null
+  exit 0
+}
+
+cmd_list() {
+  json_tool >/dev/null || die "needs jq or python3 to read the server's reply"
+  load_connection || die "not connected; run: vbox connect <host> <port> --token <token>"
+  _li_work="$(mktemp -d "${TMPDIR:-/tmp}/vbox-playbook.XXXXXX")" || die "no temp dir"
+  trap 'rm -rf "$_li_work"' EXIT HUP INT TERM
+  api_get "/v1/playbooks" "$_li_work/playbooks.json" ||
+    die "server would not list playbooks (http $VBOX_STATUS)"
+  json_rows "$_li_work/playbooks.json" playbooks id name description
+  exit 0
+}
+
+cmd_resolve() {
+  [ $# -ge 1 ] || usage
+  json_tool >/dev/null || die "needs jq or python3 to read the server's reply"
+  load_connection || die "not connected; run: vbox connect <host> <port> --token <token>"
+  _re_work="$(mktemp -d "${TMPDIR:-/tmp}/vbox-playbook.XXXXXX")" || die "no temp dir"
+  trap 'rm -rf "$_re_work"' EXIT HUP INT TERM
+  api_get "/v1/playbooks/$1/resolve" "$_re_work/resolved.json" ||
+    die "server would not resolve playbook '$1' (http $VBOX_STATUS)"
+  cat "$_re_work/resolved.json"
+  exit 0
+}
+
+trim_log() {
+  [ -f "$VBOX_LOG" ] || return 0
+  _tl_lines="$(wc -l < "$VBOX_LOG" | tr -d ' ')"
+  [ "$_tl_lines" -le "$VBOX_LOG_MAX_LINES" ] 2>/dev/null && return 0
+  tail -n "$((VBOX_LOG_MAX_LINES / 2))" "$VBOX_LOG" > "$VBOX_LOG.trim" 2>/dev/null || return 0
+  mv "$VBOX_LOG.trim" "$VBOX_LOG" 2>/dev/null || true
+}
+
+# ─── the standing instructions a loaded playbook contributes ──────────
+# Built from the copy of the server's resolution that install cached, so
+# injecting costs nothing and works with the server unreachable.
+#
+# The skill roster is spelled out with on-disk paths on purpose. The files
+# are in the directory the agent scans, but whether it re-reads that
+# directory after start-up is not something any of them promises, so the
+# text says what was loaded and where rather than relying on discovery.
+emit_context() {
+  # emit_context <event> <playbook-id> <agent> <project>
+  _ec_event="$1"; _ec_id="$2"; _ec_agent="$3"; _ec_project="$4"
+  _ec_file="$VBOX_RESOLVED_DIR/$_ec_id.json"
+  [ -f "$_ec_file" ] || return 1
+  _ec_rel="$(agent_skills_dir "$_ec_agent")" || return 1
+  _ec_name="$(json_scalar "$_ec_file" name)"
+  _ec_prompt="$(json_scalar "$_ec_file" prompt)"
+
+  _ec_text="Playbook \"${_ec_name:-$_ec_id}\" is loaded for this session."
+  [ -n "$_ec_prompt" ] && _ec_text="$_ec_text
+
+$_ec_prompt"
+  _ec_roster="$(json_rows "$_ec_file" skills name description |
+    awk -F'\t' '{ printf "- %s: %s\n", $1, ($2 == "" ? "no description" : $2) }')"
+  if [ -n "$_ec_roster" ]; then
+    _ec_text="$_ec_text
+
+Its skills are installed under $_ec_project/$_ec_rel and are available now:
+$_ec_roster"
+  fi
+  printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' \
+    "$_ec_event" "$(json_escape_multiline "$_ec_text")"
+  return 0
+}
+
+json_escape_multiline() {
+  printf '%s' "$1" |
+    sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' |
+    awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'
+}
+
+# ─── raise the picker over a pane ─────────────────────────────────────
+# Bound to a key through `run-shell`, which does expand formats — unlike
+# display-popup, which passes #{...} through to the shell untouched and
+# would have the picker install into a directory literally named
+# "#{pane_current_path}".
+cmd_pick_here() {
+  [ $# -ge 1 ] || usage
+  _ph_pane="$1"
+  _ph_project="${2:-}"
+  [ -n "$_ph_project" ] ||
+    _ph_project="$(tmux display-message -p -t "$_ph_pane" '#{pane_current_path}' 2>/dev/null)"
+  [ -n "$_ph_project" ] || _ph_project="$PWD"
+  tmux display-popup -t "$_ph_pane" -w 76 -h 18 -E \
+    "$VBOX_SELF pick --pane '$_ph_pane' --project '$_ph_project'" 2>>"$VBOX_LOG"
+  exit 0
+}
+
+# ─── the picker, run inside a tmux popup ──────────────────────────────
+cmd_pick() {
+  _pk_pane=""
+  _pk_agent=""
+  _pk_project=""
+  _pk_done=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pane)    _pk_pane="${2:-}"; shift 2 ;;
+      --agent)   _pk_agent="${2:-}"; shift 2 ;;
+      --project) _pk_project="${2:-}"; shift 2 ;;
+      --done)    _pk_done="${2:-}"; shift 2 ;;
+      *) die "unknown flag $1" ;;
+    esac
+  done
+  # Whatever happens from here, the caller waiting on us must be released.
+  [ -n "$_pk_done" ] && trap 'printf done > "$_pk_done" 2>/dev/null || true' EXIT HUP INT TERM
+  _pk_pane="${_pk_pane:-${TMUX_PANE:-}}"
+  [ -n "$_pk_project" ] || _pk_project="$PWD"
+
+  if ! json_tool >/dev/null; then
+    printf 'vbox-playbook needs jq or python3.\n'
+    pick_pause
+    exit 0
+  fi
+  if ! load_connection; then
+    printf 'Not connected to a session server.\n  vbox connect <host> <port> --token <token>\n'
+    pick_pause
+    exit 0
+  fi
+  _pk_work="$(mktemp -d "${TMPDIR:-/tmp}/vbox-pick.XXXXXX")" || exit 0
+  if ! api_get "/v1/playbooks" "$_pk_work/playbooks.json"; then
+    printf 'Server would not list playbooks (http %s).\n' "$VBOX_STATUS"
+    rm -rf "$_pk_work"
+    pick_pause
+    exit 0
+  fi
+  json_rows "$_pk_work/playbooks.json" playbooks id name description > "$_pk_work/rows.tsv"
+  if [ ! -s "$_pk_work/rows.tsv" ]; then
+    printf 'No playbooks on the server yet.\n'
+    rm -rf "$_pk_work"
+    pick_pause
+    exit 0
+  fi
+
+  printf '\n  Playbook for this %s session in %s\n\n' "${_pk_agent:-agent}" "$_pk_project"
+  _pk_n=0
+  while IFS='	' read -r _pk_id _pk_name _pk_desc; do
+    _pk_n=$((_pk_n + 1))
+    printf '    %2s) %-28s %s\n' "$_pk_n" "${_pk_name:-$_pk_id}" "$_pk_desc"
+  done < "$_pk_work/rows.tsv"
+  printf '    %2s) %s\n\n' 0 "none"
+  printf '  choose [0-%s]: ' "$_pk_n"
+  read -r _pk_choice || _pk_choice=0
+  case "$_pk_choice" in
+    ''|*[!0-9]*) _pk_choice=0 ;;
+  esac
+
+  if [ "$_pk_choice" -lt 1 ] || [ "$_pk_choice" -gt "$_pk_n" ]; then
+    # A pane that was offered the choice and declined must not be asked
+    # again every turn, so the refusal is recorded like any other answer.
+    [ -n "$_pk_pane" ] &&
+      tmux set-option -p -t "$_pk_pane" "$VBOX_PANE_OPT" "$VBOX_PICK_NONE" 2>/dev/null
+    rm -rf "$_pk_work"
+    exit 0
+  fi
+  _pk_pick="$(awk -F'	' -v n="$_pk_choice" 'NR == n { print $1 }' "$_pk_work/rows.tsv")"
+  rm -rf "$_pk_work"
+  [ -n "$_pk_pick" ] || exit 0
+
+  printf '\n  loading %s ...\n' "$_pk_pick"
+  set -- install "$_pk_pick" --project "$_pk_project"
+  [ -n "$_pk_agent" ] && set -- "$@" --agent "$_pk_agent"
+  [ -n "$_pk_pane" ] && set -- "$@" --pane "$_pk_pane"
+  "$0" "$@" || pick_pause
+  exit 0
+}
+
+pick_pause() {
+  # The popup closes the moment we exit, so an error nobody read is an
+  # error nobody can act on.
+  printf '\n  press enter to close '
+  read -r _ || true
+}
+
+# ─── hook entry points ────────────────────────────────────────────────
+cmd_session_start() {
+  _ss_agent="${1:-}"
+  agent_skills_dir "$_ss_agent" >/dev/null || exit 0
+  _ss_payload="$(mktemp "${TMPDIR:-/tmp}/vbox-hook.XXXXXX")" || exit 0
+  trap 'rm -f "$_ss_payload"' EXIT HUP INT TERM
+  cat > "$_ss_payload" 2>/dev/null || true
+  _ss_pane="${TMUX_PANE:-}"
+  # Outside tmux there is no pane to bind a playbook to, and no client to
+  # show a picker on; saying nothing is the whole of the right behaviour.
+  [ -n "$_ss_pane" ] || exit 0
+  [ -f "$VBOX_CONNECT_FILE" ] || exit 0
+  _ss_project="$(json_scalar "$_ss_payload" cwd)"
+  [ -n "$_ss_project" ] || _ss_project="$PWD"
+  _ss_project="$(project_root_of "$_ss_project")"
+
+  _ss_current="$(tmux display-message -p -t "$_ss_pane" "#{$VBOX_PANE_OPT}" 2>/dev/null)"
+  if [ -z "$_ss_current" ]; then
+    _ss_current="$(ask_pane "$_ss_pane" "$_ss_agent" "$_ss_project")"
+  fi
+  case "$_ss_current" in
+    ''|"$VBOX_PICK_NONE") exit 0 ;;
+  esac
+  emit_context SessionStart "$_ss_current" "$_ss_agent" "$_ss_project" || exit 0
+  tmux set-option -p -t "$_ss_pane" "$VBOX_INJECTED_OPT" "$_ss_current" 2>/dev/null || true
+  exit 0
+}
+
+# ─── put the picker on screen and wait for an answer ──────────────────
+# display-popup needs a client attached to the session and does not block
+# its caller, so the answer is waited for rather than returned: the picker
+# records it in the pane option and drops a file when it is finished,
+# either way. With no client attached the popup cannot be drawn at all,
+# and the session simply starts without a playbook.
+ask_pane() {
+  # ask_pane <pane> <agent> <project>
+  _ap_pane="$1"; _ap_agent="$2"; _ap_project="$3"
+  command -v tmux >/dev/null 2>&1 || return 0
+  _ap_done="$(mktemp "${TMPDIR:-/tmp}/vbox-pick-done.XXXXXX")" || return 0
+  rm -f "$_ap_done"
+  if ! tmux display-popup -t "$_ap_pane" -w 76 -h 18 -E         "$VBOX_SELF pick --pane $_ap_pane --agent $_ap_agent --project '$_ap_project' --done $_ap_done"         2>>"$VBOX_LOG"; then
+    log "could not show the playbook picker on $_ap_pane"
+    rm -f "$_ap_done"
+    return 0
+  fi
+  _ap_waited=0
+  while [ ! -f "$_ap_done" ] && [ "$_ap_waited" -lt "$VBOX_PICK_WAIT_SECONDS" ]; do
+    sleep 1
+    _ap_waited=$((_ap_waited + 1))
+  done
+  rm -f "$_ap_done"
+  tmux display-message -p -t "$_ap_pane" "#{$VBOX_PANE_OPT}" 2>/dev/null
+}
+
+cmd_context() {
+  _cx_agent="${1:-}"
+  agent_skills_dir "$_cx_agent" >/dev/null || exit 0
+  _cx_payload="$(mktemp "${TMPDIR:-/tmp}/vbox-hook.XXXXXX")" || exit 0
+  trap 'rm -f "$_cx_payload"' EXIT HUP INT TERM
+  cat > "$_cx_payload" 2>/dev/null || true
+  _cx_pane="${TMUX_PANE:-}"
+  [ -n "$_cx_pane" ] || exit 0
+  _cx_current="$(tmux display-message -p -t "$_cx_pane" "#{$VBOX_PANE_OPT}" 2>/dev/null)"
+  case "$_cx_current" in
+    ''|"$VBOX_PICK_NONE") exit 0 ;;
+  esac
+  _cx_injected="$(tmux display-message -p -t "$_cx_pane" "#{$VBOX_INJECTED_OPT}" 2>/dev/null)"
+  # Already told this session about this playbook; repeating it every turn
+  # would spend context on something it has not forgotten.
+  [ "$_cx_current" = "$_cx_injected" ] && exit 0
+  _cx_project="$(json_scalar "$_cx_payload" cwd)"
+  [ -n "$_cx_project" ] || _cx_project="$PWD"
+  _cx_project="$(project_root_of "$_cx_project")"
+  emit_context UserPromptSubmit "$_cx_current" "$_cx_agent" "$_cx_project" || exit 0
+  tmux set-option -p -t "$_cx_pane" "$VBOX_INJECTED_OPT" "$_cx_current" 2>/dev/null || true
+  exit 0
+}
+
+[ $# -ge 1 ] || usage
+CMD="$1"
+shift
+case "$CMD" in
+  list)       cmd_list "$@" ;;
+  install)    cmd_install "$@" ;;
+  uninstall)  cmd_uninstall "$@" ;;
+  current)    cmd_current "$@" ;;
+  resolve)    cmd_resolve "$@" ;;
+  pick)          cmd_pick "$@" ;;
+  pick-here)     cmd_pick_here "$@" ;;
+  session-start) cmd_session_start "$@" ;;
+  context)       cmd_context "$@" ;;
+  -h|--help)  usage ;;
+  *)          usage ;;
+esac

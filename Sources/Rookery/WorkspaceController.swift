@@ -1132,11 +1132,19 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         let nudgedFrame = CGRect(origin: frame.origin, size: CGSize(width: frame.width - 1, height: frame.height))
         _ = await tracker.applyFrame(nudgedFrame, to: windowId)
         _ = await tracker.applyFrame(frame, to: windowId)
-        if let settledFrame = await drawnFrame(of: windowId), !Self.isFrame(settledFrame, closeTo: frame) {
-            Self.logger.error("""
-                window \(windowId.rawValue) stays drawn at \(String(describing: settledFrame), privacy: .public)
-                """)
+        let deadline = ContinuousClock.now + Self.drawnFrameTimeout
+        while ContinuousClock.now < deadline {
+            if let window = WindowServer.window(withId: windowId), Self.isFrame(window.frame, closeTo: frame) {
+                Self.logger.notice("window \(windowId.rawValue) is drawn where it was placed")
+                return
+            }
+            do {
+                try await Task.sleep(for: Self.drawnFramePollInterval)
+            } catch {
+                return
+            }
         }
+        Self.logger.error("window \(windowId.rawValue) stays drawn away from where it was placed")
     }
 
     /// Where the window server draws a window once it is on screen and holds still, or nil if it does not

@@ -5,27 +5,27 @@ import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
-from crowd import CROWD_VERSION
-from crowd.config import ServerConfig
-from crowd.errors import (
+from rookd import ROOKD_VERSION
+from rookd.config import ServerConfig
+from rookd.errors import (
     AuthError,
     NotFoundError,
     PayloadTooLargeError,
     ValidationError,
-    CrowdError,
+    RookdError,
 )
-from crowd.playbooks import PlaybookIndex
-from crowd.skills import SkillIndex
-from crowd.store import SessionMeta, SessionQuery, SessionStore
+from rookd.playbooks import PlaybookIndex
+from rookd.skills import SkillIndex
+from rookd.store import SessionMeta, SessionQuery, SessionStore
 
 
-class CrowdRequestHandler(BaseHTTPRequestHandler):
+class RookdRequestHandler(BaseHTTPRequestHandler):
     """The HTTP surface through which clients upload agent session transcripts."""
 
     HANDLER_API_PREFIX = "v1"
     HANDLER_BEARER_PREFIX = "Bearer "
 
-    server_version = f"crowd/{CROWD_VERSION}"
+    server_version = f"rookd/{ROOKD_VERSION}"
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
@@ -56,7 +56,7 @@ class CrowdRequestHandler(BaseHTTPRequestHandler):
             args: the template's arguments
         """
         sys.stderr.write(
-            "crowd %s %s\n"
+            "rookd %s %s\n"
             % (
                 self.address_string(),
                 format % args,
@@ -74,10 +74,10 @@ class CrowdRequestHandler(BaseHTTPRequestHandler):
                 list_segments=list_segments[1:],
                 map_query=parse_qs(parsed.query),
             )
-        except CrowdError as err:
+        except RookdError as err:
             self._respond_error(err)
         except OSError as err:
-            self._respond_error(CrowdError(f"storage failure: {err}"))
+            self._respond_error(RookdError(f"storage failure: {err}"))
 
     def _route(
         self,
@@ -90,7 +90,7 @@ class CrowdRequestHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 {
                     "ok": True,
-                    "version": CROWD_VERSION,
+                    "version": ROOKD_VERSION,
                 },
             )
             return
@@ -392,8 +392,8 @@ class CrowdRequestHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Content-Length", str(len(chunk.data)))
-        self.send_header("X-Crow-Offset", str(chunk.offset))
-        self.send_header("X-Crow-Total", str(chunk.total))
+        self.send_header("X-Rook-Offset", str(chunk.offset))
+        self.send_header("X-Rook-Total", str(chunk.total))
         self.end_headers()
         self.wfile.write(chunk.data)
 
@@ -482,12 +482,12 @@ class CrowdRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _respond_error(self, err: CrowdError) -> None:
+    def _respond_error(self, err: RookdError) -> None:
         self.close_connection = True
         self._respond_json(HTTPStatus(err.ERROR_HTTP_STATUS), err.as_payload())
 
 
-class CrowdServer(ThreadingHTTPServer):
+class RookdServer(ThreadingHTTPServer):
     """A threaded HTTP server that carries the configuration and the session store."""
 
     daemon_threads = True
@@ -506,7 +506,7 @@ class CrowdServer(ThreadingHTTPServer):
         self.playbooks = playbooks or PlaybookIndex(config.data_root, self.skills)
         super().__init__(
             (config.host, config.port),
-            CrowdRequestHandler,
+            RookdRequestHandler,
         )
         if config.is_tls_enabled():
             self._wrap_tls()

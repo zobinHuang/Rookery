@@ -1,37 +1,37 @@
 #!/bin/sh
-# [crow] crow-agent — per-pane code-agent state, and the row count of
+# [rook] rook-agent — per-pane code-agent state, and the row count of
 # the two-row agent bar.
 #
 # State lives in tmux options rather than files: a pane option
-# (@crow-agent-pane) is the source of truth, aggregated up into a window
-# option (@crow-agent) that the status rows filter on. Options die with
+# (@rook-agent-pane) is the source of truth, aggregated up into a window
+# option (@rook-agent) that the status rows filter on. Options die with
 # their pane/window, so there is no stale state to garbage-collect.
 #
-#   crow-agent set <pane> <busy|wait|idle|none>
-#   crow-agent sync [target]     recompute how many bar rows are visible
-#   crow-agent nav <left|right>  step along the bar
-#   crow-agent clear [window]    forget a stuck tab's state
-#   crow-agent debug             dump current state
+#   rook-agent set <pane> <busy|wait|idle|none>
+#   rook-agent sync [target]     recompute how many bar rows are visible
+#   rook-agent nav <left|right>  step along the bar
+#   rook-agent clear [window]    forget a stuck tab's state
+#   rook-agent debug             dump current state
 #
 # This script never renders the bar. Rendering is pure tmux format (see
-# the @crow-row-* options in ~/.tmux.conf) so the 1s status redraw costs
+# the @rook-row-* options in ~/.tmux.conf) so the 1s status redraw costs
 # no subprocesses; all `sync` does is decide which row templates are
 # installed into status-format[] and how many rows tmux should reserve.
 
 set -u
 
-PANE_OPT='@crow-agent-pane'
-WIN_OPT='@crow-agent'
-SIG_OPT='@crow-bar-sig'
+PANE_OPT='@rook-agent-pane'
+WIN_OPT='@rook-agent'
+SIG_OPT='@rook-bar-sig'
 
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  crow-agent set <pane> <busy|wait|idle|none>   record a pane's agent state
-  crow-agent sync [target]                      recompute visible bar rows
-  crow-agent nav <left|right> [window]          step along the bar
-  crow-agent clear [window]                     forget a stuck tab's state
-  crow-agent debug                              dump current state
+  rook-agent set <pane> <busy|wait|idle|none>   record a pane's agent state
+  rook-agent sync [target]                      recompute visible bar rows
+  rook-agent nav <left|right> [window]          step along the bar
+  rook-agent clear [window]                     forget a stuck tab's state
+  rook-agent debug                              dump current state
 EOF
   exit 1
 }
@@ -41,7 +41,7 @@ norm_state() {
   case "$1" in
     busy|wait|idle)     printf '%s' "$1" ;;
     ''|none|clear|off)  printf '' ;;
-    *) printf 'crow-agent: unknown state "%s"\n' "$1" >&2; exit 1 ;;
+    *) printf 'rook-agent: unknown state "%s"\n' "$1" >&2; exit 1 ;;
   esac
 }
 
@@ -154,7 +154,7 @@ EOF
   # With no agent anywhere we fall back to "classic": drop every
   # session-local status-format override so tmux uses its built-in
   # single-line bar. That makes the bar byte-identical to pre-agent-bar
-  # crow for anyone who never runs a code agent.
+  # rook for anyone who never runs a code agent.
   if [ "$_agents" -eq 0 ]; then
     _rows='classic'
   else
@@ -186,9 +186,9 @@ EOF
     _i=0
     for _r in $_rows; do
       # Only a short indirection is written here; the real format strings
-      # live in ~/.tmux.conf as @crow-row-* so this script never has to
+      # live in ~/.tmux.conf as @rook-row-* so this script never has to
       # quote them.
-      tmux set-option -t "$_sess" "status-format[$_i]" "#{E:@crow-row-$_r}" 2>/dev/null
+      tmux set-option -t "$_sess" "status-format[$_i]" "#{E:@rook-row-$_r}" 2>/dev/null
       _i=$((_i + 1))
     done
     tmux set-option -t "$_sess" status "$_i" 2>/dev/null
@@ -276,11 +276,11 @@ cmd_nav() {
 
 cmd_debug() {
   printf 'window states:\n'
-  tmux list-windows -a -F '  #{session_name}:#{window_index} #{window_name} -> [#{@crow-agent}]' 2>/dev/null
+  tmux list-windows -a -F '  #{session_name}:#{window_index} #{window_name} -> [#{@rook-agent}]' 2>/dev/null
   printf 'pane states:\n'
-  tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} #{pane_id} -> [#{@crow-agent-pane}]' 2>/dev/null
+  tmux list-panes -a -F '  #{session_name}:#{window_index}.#{pane_index} #{pane_id} -> [#{@rook-agent-pane}]' 2>/dev/null
   printf 'bar:\n'
-  tmux list-sessions -F '  #{session_name} rows=#{status} sig=[#{@crow-bar-sig}]' 2>/dev/null
+  tmux list-sessions -F '  #{session_name} rows=#{status} sig=[#{@rook-bar-sig}]' 2>/dev/null
 }
 
 [ $# -ge 1 ] || usage

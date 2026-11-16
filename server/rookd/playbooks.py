@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from crowd.errors import ConflictError, NotFoundError, ValidationError
-from crowd.records import RecordStore
-from crowd.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
+from rookd.errors import ConflictError, NotFoundError, ValidationError
+from rookd.records import RecordStore
+from rookd.skills import GitRefResolver, SkillIndex, SkillRecord, SkillSource, SkillVersion
 
 
 @dataclass

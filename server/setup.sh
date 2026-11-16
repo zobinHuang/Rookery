@@ -11,12 +11,12 @@ info()  { echo -e "${GREEN}[✓]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 err()   { echo -e "${RED}[✗]${NC} $*"; }
 
-CROWD_HOST="0.0.0.0"
-CROWD_PORT="8787"
-CROWD_DATA_ROOT="$HOME/.local/share/crowd/data"
-CROWD_TLS_CERT=""
-CROWD_TLS_KEY=""
-CROWD_DO_SERVICE=1
+ROOKD_HOST="0.0.0.0"
+ROOKD_PORT="8787"
+ROOKD_DATA_ROOT="$HOME/.local/share/rookd/data"
+ROOKD_TLS_CERT=""
+ROOKD_TLS_KEY=""
+ROOKD_DO_SERVICE=1
 
 usage() {
   cat >&2 <<'EOF'
@@ -34,40 +34,40 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --host)       CROWD_HOST="${2:-}"; shift 2 ;;
-    --port)       CROWD_PORT="${2:-}"; shift 2 ;;
-    --data-root)  CROWD_DATA_ROOT="${2:-}"; shift 2 ;;
-    --tls-cert)   CROWD_TLS_CERT="${2:-}"; shift 2 ;;
-    --tls-key)    CROWD_TLS_KEY="${2:-}"; shift 2 ;;
-    --no-service) CROWD_DO_SERVICE=0; shift ;;
+    --host)       ROOKD_HOST="${2:-}"; shift 2 ;;
+    --port)       ROOKD_PORT="${2:-}"; shift 2 ;;
+    --data-root)  ROOKD_DATA_ROOT="${2:-}"; shift 2 ;;
+    --tls-cert)   ROOKD_TLS_CERT="${2:-}"; shift 2 ;;
+    --tls-key)    ROOKD_TLS_KEY="${2:-}"; shift 2 ;;
+    --no-service) ROOKD_DO_SERVICE=0; shift ;;
     -h|--help)    usage ;;
     *)            err "unknown option: $1"; usage ;;
   esac
 done
 
-if { [ -n "$CROWD_TLS_CERT" ] && [ -z "$CROWD_TLS_KEY" ]; } ||
-   { [ -z "$CROWD_TLS_CERT" ] && [ -n "$CROWD_TLS_KEY" ]; }; then
+if { [ -n "$ROOKD_TLS_CERT" ] && [ -z "$ROOKD_TLS_KEY" ]; } ||
+   { [ -z "$ROOKD_TLS_CERT" ] && [ -n "$ROOKD_TLS_KEY" ]; }; then
   err "--tls-cert and --tls-key must be given together"
   exit 1
 fi
 
 # ─── fetch a file from this repo's raw API (avoids CDN cache) ────────
-CROW_REPO_API="https://api.github.com/repos/zobinHuang/Rookery/contents"
-CROWD_SCRIPT_DIR=""
+ROOK_REPO_API="https://api.github.com/repos/zobinHuang/Rookery/contents"
+ROOKD_SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-  CROWD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  ROOKD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 fi
 
-crowd_install_file() {
-  # crowd_install_file <repo-path> <dest>
+rookd_install_file() {
+  # rookd_install_file <repo-path> <dest>
   local src="$1" dest="$2" http_code
-  if [ -n "$CROWD_SCRIPT_DIR" ] && [ -f "$CROWD_SCRIPT_DIR/../$src" ]; then
-    cp "$CROWD_SCRIPT_DIR/../$src" "$dest"
+  if [ -n "$ROOKD_SCRIPT_DIR" ] && [ -f "$ROOKD_SCRIPT_DIR/../$src" ]; then
+    cp "$ROOKD_SCRIPT_DIR/../$src" "$dest"
     return 0
   fi
   http_code="$(curl -sSL -w '%{http_code}' \
                 -H 'Accept: application/vnd.github.v3.raw' \
-                "${CROW_REPO_API}/${src}" -o "$dest" 2>/dev/null)" || return 1
+                "${ROOK_REPO_API}/${src}" -o "$dest" 2>/dev/null)" || return 1
   case "$http_code" in
     2??) return 0 ;;
     *) rm -f "$dest"; err "HTTP $http_code fetching $src"; return 1 ;;
@@ -107,29 +107,29 @@ fi
 echo ""
 echo "── install ───────────────────────────────────────"
 
-CROWD_APP_DIR="$HOME/.local/share/crowd/app"
-CROWD_CONFIG="$HOME/.config/crowd/config.json"
-CROWD_BIN="$HOME/.local/bin/crowd"
+ROOKD_APP_DIR="$HOME/.local/share/rookd/app"
+ROOKD_CONFIG="$HOME/.config/rookd/config.json"
+ROOKD_BIN="$HOME/.local/bin/rookd"
 
-mkdir -p "$CROWD_APP_DIR/crowd" "$HOME/.local/bin"
+mkdir -p "$ROOKD_APP_DIR/rookd" "$HOME/.local/bin"
 for MODULE in __init__.py __main__.py config.py errors.py http.py playbooks.py records.py skills.py store.py; do
-  if ! crowd_install_file "server/crowd/$MODULE" "$CROWD_APP_DIR/crowd/$MODULE"; then
-    err "Failed to install crowd/$MODULE"
+  if ! rookd_install_file "server/rookd/$MODULE" "$ROOKD_APP_DIR/rookd/$MODULE"; then
+    err "Failed to install rookd/$MODULE"
     exit 1
   fi
 done
 # Stale bytecode from a previous version shadows the modules we just wrote.
-rm -rf "$CROWD_APP_DIR/crowd/__pycache__"
-info "Installed crowd to $CROWD_APP_DIR"
+rm -rf "$ROOKD_APP_DIR/rookd/__pycache__"
+info "Installed rookd to $ROOKD_APP_DIR"
 
-cat > "$CROWD_BIN" <<LAUNCHER
+cat > "$ROOKD_BIN" <<LAUNCHER
 #!/bin/sh
-# [crow]
-PYTHONPATH="$CROWD_APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" \\
-  exec python3 -m crowd --config "$CROWD_CONFIG" "\$@"
+# [rook]
+PYTHONPATH="$ROOKD_APP_DIR\${PYTHONPATH:+:\$PYTHONPATH}" \\
+  exec python3 -m rookd --config "$ROOKD_CONFIG" "\$@"
 LAUNCHER
-chmod +x "$CROWD_BIN"
-info "Installed crowd command to $CROWD_BIN"
+chmod +x "$ROOKD_BIN"
+info "Installed rookd command to $ROOKD_BIN"
 
 # ─── 3. configure ────────────────────────────────────────────────────
 echo ""
@@ -137,31 +137,31 @@ echo "── configure ───────────────────
 
 # `init` keeps the token of an existing config, so re-running this script
 # upgrades a server without invalidating the clients already connected to it.
-CROWD_INIT_ARGS=(init --host "$CROWD_HOST" --port "$CROWD_PORT" --data-root "$CROWD_DATA_ROOT")
-if [ -n "$CROWD_TLS_CERT" ]; then
-  CROWD_INIT_ARGS+=(--tls-cert "$CROWD_TLS_CERT" --tls-key "$CROWD_TLS_KEY")
+ROOKD_INIT_ARGS=(init --host "$ROOKD_HOST" --port "$ROOKD_PORT" --data-root "$ROOKD_DATA_ROOT")
+if [ -n "$ROOKD_TLS_CERT" ]; then
+  ROOKD_INIT_ARGS+=(--tls-cert "$ROOKD_TLS_CERT" --tls-key "$ROOKD_TLS_KEY")
 fi
-"$CROWD_BIN" "${CROWD_INIT_ARGS[@]}" >/dev/null
-CROWD_TOKEN="$("$CROWD_BIN" token)"
-info "Config at $CROWD_CONFIG, data under $CROWD_DATA_ROOT"
+"$ROOKD_BIN" "${ROOKD_INIT_ARGS[@]}" >/dev/null
+ROOKD_TOKEN="$("$ROOKD_BIN" token)"
+info "Config at $ROOKD_CONFIG, data under $ROOKD_DATA_ROOT"
 
 # ─── 4. service ──────────────────────────────────────────────────────
 echo ""
 echo "── service ───────────────────────────────────────"
 
-CROWD_STARTED=0
-if [ "$CROWD_DO_SERVICE" -eq 0 ]; then
+ROOKD_STARTED=0
+if [ "$ROOKD_DO_SERVICE" -eq 0 ]; then
   info "Skipped starting the service (--no-service)"
 elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-  CROWD_UNIT_DIR="$HOME/.config/systemd/user"
-  mkdir -p "$CROWD_UNIT_DIR"
-  cat > "$CROWD_UNIT_DIR/crowd.service" <<UNIT
+  ROOKD_UNIT_DIR="$HOME/.config/systemd/user"
+  mkdir -p "$ROOKD_UNIT_DIR"
+  cat > "$ROOKD_UNIT_DIR/rookd.service" <<UNIT
 [Unit]
 Description=Rookery session server
 After=network-online.target
 
 [Service]
-ExecStart=$CROWD_BIN serve
+ExecStart=$ROOKD_BIN serve
 Restart=on-failure
 RestartSec=2
 
@@ -169,74 +169,74 @@ RestartSec=2
 WantedBy=default.target
 UNIT
   systemctl --user daemon-reload
-  systemctl --user enable --now crowd.service
+  systemctl --user enable --now rookd.service
   # Without lingering, a user unit dies the moment you log out.
   loginctl enable-linger "$(id -un)" >/dev/null 2>&1 ||
-    warn "Could not enable lingering; crowd will stop when you log out."
-  info "Started systemd user unit crowd.service"
-  CROWD_STARTED=1
+    warn "Could not enable lingering; rookd will stop when you log out."
+  info "Started systemd user unit rookd.service"
+  ROOKD_STARTED=1
 elif [ "$(uname -s)" = "Darwin" ]; then
-  CROWD_PLIST="$HOME/Library/LaunchAgents/io.github.zobinhuang.rookery.crowd.plist"
-  mkdir -p "$(dirname "$CROWD_PLIST")" "$HOME/.local/share/crowd"
-  cat > "$CROWD_PLIST" <<PLIST
+  ROOKD_PLIST="$HOME/Library/LaunchAgents/io.github.zobinhuang.rookery.rookd.plist"
+  mkdir -p "$(dirname "$ROOKD_PLIST")" "$HOME/.local/share/rookd"
+  cat > "$ROOKD_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>io.github.zobinhuang.rookery.crowd</string>
+  <key>Label</key><string>io.github.zobinhuang.rookery.rookd</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$CROWD_BIN</string>
+    <string>$ROOKD_BIN</string>
     <string>serve</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/.local/share/crowd/crowd.log</string>
-  <key>StandardErrorPath</key><string>$HOME/.local/share/crowd/crowd.log</string>
+  <key>StandardOutPath</key><string>$HOME/.local/share/rookd/rookd.log</string>
+  <key>StandardErrorPath</key><string>$HOME/.local/share/rookd/rookd.log</string>
 </dict>
 </plist>
 PLIST
-  launchctl bootout "gui/$(id -u)/io.github.zobinhuang.rookery.crowd" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$CROWD_PLIST"
-  info "Started launchd agent io.github.zobinhuang.rookery.crowd"
-  CROWD_STARTED=1
+  launchctl bootout "gui/$(id -u)/io.github.zobinhuang.rookery.rookd" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$ROOKD_PLIST"
+  info "Started launchd agent io.github.zobinhuang.rookery.rookd"
+  ROOKD_STARTED=1
 else
   warn "No systemd or launchd found. Start the server by hand:"
-  warn "  nohup $CROWD_BIN serve > ~/.local/share/crowd/crowd.log 2>&1 &"
+  warn "  nohup $ROOKD_BIN serve > ~/.local/share/rookd/rookd.log 2>&1 &"
 fi
 
 # ─── 5. verify ───────────────────────────────────────────────────────
-if [ "$CROWD_STARTED" -eq 1 ]; then
+if [ "$ROOKD_STARTED" -eq 1 ]; then
   echo ""
   echo "── verify ────────────────────────────────────────"
-  CROWD_SCHEME="http"
-  [ -n "$CROWD_TLS_CERT" ] && CROWD_SCHEME="https"
-  CROWD_PROBE_OK=0
+  ROOKD_SCHEME="http"
+  [ -n "$ROOKD_TLS_CERT" ] && ROOKD_SCHEME="https"
+  ROOKD_PROBE_OK=0
   for _ in 1 2 3 4 5; do
-    if curl -fsSk "$CROWD_SCHEME://127.0.0.1:$CROWD_PORT/v1/healthz" >/dev/null 2>&1; then
-      CROWD_PROBE_OK=1
+    if curl -fsSk "$ROOKD_SCHEME://127.0.0.1:$ROOKD_PORT/v1/healthz" >/dev/null 2>&1; then
+      ROOKD_PROBE_OK=1
       break
     fi
     sleep 1
   done
-  if [ "$CROWD_PROBE_OK" -eq 1 ]; then
-    info "Health check passed on $CROWD_SCHEME://127.0.0.1:$CROWD_PORT"
+  if [ "$ROOKD_PROBE_OK" -eq 1 ]; then
+    info "Health check passed on $ROOKD_SCHEME://127.0.0.1:$ROOKD_PORT"
   else
-    err "Health check failed. Logs: ~/.local/share/crowd/crowd.log or journalctl --user -u crowd"
+    err "Health check failed. Logs: ~/.local/share/rookd/rookd.log or journalctl --user -u rookd"
   fi
 fi
 
 # ─── done ─────────────────────────────────────────────────────────────
-CROWD_ADDR="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo '<host>')"
+ROOKD_ADDR="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo '<host>')"
 echo ""
 echo "══════════════════════════════════════════════════"
 echo "  Server ready"
 echo ""
 echo "  Run this on each client:"
 echo ""
-echo "    crow connect $CROWD_ADDR $CROWD_PORT --token $CROWD_TOKEN"
+echo "    rook connect $ROOKD_ADDR $ROOKD_PORT --token $ROOKD_TOKEN"
 echo ""
-if [ -z "$CROWD_TLS_CERT" ]; then
+if [ -z "$ROOKD_TLS_CERT" ]; then
   echo "  This server speaks plain HTTP. Transcripts carry your source code,"
   echo "  paths and anything an agent printed — only expose it on a trusted"
   echo "  network, or re-run with --tls-cert/--tls-key."

@@ -2,18 +2,18 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from crowd import CROWD_VERSION
-from crowd.config import ServerConfig
-from crowd.errors import ConfigError, CrowdError
-from crowd.http import CrowdServer
-from crowd.store import SessionQuery, SessionStore
+from rookd import ROOKD_VERSION
+from rookd.config import ServerConfig
+from rookd.errors import ConfigError, RookdError
+from rookd.http import RookdServer
+from rookd.store import SessionQuery, SessionStore
 
 
 class ServerCli:
-    """The command line around the crow session server."""
+    """The command line around the rook session server."""
 
-    CLI_DEFAULT_CONFIG = "~/.config/crowd/config.json"
-    CLI_DEFAULT_DATA_ROOT = "~/.local/share/crowd/data"
+    CLI_DEFAULT_CONFIG = "~/.config/rookd/config.json"
+    CLI_DEFAULT_DATA_ROOT = "~/.local/share/rookd/data"
 
     def __init__(self, path_config: Path) -> None:
         self._path_config = path_config
@@ -62,19 +62,19 @@ class ServerCli:
             the process exit status
         """
         config = ServerConfig.from_file(self._path_config)
-        server = CrowdServer(
+        server = RookdServer(
             config=config,
             store=SessionStore(config.data_root),
         )
         scheme = "https" if config.is_tls_enabled() else "http"
         sys.stderr.write(
-            f"crowd {CROWD_VERSION} serving {config.data_root} on "
+            f"rookd {ROOKD_VERSION} serving {config.data_root} on "
             f"{scheme}://{config.host}:{server.bound_port()}\n"
         )
         try:
             server.serve_forever()
         except KeyboardInterrupt:
-            sys.stderr.write("crowd stopping\n")
+            sys.stderr.write("rookd stopping\n")
         finally:
             server.server_close()
         return 0
@@ -109,7 +109,7 @@ class ServerCli:
 
 
 def main(list_argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="crowd")
+    parser = argparse.ArgumentParser(prog="rookd")
     parser.add_argument("--config", default=ServerCli.CLI_DEFAULT_CONFIG)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -147,10 +147,10 @@ def main(list_argv: list[str] | None = None) -> int:
             return cli.run_token()
         return cli.run_list(args.limit)
     except ConfigError as err:
-        sys.stderr.write(f"crowd: {err.message}\n")
+        sys.stderr.write(f"rookd: {err.message}\n")
         return 2
-    except CrowdError as err:
-        sys.stderr.write(f"crowd: {err.message}\n")
+    except RookdError as err:
+        sys.stderr.write(f"rookd: {err.message}\n")
         return 1
 
 

@@ -12,21 +12,21 @@ warn()  { echo -e "${YELLOW}[!]${NC} $*"; }
 err()   { echo -e "${RED}[✗]${NC} $*"; }
 
 # ─── fetch a file from this repo's raw API (avoids CDN cache) ────────
-CROW_REPO_API="https://api.github.com/repos/zobinHuang/Rookery/contents/crow"
-crow_fetch() {
-  # crow_fetch <repo-path> <local-dest>
+ROOK_REPO_API="https://api.github.com/repos/zobinHuang/Rookery/contents/rook"
+rook_fetch() {
+  # rook_fetch <repo-path> <local-dest>
   # On failure, captures curl's stderr + http status into the global
-  # CROW_FETCH_ERR so the caller can surface it to the user.
+  # ROOK_FETCH_ERR so the caller can surface it to the user.
   local src="$1" dest="$2" curl_err http_code curl_rc
-  CROW_FETCH_ERR=""
+  ROOK_FETCH_ERR=""
   curl_err="$(mktemp)"
   http_code="$(curl -sSL -w '%{http_code}' \
                 -H 'Accept: application/vnd.github.v3.raw' \
-                "${CROW_REPO_API}/${src}" \
+                "${ROOK_REPO_API}/${src}" \
                 -o "$dest" 2>"$curl_err")"
   curl_rc=$?
   if [ "$curl_rc" -ne 0 ]; then
-    CROW_FETCH_ERR="curl exit=$curl_rc: $(tr '\n' ' ' <"$curl_err")"
+    ROOK_FETCH_ERR="curl exit=$curl_rc: $(tr '\n' ' ' <"$curl_err")"
     rm -f "$curl_err"
     return 1
   fi
@@ -37,7 +37,7 @@ crow_fetch() {
       # On non-2xx the body was written to $dest — peek at it for the
       # actual GitHub error (rate-limit, 404, etc). Truncate so we don't
       # spam the terminal with a full HTML page.
-      CROW_FETCH_ERR="HTTP $http_code from ${CROW_REPO_API}/${src} — $(head -c 200 "$dest" 2>/dev/null | tr '\n' ' ')"
+      ROOK_FETCH_ERR="HTTP $http_code from ${ROOK_REPO_API}/${src} — $(head -c 200 "$dest" 2>/dev/null | tr '\n' ' ')"
       rm -f "$dest"
       return 1
       ;;
@@ -47,28 +47,28 @@ crow_fetch() {
 # When running `bash setup.sh` from a clone, prefer the local file. When
 # running via `curl|bash`, BASH_SOURCE points to /dev/fd/N or main and the
 # sibling check fails, so we fall back to fetching from GitHub.
-CROW_SCRIPT_DIR=""
+ROOK_SCRIPT_DIR=""
 if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
-  CROW_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  ROOK_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 fi
-CROW_INSTALL_ERR=""
+ROOK_INSTALL_ERR=""
 
-crow_install_file() {
-  # crow_install_file <repo-path> <dest>
-  # On failure, sets CROW_INSTALL_ERR with a human-readable reason.
+rook_install_file() {
+  # rook_install_file <repo-path> <dest>
+  # On failure, sets ROOK_INSTALL_ERR with a human-readable reason.
   local src="$1" dest="$2"
-  CROW_INSTALL_ERR=""
-  if [ -n "$CROW_SCRIPT_DIR" ] && [ -f "$CROW_SCRIPT_DIR/$src" ]; then
-    if ! cp "$CROW_SCRIPT_DIR/$src" "$dest" 2>/dev/null; then
-      CROW_INSTALL_ERR="cp $CROW_SCRIPT_DIR/$src -> $dest failed"
+  ROOK_INSTALL_ERR=""
+  if [ -n "$ROOK_SCRIPT_DIR" ] && [ -f "$ROOK_SCRIPT_DIR/$src" ]; then
+    if ! cp "$ROOK_SCRIPT_DIR/$src" "$dest" 2>/dev/null; then
+      ROOK_INSTALL_ERR="cp $ROOK_SCRIPT_DIR/$src -> $dest failed"
       return 1
     fi
     return 0
   fi
-  if crow_fetch "$src" "$dest"; then
+  if rook_fetch "$src" "$dest"; then
     return 0
   fi
-  CROW_INSTALL_ERR="$CROW_FETCH_ERR"
+  ROOK_INSTALL_ERR="$ROOK_FETCH_ERR"
   return 1
 }
 
@@ -78,7 +78,7 @@ COMMIT_HASH="${COMMIT_HASH:-unknown}"
 
 echo ""
 echo "══════════════════════════════════════════════════"
-echo "  crow setup"
+echo "  rook setup"
 echo "  commit: $COMMIT_HASH"
 echo "══════════════════════════════════════════════════"
 
@@ -95,16 +95,16 @@ fi
 # ─── patch tmux config ────────────────────────────────────────────────
 TMUX_CONF="$HOME/.tmux.conf"
 
-# crow owns one block of each dotfile it configures, between these markers,
+# rook owns one block of each dotfile it configures, between these markers,
 # and rewrites only that block: whatever else is in the file is the user's and
 # stays as it was. The block goes at the end, so where a line of the user's and
-# one of crow's set the same option, crow's wins, as it did when crow wrote
+# one of rook's set the same option, rook's wins, as it did when rook wrote
 # the whole file.
-crow_write_block() {
-  # crow_write_block <file> <comment-leader> — the block's lines come on stdin
+rook_write_block() {
+  # rook_write_block <file> <comment-leader> — the block's lines come on stdin
   local file="$1" leader="$2" begin end kept
-  begin="$leader >>> crow >>>"
-  end="$leader <<< crow <<<"
+  begin="$leader >>> rook >>>"
+  end="$leader <<< rook <<<"
   kept="$(mktemp)"
   if [ -f "$file" ]; then
     awk -v begin="$begin" -v end="$end" '
@@ -119,12 +119,12 @@ crow_write_block() {
     echo "$begin"
     cat
     echo "$end"
-  } > "$file.crow-tmp"
+  } > "$file.rook-tmp"
   rm -f "$kept"
-  mv "$file.crow-tmp" "$file"
+  mv "$file.rook-tmp" "$file"
 }
 
-crow_write_block "$TMUX_CONF" "#" <<'TMUX'
+rook_write_block "$TMUX_CONF" "#" <<'TMUX'
 
 # ─── clipboard & input ───────────────────────────────────────────────
 set -g default-terminal "xterm-256color"
@@ -154,9 +154,9 @@ bind -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "~/.local/bin/osc52-cop
 # behave exactly like previous-window/next-window did before the bar.
 #
 # -b is required, not an optimisation: run-shell without it blocks the
-# server until the command returns, and crow-agent calls back into tmux.
-bind -n M-Left  if-shell -F "#{pane_at_left}"   'run-shell -b "$HOME/.local/bin/crow-agent nav left #{window_id}"'  "select-pane -L"
-bind -n M-Right if-shell -F "#{pane_at_right}"  'run-shell -b "$HOME/.local/bin/crow-agent nav right #{window_id}"' "select-pane -R"
+# server until the command returns, and rook-agent calls back into tmux.
+bind -n M-Left  if-shell -F "#{pane_at_left}"   'run-shell -b "$HOME/.local/bin/rook-agent nav left #{window_id}"'  "select-pane -L"
+bind -n M-Right if-shell -F "#{pane_at_right}"  'run-shell -b "$HOME/.local/bin/rook-agent nav right #{window_id}"' "select-pane -R"
 bind -n M-Up    if-shell -F "#{pane_at_top}"    "" "select-pane -U"
 bind -n M-Down  if-shell -F "#{pane_at_bottom}" "" "select-pane -D"
 
@@ -167,7 +167,7 @@ bind -T tab_mode r command-prompt -I "#W" "rename-window '%%'"
 bind -T tab_mode x kill-window
 # Clear a tab stuck showing an agent state — an agent SIGKILLed with its
 # pane left open never runs SessionEnd, and no tmux hook fires either.
-bind -T tab_mode c run-shell -b "$HOME/.local/bin/crow-agent clear #{window_id}"
+bind -T tab_mode c run-shell -b "$HOME/.local/bin/rook-agent clear #{window_id}"
 # Swap this pane's playbook while an agent is running in it. The agent is
 # told on its next turn, by the UserPromptSubmit hook. display-popup needs
 # tmux 3.2, and a client attached to draw on — which is the case whenever
@@ -177,7 +177,7 @@ bind -T tab_mode c run-shell -b "$HOME/.local/bin/crow-agent clear #{window_id}"
 # instead of this pane and its directory. run-shell does expand them, and
 # -b keeps the server from blocking while the popup is up.
 if-shell "tmux -V | awk '{if($2+0 >= 3.2) exit 0; else exit 1}'" \
-  "bind -T tab_mode p run-shell -b \"$HOME/.local/bin/crow-playbook pick-here '#{pane_id}' '#{pane_current_path}'\"" \
+  "bind -T tab_mode p run-shell -b \"$HOME/.local/bin/rook-playbook pick-here '#{pane_id}' '#{pane_current_path}'\"" \
   "bind -T tab_mode p display-message 'playbooks need tmux 3.2 or newer'"
 bind -T tab_mode Left previous-window
 bind -T tab_mode Right next-window
@@ -193,7 +193,7 @@ bind -T tab_mode 7 select-window -t 7
 bind -T tab_mode 8 select-window -t 8
 bind -T tab_mode 9 select-window -t 9
 # Nested-tmux passthrough: Ctrl+t Ctrl+t forwards Ctrl+t to the pane.
-# Use case: `crow` running locally with an inner `crow` over SSH.
+# Use case: `rook` running locally with an inner `rook` over SSH.
 bind -T tab_mode C-t send-keys C-t
 # Alt+arrows aren't chord triggers, so the outer always intercepts them.
 # `Ctrl+t Alt+<dir>` forwards the chord to the pane for quick inner-side
@@ -235,7 +235,7 @@ bind -r -T resize_mode Down resize-pane -D 2
 bind -T resize_mode C-n send-keys C-n
 
 # ─── F12: nested-tmux passthrough toggle ─────────────────────────────
-# When you're inside an inner tmux (e.g. SSH'd into a remote crow),
+# When you're inside an inner tmux (e.g. SSH'd into a remote rook),
 # the outer tmux intercepts Ctrl+t/p/n and Alt+arrows. F12 swaps the
 # active key-table to "off" so every outer binding becomes inert and
 # keystrokes pass straight through to the pane (= the inner tmux).
@@ -268,10 +268,10 @@ set -g status-left-length 80
 # (nested-tmux passthrough mode).
 set -g status-left "#[bg=#cba6f7,fg=#1e1e2e,bold] Rookery [#h] #[default] #[bg=#89b4fa,fg=#1e1e2e,bold] ◆ #S #[default]#{?#{==:#{client_key_table},off}, #[bg=#f9e2af]#[fg=#1e1e2e]#[bold] PASSTHRU #[default],} "
 set -g status-right-length 80
-# Per-tab uptime (#(crow-uptime)) + clock. crow-uptime prints the elapsed
+# Per-tab uptime (#(rook-uptime)) + clock. rook-uptime prints the elapsed
 # time since the current window (tab) was created, falling back to session
 # creation for windows that pre-date the install.
-set -g status-right "#[fg=#a6e3a1]running #($HOME/.local/bin/crow-uptime)#[default] #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
+set -g status-right "#[fg=#a6e3a1]running #($HOME/.local/bin/rook-uptime)#[default] #[fg=#a6adc8]│ %Y-%m-%d %H:%M "
 set -g status-interval 1
 # #{=14:...} is the plain trim, understood far back; the #{=/14/…:...}
 # form that appends an ellipsis is newer and renders empty on old tmux.
@@ -280,8 +280,8 @@ setw -g window-status-current-format "#[bg=#45475a,fg=#89b4fa,bold] ▸ #I:#{=14
 setw -g window-status-separator ""
 
 # ─── agent bar: READY / BUSY rows ────────────────────────────────────
-# Each window carries a @crow-agent option (busy | wait | idle | unset)
-# written by `crow-agent`, which code-agent hooks call. The rows below
+# Each window carries a @rook-agent option (busy | wait | idle | unset)
+# written by `rook-agent`, which code-agent hooks call. The rows below
 # filter the window list on it, entirely in tmux's format language — no
 # #(), so the 1s redraw stays free of subprocesses (see commit 1f15349
 # for what a second #() did to refresh behaviour).
@@ -289,62 +289,62 @@ setw -g window-status-separator ""
 # Two conventions keep these strings readable:
 #   * one attribute per #[...] — a comma inside #[bg=x,fg=y] would be
 #     read as a #{?...} argument separator and split the conditional.
-#   * the row templates live here as user options; crow-agent only ever
-#     writes `status-format[N] = #{E:@crow-row-<name>}` into a session,
+#   * the row templates live here as user options; rook-agent only ever
+#     writes `status-format[N] = #{E:@rook-row-<name>}` into a session,
 #     so it never has to re-quote any of this.
 
 # READY row items — anything not busy: waiting on you, idle, or a plain
 # tab that has never run an agent (dim, no glyph).
-set -g @crow-ready-item "#{?#{==:#{@crow-agent},busy},,#[range=window|#{window_index}]#{?#{==:#{@crow-agent},wait},#[fg=#f9e2af] ! #I:#{=14:window_name} ,#{?#{==:#{@crow-agent},idle},#[fg=#a6e3a1] ○ #I:#{=14:window_name} ,#[fg=#6c7086]   #I:#{=14:window_name} }}#[default]#[norange]}"
-set -g @crow-ready-cur  "#{?#{==:#{@crow-agent},busy},,#[range=window|#{window_index}]#[list=focus]#[bg=#45475a]#[fg=#89b4fa]#[bold] ▸ #I:#{=14:window_name} #[default]#[norange]#[list=on]}"
+set -g @rook-ready-item "#{?#{==:#{@rook-agent},busy},,#[range=window|#{window_index}]#{?#{==:#{@rook-agent},wait},#[fg=#f9e2af] ! #I:#{=14:window_name} ,#{?#{==:#{@rook-agent},idle},#[fg=#a6e3a1] ○ #I:#{=14:window_name} ,#[fg=#6c7086]   #I:#{=14:window_name} }}#[default]#[norange]}"
+set -g @rook-ready-cur  "#{?#{==:#{@rook-agent},busy},,#[range=window|#{window_index}]#[list=focus]#[bg=#45475a]#[fg=#89b4fa]#[bold] ▸ #I:#{=14:window_name} #[default]#[norange]#[list=on]}"
 
 # BUSY row items — agent currently working.
-set -g @crow-busy-item "#{?#{==:#{@crow-agent},busy},#[range=window|#{window_index}]#[fg=#fab387] ● #I:#{=14:window_name} #[default]#[norange],}"
-set -g @crow-busy-cur  "#{?#{==:#{@crow-agent},busy},#[range=window|#{window_index}]#[list=focus]#[bg=#45475a]#[fg=#fab387]#[bold] ▸ ● #I:#{=14:window_name} #[default]#[norange]#[list=on],}"
+set -g @rook-busy-item "#{?#{==:#{@rook-agent},busy},#[range=window|#{window_index}]#[fg=#fab387] ● #I:#{=14:window_name} #[default]#[norange],}"
+set -g @rook-busy-cur  "#{?#{==:#{@rook-agent},busy},#[range=window|#{window_index}]#[list=focus]#[bg=#45475a]#[fg=#fab387]#[bold] ▸ ● #I:#{=14:window_name} #[default]#[norange]#[list=on],}"
 
 # Row templates. #{W:normal,current} loops the window list and picks the
 # second format for the current window, so neither item format has to
 # test for it.
-set -g @crow-row-ready "#[align=left]#[bg=#a6e3a1]#[fg=#1e1e2e]#[bold] READY #[default] #[list=on]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#{E:@crow-ready-item},#{E:@crow-ready-cur}}#[nolist]"
-set -g @crow-row-busy  "#[align=left]#[bg=#fab387]#[fg=#1e1e2e]#[bold] BUSY  #[default] #[list=on]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#{E:@crow-busy-item},#{E:@crow-busy-cur}}#[nolist]"
+set -g @rook-row-ready "#[align=left]#[bg=#a6e3a1]#[fg=#1e1e2e]#[bold] READY #[default] #[list=on]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#{E:@rook-ready-item},#{E:@rook-ready-cur}}#[nolist]"
+set -g @rook-row-busy  "#[align=left]#[bg=#fab387]#[fg=#1e1e2e]#[bold] BUSY  #[default] #[list=on]#[list=left-marker]<#[list=right-marker]>#[list=on]#{W:#{E:@rook-busy-item},#{E:@rook-busy-cur}}#[nolist]"
 # Chrome row — the default status line minus the window list, which the
 # agent rows have taken over. Always the bottom row, so the clock stays
 # put as rows appear and disappear above it.
-set -g @crow-row-chrome "#[align=left range=left #{E:status-left-style}]#[push-default]#{T;=/#{status-left-length}:status-left}#[pop-default]#[norange default]#[align=right range=right #{E:status-right-style}]#[push-default]#{T;=/#{status-right-length}:status-right}#[pop-default]#[norange default]"
+set -g @rook-row-chrome "#[align=left range=left #{E:status-left-style}]#[push-default]#{T;=/#{status-left-length}:status-left}#[pop-default]#[norange default]#[align=right range=right #{E:status-right-style}]#[push-default]#{T;=/#{status-right-length}:status-right}#[pop-default]#[norange default]"
 
 # ─── pane borders ────────────────────────────────────────────────────
 set -g pane-border-style "fg=#45475a"
 set -g pane-active-border-style "fg=#89b4fa"
 
-# ─── per-tab uptime: stamp window creation time so crow-uptime can show
+# ─── per-tab uptime: stamp window creation time so rook-uptime can show
 #     "running 5m 30s" relative to when this tab opened, not when the
 #     session opened. Uses run-shell + date because #{T:%s} is empty on
 #     recent tmux builds (the strftime %s format isn't reliably compiled in).
-set-hook -g after-new-window  'run-shell -b "tmux set-option -w -t #{window_id} @crow-window-created \"$(date +%s)\""'
-set-hook -g after-new-session 'run-shell -b "tmux set-option -w -t #{window_id} @crow-window-created \"$(date +%s)\""'
+set-hook -g after-new-window  'run-shell -b "tmux set-option -w -t #{window_id} @rook-window-created \"$(date +%s)\""'
+set-hook -g after-new-session 'run-shell -b "tmux set-option -w -t #{window_id} @rook-window-created \"$(date +%s)\""'
 
 # ─── agent bar: keep the row count in step with windows and panes ────
 # These must come last. set-hook -g *replaces* a hook array, so an
 # appended entry placed above the uptime stamps would be silently wiped
 # by them; -ga below appends to what those two just set.
-set-hook -ga after-new-window  'run-shell -b "$HOME/.local/bin/crow-agent sync"'
-set-hook -ga after-new-session 'run-shell -b "$HOME/.local/bin/crow-agent sync"'
+set-hook -ga after-new-window  'run-shell -b "$HOME/.local/bin/rook-agent sync"'
+set-hook -ga after-new-session 'run-shell -b "$HOME/.local/bin/rook-agent sync"'
 # -g, not -ga, for these: nothing else writes them, and sourcing this
 # file again (which is exactly what a hot upgrade does) would otherwise
 # append a duplicate every time, so each event would fire sync N times.
 # The two above must stay -ga because the uptime stamps own index 0.
-set-hook -g  session-created   'run-shell -b "$HOME/.local/bin/crow-agent sync"'
-set-hook -g  client-attached   'run-shell -b "$HOME/.local/bin/crow-agent sync"'
-set-hook -g  window-unlinked   'run-shell -b "$HOME/.local/bin/crow-agent sync"'
+set-hook -g  session-created   'run-shell -b "$HOME/.local/bin/rook-agent sync"'
+set-hook -g  client-attached   'run-shell -b "$HOME/.local/bin/rook-agent sync"'
+set-hook -g  window-unlinked   'run-shell -b "$HOME/.local/bin/rook-agent sync"'
 # A pane going away takes its agent with it; without these, a tab whose
 # agent was killed mid-run would sit in BUSY forever. Both are needed and
 # they don't overlap: a pane whose command exits fires pane-exited, while
 # `Ctrl+p x` runs kill-pane, which fires only after-kill-pane.
-set-hook -g  pane-exited       'run-shell -b "$HOME/.local/bin/crow-agent sync"'
-set-hook -g  after-kill-pane   'run-shell -b "$HOME/.local/bin/crow-agent sync"'
-set-hook -g  pane-died         'run-shell -b "$HOME/.local/bin/crow-agent sync"'
+set-hook -g  pane-exited       'run-shell -b "$HOME/.local/bin/rook-agent sync"'
+set-hook -g  after-kill-pane   'run-shell -b "$HOME/.local/bin/rook-agent sync"'
+set-hook -g  pane-died         'run-shell -b "$HOME/.local/bin/rook-agent sync"'
 TMUX
-info "Updated crow's block of .tmux.conf (tabs, panes, Alt keybindings, status bar)"
+info "Updated rook's block of .tmux.conf (tabs, panes, Alt keybindings, status bar)"
 
 # ─── install OSC 52 clipboard helper ─────────────────────────────────
 mkdir -p "$HOME/.local/bin"
@@ -364,11 +364,11 @@ info "Installed osc52-copy helper"
 # ─── patch vimrc ──────────────────────────────────────────────────────
 VIMRC="$HOME/.vimrc"
 
-crow_write_block "$VIMRC" '"' <<'VIM'
+rook_write_block "$VIMRC" '"' <<'VIM'
 syntax on
 set number
 VIM
-info "Updated crow's block of .vimrc (line numbers + syntax highlighting)"
+info "Updated rook's block of .vimrc (line numbers + syntax highlighting)"
 
 # ─── 3. helper scripts ───────────────────────────────────────────────
 echo ""
@@ -377,71 +377,71 @@ echo "── helpers ───────────────────�
 mkdir -p "$HOME/.local/bin"
 
 # Always overwrite so re-running setup.sh upgrades these
-_crow_install_or_fail() {
-  # _crow_install_or_fail <repo-path> <dest> <label>
-  if crow_install_file "$1" "$2"; then
+_rook_install_or_fail() {
+  # _rook_install_or_fail <repo-path> <dest> <label>
+  if rook_install_file "$1" "$2"; then
     return 0
   fi
-  err "Failed to install $3 — ${CROW_INSTALL_ERR:-<no error captured>}"
+  err "Failed to install $3 — ${ROOK_INSTALL_ERR:-<no error captured>}"
   return 1
 }
 
-if _crow_install_or_fail bin/crow-uptime "$HOME/.local/bin/crow-uptime" "crow-uptime"; then
-  chmod +x "$HOME/.local/bin/crow-uptime"
-  info "Installed crow-uptime"
+if _rook_install_or_fail bin/rook-uptime "$HOME/.local/bin/rook-uptime" "rook-uptime"; then
+  chmod +x "$HOME/.local/bin/rook-uptime"
+  info "Installed rook-uptime"
 fi
 
-if _crow_install_or_fail bin/crow-agent "$HOME/.local/bin/crow-agent" "crow-agent"; then
-  chmod +x "$HOME/.local/bin/crow-agent"
-  info "Installed crow-agent"
+if _rook_install_or_fail bin/rook-agent "$HOME/.local/bin/rook-agent" "rook-agent"; then
+  chmod +x "$HOME/.local/bin/rook-agent"
+  info "Installed rook-agent"
 fi
 
-if _crow_install_or_fail bin/crow-hooks "$HOME/.local/bin/crow-hooks" "crow-hooks"; then
-  chmod +x "$HOME/.local/bin/crow-hooks"
-  info "Installed crow-hooks"
+if _rook_install_or_fail bin/rook-hooks "$HOME/.local/bin/rook-hooks" "rook-hooks"; then
+  chmod +x "$HOME/.local/bin/rook-hooks"
+  info "Installed rook-hooks"
 fi
 
-if _crow_install_or_fail bin/crow-session "$HOME/.local/bin/crow-session" "crow-session"; then
-  chmod +x "$HOME/.local/bin/crow-session"
-  info "Installed crow-session"
+if _rook_install_or_fail bin/rook-session "$HOME/.local/bin/rook-session" "rook-session"; then
+  chmod +x "$HOME/.local/bin/rook-session"
+  info "Installed rook-session"
 fi
 
-if _crow_install_or_fail bin/crow-playbook "$HOME/.local/bin/crow-playbook" "crow-playbook"; then
-  chmod +x "$HOME/.local/bin/crow-playbook"
-  info "Installed crow-playbook"
+if _rook_install_or_fail bin/rook-playbook "$HOME/.local/bin/rook-playbook" "rook-playbook"; then
+  chmod +x "$HOME/.local/bin/rook-playbook"
+  info "Installed rook-playbook"
 fi
 
-# ─── 4. install crow command ─────────────────────────────────────
+# ─── 4. install rook command ─────────────────────────────────────
 echo ""
-echo "── crow command ──────────────────────────────"
+echo "── rook command ──────────────────────────────"
 
-CROW_BIN="$HOME/.local/bin/crow"
+ROOK_BIN="$HOME/.local/bin/rook"
 
-if _crow_install_or_fail bin/crow "$CROW_BIN" "crow"; then
-  chmod +x "$CROW_BIN"
-  info "Installed crow command to $CROW_BIN"
+if _rook_install_or_fail bin/rook "$ROOK_BIN" "rook"; then
+  chmod +x "$ROOK_BIN"
+  info "Installed rook command to $ROOK_BIN"
 fi
 
 # ensure ~/.local/bin is in PATH
 SHELL_RC="$HOME/.bashrc"
 [ -n "${ZSH_VERSION:-}" ] && SHELL_RC="$HOME/.zshrc"
-PATH_MARKER="# [crow] path"
+PATH_MARKER="# [rook] path"
 
-# remove old crow path line if exists, then write fresh.
+# remove old rook path line if exists, then write fresh.
 # Brackets in PATH_MARKER are regex metacharacters; literal-match them.
-sed -i.bak '/# \[crow\] path/,+1d' "$SHELL_RC" 2>/dev/null || true
+sed -i.bak '/# \[rook\] path/,+1d' "$SHELL_RC" 2>/dev/null || true
 rm -f "${SHELL_RC}.bak"
 
 PATH_LINE="export PATH=\"\$HOME/.local/bin:\$PATH\""
 printf '\n%s\n%s\n' "$PATH_MARKER" "$PATH_LINE" >> "$SHELL_RC"
-info "Added crow PATH to $(basename "$SHELL_RC")"
+info "Added rook PATH to $(basename "$SHELL_RC")"
 warn "Run 'source $SHELL_RC' or restart your shell"
 
 # Strip any vibe-music shell-hook line left by older installs (idempotent).
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
   [ -f "$RC" ] || continue
   # Brackets in the marker are regex metacharacters; literal-match them.
-  sed -i.bak '/# \[crow\] vibe-hooks/,+1d' "$RC" 2>/dev/null || true
+  sed -i.bak '/# \[rook\] vibe-hooks/,+1d' "$RC" 2>/dev/null || true
   rm -f "${RC}.bak"
 done
 
@@ -449,21 +449,21 @@ done
 echo ""
 echo "── code-agent hooks ──────────────────────────────"
 
-CROW_CODEX_NEEDS_TRUST=0
-while IFS=: read -r CROW_HOOK_AGENT CROW_HOOK_RESULT; do
-  CROW_HOOK_RESULT="${CROW_HOOK_RESULT# }"
-  case "$CROW_HOOK_AGENT:$CROW_HOOK_RESULT" in
+ROOK_CODEX_NEEDS_TRUST=0
+while IFS=: read -r ROOK_HOOK_AGENT ROOK_HOOK_RESULT; do
+  ROOK_HOOK_RESULT="${ROOK_HOOK_RESULT# }"
+  case "$ROOK_HOOK_AGENT:$ROOK_HOOK_RESULT" in
     claude:merged) info "Merged Claude Code hooks into ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json" ;;
     codex:merged)  info "Merged Codex hooks into ${CODEX_HOME:-$HOME/.codex}/hooks.json"
-                   CROW_CODEX_NEEDS_TRUST=1 ;;
+                   ROOK_CODEX_NEEDS_TRUST=1 ;;
     codex:absent)  ;;
     *:no-json-tool)
-      warn "Neither jq nor python3 found; skipped $CROW_HOOK_AGENT hook setup." ;;
+      warn "Neither jq nor python3 found; skipped $ROOK_HOOK_AGENT hook setup." ;;
     *:failed)
-      err "Could not merge $CROW_HOOK_AGENT hooks — its config is not valid JSON. Left it untouched." ;;
+      err "Could not merge $ROOK_HOOK_AGENT hooks — its config is not valid JSON. Left it untouched." ;;
   esac
 done <<EOF
-$("$HOME/.local/bin/crow-hooks" install)
+$("$HOME/.local/bin/rook-hooks" install)
 EOF
 
 # ─── 6. hot reload ───────────────────────────────────────────────────
@@ -480,16 +480,16 @@ echo "── reload ────────────────────
 # appends — which is exactly why the sync hooks use `set-hook -g`; with
 # `-ga` each re-source would stack another copy and every event would
 # fire sync N times. The agent rows survive too, because status-format
-# holds an indirection (`#{E:@crow-row-...}`) rather than the template
+# holds an indirection (`#{E:@rook-row-...}`) rather than the template
 # itself, so live sessions pick up new row rendering for free.
 #
 # Code-agent hooks need nothing here: both Claude Code and codex re-read
 # their hook config mid-session (codex asks you to re-trust it first).
 if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
-  CROW_LIVE="$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')"
+  ROOK_LIVE="$(tmux list-sessions 2>/dev/null | wc -l | tr -d ' ')"
   if tmux source-file "$TMUX_CONF" 2>/dev/null; then
-    "$HOME/.local/bin/crow-agent" sync >/dev/null 2>&1 || true
-    info "Reloaded into $CROW_LIVE running session(s) — no restart needed"
+    "$HOME/.local/bin/rook-agent" sync >/dev/null 2>&1 || true
+    info "Reloaded into $ROOK_LIVE running session(s) — no restart needed"
   else
     warn "Could not reload the running tmux server."
     warn "Run this by hand to finish the upgrade: tmux source-file ~/.tmux.conf"
@@ -503,8 +503,8 @@ fi
 # codex will not fire a hook at all until its new config is trusted. Push
 # what is already under way instead of waiting. Nothing happens here if
 # this machine was never connected to a session server.
-if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/crow/connect.json" ]; then
-  nohup "$HOME/.local/bin/crow-session" adopt --quiet >/dev/null 2>&1 &
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/rook/connect.json" ]; then
+  nohup "$HOME/.local/bin/rook-session" adopt --quiet >/dev/null 2>&1 &
   info "Pushing agent sessions already under way to the session server"
 fi
 
@@ -514,13 +514,13 @@ echo "════════════════════════�
 echo "  Setup complete!"
 echo ""
 echo "  Sessions:"
-echo "    crow new <name>          Create a new session"
-echo "    crow attach <name>       Attach to existing session"
-echo "    crow ls                  List all sessions"
-echo "    crow kill <name>         Kill a session"
-echo "    crow exit                Kill current session"
-echo "    crow connect <host> <port> --token <token>"
-echo "                             Upload session history to a crowd server"
+echo "    rook new <name>          Create a new session"
+echo "    rook attach <name>       Attach to existing session"
+echo "    rook ls                  List all sessions"
+echo "    rook kill <name>         Kill a session"
+echo "    rook exit                Kill current session"
+echo "    rook connect <host> <port> --token <token>"
+echo "                             Upload session history to a rookd server"
 echo ""
 echo "  Tabs (Ctrl+t):          Panes (Ctrl+p):"
 echo "    n   new tab              d   split down"
@@ -536,7 +536,7 @@ echo "  Alt+left/right:   panes first, then along the status bar,"
 echo "                    walking the READY row then the BUSY row."
 echo "  Alt+up/down:      panes only."
 echo ""
-if [ "$CROW_CODEX_NEEDS_TRUST" -eq 1 ]; then
+if [ "$ROOK_CODEX_NEEDS_TRUST" -eq 1 ]; then
   echo ""
   echo "  ─────────────────────────────────────────────"
   echo "  ONE MANUAL STEP for codex:"

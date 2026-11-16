@@ -2,7 +2,7 @@ import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
-from crowd.errors import ConfigError
+from rookd.errors import ConfigError
 
 
 @dataclass

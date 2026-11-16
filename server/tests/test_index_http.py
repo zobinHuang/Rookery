@@ -5,11 +5,11 @@ import threading
 import unittest
 from pathlib import Path
 from tests.test_skills import FakeResolver
-from crowd.config import ServerConfig
-from crowd.http import CrowdServer
-from crowd.playbooks import PlaybookIndex
-from crowd.skills import SkillIndex
-from crowd.store import SessionStore
+from rookd.config import ServerConfig
+from rookd.http import RookdServer
+from rookd.playbooks import PlaybookIndex
+from rookd.skills import SkillIndex
+from rookd.store import SessionStore
 
 
 class IndexApiTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class IndexApiTest(unittest.TestCase):
             tls_cert=None,
             tls_key=None,
         )
-        self.server = CrowdServer(
+        self.server = RookdServer(
             config=config,
             store=SessionStore(self.root),
             skills=skills,

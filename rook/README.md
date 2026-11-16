@@ -1,4 +1,4 @@
-# crow
+# rook
 
 <img src="./docs/screenshot.png" />
 
@@ -7,32 +7,32 @@
 ## Install
 
 ```bash
-curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/crow/setup.sh | bash
+curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/rook/setup.sh | bash
 ```
 
 ## Usage
 
 ```bash
 # create a session and attach to it
-crow new <name>
+rook new <name>
 
 # attach to an existing session
-crow attach <name>
+rook attach <name>
 
 # list sessions
-crow ls
+rook ls
 
 # kill a session by name
-crow kill <name>
+rook kill <name>
 
 # kill the session you're in
-crow exit
+rook exit
 
 # upload agent session history to a server
-crow connect <host> <port> --token <token>
+rook connect <host> <port> --token <token>
 
 # stop uploading
-crow disconnect
+rook disconnect
 ```
 
 See [keybindings](docs/keybindings.md), [session history](docs/sessions.md) and

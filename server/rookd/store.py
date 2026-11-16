@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
-from crowd.errors import CursorConflictError, NotFoundError, ValidationError
+from rookd.errors import CursorConflictError, NotFoundError, ValidationError
 
 
 @dataclass

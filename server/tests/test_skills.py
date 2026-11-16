@@ -1,8 +1,8 @@
 import tempfile
 import unittest
 from pathlib import Path
-from crowd.errors import NotFoundError, ValidationError
-from crowd.skills import (
+from rookd.errors import NotFoundError, ValidationError
+from rookd.skills import (
     GitRefResolver,
     SkillIndex,
     SkillRecord,

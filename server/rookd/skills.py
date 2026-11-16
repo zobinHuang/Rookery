@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
-from crowd.errors import NotFoundError, ValidationError
-from crowd.records import RecordStore
+from rookd.errors import NotFoundError, ValidationError
+from rookd.records import RecordStore
 
 
 @dataclass

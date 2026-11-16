@@ -2,8 +2,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from crowd.errors import CursorConflictError, NotFoundError, ValidationError
-from crowd.store import AgentAccount, SessionMeta, SessionQuery, SessionStore
+from rookd.errors import CursorConflictError, NotFoundError, ValidationError
+from rookd.store import AgentAccount, SessionMeta, SessionQuery, SessionStore
 
 
 def make_meta(
@@ -46,10 +46,10 @@ class SessionMetaTest(unittest.TestCase):
         self.assertNotIn("..", account.directory_name())
 
     def test_project_directory_keeps_basename_and_separates_same_names(self) -> None:
-        one = make_meta(cwd="/a/crow").project_directory_name()
-        two = make_meta(cwd="/b/crow").project_directory_name()
-        self.assertTrue(one.startswith("crow-"))
-        self.assertTrue(two.startswith("crow-"))
+        one = make_meta(cwd="/a/rook").project_directory_name()
+        two = make_meta(cwd="/b/rook").project_directory_name()
+        self.assertTrue(one.startswith("rook-"))
+        self.assertTrue(two.startswith("rook-"))
         self.assertNotEqual(one, two)
 
     def test_layout_splits_by_agent_account_and_project(self) -> None:

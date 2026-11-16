@@ -1,7 +1,7 @@
 #!/bin/sh
-# [crow] crow-uptime — print the current tmux session's uptime as
+# [rook] rook-uptime — print the current tmux session's uptime as
 # "1d 2h 3m" / "2h 30m 15s" / "5m 12s". Called from status-right via
-# #(crow-uptime).
+# #(rook-uptime).
 #
 # Why a helper? tmux's format parser does NOT expand #{...} substitutions
 # inside the contents of #(...), so the previous inline approach
@@ -16,8 +16,8 @@ set -u
 # Prefer the per-window timestamp written by the after-new-window /
 # after-new-session hooks (set in ~/.tmux.conf); fall back to the
 # session's creation time for windows that pre-date the hook (e.g., the
-# user's tmux server was already running when crow was upgraded).
-created=$(tmux display-message -p '#{@crow-window-created}' 2>/dev/null)
+# user's tmux server was already running when rook was upgraded).
+created=$(tmux display-message -p '#{@rook-window-created}' 2>/dev/null)
 case "$created" in
   ''|*[!0-9]*) created=$(tmux display-message -p '#{session_created}' 2>/dev/null) ;;
 esac

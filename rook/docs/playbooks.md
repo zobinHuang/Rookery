@@ -15,12 +15,12 @@ curl -sH "Authorization: Bearer $TOKEN" "$BASE/v1/playbooks" \
        "skills": ["github-com-owner-repo-review-security"]}'
 
 # on a client
-crow-playbook list
-crow-playbook install backend-review
-crow-playbook uninstall
+rook-playbook list
+rook-playbook install backend-review
+rook-playbook uninstall
 ```
 
-Starting an agent in a crow pane offers you a playbook in a popup; `Ctrl+t` `p`
+Starting an agent in a rook pane offers you a playbook in a popup; `Ctrl+t` `p`
 raises the same picker, so you can change a pane's playbook with an agent already
 running in it. The agent is told on its next turn.
 
@@ -64,5 +64,5 @@ skill one of three ways, and the difference matters:
 Upstream is consulted when a playbook is loaded — when an agent session starts, or
 when you pick one with `Ctrl+t` `p`. Nothing polls in the background.
 
-Fetched trees are cached by commit under `~/.local/share/crow/skills/`, so
+Fetched trees are cached by commit under `~/.local/share/rook/skills/`, so
 switching back to a playbook you have used before costs no network at all.

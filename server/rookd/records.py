@@ -4,7 +4,7 @@ import re
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
-from crowd.errors import NotFoundError, ValidationError
+from rookd.errors import NotFoundError, ValidationError
 
 
 class RecordStore:

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# [crow]
+# [rook]
 set -euo pipefail
 
 usage() {
   echo "Usage:"
-  echo "  crow new <session-name>     Create and attach to a new crow session"
-  echo "  crow attach <name>          Attach to an existing session"
-  echo "  crow ls                     List all crow sessions"
-  echo "  crow kill <name>            Kill a session by name"
-  echo "  crow exit                   Kill current session"
+  echo "  rook new <session-name>     Create and attach to a new rook session"
+  echo "  rook attach <name>          Attach to an existing session"
+  echo "  rook ls                     List all rook sessions"
+  echo "  rook kill <name>            Kill a session by name"
+  echo "  rook exit                   Kill current session"
   echo ""
-  echo "  crow connect <host> <port> --token <token>"
-  echo "                              Upload agent session history to a crowd server"
-  echo "  crow disconnect             Stop uploading session history"
-  echo "  crow sessions               Show the upload connection and its backlog"
+  echo "  rook connect <host> <port> --token <token>"
+  echo "                              Upload agent session history to a rookd server"
+  echo "  rook disconnect             Stop uploading session history"
+  echo "  rook sessions               Show the upload connection and its backlog"
   exit 1
 }
 
@@ -34,7 +34,7 @@ case "$CMD" in
     ;;
   attach)
     if [ $# -lt 1 ]; then
-      echo "Usage: crow attach <session-name>"
+      echo "Usage: rook attach <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$1"
@@ -71,12 +71,12 @@ case "$CMD" in
       fi
     done < <(tmux list-sessions -F "#{session_name}|#{session_created}" 2>/dev/null || true)
     if [ "$FOUND" -eq 0 ]; then
-      echo "No crow sessions."
+      echo "No rook sessions."
     fi
     ;;
   kill)
     if [ $# -lt 1 ]; then
-      echo "Usage: crow kill <session-name>"
+      echo "Usage: rook kill <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$1"
@@ -92,27 +92,27 @@ case "$CMD" in
     while [ $# -gt 0 ]; do
       case "$1" in
         --) shift; NAME="${1:-}"; break ;;
-        -*) echo "crow new: unknown flag $1" >&2; exit 1 ;;
+        -*) echo "rook new: unknown flag $1" >&2; exit 1 ;;
         *)  NAME="$1"; shift ;;
       esac
     done
     if [ -z "$NAME" ]; then
-      echo "Usage: crow new <session-name>"
+      echo "Usage: rook new <session-name>"
       exit 1
     fi
     SESSION_NAME="$(whoami)-$NAME"
     if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
-      echo "Session '$SESSION_NAME' already exists. Use 'crow attach $NAME' instead."
+      echo "Session '$SESSION_NAME' already exists. Use 'rook attach $NAME' instead."
       exit 1
     fi
     tmux new-session -d -s "$SESSION_NAME" -c "$HOME"
     tmux attach-session -t "$SESSION_NAME"
     ;;
   connect|disconnect)
-    exec "$HOME/.local/bin/crow-session" "$CMD" "$@"
+    exec "$HOME/.local/bin/rook-session" "$CMD" "$@"
     ;;
   sessions)
-    exec "$HOME/.local/bin/crow-session" status
+    exec "$HOME/.local/bin/rook-session" status
     ;;
   -h|--help) usage ;;
   *)         usage ;;

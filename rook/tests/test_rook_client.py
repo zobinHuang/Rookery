@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT / "server"))
 from roost.config import ServerConfig  # noqa: E402
 from roost.http import RoostServer  # noqa: E402
 from roost.resources import ResourceRef  # noqa: E402
-from roost.store import SessionStore  # noqa: E402
+from roost.store import SessionMeta, SessionStore  # noqa: E402
 
 LOADER = importlib.machinery.SourceFileLoader("rook_client", str(REPO_ROOT / "rook" / "bin" / "rook-client"))
 SPEC = importlib.util.spec_from_loader("rook_client", LOADER)
@@ -226,6 +226,58 @@ class QueueAndSendTest(RookHomeTest):
         self.assertEqual(rook_client.RookClient.flush(), 0)
         agent = server.resources.get(ResourceRef("agent", SESSION))
         self.assertEqual(agent.map_attributes["state"], "thinking")
+
+
+
+class AgentCommandsTest(QueueAndSendTest):
+    """`rook agent` against a roost of the test's own."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.server = self.start_server()
+        self.connect(self.server.bound_port())
+
+    def report(self, list_events: list[dict[str, object]]) -> None:
+        self.server.events.record(list_events)
+
+    def run_client(self, list_argv: list[str]) -> str:
+        stdout = io.StringIO()
+        with mock.patch.object(sys, "stdout", stdout):
+            self.assertEqual(rook_client.main(list_argv), 0)
+        return stdout.getvalue()
+
+    def start_agent(self, agent_id: str, state: str, at: str, detail: dict[str, object] | None = None) -> None:
+        actor = {"kind": "agent", "id": agent_id}
+        self.report([
+            {"actor": actor, "verb": "started", "at": at, "detail": {"name": f"studio/{agent_id}", "rook_name": "studio", **(detail or {})}},
+            {"actor": actor, "verb": "state", "at": at, "detail": {"state": state}},
+        ])
+
+    def test_status_lists_those_needing_a_person_first_and_leaves_ended_ones_out(self) -> None:
+        self.report([{"actor": {"kind": "rook", "id": "studio"}, "verb": "connected"}])
+        self.start_agent("busy", "working", "2026-11-16T10:00:00.000+00:00", {"cwd": "/src/payments", "git_branch": "main"})
+        self.start_agent("asking", "needs_approval", "2026-11-16T09:00:00.000+00:00")
+        self.start_agent("gone", "ended", "2026-11-16T11:00:00.000+00:00")
+        self.start_agent("busy~helper", "working", "2026-11-16T10:30:00.000+00:00", {"parent": "busy"})
+        list_rows = json.loads(self.run_client(["agent", "status", "--json"]))
+        self.assertEqual([row["id"] for row in list_rows], ["asking", "busy"])
+        self.assertTrue(list_rows[0]["needs_person"])
+        self.assertEqual(list_rows[1]["project"], "payments")
+        self.assertEqual(list_rows[1]["subagents"], 1)
+        self.assertTrue(list_rows[1]["rook_online"])
+        list_all = json.loads(self.run_client(["agent", "status", "--all", "--json"]))
+        self.assertIn("gone", [row["id"] for row in list_all])
+
+    def test_tail_reads_only_the_end_of_a_long_transcript(self) -> None:
+        self.server.store.begin(SessionMeta.from_request(session_id="agent-helper", map_body={"agent": "claude"}))
+        list_lines = [
+            json.dumps({"type": "user", "message": {"role": "user", "content": f"step {index}"}})
+            for index in range(5000)
+        ]
+        self.server.store.append("agent-helper", 0, ("\n".join(list_lines) + "\n").encode(), do_reset=False)
+        with mock.patch.object(rook_client.AgentCommands, "AGENT_TAIL_BYTES", 2000):
+            output = self.run_client(["agent", "tail", "busy~helper", "--steps", "3"])
+        self.assertEqual(output.splitlines(), ["[user] step 4997", "[user] step 4998", "[user] step 4999"])
 
 
 if __name__ == "__main__":

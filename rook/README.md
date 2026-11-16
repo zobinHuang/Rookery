@@ -45,6 +45,10 @@ rook resource ls --kind agent
 rook resource get playbook backend-review
 rook resource update memory <id> --attr text="use cursors, not offsets"
 
+# see every agent's state, those waiting on you first, and what one did lately
+rook agent status
+rook agent tail <agent>
+
 # send another agent a message, and check the live link
 rook message <agent> "the api is up"
 rook link

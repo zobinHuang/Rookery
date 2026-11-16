@@ -202,6 +202,50 @@ class Connection:
         raw = self.request_bytes(method, path, map_body)
         return json.loads(raw) if raw else {}
 
+    def transcript_tail(self, session_id: str, nb_tail_bytes: int) -> bytes:
+        """About the last bytes of a session's transcript, from the start of a line, without fetching the
+        rest of it.
+
+        Args:
+            session_id: the session whose transcript to read
+            nb_tail_bytes: how much of its end to read
+
+        Raises:
+            RookClientError: if roost cannot be reached or holds no such session
+        """
+        path = f"/v1/sessions/{urllib.parse.quote(session_id, safe='')}/transcript"
+        nb_total = int(self.response_header("GET", f"{path}?limit=1", "X-Rook-Total") or 0)
+        offset = max(0, nb_total - nb_tail_bytes)
+        raw = self.request_bytes("GET", f"{path}?offset={offset}")
+        if offset > 0:
+            _, _, raw = raw.partition(b"\n")
+        return raw
+
+    def response_header(self, method: str, path: str, header: str) -> str | None:
+        """One header of roost's answer to a request whose body is not needed.
+
+        Raises:
+            RookClientError: if roost cannot be reached or refuses the request
+        """
+        request = urllib.request.Request(self.base_url + path, method=method)
+        request.add_header("Authorization", f"Bearer {self.token}")
+        try:
+            with urllib.request.urlopen(request, timeout=self.CONNECTION_TIMEOUT_SECONDS, context=self._context()) as response:
+                return response.headers.get(header)
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode("utf-8", errors="replace")
+            raise RookClientError(f"roost answered {err.code}: {detail}") from err
+        except (urllib.error.URLError, OSError) as err:
+            raise RookClientError(f"cannot reach roost at {self.base_url}: {err}") from err
+
+    def _context(self) -> ssl.SSLContext | None:
+        if not self.is_insecure:
+            return None
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context
+
     def request_bytes(self, method: str, path: str, map_body: object = None) -> bytes:
         """Send one request to roost and take its answer as it came, for answers that are not one object.
 
@@ -213,13 +257,8 @@ class Connection:
         request.add_header("Authorization", f"Bearer {self.token}")
         if data is not None:
             request.add_header("Content-Type", "application/json")
-        context = None
-        if self.is_insecure:
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
         try:
-            with urllib.request.urlopen(request, timeout=self.CONNECTION_TIMEOUT_SECONDS, context=context) as response:
+            with urllib.request.urlopen(request, timeout=self.CONNECTION_TIMEOUT_SECONDS, context=self._context()) as response:
                 raw = response.read()
         except urllib.error.HTTPError as err:
             detail = err.read().decode("utf-8", errors="replace")
@@ -985,6 +1024,123 @@ class ResourceCommands:
         sys.stdout.write("\n")
 
 
+class AgentCommands:
+    """`rook agent`: the fleet as a person or an agent overseeing it reads it: who runs where, in what
+    state, who needs a person, and what one of them said and did lately."""
+
+    AGENT_ATTENTION_STATES = ("needs_approval", "needs_input", "error", "rate_limited")
+    AGENT_BUSY_STATES = ("thinking", "working", "compacting")
+    AGENT_TAIL_BYTES = 400_000
+    AGENT_LIST_LIMIT = 500
+    AGENT_SUBAGENT_SEPARATOR = "~"
+    AGENT_SUBAGENT_SESSION_PREFIX = "agent-"
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the agent subcommands to a parser."""
+        commands = parser.add_subparsers(dest="action", required=True)
+        status_parser = commands.add_parser("status", help="every agent's state, those needing a person first")
+        status_parser.add_argument("--all", action="store_true", help="list ended agents too")
+        status_parser.add_argument("--json", action="store_true")
+        tail_parser = commands.add_parser("tail", help="what an agent said and did lately")
+        tail_parser.add_argument("agent", help="the agent's id")
+        tail_parser.add_argument("--steps", type=int, default=40, help="how many of its latest steps")
+
+    @classmethod
+    def run(cls, args: argparse.Namespace, connection: Connection) -> int:
+        """Carry out one subcommand, printing its result.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if roost refuses the request
+        """
+        if args.action == "status":
+            list_rows = cls.status(connection, is_all=args.all)
+            if args.json:
+                json.dump(list_rows, sys.stdout, indent=2, ensure_ascii=False)
+                sys.stdout.write("\n")
+            else:
+                cls._print_status(list_rows)
+        elif args.action == "tail":
+            raw = connection.transcript_tail(cls.transcript_session_id(args.agent), cls.AGENT_TAIL_BYTES)
+            for line in TranscriptLines.readable(raw)[-args.steps:]:
+                print(line)
+        return 0
+
+    @classmethod
+    def status(cls, connection: Connection, is_all: bool) -> list[dict[str, object]]:
+        """Every session's state, with its subagents counted under it: those needing a person first, then
+        those working, then the rest, each group last active first.
+
+        Args:
+            connection: the roost to read
+            is_all: whether ended sessions are listed too
+
+        Returns:
+            one row per session
+        """
+        list_agents = connection.request("GET", f"/v1/resources?kind=agent&limit={cls.AGENT_LIST_LIMIT}")["resources"]
+        list_rooks = connection.request("GET", f"/v1/resources?kind=rook&limit={cls.AGENT_LIST_LIMIT}")["resources"]
+        map_online = {rook["id"]: bool(rook["attributes"].get("online")) for rook in list_rooks}
+        map_subagents: dict[str, int] = {}
+        for agent in list_agents:
+            parent = agent["attributes"].get("parent")
+            if parent:
+                map_subagents[str(parent)] = map_subagents.get(str(parent), 0) + 1
+        list_rows: list[dict[str, object]] = []
+        for agent in list_agents:
+            map_attributes = agent["attributes"]
+            state = str(map_attributes.get("state") or "")
+            if map_attributes.get("parent") or (state == "ended" and not is_all):
+                continue
+            rook_name = str(map_attributes.get("rook_name") or "")
+            cwd = str(map_attributes.get("cwd") or "")
+            list_rows.append({
+                "id": agent["id"],
+                "title": str(map_attributes.get("title") or agent["name"]),
+                "state": state,
+                "needs_person": state in cls.AGENT_ATTENTION_STATES,
+                "rook": rook_name,
+                "rook_online": map_online.get(rook_name, False),
+                "project": cwd.rstrip("/").rsplit("/", 1)[-1] if cwd else "",
+                "branch": str(map_attributes.get("git_branch") or ""),
+                "subagents": map_subagents.get(agent["id"], 0),
+                "last_used_at": agent["last_used_at"],
+            })
+        list_rows.sort(key=lambda row: str(row["last_used_at"]), reverse=True)
+        list_rows.sort(key=cls._urgency)
+        return list_rows
+
+    @classmethod
+    def transcript_session_id(cls, agent_id: str) -> str:
+        """The session roost keeps an agent's transcript under: its own, or for a subagent, named
+        `<parent>~<agent>`, the `agent-<agent>` one its harness writes beside its parent's."""
+        _, separator, child = agent_id.partition(cls.AGENT_SUBAGENT_SEPARATOR)
+        return f"{cls.AGENT_SUBAGENT_SESSION_PREFIX}{child}" if separator else agent_id
+
+    @classmethod
+    def _urgency(cls, row: dict[str, object]) -> int:
+        if row["needs_person"]:
+            return 0
+        if row["state"] in cls.AGENT_BUSY_STATES:
+            return 1
+        return 3 if row["state"] == "ended" else 2
+
+    @staticmethod
+    def _print_status(list_rows: list[dict[str, object]]) -> None:
+        if not list_rows:
+            print("no agents")
+            return
+        for row in list_rows:
+            flag = "!" if row["needs_person"] else " "
+            where = str(row["rook"]) + ("" if row["rook_online"] else " (offline)")
+            extra = f" +{row['subagents']} subagents" if row["subagents"] else ""
+            place = "/".join(part for part in (row["project"], row["branch"]) if part)
+            print(f"{flag} {str(row['state']):15} {str(row['title'])[:40]:40} {where:24} {place}{extra}  [{row['id']}]")
+
+
 class MessageCommands:
     """`rook message`: send text to another agent, as the agent in this pane, or as a person outside one."""
 
@@ -1163,6 +1319,7 @@ def main(list_argv: list[str] | None = None) -> int:
     playbook_parser.add_argument("resolved_path")
     ResourceCommands.build_parser(commands.add_parser("resource"))
     MessageCommands.build_parser(commands.add_parser("message"))
+    AgentCommands.build_parser(commands.add_parser("agent"))
     args = parser.parse_args(list_argv)
     if args.command == "event":
         if args.event_command == "hook":
@@ -1177,6 +1334,8 @@ def main(list_argv: list[str] | None = None) -> int:
     try:
         if args.command == "message":
             return MessageCommands.run(args, connection)
+        if args.command == "agent":
+            return AgentCommands.run(args, connection)
         return ResourceCommands.run(args, connection)
     except RookClientError as err:
         sys.stderr.write(f"rook: {err.message}\n")

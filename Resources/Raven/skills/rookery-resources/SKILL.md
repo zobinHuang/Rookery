@@ -7,6 +7,14 @@ description: Reference for reading and changing roost's resources (agents, skill
 
 Every command prints JSON unless noted. `$ROOKERY_AGENT_ID` is your own agent id.
 
+## The agents
+
+    rook-client agent status                  # every live session: those needing a person first, then working, then the rest
+    rook-client agent status --all --json     # ended ones too, as JSON: id, title, state, needs_person, rook, rook_online, project, branch, subagents, last_used_at
+    rook-client agent tail <agent id>         # what it said and did lately, as text; --steps N for more or fewer
+
+A subagent's id is `<session id>~<agent id>`; `agent tail` reads its own transcript. States: `idle`, `thinking`, `working`, `compacting`, `done`, `needs_approval`, `needs_input`, `error`, `rate_limited`, `ended`. The first four need nothing; `needs_*` waits on a person.
+
 ## Read
 
     rook-client resource kinds                                # the kinds roost manages
@@ -15,7 +23,7 @@ Every command prints JSON unless noted. `$ROOKERY_AGENT_ID` is your own agent id
     rook-client resource relations                            # every relation
     rook-client resource relations agent <id>                 # those touching one resource
     rook-client resource events --limit 100                   # the latest events
-    rook-client resource transcript <agent id> --last 300     # an agent session's conversation, as text
+    rook-client resource transcript <agent id> --last 300     # a whole session's conversation, as text; prefer agent tail
 
 A relation is `source --verb--> target` with how often and when it last happened. Verbs: `uses` (an agent used a skill), `mounts` (it loaded a playbook's skill), `follows` (it follows a playbook), `wrote` (it wrote a memory), `spawned` (a subagent), `messaged`, `created`, `updated`, `depends_on`.
 

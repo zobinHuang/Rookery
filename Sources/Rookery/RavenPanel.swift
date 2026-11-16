@@ -3,44 +3,48 @@ import SwiftUI
 
 /// A request to start Raven from, each one of its skills.
 enum RavenStarter: CaseIterable {
+    case fleetStatus
+    case inspectAgent
     case registerSkill
     case writePlaybook
     case distillPlaybook
     case tidyMemories
     case describeSkills
-    case findStuckAgents
 
     var title: String {
         switch self {
+        case .fleetStatus: "How are my agents?"
+        case .inspectAgent: "What is an agent doing?"
         case .registerSkill: "Register a skill"
         case .writePlaybook: "Write a playbook"
         case .distillPlaybook: "Distill a playbook"
         case .tidyMemories: "Tidy memories"
         case .describeSkills: "Describe skills"
-        case .findStuckAgents: "What's stuck?"
         }
     }
 
     var symbol: RookeryIcon {
         switch self {
+        case .fleetStatus: .agent
+        case .inspectAgent: .bubble
         case .registerSkill: .skill
         case .writePlaybook: .playbook
         case .distillPlaybook: .playbook
         case .tidyMemories: .memory
         case .describeSkills: .skill
-        case .findStuckAgents: .bubble
         }
     }
 
     /// The request it fills in, for the user to finish or send.
     var request: String {
         switch self {
+        case .fleetStatus: "How are my agents? Who needs me, and for what?"
+        case .inspectAgent: "What is @agent/"
         case .registerSkill: "Register the skill at "
         case .writePlaybook: "Write a playbook for "
         case .distillPlaybook: "Distill a playbook from how @"
         case .tidyMemories: "Tidy the memories: merge duplicates and drop what nothing needs."
         case .describeSkills: "Write the missing descriptions of the registered skills."
-        case .findStuckAgents: "Which agents are stuck or waiting on me, and on what?"
         }
     }
 }

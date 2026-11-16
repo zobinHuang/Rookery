@@ -291,9 +291,22 @@ public struct FleetDelivery: Decodable, Equatable, Identifiable, Sendable {
         case createdAt = "created_at"
     }
 
+    /// The outcomes a delivery ends in.
+    public static let setSettledStatuses: Set<String> = ["delivered", "failed", "expired"]
+
     /// Why it waits or failed, or how it arrived.
     public var reason: String {
         mapDetail["reason"]?.stringValue ?? ""
+    }
+
+    /// Whether it reached its agent or never will.
+    public var isSettled: Bool {
+        Self.setSettledStatuses.contains(status)
+    }
+
+    /// Whether it never will.
+    public var isFailed: Bool {
+        isSettled && status != "delivered"
     }
 }
 

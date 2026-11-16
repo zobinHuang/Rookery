@@ -13,6 +13,9 @@ struct AgentDetailView: View {
     /// How much of a transcript's end is read when the page opens; the rest is a click away.
     private static let openingTailBytes = 3 * 1024 * 1024
     private static let shownDeliveryLimit = 3
+    /// How long a prompt's outcome stays above the box once it is known.
+    private static let deliveredLinger: TimeInterval = 4
+    private static let failedLinger: TimeInterval = 10
     private static let bottomId = "bottom"
 
     let fleetModel: FleetModel
@@ -22,6 +25,10 @@ struct AgentDetailView: View {
     @State private var reader = TranscriptReader()
     @State private var hasTranscript = true
     @State private var listDeliveries: [FleetDelivery] = []
+    /// When each prompt was first seen settled; those settled before the page opened count as long ago.
+    @State private var mapSettledAt: [String: Date] = [:]
+    @State private var setDismissedDeliveries: Set<String> = []
+    @State private var now = Date()
     @State private var draft = ""
     @State private var isSending = false
     @State private var sendError: String?
@@ -156,13 +163,19 @@ struct AgentDetailView: View {
     private func composer(_ agent: FleetAgent) -> some View {
         let isReachable = agent.state != .ended && fleetModel.fleet.isOnline(agent)
         return VStack(alignment: .leading, spacing: 8) {
-            ForEach(listDeliveries.prefix(Self.shownDeliveryLimit)) { delivery in
+            ForEach(listShownDeliveries) { delivery in
                 deliveryLine(delivery)
             }
             if let sendError {
-                RookeryLabel(sendError, icon: .warning)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
+                HStack(spacing: 6) {
+                    RookeryLabel(sendError, icon: .warning)
+                        .foregroundStyle(.orange)
+                    dismissButton {
+                        self.sendError = nil
+                    }
+                }
+                .font(.system(size: 11))
+                .transition(.opacity)
             }
             AgentComposer(
                 text: $draft,
@@ -176,7 +189,45 @@ struct AgentDetailView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 18)
         .padding(.top, 6)
-        .animation(.easeOut(duration: 0.2), value: listDeliveries)
+        .animation(.easeOut(duration: 0.25), value: listShownDeliveries)
+        .animation(.easeOut(duration: 0.2), value: sendError)
+        .onChange(of: draft) {
+            sendError = nil
+        }
+    }
+
+    /// The prompts on their way, and those whose outcome came in a moment ago and was not dismissed.
+    private var listShownDeliveries: [FleetDelivery] {
+        let listShown = listDeliveries.filter { delivery in
+            guard !setDismissedDeliveries.contains(delivery.id) else {
+                return false
+            }
+            guard delivery.isSettled else {
+                return true
+            }
+            let linger = delivery.isFailed ? Self.failedLinger : Self.deliveredLinger
+            return now.timeIntervalSince(mapSettledAt[delivery.id] ?? .distantPast) < linger
+        }
+        return Array(listShown.prefix(Self.shownDeliveryLimit))
+    }
+
+    /// Note when each prompt's outcome first showed up.
+    private func noteOutcomes(isOpening: Bool) {
+        now = Date()
+        for delivery in listDeliveries where delivery.isSettled && mapSettledAt[delivery.id] == nil {
+            mapSettledAt[delivery.id] = isOpening ? .distantPast : now
+        }
+    }
+
+    private func dismissButton(action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            RookeryIconView(.close)
+                .foregroundStyle(StageColors.tertiaryText)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Dismiss")
     }
 
     private func composerHint(_ agent: FleetAgent) -> String {
@@ -206,9 +257,14 @@ struct AgentDetailView: View {
             Text(delivery.reason)
                 .foregroundStyle(StageColors.secondaryText)
                 .lineLimit(1)
+            if delivery.isSettled {
+                dismissButton {
+                    setDismissedDeliveries.insert(delivery.id)
+                }
+            }
         }
         .font(.system(size: 11))
-        .transition(.opacity)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     private func send(to agent: FleetAgent) {
@@ -223,6 +279,7 @@ struct AgentDetailView: View {
                 let delivery = try await fleetModel.send(text, to: agent.id)
                 draft = ""
                 listDeliveries.insert(delivery, at: 0)
+                noteOutcomes(isOpening: false)
             } catch {
                 sendError = FleetModel.describe(error)
             }
@@ -248,6 +305,8 @@ struct AgentDetailView: View {
         reader = TranscriptReader()
         hasTranscript = true
         listDeliveries = []
+        mapSettledAt = [:]
+        var isOpening = true
         if let cached = await fleetModel.transcripts.reader(for: agentId) {
             reader = cached
         } else if let client = fleetModel.client() {
@@ -258,6 +317,8 @@ struct AgentDetailView: View {
                 await readTranscript(from: client)
                 do {
                     listDeliveries = try await client.deliveries(to: agentId)
+                    noteOutcomes(isOpening: isOpening)
+                    isOpening = false
                 } catch {
                     Self.logger.info("cannot read deliveries: \(FleetModel.describe(error), privacy: .public)")
                 }

@@ -163,6 +163,14 @@ class ResourceApiTest(unittest.TestCase):
         status, _ = self.request("DELETE", "/v1/resources/memory/nothing-here")
         self.assertEqual(status, 404)
 
+    def test_a_deleted_agent_stays_deleted(self) -> None:
+        subagent = {"kind": "agent", "id": "s-1~helper"}
+        self.report({"actor": subagent, "verb": "started", "detail": {"parent": "s-1"}})
+        status, _ = self.request("DELETE", "/v1/resources/agent/s-1~helper")
+        self.assertEqual(status, 200)
+        status, _ = self.request("GET", "/v1/resources/agent/s-1~helper")
+        self.assertEqual(status, 404)
+
     def test_every_route_needs_the_token(self) -> None:
         for path in ("/v1/kinds", "/v1/resources", "/v1/events", "/v1/relations"):
             with self.subTest(path=path):

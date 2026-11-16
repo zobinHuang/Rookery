@@ -262,7 +262,14 @@ class EventLog:
             raise ValidationError(f"unknown event verb: {verb!r}")
         actor = self._actor_of(report.get("actor"))
         map_detail = report.get("detail") if isinstance(report.get("detail"), dict) else {}
-        target = self._object_of(report.get("object"), actor, map_detail, at, connection)
+        target = self._object_of(
+            map_object=report.get("object"),
+            actor=actor,
+            map_detail=map_detail,
+            at=at,
+            connection=connection,
+            may_create=verb != EventVerbs.DELETED,
+        )
         if verb in EventVerbs.SET_RELATION_VERBS and target is None:
             raise ValidationError(f"a {verb} event needs an object")
         if actor.kind == ResourceKinds.AGENT.name:
@@ -378,8 +385,10 @@ class EventLog:
         map_detail: dict[str, object],
         at: str,
         connection: sqlite3.Connection,
+        may_create: bool,
     ) -> ResourceRef | None:
-        """The resource an event acts on, found by id or by name, and created if it is not managed yet."""
+        """The resource an event acts on, found by id or by name, and created if it is not managed yet,
+        unless the event is its deletion."""
         if map_object is None:
             return None
         if not isinstance(map_object, dict):
@@ -398,6 +407,8 @@ class EventLog:
             for key in self.EVENT_OBJECT_ATTRIBUTE_FIELDS
             if key in map_detail and kind == ResourceKinds.MEMORY.name
         }
+        if stored is None and not may_create:
+            return target
         if stored is None:
             self._resources.put(
                 Resource(

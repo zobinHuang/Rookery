@@ -286,6 +286,19 @@ class HookEventMapper:
         list_events.extend(self._resource_events(actor))
         return list_events
 
+    def started_event(self) -> dict[str, object]:
+        """The `started` event of the payload's session, for one first seen partway through.
+
+        Returns:
+            the event, naming the agent and where it runs
+        """
+        return {
+            "actor": {"kind": "agent", "id": self._session_id},
+            "verb": "started",
+            "at": self.now(),
+            "detail": self._agent_detail(),
+        }
+
     @staticmethod
     def now() -> str:
         """The current time as roost writes it."""
@@ -997,6 +1010,13 @@ class RookClient:
                 return 0
             mapper = HookEventMapper(harness, map_payload)
             list_events = mapper.events()
+            if (
+                list_events
+                and list_events[0]["verb"] != "started"
+                and map_payload.get("hook_event_name") != "SessionEnd"
+                and AgentStateMemo.current(mapper.session_id) is None
+            ):
+                list_events.insert(0, mapper.started_event())
             if (
                 list_events
                 and list_events[0]["verb"] == "started"

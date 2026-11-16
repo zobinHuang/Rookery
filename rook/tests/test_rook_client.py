@@ -178,10 +178,19 @@ class QueueAndSendTest(RookHomeTest):
         return path.read_text().splitlines() if path.exists() else []
 
     def test_a_state_repeated_by_every_tool_call_is_queued_once(self) -> None:
+        self.hook(self.payload("SessionStart", cwd=str(self.home)))
         self.hook(self.payload("PreToolUse", tool_name="Bash", tool_input={}))
         self.hook(self.payload("PostToolUse", tool_name="Bash", tool_input={}))
         self.hook(self.payload("PreToolUse", tool_name="Bash", tool_input={}))
-        self.assertEqual(len(self.queued()), 1)
+        self.assertEqual([json.loads(line)["verb"] for line in self.queued()], ["started", "state"])
+
+    def test_a_session_first_seen_partway_is_started_with_its_name(self) -> None:
+        self.hook(self.payload("UserPromptSubmit"))
+        list_events = [json.loads(line) for line in self.queued()]
+        self.assertEqual([event["verb"] for event in list_events], ["started", "state"])
+        self.assertEqual(list_events[0]["detail"]["name"], "studio")
+        self.hook(self.payload("Stop"))
+        self.assertEqual([json.loads(line)["verb"] for line in self.queued()][2:], ["state"])
 
     def test_queued_events_reach_roost(self) -> None:
         server = self.start_server()

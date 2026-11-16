@@ -35,6 +35,17 @@ class FakeResolver(GitRefResolver):
 
 
 class SkillSourceTest(unittest.TestCase):
+    def test_parses_a_skills_address_copied_from_a_code_hosts_page(self) -> None:
+        cases = [
+            ("https://github.com/anthropics/skills/tree/main/skills/pdf", "https://github.com/anthropics/skills", "skills/pdf", "main"),
+            ("https://github.com/anthropics/skills/blob/v2/pdf/SKILL.md", "https://github.com/anthropics/skills", "pdf", "v2"),
+            ("https://gitlab.com/team/sub/skills/-/tree/main/review", "https://gitlab.com/team/sub/skills", "review", "main"),
+        ]
+        for spec, repo_url, skill_path, ref in cases:
+            with self.subTest(spec=spec):
+                source = SkillSource.parse(spec)
+                self.assertEqual((source.repo_url, source.skill_path, source.ref), (repo_url, skill_path, ref))
+
     def test_parses_the_forms_a_repo_of_skills_is_cited_in(self) -> None:
         for spec, repo, path, ref in (
             ("owner/repo", "https://github.com/owner/repo", "", ""),

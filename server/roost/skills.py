@@ -24,6 +24,9 @@ class SkillSource:
     SOURCE_PATH_PATTERN = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._/-]*$")
     SOURCE_REF_PATTERN = re.compile(r"^[A-Za-z0-9._/-]{1,128}$")
     SOURCE_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
+    SOURCE_BROWSE_MARKERS = ("tree", "blob")
+    SOURCE_GITLAB_SEPARATOR = "-"
+    SOURCE_SKILL_FILE = "skill.md"
 
     @classmethod
     def validate_skill_path(cls, skill_path: str) -> str:
@@ -69,6 +72,9 @@ class SkillSource:
         text = spec.strip()
         if not text:
             raise ValidationError("skill source is empty")
+        browsed = cls._from_browser_url(text)
+        if browsed is not None:
+            return browsed
 
         ref = ""
         if "#" in text:
@@ -92,6 +98,37 @@ class SkillSource:
             skill_path=skill_path,
             ref=ref,
         )
+
+    @classmethod
+    def _from_browser_url(cls, text: str) -> "SkillSource | None":
+        """Read the address a person copies from a code host's web page for a skill's directory or its
+        SKILL.md: `https://host/owner/repo/tree/<ref>/<path>`, or GitLab's `/-/tree/`; None for anything
+        else."""
+        parts = urlsplit(text)
+        if parts.scheme not in ("https", "http") or not parts.netloc:
+            return None
+        list_segments = [segment for segment in parts.path.split("/") if segment]
+        for index, segment in enumerate(list_segments):
+            if segment not in cls.SOURCE_BROWSE_MARKERS or index < 2 or index + 1 >= len(list_segments):
+                continue
+            list_repo = list_segments[:index]
+            if list_repo[-1] == cls.SOURCE_GITLAB_SEPARATOR:
+                list_repo = list_repo[:-1]
+            ref = list_segments[index + 1]
+            list_path = list_segments[index + 2:]
+            if list_path and list_path[-1].lower() == cls.SOURCE_SKILL_FILE:
+                list_path = list_path[:-1]
+            if not cls.SOURCE_REF_PATTERN.match(ref):
+                raise ValidationError(f"unusable ref: {ref!r}")
+            skill_path = "/".join(list_path)
+            if skill_path:
+                cls.validate_skill_path(skill_path)
+            return cls(
+                repo_url=f"{parts.scheme}://{parts.netloc}/{'/'.join(list_repo)}",
+                skill_path=skill_path,
+                ref=ref,
+            )
+        return None
 
     @classmethod
     def _normalize_repo_url(cls, text: str) -> str:

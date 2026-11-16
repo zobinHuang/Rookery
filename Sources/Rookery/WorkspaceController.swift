@@ -1202,7 +1202,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
 
         if let selected = group(onStage: stageId)?.listMembersFrontToBack.first(where: { mapShownFrames[$0.windowId] != nil }) {
-            noteRecentlyUsed(selected.windowId)
+            // A window the user asked for counts as used; one a switch merely brought back counts once it has focus.
+            if frontWindowId != nil {
+                noteRecentlyUsed(selected.windowId)
+            }
             broughtForwardWindowId = selected.windowId
             await bringForward(selected.windowId)
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)

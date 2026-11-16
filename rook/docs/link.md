@@ -20,6 +20,16 @@ An agent is a session, and rook notes the tmux pane each session starts in. A de
 
 Two deliveries never land in one prompt: after typing one, rook-link waits for the agent to change state before typing the next. A message from another agent arrives with the sender's id and the `rook message` line that answers it; a person's prompt arrives as written.
 
+## Interrupts, approvals and new sessions
+
+A delivery carries a kind; the table above is a `prompt`'s. `rook link prompts off` turns all of these away too.
+
+| Kind | What rook-link does |
+|---|---|
+| `interrupt` | presses Escape in the agent's pane while it thinks, works or compacts; an agent already stopped is left alone |
+| `approve` | answers Claude Code's approval prompt, only while the agent waits on one: `once` presses 1, the prompt's first choice, allowing that one call; `deny` presses Escape. No other key is pressed, as the prompt's other choices vary; other harnesses are turned away |
+| `spawn` | opens a window named `rook` in the tmux server the latest session started under (starting one if none runs), in the directory asked for, running the harness with the first prompt in the user's login shell, which stays once the harness exits. The new session reports itself through its hooks like any other |
+
 What became of each delivery goes back to roost, which logs it (`delivered` or `undelivered`) and shows it in Rookery.
 
 ## Files

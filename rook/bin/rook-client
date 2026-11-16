@@ -637,6 +637,20 @@ class AgentPane:
         pane = os.environ.get("TMUX_PANE", "")
         return cls.session_in(tmux.split(",")[0], pane) if tmux and pane else None
 
+    @classmethod
+    def latest_tmux_socket(cls) -> str | None:
+        """The tmux server the latest session started under, where a new one goes too, or None if none did."""
+        directory = RookPaths.agent_panes_dir()
+        list_records = [path for path in directory.glob("*") if not path.name.startswith("pane-")] if directory.is_dir() else []
+        for path in sorted(list_records, key=lambda path: path.stat().st_mtime, reverse=True):
+            try:
+                socket_path = str(json.loads(path.read_text(encoding="utf-8")).get("tmux_socket") or "")
+            except (OSError, ValueError):
+                continue
+            if socket_path:
+                return socket_path
+        return None
+
     def is_current(self) -> bool:
         """Whether the pane still runs this session, rather than one started in it since."""
         return self.session_in(self.tmux_socket, self.pane) == self.session_id

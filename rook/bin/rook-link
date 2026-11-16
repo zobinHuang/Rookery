@@ -4,6 +4,8 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import pwd
+import shlex
 import signal
 import socket
 import ssl
@@ -34,6 +36,42 @@ class PaneTyper:
     TYPER_TIMEOUT_SECONDS = 5
     TYPER_SETTLE_SECONDS = 0.3
     TYPER_SHELLS = frozenset({"bash", "zsh", "sh", "dash", "fish", "ksh", "tcsh", "csh"})
+    TYPER_WINDOW_NAME = "rook"
+    TYPER_FALLBACK_SHELL = "/bin/sh"
+
+    def press(self, agent_pane: "rook_client.AgentPane", key: str) -> None:
+        """Press one key in a pane, as tmux names it (`Escape`, `1`).
+
+        Raises:
+            RookLinkError: if the pane is gone or tmux refuses
+        """
+        self._tmux(agent_pane, ["display-message", "-p", "-t", agent_pane.pane, "#{pane_id}"])
+        self._tmux(agent_pane, ["send-keys", "-t", agent_pane.pane, key])
+
+    def open_window(self, tmux_socket: str | None, cwd: str, command: str) -> str:
+        """Open a window in a tmux server, starting one if none runs, that runs a command in the user's login
+        shell and then stays at that shell's prompt.
+
+        Args:
+            tmux_socket: the server's socket, or None for the default one
+            cwd: the directory the window starts in
+            command: the shell command to run
+
+        Returns:
+            the new window's pane id
+
+        Raises:
+            RookLinkError: if tmux cannot open the window
+        """
+        shell = pwd.getpwuid(os.getuid()).pw_shell or self.TYPER_FALLBACK_SHELL
+        shell_command = f"{shlex.quote(shell)} -lc {shlex.quote(f'{command}; exec {shlex.quote(shell)} -l')}"
+        list_socket = ["-S", tmux_socket] if tmux_socket else []
+        list_format = ["-P", "-F", "#{pane_id}"]
+        try:
+            pane = self._run([*list_socket, "new-window", "-d", "-c", cwd, "-n", self.TYPER_WINDOW_NAME, *list_format, shell_command])
+        except RookLinkError:
+            pane = self._run([*list_socket, "new-session", "-d", "-c", cwd, "-s", self.TYPER_WINDOW_NAME, *list_format, shell_command])
+        return pane.strip()
 
     def runs_program(self, agent_pane: "rook_client.AgentPane") -> bool:
         """Whether the pane is still there and runs something other than its shell, as an agent does.
@@ -72,9 +110,13 @@ class PaneTyper:
         self._tmux(agent_pane, ["send-keys", "-t", agent_pane.pane, "Enter"])
 
     def _tmux(self, agent_pane: "rook_client.AgentPane", list_arguments: list[str], text: str | None = None) -> str:
+        list_socket = ["-S", agent_pane.tmux_socket] if agent_pane.tmux_socket else []
+        return self._run([*list_socket, *list_arguments], text)
+
+    def _run(self, list_arguments: list[str], text: str | None = None) -> str:
         try:
             completed = subprocess.run(
-                ["tmux", "-S", agent_pane.tmux_socket, *list_arguments],
+                ["tmux", *list_arguments],
                 input=text,
                 capture_output=True,
                 text=True,
@@ -97,6 +139,11 @@ class DeliveryDesk:
     """
 
     DESK_READY_STATES = frozenset({"idle", "done", "error", "rate_limited"})
+    DESK_APPROVAL_STATE = "needs_approval"
+    """The keys that answer Claude Code's approval prompt: its first choice is always to allow this once, and
+    Escape declines; no other is pressed, as the prompt's other choices vary."""
+    DESK_APPROVAL_KEYS = {"once": "1", "deny": "Escape"}
+    DESK_APPROVAL_HARNESSES = frozenset({"claude"})
     """What a session whose state went unrecorded counts as while its pane still runs it."""
     DESK_UNKNOWN_STATE = "idle"
     DESK_KEEP_FINISHED_SECONDS = 2 * 24 * 3600
@@ -182,9 +229,13 @@ class DeliveryDesk:
     def _advance(self, map_record: dict[str, object], accepts_prompts: bool) -> None:
         map_delivery = map_record["delivery"]
         delivery_id = str(map_delivery["id"])
+        kind = str(map_delivery.get("kind") or "prompt")
         session_id = str(map_delivery["agent_id"]).split("~")[0]
         if not accepts_prompts:
             self._finish(map_record, "failed", "this rook does not take prompts (rook link prompts on)")
+            return
+        if kind == "spawn":
+            self._spawn(map_record)
             return
         agent_pane = rook_client.AgentPane.of(session_id)
         if agent_pane is None:
@@ -193,6 +244,12 @@ class DeliveryDesk:
         if not agent_pane.is_current():
             rook_client.Mailbox.withdraw(session_id, delivery_id)
             self._finish(map_record, "failed", "the session's pane runs another session now")
+            return
+        if kind == "interrupt":
+            self._interrupt(map_record, agent_pane)
+            return
+        if kind == "approve":
+            self._approve(map_record, agent_pane)
             return
         state = rook_client.AgentStateMemo.current(session_id)
         if state is None:
@@ -222,6 +279,58 @@ class DeliveryDesk:
             return
         self._map_typed_at[session_id] = time.time()
         self._finish(map_record, "delivered", "typed into the pane")
+
+    def _interrupt(self, map_record: dict[str, object], agent_pane: "rook_client.AgentPane") -> None:
+        state = rook_client.AgentStateMemo.current(agent_pane.session_id)
+        if state in self.DESK_READY_STATES:
+            self._finish(map_record, "delivered", f"nothing to interrupt: the agent is {state}")
+            return
+        if state is None and not self._typer.runs_program(agent_pane):
+            self._finish(map_record, "failed", "the session has ended")
+            return
+        try:
+            self._typer.press(agent_pane, "Escape")
+        except RookLinkError as err:
+            self._finish(map_record, "failed", err.message)
+            return
+        self._finish(map_record, "delivered", "interrupted with Escape")
+
+    def _approve(self, map_record: dict[str, object], agent_pane: "rook_client.AgentPane") -> None:
+        choice = str((map_record["delivery"].get("options") or {}).get("choice") or "")
+        key = self.DESK_APPROVAL_KEYS.get(choice)
+        if key is None:
+            self._finish(map_record, "failed", f"no such answer to an approval: {choice!r}")
+            return
+        if agent_pane.harness not in self.DESK_APPROVAL_HARNESSES:
+            self._finish(map_record, "failed", f"approvals are answered for Claude Code only, not {agent_pane.harness}")
+            return
+        state = rook_client.AgentStateMemo.current(agent_pane.session_id)
+        if state != self.DESK_APPROVAL_STATE:
+            self._finish(map_record, "failed", f"the agent is not waiting for an approval now ({state or 'ended'})")
+            return
+        try:
+            self._typer.press(agent_pane, key)
+        except RookLinkError as err:
+            self._finish(map_record, "failed", err.message)
+            return
+        self._finish(map_record, "delivered", "allowed once" if choice == "once" else "declined")
+
+    def _spawn(self, map_record: dict[str, object]) -> None:
+        map_delivery = map_record["delivery"]
+        map_options = map_delivery.get("options") or {}
+        cwd = str(map_options.get("cwd") or "")
+        harness = str(map_options.get("harness") or "claude")
+        if not os.path.isdir(cwd):
+            self._finish(map_record, "failed", f"no such directory on this rook: {cwd}")
+            return
+        prompt = str(map_delivery.get("text") or "")
+        command = f"{harness} {shlex.quote(prompt)}" if prompt else harness
+        try:
+            pane = self._typer.open_window(rook_client.AgentPane.latest_tmux_socket(), cwd, command)
+        except RookLinkError as err:
+            self._finish(map_record, "failed", err.message)
+            return
+        self._finish(map_record, "delivered", f"started {harness} in {cwd}, pane {pane}")
 
     def _finish(self, map_record: dict[str, object], status: str, reason: str) -> None:
         map_record["status"] = status

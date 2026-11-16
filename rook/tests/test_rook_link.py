@@ -29,7 +29,16 @@ class RecordingTyper:
 
     def __init__(self) -> None:
         self.list_typed: list[str] = []
+        self.list_pressed: list[str] = []
+        self.list_opened: list[tuple[str, str]] = []
         self.is_pane_running = False
+
+    def press(self, agent_pane: object, key: str) -> None:
+        self.list_pressed.append(key)
+
+    def open_window(self, tmux_socket: str | None, cwd: str, command: str) -> str:
+        self.list_opened.append((cwd, command))
+        return "%9"
 
     def type(self, agent_pane: object, buffer_name: str, text: str) -> None:
         self.list_typed.append(text)
@@ -46,13 +55,22 @@ class AgentInPaneTest(RookHomeTest):
             rook_client.AgentPane.record(session_id, "claude")
         rook_client.AgentStateMemo.is_new(session_id, "idle")
 
-    def delivery(self, delivery_id: str, text: str, sender: dict[str, str] | None = None) -> dict[str, object]:
+    def delivery(
+        self,
+        delivery_id: str,
+        text: str,
+        sender: dict[str, str] | None = None,
+        kind: str = "prompt",
+        options: dict[str, object] | None = None,
+    ) -> dict[str, object]:
         return {
             "id": delivery_id,
-            "agent_id": SESSION,
+            "agent_id": "" if kind == "spawn" else SESSION,
             "text": text,
             "sender": sender or {"kind": "person", "id": "user"},
             "created_at": f"2026-11-16T00:00:0{len(delivery_id) % 10}.000+00:00",
+            "kind": kind,
+            "options": options or {},
         }
 
     def outcome(self, delivery_id: str) -> dict[str, object]:
@@ -134,6 +152,51 @@ class DeliveryDeskTest(AgentInPaneTest):
         self.assertEqual(self.typer.list_typed, [])
         self.assertIn("another session", self.outcome("d-1")["reason"])
 
+    def test_an_interrupt_presses_escape_only_while_the_agent_works(self) -> None:
+        self.start_session()
+        rook_client.AgentStateMemo.is_new(SESSION, "working")
+        self.desk.accept(self.delivery("d-1", "", kind="interrupt"))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.typer.list_pressed, ["Escape"])
+        rook_client.AgentStateMemo.is_new(SESSION, "idle")
+        self.desk.accept(self.delivery("d-22", "", kind="interrupt"))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.typer.list_pressed, ["Escape"])
+        self.assertIn("nothing to interrupt", self.outcome("d-22")["reason"])
+
+    def test_an_approval_answers_only_a_waiting_claude_code(self) -> None:
+        self.start_session()
+        rook_client.AgentStateMemo.is_new(SESSION, "working")
+        self.desk.accept(self.delivery("d-1", "", kind="approve", options={"choice": "once"}))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.outcome("d-1")["status"], "failed")
+        self.assertEqual(self.typer.list_pressed, [])
+        rook_client.AgentStateMemo.is_new(SESSION, "needs_approval")
+        self.desk.accept(self.delivery("d-22", "", kind="approve", options={"choice": "once"}))
+        self.desk.accept(self.delivery("d-333", "", kind="approve", options={"choice": "deny"}))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.typer.list_pressed, ["1", "Escape"])
+        self.assertEqual(self.outcome("d-22")["status"], "delivered")
+
+    def test_an_approval_is_not_guessed_for_another_harness(self) -> None:
+        with mock.patch.dict(os.environ, {"TMUX": f"{TMUX_SOCKET},1,0", "TMUX_PANE": "%1"}):
+            rook_client.AgentPane.record(SESSION, "codex")
+        rook_client.AgentStateMemo.is_new(SESSION, "needs_approval")
+        self.desk.accept(self.delivery("d-1", "", kind="approve", options={"choice": "once"}))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.typer.list_pressed, [])
+        self.assertIn("Claude Code only", self.outcome("d-1")["reason"])
+
+    def test_a_new_session_opens_a_window_running_its_harness_with_the_prompt(self) -> None:
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        self.desk.accept(self.delivery("d-1", "fix the flaky test", kind="spawn", options={"cwd": directory, "harness": "claude"}))
+        self.desk.accept(self.delivery("d-22", "", kind="spawn", options={"cwd": "/no/such/dir", "harness": "claude"}))
+        self.desk.process(accepts_prompts=True)
+        self.assertEqual(self.typer.list_opened, [(directory, "claude 'fix the flaky test'")])
+        self.assertEqual(self.outcome("d-1")["status"], "delivered")
+        self.assertEqual(self.outcome("d-22")["status"], "failed")
+
     def test_an_ended_session_cannot_be_reached(self) -> None:
         self.start_session()
         rook_client.AgentStateMemo.forget(SESSION)
@@ -187,6 +250,29 @@ class PaneTyperTest(unittest.TestCase):
         self.assertTrue(rook_link.PaneTyper().runs_program(agent_pane))
         gone_pane = rook_client.AgentPane(session_id=SESSION, harness="claude", tmux_socket=self.socket, pane="%99")
         self.assertFalse(rook_link.PaneTyper().runs_program(gone_pane))
+
+    def test_a_key_is_pressed_in_the_pane(self) -> None:
+        agent_pane = rook_client.AgentPane(session_id=SESSION, harness="claude", tmux_socket=self.socket, pane=self.pane)
+        rook_link.PaneTyper().press(agent_pane, "x")
+        time.sleep(0.3)
+        screen = subprocess.run(
+            [*self.tmux, "capture-pane", "-p", "-t", self.pane],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertIn("x", screen)
+
+    def test_a_window_is_opened_and_its_command_run(self) -> None:
+        pane = rook_link.PaneTyper().open_window(self.socket, self._tmp, "echo rook-opened-$((40+2))")
+        time.sleep(0.8)
+        screen = subprocess.run(
+            [*self.tmux, "capture-pane", "-p", "-t", pane],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.assertIn("rook-opened-42", screen)
 
     def test_a_gone_pane_fails(self) -> None:
         agent_pane = rook_client.AgentPane(session_id=SESSION, harness="claude", tmux_socket=self.socket, pane="%99")

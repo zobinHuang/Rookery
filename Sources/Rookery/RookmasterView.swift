@@ -203,7 +203,11 @@ enum RookmasterStyle {
 /// newest at the bottom, live, with a filter; and Raven beside it in a tab of its own; with
 /// the code agents' plan limits to their right. Folds down to its title bar.
 struct RookmasterPanel: View {
-    private static let expandedHeight: CGFloat = 340
+    /// The panel's height before the user sets one, and the bounds the user may drag it between.
+    static let defaultHeight: CGFloat = 340
+    private static let minimumHeight: CGFloat = 140
+    private static let maximumHeight: CGFloat = 900
+    private static let handleHeight: CGFloat = 7
     private static let usageWidth: CGFloat = 300
     private static let foldAnimation = Animation.spring(response: 0.3, dampingFraction: 0.9)
 
@@ -212,6 +216,9 @@ struct RookmasterPanel: View {
     let agentUsage: AgentUsageMonitor
 
     @Namespace private var tabNamespace
+    /// The height when the drag under way began.
+    @State private var dragStartHeight: CGFloat?
+    @State private var isHandleHovered = false
 
     private var memory: PageMemory {
         fleetModel.pageMemory
@@ -233,6 +240,11 @@ struct RookmasterPanel: View {
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(height: 1)
+                .overlay {
+                    if memory.isPanelExpanded {
+                        resizeHandle
+                    }
+                }
             titleBar
             if memory.isPanelExpanded {
                 HStack(spacing: 0) {
@@ -257,12 +269,44 @@ struct RookmasterPanel: View {
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
-                .frame(height: Self.expandedHeight)
+                .frame(height: memory.panelHeight)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(StageColors.sidebar)
         .animation(Self.foldAnimation, value: memory.isPanelExpanded)
+    }
+
+    /// A strip along the panel's top edge that drags its height, lit while the pointer is on it.
+    private var resizeHandle: some View {
+        Rectangle()
+            .fill(isHandleHovered || dragStartHeight != nil ? AnyShapeStyle(Color.accentColor.opacity(0.5)) : AnyShapeStyle(StageColor.clear))
+            .frame(height: 2)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.handleHeight)
+            .contentShape(Rectangle())
+            .onHover { isInside in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    isHandleHovered = isInside
+                }
+                if isInside {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start = dragStartHeight ?? memory.panelHeight
+                        dragStartHeight = start
+                        memory.panelHeight = min(max(start - value.translation.height, Self.minimumHeight), Self.maximumHeight)
+                    }
+                    .onEnded { _ in
+                        dragStartHeight = nil
+                    }
+            )
+            .help("Drag to change the panel's height")
     }
 
     private var titleBar: some View {

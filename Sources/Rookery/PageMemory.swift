@@ -11,6 +11,8 @@ final class PageMemory {
     var rookmasterTab = RookmasterTab.board
     var rookmasterSelectedRef: FleetRef?
     var panelTab = RookmasterPanelTab.raven
+    /// The height the user dragged the panel to.
+    var panelHeight = RookmasterPanel.defaultHeight
     var isPanelExpanded = true
     var logFilter = ""
     var logClearedThroughSeq = 0

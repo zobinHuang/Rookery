@@ -371,6 +371,12 @@ public struct AgentFleet: Equatable, Sendable {
                 mapAgents[event.actor.id]?.title = title
             }
             return .changed
+        case (Self.agentKind, "renamed"):
+            guard mapAgents[event.actor.id] != nil else {
+                return .refetch(event.actor)
+            }
+            mapAgents[event.actor.id]?.title = event.mapDetail["title"]?.stringValue ?? ""
+            return .changed
         case (Self.agentKind, "ended"):
             guard mapAgents[event.actor.id] != nil else {
                 return .unchanged

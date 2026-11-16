@@ -354,7 +354,7 @@ struct RookmasterLog: View {
     }
 
     private func detail(of event: FleetEvent) -> String {
-        for key in ["state", "reason", "preview", "path"] {
+        for key in ["state", "title", "reason", "preview", "path"] {
             if let value = event.mapDetail[key]?.stringValue {
                 return value.replacingOccurrences(of: "\n", with: " ")
             }

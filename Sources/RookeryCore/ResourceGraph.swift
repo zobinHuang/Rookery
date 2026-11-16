@@ -147,6 +147,8 @@ public struct ResourceGraph: Equatable, Sendable {
                     if let title = event.mapDetail["title"], title.stringValue != nil {
                         setAttribute("title", to: title, of: event.actor)
                     }
+                } else if event.verb == "renamed", let title = event.mapDetail["title"] {
+                    setAttribute("title", to: title, of: event.actor)
                 } else if event.verb == "ended" {
                     setAttribute("closed_at", to: .string(event.at), of: event.actor)
                 }

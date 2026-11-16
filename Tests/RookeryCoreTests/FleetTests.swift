@@ -44,6 +44,15 @@ struct FleetTests {
         #expect(fleet.lastSeq == 12)
     }
 
+    @Test func takesANewTitle() throws {
+        var fleet = try fleet()
+
+        let effect = fleet.apply(FleetEvent(seq: 11, at: "t", actor: FleetRef(kind: "agent", id: "s-1"), verb: "renamed", mapDetail: ["title": .string("G-Watch development")]))
+
+        #expect(effect == .changed)
+        #expect(fleet.mapAgents["s-1"]?.displayName == "G-Watch development")
+    }
+
     @Test func asksForNewAgentsToBeFetched() throws {
         var fleet = try fleet()
         let newRef = FleetRef(kind: "agent", id: "s-3")

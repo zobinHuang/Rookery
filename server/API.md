@@ -306,11 +306,11 @@ data: {"seq": 18342, "at": "...", "actor": {"kind": "agent", "id": "..."}, "verb
 
 ## Messages
 
-Text on its way to an agent: a prompt from a person, or a message from another agent. The server holds it until the rook the agent runs under takes it over the live link; a subagent is reached through its parent's rook. A delivery is `pending` until handed to the rook, `sent` once handed, `waiting` while the rook holds it for the agent to be ready, then `delivered` or `failed`; one still open after a day is `expired`. Each is logged: `messaged` from the sender to the agent, then `delivered` or `undelivered` from the rook.
+Something on its way to an agent through its rook: a prompt from a person or a message from another agent (`prompt`), an interrupt of what it is doing (`interrupt`), or an answer to its approval prompt (`approve`); or, for a rook itself, a new session to start (`spawn`). Each delivery carries its `kind` and its `options`. The server holds it until the rook the agent runs under takes it over the live link; a subagent is reached through its parent's rook. A delivery is `pending` until handed to the rook, `sent` once handed, `waiting` while the rook holds it for the agent to be ready, then `delivered` or `failed`; one still open after a day is `expired`. Each is logged: `messaged` from the sender to the agent, then `delivered` or `undelivered` from the rook.
 
 | | |
 |---|---|
-| `POST /v1/messages` | `{"to": "<agent id>", "text": "..."}`, with `actor` as for resources; answers `201` with the delivery |
+| `POST /v1/messages` | `{"to": "<agent id>", "text": "..."}`, with `actor` as for resources; answers `201` with the delivery. `kind` (default `prompt`) also takes `interrupt` (no text) and `approve` with `options` `{"choice": "once" \| "deny"}`; `{"kind": "spawn", "rook": "<rook>", "text": "<first prompt>", "options": {"cwd": "/abs/path", "harness": "claude" \| "codex"}}` asks a rook to start a new session |
 | `GET /v1/messages` | the latest deliveries, or one agent's with `agent=<id>`; `limit` up to 500 |
 | `GET /v1/messages/<id>` | one delivery |
 

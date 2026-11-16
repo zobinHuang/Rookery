@@ -20,7 +20,7 @@ from roost.errors import (
 )
 from roost.events import EventLog
 from roost.link import LinkHub
-from roost.messages import DeliveryStore
+from roost.messages import Delivery, DeliveryStore
 from roost.playbooks import PlaybookIndex
 from roost.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
 from roost.skills import SkillIndex
@@ -398,11 +398,23 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             map_body = self._read_json_body()
             map_actor = map_body.get("actor")
             sender = ResourceRef.from_payload(map_actor) if map_actor else EventLog.EVENT_PERSON
-            delivery = self.server.link.send_to_agent(
-                sender,
-                str(map_body.get("to") or ""),
-                str(map_body.get("text") or ""),
-            )
+            map_options = map_body.get("options") if isinstance(map_body.get("options"), dict) else {}
+            kind = str(map_body.get("kind") or Delivery.KIND_PROMPT)
+            if kind == Delivery.KIND_SPAWN:
+                delivery = self.server.link.spawn_on_rook(
+                    sender,
+                    str(map_body.get("rook") or ""),
+                    str(map_body.get("text") or ""),
+                    map_options,
+                )
+            else:
+                delivery = self.server.link.send_to_agent(
+                    sender,
+                    str(map_body.get("to") or ""),
+                    str(map_body.get("text") or ""),
+                    kind,
+                    map_options,
+                )
             self._respond_json(HTTPStatus.CREATED, delivery.as_payload())
             return
         if list_segments == ["messages"] and method == "GET":

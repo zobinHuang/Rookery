@@ -127,22 +127,42 @@ class LinkHub:
         with self._lock:
             return sorted(self._map_rooks)
 
-    def send_to_agent(self, sender: ResourceRef, agent_id: str, text: str) -> Delivery:
-        """Hold text for an agent and hand it to the agent's rook if that rook is online.
+    def send_to_agent(
+        self,
+        sender: ResourceRef,
+        agent_id: str,
+        text: str,
+        kind: str = Delivery.KIND_PROMPT,
+        map_options: dict[str, object] | None = None,
+    ) -> Delivery:
+        """Hold something for an agent and hand it to the agent's rook if that rook is online.
 
         Args:
             sender: the person or agent sending it
             agent_id: the agent
-            text: what to tell it
+            text: what to tell it, for a prompt
+            kind: `prompt`, `interrupt` or `approve`
+            map_options: the kind's options
 
         Returns:
             the delivery
 
         Raises:
-            ValidationError: if the text or the agent cannot take a delivery
+            ValidationError: if the delivery or the agent is unusable
             NotFoundError: if there is no such agent
         """
-        delivery = self._deliveries.create(sender, agent_id, text)
+        return self._route(self._deliveries.create(sender, agent_id, text, kind, map_options))
+
+    def spawn_on_rook(self, sender: ResourceRef, rook_name: str, prompt: str, map_options: dict[str, object]) -> Delivery:
+        """Hold a new session for a rook to start, and hand it over if the rook is online.
+
+        Raises:
+            ValidationError: if the directory or the harness is unusable
+            NotFoundError: if there is no such rook
+        """
+        return self._route(self._deliveries.create_spawn(sender, rook_name, prompt, map_options))
+
+    def _route(self, delivery: Delivery) -> Delivery:
         with self._lock:
             peer = self._map_rooks.get(delivery.rook_name)
         if peer is not None:

@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -5,6 +6,7 @@ from pathlib import Path
 from roost.database import Database
 from roost.errors import NotFoundError, ValidationError
 from roost.events import AgentStates, EventLog
+from roost.messages import DeliveryStore
 from roost.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
 
 AGENT = {"kind": "agent", "id": "s-1"}
@@ -130,3 +132,31 @@ class EventLogTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DatabaseUpgradeTest(unittest.TestCase):
+    def test_a_database_made_before_delivery_kinds_gains_them(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            connection = sqlite3.connect(root / Database.DATABASE_FILE_NAME)
+            connection.execute(
+                """
+                CREATE TABLE deliveries (
+                    id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, rook_name TEXT NOT NULL, text TEXT NOT NULL,
+                    sender_kind TEXT NOT NULL, sender_id TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL,
+                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO deliveries VALUES ('d-1', 's-1', 'studio', 'hello', 'person', 'user', 'delivered', '{}', 't', 't')"
+            )
+            connection.commit()
+            connection.close()
+            database = Database(root)
+            self.addCleanup(database.close)
+            resources = ResourceStore(database)
+            delivery = DeliveryStore(resources, EventLog(resources)).get("d-1")
+            self.assertEqual(delivery.kind, "prompt")
+            self.assertEqual(delivery.map_options, {})
+            self.assertEqual(delivery.text, "hello")

@@ -8,6 +8,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 from websockets.sync.client import ClientConnection, connect
 from roost.config import ServerConfig
 from roost.http import RoostServer
+from roost.errors import ValidationError
 from roost.resources import ResourceRef
 from roost.store import SessionStore
 
@@ -121,6 +122,38 @@ class LinkTest(unittest.TestCase):
         delivery = self.server.link.send_to_agent(ResourceRef("person", "user"), self.TEST_AGENT, "hello")
         rook = self.open_link({"role": "rook", "rook": "studio"})
         self.assertEqual(self.receive(rook, "deliver")["delivery"]["id"], delivery.id)
+
+    def test_an_interrupt_and_an_approval_reach_the_agents_rook_with_their_kind(self) -> None:
+        person = ResourceRef("person", "user")
+        interrupt = self.server.link.send_to_agent(person, self.TEST_AGENT, "", kind="interrupt")
+        approval = self.server.link.send_to_agent(person, self.TEST_AGENT, "", kind="approve", map_options={"choice": "once"})
+        rook = self.open_link({"role": "rook", "rook": "studio"})
+        list_delivered = [self.receive(rook, "deliver")["delivery"] for _ in range(2)]
+        self.assertEqual([delivery["kind"] for delivery in list_delivered], ["interrupt", "approve"])
+        self.assertEqual(list_delivered[1]["options"], {"choice": "once"})
+        self.assertEqual({interrupt.id, approval.id}, {delivery["id"] for delivery in list_delivered})
+
+    def test_an_approval_needs_a_choice_and_an_unknown_kind_is_refused(self) -> None:
+        person = ResourceRef("person", "user")
+        with self.assertRaises(ValidationError):
+            self.server.link.send_to_agent(person, self.TEST_AGENT, "", kind="approve", map_options={"choice": "always"})
+        with self.assertRaises(ValidationError):
+            self.server.link.send_to_agent(person, self.TEST_AGENT, "", kind="reboot")
+
+    def test_a_new_session_goes_to_its_rook_and_is_logged_against_it(self) -> None:
+        self.server.events.record([{"actor": {"kind": "rook", "id": "studio"}, "verb": "connected"}])
+        person = ResourceRef("person", "user")
+        with self.assertRaises(ValidationError):
+            self.server.link.spawn_on_rook(person, "studio", "go", {"cwd": "relative/path"})
+        spawn = self.server.link.spawn_on_rook(person, "studio", "fix the flaky test", {"cwd": "/src/api"})
+        rook = self.open_link({"role": "rook", "rook": "studio"})
+        delivered = self.receive(rook, "deliver")["delivery"]
+        self.assertEqual(delivered["id"], spawn.id)
+        self.assertEqual(delivered["options"], {"cwd": "/src/api", "harness": "claude"})
+        rook.send(json.dumps({"type": "delivery", "id": spawn.id, "status": "delivered", "reason": "started"}))
+        desktop = self.open_link({"role": "desktop", "after": 0})
+        event = self.receive_event(desktop, "delivered")
+        self.assertEqual(event["object"], {"kind": "rook", "id": "studio"})
 
     def test_an_agent_messages_another_through_its_rook(self) -> None:
         self.server.events.record([{

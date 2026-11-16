@@ -76,6 +76,12 @@ class Database:
         """,
     )
 
+    DATABASE_COLUMN_ADDITIONS = (
+        ("deliveries", "kind", "TEXT NOT NULL DEFAULT 'prompt'"),
+        ("deliveries", "options", "TEXT NOT NULL DEFAULT '{}'"),
+    )
+    """Columns added to tables after they were first created, which a database made earlier lacks."""
+
     def __init__(self, data_root: Path) -> None:
         self._path = data_root / self.DATABASE_FILE_NAME
         data_root.mkdir(parents=True, exist_ok=True)
@@ -93,6 +99,10 @@ class Database:
         with self.transaction() as connection:
             for statement in self.DATABASE_SCHEMA:
                 connection.execute(statement)
+            for table, column, definition in self.DATABASE_COLUMN_ADDITIONS:
+                set_columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+                if column not in set_columns:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:

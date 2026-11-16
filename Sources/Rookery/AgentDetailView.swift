@@ -34,6 +34,11 @@ struct AgentDetailView: View {
     @State private var sendError: String?
     @FocusState private var isComposerFocused: Bool
 
+    /// The session the transcript is read from.
+    private var transcriptSessionId: String {
+        FleetAgent.transcriptSessionId(of: agentId)
+    }
+
     private var agent: FleetAgent? {
         fleetModel.fleet.mapAgents[agentId]
     }
@@ -331,11 +336,8 @@ struct AgentDetailView: View {
 
     /// Begin reading at the transcript's last stretch, so the latest of a long conversation shows at once.
     private func startAtTail(from client: RoostClient) async {
-        guard !agentId.contains("~") else {
-            return
-        }
         do {
-            guard let probe = try await client.transcript(of: agentId, from: 0, limit: 1) else {
+            guard let probe = try await client.transcript(of: transcriptSessionId, from: 0, limit: 1) else {
                 return
             }
             if probe.total > Self.openingTailBytes {
@@ -349,13 +351,9 @@ struct AgentDetailView: View {
     /// Read what the transcript grew by since the last read, all of it, a chunk at a time; start over when
     /// the agent rewrote it.
     private func readTranscript(from client: RoostClient) async {
-        guard !agentId.contains("~") else {
-            hasTranscript = false
-            return
-        }
         do {
             while !Task.isCancelled {
-                guard let chunk = try await client.transcript(of: agentId, from: reader.nextOffset) else {
+                guard let chunk = try await client.transcript(of: transcriptSessionId, from: reader.nextOffset) else {
                     hasTranscript = false
                     return
                 }

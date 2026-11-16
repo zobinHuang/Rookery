@@ -44,6 +44,11 @@ struct FleetTests {
         #expect(fleet.lastSeq == 12)
     }
 
+    @Test func readsASubagentsTranscriptFromTheSessionTheHarnessWroteIt() {
+        #expect(FleetAgent.transcriptSessionId(of: "6ca28427~a3c52ad0") == "agent-a3c52ad0")
+        #expect(FleetAgent.transcriptSessionId(of: "6ca28427") == "6ca28427")
+    }
+
     @Test func namesNoProjectWithoutAWorkingDirectory() {
         #expect(FleetAgent(id: "a", name: "a", state: .idle).projectName == "")
     }

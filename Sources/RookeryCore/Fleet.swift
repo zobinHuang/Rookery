@@ -245,6 +245,18 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
         title.isEmpty ? name : title
     }
 
+    /// The session roost keeps this agent's transcript under: its own, or for a subagent, which rook names
+    /// `<parent>~<agent>`, the `agent-<agent>` one the harness writes beside its parent's.
+    public static func transcriptSessionId(of agentId: String) -> String {
+        guard let separator = agentId.firstIndex(of: Self.subagentSeparator) else {
+            return agentId
+        }
+        return Self.subagentSessionPrefix + agentId[agentId.index(after: separator)...]
+    }
+
+    private static let subagentSeparator: Character = "~"
+    private static let subagentSessionPrefix = "agent-"
+
     /// The working directory's last component, which names the project.
     public var projectName: String {
         cwd.isEmpty ? "" : URL(fileURLWithPath: cwd).lastPathComponent

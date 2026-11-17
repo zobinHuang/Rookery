@@ -100,7 +100,7 @@ struct AgentComposer: View {
     /// Whether an input method is composing in the focused field, as Pinyin does before its candidate is
     /// chosen: Return then commits the candidate and the arrows move among candidates, so neither sends or
     /// works the suggestions.
-    private static var isComposing: Bool {
+    static var isComposing: Bool {
         (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
     }
 

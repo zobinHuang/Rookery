@@ -98,6 +98,7 @@ final class Preferences {
     private static let stageHotkeyKey = "stageHotkey"
     private static let rightSidebarHotkeyKey = "rightSidebarHotkey"
     private static let previousTabHotkeyKey = "previousTabHotkey"
+    private static let launcherHotkeyKey = "launcherHotkey"
     private static let nextTabHotkeyKey = "nextTabHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let stageRightSidebarCollapsedKey = "isStageRightSidebarCollapsed"
@@ -122,6 +123,7 @@ final class Preferences {
     static let defaultStageHotkey = Hotkey(keyCode: kVK_Return, modifiers: [.control, .option])
     static let defaultRightSidebarHotkey = Hotkey(keyCode: kVK_ANSI_Backslash, modifiers: [.control, .option])
     static let defaultPreviousTabHotkey = Hotkey(keyCode: kVK_LeftArrow, modifiers: [.option])
+    static let defaultLauncherHotkey = Hotkey(keyCode: kVK_Space, modifiers: [.command])
     static let defaultNextTabHotkey = Hotkey(keyCode: kVK_RightArrow, modifiers: [.option])
     /// What the screen saver says while the user has set nothing.
     static let defaultScreenSaverText = "Be right back"
@@ -286,6 +288,14 @@ final class Preferences {
         }
     }
 
+    /// Opens the launcher, to find an application or a page or ask Raven; taken from the system before it
+    /// sees it, as ⌘Space is from Spotlight.
+    var launcherHotkey: Hotkey {
+        didSet {
+            store(launcherHotkey, forKey: Self.launcherHotkeyKey)
+        }
+    }
+
     /// Brings forward the tab before the front one in its group.
     var previousTabHotkey: Hotkey {
         didSet {
@@ -340,6 +350,7 @@ final class Preferences {
         stageHotkey = Self.load(forKey: Self.stageHotkeyKey, from: defaults) ?? Self.defaultStageHotkey
         rightSidebarHotkey = Self.load(forKey: Self.rightSidebarHotkeyKey, from: defaults) ?? Self.defaultRightSidebarHotkey
         previousTabHotkey = Self.load(forKey: Self.previousTabHotkeyKey, from: defaults) ?? Self.defaultPreviousTabHotkey
+        launcherHotkey = Self.load(forKey: Self.launcherHotkeyKey, from: defaults) ?? Self.defaultLauncherHotkey
         nextTabHotkey = Self.load(forKey: Self.nextTabHotkeyKey, from: defaults) ?? Self.defaultNextTabHotkey
     }
 
@@ -352,6 +363,7 @@ final class Preferences {
         stageHotkey = Self.defaultStageHotkey
         rightSidebarHotkey = Self.defaultRightSidebarHotkey
         previousTabHotkey = Self.defaultPreviousTabHotkey
+        launcherHotkey = Self.defaultLauncherHotkey
         nextTabHotkey = Self.defaultNextTabHotkey
     }
 

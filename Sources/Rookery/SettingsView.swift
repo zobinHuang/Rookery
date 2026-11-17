@@ -506,6 +506,7 @@ struct SettingsView: View {
                 }
                 .fixedSize()
             }
+            recorderRow("Launcher", hotkey: preferences.launcherHotkey) { preferences.launcherHotkey = $0 }
             recorderRow("Open or Close Stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
             recorderRow("Fold or Open Right Sidebar", hotkey: preferences.rightSidebarHotkey) { preferences.rightSidebarHotkey = $0 }
             recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }

@@ -26,6 +26,7 @@ final class ShortcutController {
     private let preferences: Preferences
     private let hotkeyCenter = HotkeyCenter()
     private let stages: StageCoordinator
+    private let launcher: LauncherController
     private lazy var switcher = SwitcherController(hotkeyCenter: hotkeyCenter) { [preferences] in
         preferences.theme
     }
@@ -34,10 +35,11 @@ final class ShortcutController {
     }
     private var isSuspended = false
 
-    init(workspaceController: WorkspaceController, preferences: Preferences, stages: StageCoordinator) {
+    init(workspaceController: WorkspaceController, preferences: Preferences, stages: StageCoordinator, launcher: LauncherController) {
         self.workspaceController = workspaceController
         self.preferences = preferences
         self.stages = stages
+        self.launcher = launcher
     }
 
     /// Register every shortcut, and register them again whenever the preferences change.
@@ -141,6 +143,18 @@ final class ShortcutController {
     ///
     /// - Returns: whether the key press was taken
     private func intercept(keyCode: Int, modifiers: NSEvent.ModifierFlags) -> Bool {
+        let setShortcutModifiers: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
+        let launcherHotkey = preferences.launcherHotkey
+        if
+            !isSuspended,
+            keyCode == Int(launcherHotkey.keyCode),
+            modifiers.intersection(setShortcutModifiers) == launcherHotkey.modifiers.intersection(setShortcutModifiers)
+        {
+            DispatchQueue.main.async { [launcher] in
+                launcher.toggle()
+            }
+            return true
+        }
         if
             switcher.isShowing,
             let direction = Self.mapArrowDirections[keyCode]

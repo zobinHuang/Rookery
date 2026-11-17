@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var workspacePanelController: WorkspacePanelController?
     private var controlServer: ControlServer?
     private var shortcutController: ShortcutController?
+    private var launcherController: LauncherController?
     private var stageCoordinator: StageCoordinator?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -118,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applicationMonitor?.stop()
         workspaceController?.stop()
         shortcutController?.stop()
+        launcherController?.stop()
         controlServer?.stop()
         mixerController.stop()
         agentUsageMonitor.stop()
@@ -318,7 +320,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspaceController = workspace
         workspacePanelController = panel
         workspace.start()
-        let shortcuts = ShortcutController(workspaceController: workspace, preferences: preferences, stages: stages)
+        let launcher = LauncherController(fleetModel: fleetModel, workspaceController: workspace, preferences: preferences)
+        launcherController = launcher
+        let shortcuts = ShortcutController(workspaceController: workspace, preferences: preferences, stages: stages, launcher: launcher)
         shortcutController = shortcuts
         shortcuts.start()
         settingsWindowController = SettingsWindowController(

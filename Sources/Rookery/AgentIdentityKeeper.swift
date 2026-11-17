@@ -23,8 +23,6 @@ final class AgentIdentityKeeper {
     private static let tailBytes = 2 * 1024 * 1024
     /// How long an agent the model failed for waits before it is tried again.
     private static let retryDelay: TimeInterval = 600
-    private static let workspaceName = "identity"
-    private static let claudeModel = "haiku"
 
     private let fleetModel: FleetModel
     private var loopTask: Task<Void, Never>?
@@ -175,39 +173,6 @@ final class AgentIdentityKeeper {
 
     /// Ask the code agent Raven runs on, with its smallest model and no tools, for an identity.
     private func ask(_ prompt: String) async throws -> AgentIdentity? {
-        let workspace = DataDirectory.file(named: Self.workspaceName)
-        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let isCodex = fleetModel.ravenEngine == RavenConversation.engineCodex
-        let listArguments = isCodex
-            ? [
-                "exec",
-                "--ephemeral",
-                "--skip-git-repo-check",
-                "--ignore-user-config",
-                "-c", "sandbox_mode=\"read-only\"",
-                "-c", "approval_policy=\"never\"",
-                prompt,
-            ]
-            : [
-                "-p", prompt,
-                "--model", Self.claudeModel,
-                "--tools", "",
-                "--no-session-persistence",
-                "--setting-sources", "project",
-                "--strict-mcp-config",
-                "--output-format", "text",
-            ]
-        let agent = HeadlessAgent(launch: HeadlessAgent.Launch(
-            arguments: listArguments,
-            workingDirectory: workspace,
-            mapEnvironment: ["TMUX": nil, "TMUX_PANE": nil],
-            executable: nil,
-            program: isCodex ? .codex : .claude
-        ))
-        var output = Data()
-        for try await chunk in agent.run() {
-            output.append(chunk)
-        }
-        return AgentIdentity.parse(String(decoding: output, as: UTF8.self))
+        AgentIdentity.parse(try await QuickModel.answer(prompt, engine: fleetModel.ravenEngine))
     }
 }

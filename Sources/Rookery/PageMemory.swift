@@ -34,6 +34,27 @@ final class PageMemory {
     /// How far each scroll area was scrolled, by the area's key: from the top, or for an area that
     /// follows its end, how far above its bottom.
     @ObservationIgnored var mapScrollOffsets: [String: CGPoint] = [:]
+    /// The section of the settings shown.
+    var settingsPane = SettingsPane.general
+    /// The person open in the settings, as far as the user changed them.
+    var personDraft: PersonDraft?
+    /// The roost address and token typed in the settings and not yet used; nil for the ones kept.
+    var roostAddressDraft: String?
+    var roostTokenDraft: String?
+    /// The search for a city to add to the world clock.
+    @ObservationIgnored let clockCitySearch = WorldClockCitySearch()
+}
+
+/// A person open in the settings to change, as the user left them: their name, their addresses, an
+/// address being typed and a picture being framed for their photo.
+struct PersonDraft {
+    let personId: String
+    /// Whether the person was just added, so cancelling removes them.
+    let isNew: Bool
+    var name: String
+    var listAddresses: [String]
+    var newAddress = ""
+    var croppedPicture: NSImage?
 }
 
 /// A scroll area that opens where the user left it, by a key; one that follows its end, as a

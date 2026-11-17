@@ -41,17 +41,13 @@ struct SettingsView: View {
     /// without scripting Mail.
     var shownMailAccess: MailAccess?
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
-    @State private var citySearch = WorldClockCitySearch()
     @State private var clockSearchError: String?
     @State private var loginItemError: String?
-    @State private var roostAddressDraft = ""
-    @State private var roostTokenDraft = ""
     @State private var roostTestResult: String?
     @State private var isTestingRoost = false
     @State private var roostError: String?
     @State private var mailAccess: MailAccess?
     @State private var isRailCompact = false
-    @State private var selectedPane = SettingsPane.general
     @Namespace private var railNamespace
     @State private var mailError: String?
     /// The calendars Rookery may use that take events, offered as the default calendar.
@@ -118,7 +114,7 @@ struct SettingsView: View {
     private func railItem(_ pane: SettingsPane) -> some View {
         let isSelected = selectedPane == pane
         return Button {
-            selectedPane = pane
+            memory.settingsPane = pane
         } label: {
             HStack(spacing: 9) {
                 RookeryIconView(pane.symbol)
@@ -173,6 +169,34 @@ struct SettingsView: View {
         }
     }
 
+    private var memory: PageMemory {
+        fleetModel.pageMemory
+    }
+
+    private var selectedPane: SettingsPane {
+        memory.settingsPane
+    }
+
+    private var citySearch: WorldClockCitySearch {
+        memory.clockCitySearch
+    }
+
+    private var roostAddressDraft: String {
+        memory.roostAddressDraft ?? preferences.roostAddress
+    }
+
+    private var roostTokenDraft: String {
+        memory.roostTokenDraft ?? fleetModel.token
+    }
+
+    private var roostAddressBinding: Binding<String> {
+        Binding(get: { roostAddressDraft }, set: { memory.roostAddressDraft = $0 })
+    }
+
+    private var roostTokenBinding: Binding<String> {
+        Binding(get: { roostTokenDraft }, set: { memory.roostTokenDraft = $0 })
+    }
+
     @ViewBuilder
     private var paneContent: some View {
         switch selectedPane {
@@ -180,7 +204,7 @@ struct SettingsView: View {
         case .roost: roost
         case .mail: mailSettings
         case .calendars: calendarSettings
-        case .people: PeopleSettingsSection(people: fleetModel.people)
+        case .people: PeopleSettingsSection(people: fleetModel.people, memory: memory)
         case .codeAgents: codeAgents
         case .worldClock: worldClock
         case .screenSaver: screenSaver
@@ -255,12 +279,12 @@ struct SettingsView: View {
     private var roost: some View {
         SettingsSection(pane: .roost) {
             SettingsRow(title: "Address") {
-                TextField("roost.example.com:8787", text: $roostAddressDraft)
+                TextField("roost.example.com:8787", text: roostAddressBinding)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: Self.fieldWidth)
             }
             SettingsRow(title: "Token", detail: "kept on this Mac, for you alone") {
-                SecureField("roost token", text: $roostTokenDraft)
+                SecureField("roost token", text: roostTokenBinding)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: Self.fieldWidth)
             }
@@ -300,8 +324,6 @@ struct SettingsView: View {
             }
         }
         .onAppear {
-            roostAddressDraft = preferences.roostAddress
-            roostTokenDraft = fleetModel.token
         }
     }
 
@@ -575,6 +597,8 @@ struct SettingsView: View {
     private func connectRoost() {
         do {
             try fleetModel.connect(address: roostAddressDraft, token: roostTokenDraft)
+            memory.roostAddressDraft = nil
+            memory.roostTokenDraft = nil
             roostError = nil
         } catch {
             roostError = FleetModel.describe(error)
@@ -618,7 +642,7 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             RookeryIconView(.search)
                 .foregroundStyle(StageColors.secondaryText)
-            TextField("Add City or Time Zone", text: $citySearch.query)
+            TextField("Add City or Time Zone", text: Bindable(citySearch).query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
         }
@@ -1137,18 +1161,22 @@ private struct CalendarChoiceBody: View {
 /// them, and a row to add one.
 private struct PeopleSettingsSection: View {
     let people: PeopleStore
+    let memory: PageMemory
 
-    @State private var editingId: String?
-    /// The person just added, removed again if the user cancels before saving.
-    @State private var newPersonId: String?
+    private var editingId: String? {
+        memory.personDraft?.personId
+    }
 
     var body: some View {
         SettingsSection(pane: .people) {
             ForEach(people.listPeople) { person in
-                if editingId == person.id {
-                    PersonEditor(people: people, person: person, isNew: newPersonId == person.id) {
-                        editingId = nil
-                        newPersonId = nil
+                if let draft = memory.personDraft, draft.personId == person.id {
+                    PersonEditor(
+                        people: people,
+                        person: person,
+                        draft: Binding(get: { memory.personDraft ?? draft }, set: { memory.personDraft = $0 })
+                    ) {
+                        memory.personDraft = nil
                     }
                     .modifier(SettingsSeparator())
                     .transition(.opacity)
@@ -1164,8 +1192,7 @@ private struct PeopleSettingsSection: View {
             SettingsActionRow(title: "Add Person…", symbol: .plus) {
                 let person = Person(name: "New Person", listAddresses: [])
                 people.put(person)
-                newPersonId = person.id
-                editingId = person.id
+                memory.personDraft = PersonDraft(personId: person.id, isNew: true, name: "", listAddresses: [])
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.88), value: editingId)
@@ -1186,7 +1213,7 @@ private struct PeopleSettingsSection: View {
                 .lineLimit(2)
             Spacer(minLength: 12)
             Button("Edit") {
-                editingId = person.id
+                memory.personDraft = PersonDraft(personId: person.id, isNew: false, name: person.name, listAddresses: person.listAddresses)
             }
         }
         .padding(.vertical, 8)
@@ -1199,15 +1226,11 @@ private struct PeopleSettingsSection: View {
 private struct PersonEditor: View {
     let people: PeopleStore
     let person: Person
-    let isNew: Bool
+    /// The person as the user changed them, kept while they look elsewhere.
+    @Binding var draft: PersonDraft
     let onDone: () -> Void
 
-    @State private var name = ""
-    @State private var listAddresses: [String] = []
-    @State private var newAddress = ""
     @State private var problem: String?
-    /// The picture being framed for the photo, while it is.
-    @State private var croppedPicture: NSImage?
     @State private var isPhotoHovered = false
     @FocusState private var isNameFocused: Bool
 
@@ -1215,19 +1238,19 @@ private struct PersonEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let croppedPicture {
+            if let croppedPicture = draft.croppedPicture {
                 PhotoCropper(image: croppedPicture) { source in
                     keepPhoto(croppedPicture, cropping: source)
                 } onCancel: {
                     withAnimation(.easeOut(duration: 0.2)) {
-                        self.croppedPicture = nil
+                        draft.croppedPicture = nil
                     }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.97)))
             } else {
                 HStack(alignment: .top, spacing: 14) {
                     photoControl
-                    TextField("Name", text: $name)
+                    TextField("Name", text: $draft.name)
                         .textFieldStyle(.roundedBorder)
                         .focused($isNameFocused)
                         .padding(.top, 4)
@@ -1238,14 +1261,14 @@ private struct PersonEditor: View {
                 Text("Addresses")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(StageColors.tertiaryText)
-                ForEach(listAddresses, id: \.self) { address in
+                ForEach(draft.listAddresses, id: \.self) { address in
                     HStack(spacing: 8) {
                         Text(address)
                             .font(.system(size: 12.5))
                             .textSelection(.enabled)
                         Spacer(minLength: 8)
                         Button {
-                            listAddresses.removeAll { $0 == address }
+                            draft.listAddresses.removeAll { $0 == address }
                         } label: {
                             RookeryIconView(.close)
                                 .foregroundStyle(StageColors.tertiaryText)
@@ -1254,7 +1277,7 @@ private struct PersonEditor: View {
                         .help("Remove this address")
                     }
                 }
-                TextField("Add an address and press Return", text: $newAddress)
+                TextField("Add an address and press Return", text: $draft.newAddress)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(addAddress)
             }
@@ -1270,7 +1293,7 @@ private struct PersonEditor: View {
                 }
                 Spacer(minLength: 0)
                 Button("Cancel") {
-                    if isNew {
+                    if draft.isNew {
                         people.remove(person.id)
                     }
                     onDone()
@@ -1278,21 +1301,19 @@ private struct PersonEditor: View {
                 .keyboardShortcut(.cancelAction)
                 Button("Save", action: save)
                     .buttonStyle(StageButtonStyle(kind: .prominent))
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(14)
         .background(StageColors.hoveredRow.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .padding(.vertical, 10)
         .onAppear {
-            name = isNew ? "" : person.name
-            listAddresses = person.listAddresses
             isNameFocused = true
         }
     }
 
     private func addAddress() {
-        let address = newAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        let address = draft.newAddress.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !address.isEmpty else {
             return
         }
@@ -1300,18 +1321,18 @@ private struct PersonEditor: View {
             problem = "\(address) is not a mail address"
             return
         }
-        if !listAddresses.contains(where: { $0.caseInsensitiveCompare(address) == .orderedSame }) {
-            listAddresses.append(address)
+        if !draft.listAddresses.contains(where: { $0.caseInsensitiveCompare(address) == .orderedSame }) {
+            draft.listAddresses.append(address)
         }
-        newAddress = ""
+        draft.newAddress = ""
         problem = nil
     }
 
     private func save() {
         addAddress()
         var changed = people.book.person(withId: person.id) ?? person
-        changed.name = name.trimmingCharacters(in: .whitespaces)
-        changed.listAddresses = listAddresses
+        changed.name = draft.name.trimmingCharacters(in: .whitespaces)
+        changed.listAddresses = draft.listAddresses
         people.put(changed)
         onDone()
     }
@@ -1322,7 +1343,7 @@ private struct PersonEditor: View {
         let shown = people.book.person(withId: person.id) ?? person
         return VStack(spacing: 6) {
             Button(action: choosePhoto) {
-                PersonMark(person: shown, fallbackName: name, size: Self.photoSide)
+                PersonMark(person: shown, fallbackName: draft.name, size: Self.photoSide)
                     .overlay {
                         ZStack {
                             Circle()
@@ -1360,7 +1381,7 @@ private struct PersonEditor: View {
                     if people.hasOriginalPicture(of: person.id) {
                         Button("Adjust") {
                             withAnimation(.easeOut(duration: 0.2)) {
-                                croppedPicture = people.originalPicture(of: person.id)
+                                draft.croppedPicture = people.originalPicture(of: person.id)
                             }
                         }
                     }
@@ -1383,7 +1404,7 @@ private struct PersonEditor: View {
             problem = String(describing: error)
         }
         withAnimation(.easeOut(duration: 0.2)) {
-            croppedPicture = nil
+            draft.croppedPicture = nil
         }
     }
 
@@ -1391,7 +1412,7 @@ private struct PersonEditor: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a photo of \(name.isEmpty ? "this person" : name)"
+        panel.message = "Choose a photo of \(draft.name.isEmpty ? "this person" : draft.name)"
         NSApp.activate()
         panel.begin { response in
             guard response == .OK, let url = panel.url else {
@@ -1402,7 +1423,7 @@ private struct PersonEditor: View {
                     let picture = try PeopleStore.picture(at: url)
                     problem = nil
                     withAnimation(.easeOut(duration: 0.2)) {
-                        croppedPicture = picture
+                        draft.croppedPicture = picture
                     }
                 } catch {
                     problem = String(describing: error)

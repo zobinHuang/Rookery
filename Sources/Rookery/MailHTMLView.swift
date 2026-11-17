@@ -1,5 +1,6 @@
 import AppKit
 import os
+import RookeryCore
 import SwiftUI
 import WebKit
 
@@ -15,6 +16,10 @@ struct MailHTMLView: NSViewRepresentable {
     let html: String
     /// Whether the message may fetch its images and other remote content.
     let isRemoteAllowed: Bool
+    /// Whether the earlier mail the message quotes is taken away, leaving its own words.
+    var isQuoteTrimmed = false
+    /// Told whether anything quoted was taken away, once the message is laid out.
+    var onQuoteTrimmed: ((Bool) -> Void)?
     /// Told the height the message's content needs once it is laid out; nil to scroll inside the view.
     var onHeight: ((CGFloat) -> Void)?
 
@@ -33,12 +38,14 @@ struct MailHTMLView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
-        let key = "\(isRemoteAllowed)\(html.hashValue)"
+        let key = "\(isRemoteAllowed)\(isQuoteTrimmed)\(html.hashValue)"
         guard context.coordinator.loadedKey != key else {
             return
         }
         context.coordinator.loadedKey = key
         context.coordinator.onHeight = onHeight
+        context.coordinator.isQuoteTrimmed = isQuoteTrimmed
+        context.coordinator.onQuoteTrimmed = onQuoteTrimmed
         let html = html
         let isRemoteAllowed = isRemoteAllowed
         WKContentRuleListStore.default()?.compileContentRuleList(
@@ -75,14 +82,23 @@ struct MailHTMLView: NSViewRepresentable {
 
         var loadedKey = ""
         var onHeight: ((CGFloat) -> Void)?
+        var isQuoteTrimmed = false
+        var onQuoteTrimmed: ((Bool) -> Void)?
 
-        /// Read how tall the laid out message is, by a script of Rookery's own: the message's own scripts
-        /// stay off.
+        /// Take away the quoted mail when asked and read how tall the laid out message is, by scripts of
+        /// Rookery's own: the message's own scripts stay off.
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            guard let onHeight else {
-                return
-            }
+            let isQuoteTrimmed = isQuoteTrimmed
+            let onQuoteTrimmed = onQuoteTrimmed
+            let onHeight = onHeight
             Task { @MainActor in
+                if isQuoteTrimmed {
+                    let isTrimmed = try? await webView.callAsyncJavaScript(MailQuote.trimScript, contentWorld: .defaultClient)
+                    onQuoteTrimmed?((isTrimmed as? Bool) ?? false)
+                }
+                guard let onHeight else {
+                    return
+                }
                 let height = try? await webView.callAsyncJavaScript(Self.heightScript, contentWorld: .defaultClient)
                 if let height = height as? Double {
                     onHeight(CGFloat(height))

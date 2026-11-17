@@ -1,0 +1,106 @@
+import Foundation
+
+/// The earlier mail a reply carries below its own text: where it starts, so a conversation shows each
+/// message's own words once, in its own card, and the quoted history only when asked.
+public enum MailQuote {
+    /// The lines that open a quoted message in plain text, as mail clients write them.
+    private static let listAttributionPatterns = [
+        #"^\s*On .{3,300}wrote:\s*$"#,
+        #"^\s*在.{3,300}写道[:：]\s*$"#,
+        #"^\s*-{2,}\s*(Original Message|Forwarded message|原始邮件|转发邮件)\s*-{2,}"#,
+        #"^\s*_{10,}\s*$"#,
+    ]
+    /// A header block of a quoted message, as Outlook writes it: `From:` and, within a few lines, `Sent:`.
+    private static let headerStartPattern = #"^\s*\*?(From|发件人)\s*[:：]"#
+    private static let headerFollowPattern = #"^\s*\*?(Sent|Date|发送时间|时间)\s*[:：]"#
+    private static let headerReach = 4
+    private static let quotedLinePrefix = ">"
+
+    /// A plain-text message without the earlier mail it quotes: cut at the first line that opens a
+    /// quote, or at a run of `>` lines that runs to the end.
+    ///
+    /// - Parameter text: the message's text
+    /// - Returns: the text before the quote, trimmed; nil when it quotes nothing or nothing would be left
+    public static func trimmed(_ text: String) -> String? {
+        let listLines = text.components(separatedBy: .newlines)
+        guard let cutIndex = quoteStart(in: listLines) else {
+            return nil
+        }
+        let kept = listLines[..<cutIndex].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        return kept.isEmpty ? nil : kept
+    }
+
+    private static func quoteStart(in listLines: [String]) -> Int? {
+        for (index, line) in listLines.enumerated() {
+            if listAttributionPatterns.contains(where: { line.range(of: $0, options: .regularExpression) != nil }) {
+                return index
+            }
+            if
+                line.range(of: headerStartPattern, options: .regularExpression) != nil,
+                listLines[(index + 1)..<min(listLines.count, index + 1 + headerReach)].contains(where: {
+                    $0.range(of: headerFollowPattern, options: .regularExpression) != nil
+                })
+            {
+                return index
+            }
+            if
+                line.hasPrefix(quotedLinePrefix),
+                listLines[index...].allSatisfy({ $0.hasPrefix(quotedLinePrefix) || $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            {
+                return index
+            }
+        }
+        return nil
+    }
+
+    /// A script, run in a message's page by Rookery rather than by the message, that takes away the
+    /// quoted earlier mail: the first element that opens a quote, as clients mark it or by its words, and
+    /// everything after it. It leaves the page as it was when nothing of the message's own would remain,
+    /// as in a forward, and returns whether it took anything away.
+    public static let trimScript = #"""
+    const selectors = [
+        ".gmail_quote", ".gmail_quote_container", "blockquote[type=cite]", ".yahoo_quoted",
+        ".moz-cite-prefix", "#divRplyFwdMsg", "#appendonsend", "hr#stopSpelling",
+        "div[style*='border-top:solid #E1E1E1']", "div[style*='border-top: solid #E1E1E1']",
+        "div[style*='border-top:solid #B5C4DF']", "div[style*='border-top: solid rgb(225, 225, 225)']",
+        ".OutlookMessageHeader", "#mail-editor-reference-message-container", ".protonmail_quote",
+        "#isReplyContent", "#isForwardContent", ".ntes-mailmaster-quote", "#ntes-pcmail-quote"
+    ];
+    const patterns = [
+        /^\s*On [\s\S]{3,300}wrote:\s*$/,
+        /^\s*在[\s\S]{3,300}写道[:：]\s*$/,
+        /^\s*-{2,}\s*(Original Message|Forwarded message|原始邮件|转发邮件)\s*-{2,}/i,
+        /^\s*(From|发件人)\s*[:：][\s\S]{0,400}(Sent|Date|发送时间|时间)\s*[:：]/
+    ];
+    const body = document.body;
+    if (!body) { return false; }
+    const candidates = [];
+    for (const selector of selectors) {
+        const found = body.querySelector(selector);
+        if (found) { candidates.push(found); }
+    }
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+        const element = walker.currentNode;
+        if (!/^(P|DIV|SPAN|FONT|B|TD)$/.test(element.tagName)) { continue; }
+        if (element.querySelector("p, div, table, blockquote")) { continue; }
+        const text = (element.innerText || "").trim();
+        if (text.length > 500) { continue; }
+        if (patterns.some(pattern => pattern.test(text))) { candidates.push(element); break; }
+    }
+    if (candidates.length === 0) { return false; }
+    candidates.sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    const marker = candidates[0];
+    const range = document.createRange();
+    range.setStart(body, 0);
+    range.setEndBefore(marker);
+    if (range.toString().trim().length === 0 && !range.cloneContents().querySelector("img")) { return false; }
+    let node = marker;
+    while (node && node !== body) {
+        while (node.nextSibling) { node.nextSibling.remove(); }
+        node = node.parentNode;
+    }
+    marker.remove();
+    return true;
+    """#
+}

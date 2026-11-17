@@ -84,6 +84,10 @@ struct MailPage: View {
     @State private var mapDetails: [Int: MailMessageDetail] = [:]
     @State private var setOpenIds: Set<Int> = []
     @State private var mapBodyHeights: [Int: CGFloat] = [:]
+    /// The messages whose quoted earlier mail was found and taken away.
+    @State private var setQuoteTrimmedIds: Set<Int> = []
+    /// The messages whose quoted earlier mail the user asked to see.
+    @State private var setQuoteShownIds: Set<Int> = []
 
     @Environment(\.people) private var people
 
@@ -451,10 +455,22 @@ struct MailPage: View {
     /// attachments.
     @ViewBuilder
     private func messageBody(_ detail: MailMessageDetail) -> some View {
+        let messageId = detail.summary.id
+        let isQuoteShown = setQuoteShownIds.contains(messageId)
         if !detail.html.isEmpty {
-            MailHTMLView(html: detail.html, isRemoteAllowed: true) { height in
-                mapBodyHeights[detail.summary.id] = height
-            }
+            MailHTMLView(
+                html: detail.html,
+                isRemoteAllowed: true,
+                isQuoteTrimmed: !isQuoteShown,
+                onQuoteTrimmed: { isTrimmed in
+                    if isTrimmed {
+                        setQuoteTrimmedIds.insert(messageId)
+                    }
+                },
+                onHeight: { height in
+                    mapBodyHeights[messageId] = height
+                }
+            )
             .frame(height: max(mapBodyHeights[detail.summary.id] ?? Self.bodyStartHeight, Self.bodyMinimumHeight))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
@@ -462,13 +478,28 @@ struct MailPage: View {
                     .strokeBorder(StageColors.separator)
             }
         } else {
-            Text(detail.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : detail.text)
+            Text(detail.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : (isQuoteShown ? detail.text : MailQuote.trimmed(detail.text) ?? detail.text))
                 .font(.system(size: 13))
                 .lineSpacing(3)
                 .foregroundStyle(detail.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if setQuoteTrimmedIds.contains(messageId) || (detail.html.isEmpty && MailQuote.trimmed(detail.text) != nil) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    if isQuoteShown {
+                        setQuoteShownIds.remove(messageId)
+                    } else {
+                        setQuoteShownIds.insert(messageId)
+                    }
+                }
+            } label: {
+                RookeryLabel(isQuoteShown ? "Hide Quoted Mail" : "Show Quoted Mail", icon: .ellipsis)
+                    .font(.system(size: 11.5))
+            }
+            .help(isQuoteShown ? "Show only what this message says" : "Show the earlier mail this message quotes")
         }
         if !detail.listAttachments.isEmpty {
             FlowRow(spacing: 5) {
@@ -574,9 +605,9 @@ struct MailPage: View {
             if let detail {
                 mapDetails[selectedId] = detail
                 let listFound = try await service.thread(of: detail.summary)
-                listThread = listFound.contains(where: { $0.id == selectedId }) ? listFound : [detail.summary]
+                listThread = listFound.contains(where: { $0.id == selectedId }) ? listFound.reversed() : [detail.summary]
                 setOpenIds = [selectedId]
-                if let latestId = listThread.last?.id, latestId != selectedId {
+                if let latestId = listThread.first?.id, latestId != selectedId {
                     setOpenIds.insert(latestId)
                     mapDetails[latestId] = try await service.message(latestId)
                 }

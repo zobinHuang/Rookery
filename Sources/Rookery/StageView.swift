@@ -61,6 +61,10 @@ struct StageView: View {
     /// edge for it to show.
     private static let tabFadeWidth: CGFloat = 28
     nonisolated private static let tabFadeThreshold: CGFloat = 2
+    /// A tab's height, from the content's top edge, which it stands on.
+    static let tabHeight: CGFloat = 34
+    /// The tabs' distance from the content's sides, clear of its rounded corners.
+    static let tabBarInset: CGFloat = 12
     private static let tabScrollAnimation = Animation.easeOut(duration: 0.22)
 
     let model: StageModel
@@ -755,7 +759,7 @@ struct StageView: View {
     private var tabBar: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
+                HStack(alignment: .bottom, spacing: 3) {
                     ForEach(model.listTabs) { tab in
                         tabButton(tab)
                             .id(tab.windowId)
@@ -767,9 +771,8 @@ struct StageView: View {
                 .backgroundPreferenceValue(TabBoundsKey.self) { mapTabBounds in
                     TabBackgrounds(model: model, mapTabBounds: mapTabBounds)
                 }
-                .padding(.horizontal, 6)
-                .padding(.top, 6)
-                .frame(minWidth: tabBarWidth, maxHeight: .infinity, alignment: .leading)
+                .padding(.horizontal, StageView.tabBarInset)
+                .frame(minWidth: tabBarWidth, maxHeight: .infinity, alignment: .bottomLeading)
                 .contentShape(Rectangle())
                 .dropDestination(for: String.self) { listTexts, _ in
                     guard case .window(let windowId) = Self.payload(from: listTexts) else {
@@ -858,8 +861,9 @@ struct StageView: View {
             }
             .frame(maxWidth: 220)
             .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, 12)
-            .frame(minHeight: 32)
+            .padding(.leading, 12)
+            .padding(.trailing, 16)
+            .frame(height: StageView.tabHeight)
             .anchorPreference(key: TabBoundsKey.self, value: .bounds) { [tab.windowId: $0] }
             .contentShape(Rectangle())
         }
@@ -1105,7 +1109,6 @@ struct TabBoundsKey: PreferenceKey {
 /// The faint ones are keyed by position, not by window: the tabs themselves carry the windows' ids, and
 /// scrolling the tab bar to a window would otherwise find the background instead.
 struct TabBackgrounds: View {
-    private static let cornerRadius: CGFloat = 9
 
     let model: StageModel
     let mapTabBounds: [WindowId: Anchor<CGRect>]
@@ -1116,9 +1119,12 @@ struct TabBackgrounds: View {
                 ForEach(model.listTabs.indices, id: \.self) { tabIndex in
                     if let anchor = mapTabBounds[model.listTabs[tabIndex].windowId] {
                         let bounds = proxy[anchor]
-                        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                        FolderTabShape()
                             .fill(StageColors.idleTab)
-                            .strokeBorder(StageColors.contrastBorder)
+                            .overlay {
+                                FolderTabShape()
+                                    .stroke(StageColors.contrastBorder)
+                            }
                             .frame(width: bounds.width, height: bounds.height)
                             .offset(x: bounds.minX, y: bounds.minY)
                     }
@@ -1334,7 +1340,7 @@ struct SwitchingTabs: View {
     @State private var phase: CGFloat = -1
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .bottom, spacing: 3) {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.mini)
@@ -1342,13 +1348,14 @@ struct SwitchingTabs: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
             }
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(StageColors.selectedTab, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .padding(.leading, 12)
+            .padding(.trailing, 16)
+            .frame(height: StageView.tabHeight)
+            .background(StageColors.selectedTab, in: FolderTabShape())
             ForEach(Self.placeholderWidths, id: \.self) { width in
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                FolderTabShape()
                     .fill(StageColors.idleTab)
-                    .frame(width: width, height: 30)
+                    .frame(width: width, height: StageView.tabHeight)
                     .overlay {
                         GeometryReader { proxy in
                             LinearGradient(
@@ -1359,12 +1366,12 @@ struct SwitchingTabs: View {
                             .frame(width: proxy.size.width * 0.6)
                             .offset(x: phase * proxy.size.width * 1.6)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .clipShape(FolderTabShape())
                     }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.top, 6)
+        .frame(maxHeight: .infinity, alignment: .bottomLeading)
+        .padding(.horizontal, StageView.tabBarInset)
         .onAppear {
             withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
                 phase = 1

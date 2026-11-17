@@ -18,19 +18,53 @@ struct TabHighlight: NSViewRepresentable {
     }
 }
 
-/// The view behind `TabHighlight`: one layer, moved by spring animations the render server runs.
+/// The outline of a tab, a folder's tab standing on the content below it: square at the bottom, where it
+/// meets the window, with a small round corner at the top left and a large one at the top right.
+struct FolderTabShape: Shape {
+    static let leadingRadius: CGFloat = 6
+    static let trailingRadius: CGFloat = 14
+
+    func path(in rect: CGRect) -> Path {
+        Path(Self.outline(in: rect))
+    }
+
+    /// The outline in a rectangle whose top is its minimum y, left open along the bottom so a stroke
+    /// leaves the edge the tab stands on undrawn.
+    static func outline(in rect: CGRect) -> CGPath {
+        let leading = min(leadingRadius, rect.width / 2, rect.height)
+        let trailing = min(trailingRadius, rect.width - leading, rect.height)
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + leading))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + leading, y: rect.minY),
+            control: CGPoint(x: rect.minX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - trailing, y: rect.minY))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + trailing),
+            control1: CGPoint(x: rect.maxX - trailing * 0.45, y: rect.minY),
+            control2: CGPoint(x: rect.maxX, y: rect.minY + trailing * 0.55)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
+}
+
+/// The view behind `TabHighlight`: one shape layer whose outline springs from tab to tab, an animation
+/// the render server runs.
 final class TabHighlightView: NSView {
-    private static let cornerRadius: CGFloat = 9
-    private static let shadowOpacity: Float = 0.12
-    private static let shadowRadius: CGFloat = 3
-    private static let shadowOffset = CGSize(width: 0, height: 1)
+    private static let shadowOpacity: Float = 0.1
+    private static let shadowRadius: CGFloat = 4
+    private static let shadowOffset = CGSize(width: 0, height: -1)
     /// Matches the spring the stage's other motion uses: a quarter second, barely overshooting.
     private static let springDuration: TimeInterval = 0.26
-    private static let springBounce: CGFloat = 0.15
+    private static let springBounce: CGFloat = 0.12
     /// The selected outline, drawn only by the high-contrast themes.
     private static let borderWidth: CGFloat = 1
 
-    private let highlight = CALayer()
+    private let highlight = CAShapeLayer()
+    private var shownFrame: CGRect?
 
     /// The theme the highlight is drawn in.
     var theme = Theme.light {
@@ -44,9 +78,7 @@ final class TabHighlightView: NSView {
     init() {
         super.init(frame: .zero)
         wantsLayer = true
-        highlight.cornerRadius = Self.cornerRadius
-        highlight.cornerCurve = .continuous
-        highlight.borderWidth = Self.borderWidth
+        highlight.lineWidth = Self.borderWidth
         highlight.shadowColor = NSColor.black.cgColor
         highlight.shadowOpacity = Self.shadowOpacity
         highlight.shadowRadius = Self.shadowRadius
@@ -71,9 +103,17 @@ final class TabHighlightView: NSView {
         nil
     }
 
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        highlight.frame = bounds
+        CATransaction.commit()
+    }
+
     override func updateLayer() {
-        highlight.backgroundColor = StageColors.selectedTab.color(in: theme).cgColor
-        highlight.borderColor = StageColors.contrastActiveBorder.color(in: theme).cgColor
+        highlight.fillColor = StageColors.selectedTab.color(in: theme).cgColor
+        highlight.strokeColor = StageColors.contrastActiveBorder.color(in: theme).cgColor
     }
 
     /// Put the highlight over a tab, sliding there from the tab it was over.
@@ -82,36 +122,30 @@ final class TabHighlightView: NSView {
     func move(to frame: CGRect?) {
         guard let frame else {
             highlight.isHidden = true
+            shownFrame = nil
             return
         }
-        let wasShown = !highlight.isHidden
-        let oldPosition = highlight.position
-        let oldBounds = highlight.bounds
-        let newPosition = CGPoint(x: frame.midX, y: frame.midY)
-        let newBounds = CGRect(origin: .zero, size: frame.size)
-        guard !wasShown || oldPosition != newPosition || oldBounds != newBounds else {
+        let oldFrame = highlight.isHidden ? nil : shownFrame
+        guard oldFrame != frame else {
             return
         }
+        let oldPath = highlight.path
+        let newPath = FolderTabShape.outline(in: frame)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         highlight.isHidden = false
-        highlight.position = newPosition
-        highlight.bounds = newBounds
-        highlight.shadowPath = CGPath(
-            roundedRect: newBounds,
-            cornerWidth: Self.cornerRadius,
-            cornerHeight: Self.cornerRadius,
-            transform: nil
-        )
+        highlight.path = newPath
+        highlight.shadowPath = newPath
         CATransaction.commit()
-        guard wasShown else {
+        shownFrame = frame
+        guard oldFrame != nil, let oldPath else {
             return
         }
-        highlight.add(Self.slide(keyPath: "position", from: NSValue(point: oldPosition)), forKey: "position")
-        highlight.add(Self.slide(keyPath: "bounds", from: NSValue(rect: oldBounds)), forKey: "bounds")
+        highlight.add(Self.slide(keyPath: "path", from: oldPath), forKey: "path")
+        highlight.add(Self.slide(keyPath: "shadowPath", from: oldPath), forKey: "shadowPath")
     }
 
-    private static func slide(keyPath: String, from fromValue: NSValue) -> CASpringAnimation {
+    private static func slide(keyPath: String, from fromValue: CGPath) -> CASpringAnimation {
         let animation = CASpringAnimation(perceptualDuration: springDuration, bounce: springBounce)
         animation.keyPath = keyPath
         animation.fromValue = fromValue

@@ -393,6 +393,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             return
         }
         leavePage()
+        if model.listTabs.contains(where: { $0.windowId == windowId }) {
+            model.selectedWindowId = windowId
+        }
         Task { [workspaceController, stageId] in
             await workspaceController.switchTo(groupId, bringingToFront: windowId, onStage: stageId)
         }

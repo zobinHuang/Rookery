@@ -3,6 +3,8 @@
 `rook connect` makes every Claude Code and codex session in your panes upload its
 own JSON transcript to a [roost](../server/) server as you work.
 
+Only the sessions you run count: Claude Code started in a terminal (`cli`) or in VS Code (`claude-vscode`), and codex. A session another program starts for itself, as an agent framework such as Raft (`raft`) or a script's `claude -p` (`sdk-cli`), is neither uploaded nor reported, and no playbook is put into it; Claude Code names how a session was started in `CLAUDE_CODE_ENTRYPOINT` and in its transcript. To count others too, list every start to count in `~/.config/rook/config.json`, as `"entrypoints": ["cli", "claude-vscode", "sdk-cli"]`.
+
 ```bash
 # on the server
 curl -fsSL -H 'Accept: application/vnd.github.v3.raw' https://api.github.com/repos/zobinHuang/Rookery/contents/server/setup.sh | bash

@@ -26,6 +26,7 @@ ROOK_LEDGER="$ROOK_STATE_DIR/sessions.tsv"
 ROOK_LOCK_DIR="$ROOK_STATE_DIR/locks"
 ROOK_LOG="$ROOK_STATE_DIR/upload.log"
 ROOK_SELF="$HOME/.local/bin/rook-session"
+ROOK_CLIENT="$HOME/.local/bin/rook-client"
 ROOK_PREFIX_BYTES=4096
 ROOK_FLUSH_MAX=20
 ROOK_LOG_MAX_LINES=2000
@@ -310,6 +311,9 @@ adopt_backlog() {
     adopt_scan "$_ab_agent" > "$ROOK_WORK/adopt-$_ab_agent"
     while IFS= read -r _ab_file; do
       [ -n "$_ab_file" ] && [ -f "$_ab_file" ] || continue
+      if [ -x "$ROOK_CLIENT" ] && ! "$ROOK_CLIENT" event reports "$_ab_agent" --transcript "$_ab_file" >/dev/null 2>&1; then
+        continue
+      fi
       _ab_id="$(adopt_session_id "$_ab_agent" "$_ab_file")"
       [ -n "$_ab_id" ] || continue
       # Already up to date as far as we know; the hooks have it from here.
@@ -598,6 +602,11 @@ cmd_run_upload() {
   [ $# -eq 2 ] || exit 0
   _agent="$1"
   _payload="$2"
+  # A session another program started for itself, as Raft's agents, is no agent of the user's.
+  if [ -x "$ROOK_CLIENT" ] && ! "$ROOK_CLIENT" event reports "$_agent" >/dev/null 2>&1; then
+    rm -f "$_payload"
+    exit 0
+  fi
   open_work_dir || exit 0
   trap 'rm -rf "$ROOK_WORK"; rm -f "$_payload"' EXIT HUP INT TERM
   load_connection || exit 0

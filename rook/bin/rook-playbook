@@ -648,6 +648,13 @@ report_playbook() {
 }
 
 # ─── hook entry points ────────────────────────────────────────────────
+# Whether the calling hook's session is one rook reports, as rook-client judges: not one another program
+# started for itself, as Raft's agents, whose prompts are not the user's to steer.
+reports_session() {
+  [ -x "$HOME/.local/bin/rook-client" ] || return 0
+  "$HOME/.local/bin/rook-client" event reports "$1" >/dev/null 2>&1
+}
+
 cmd_session_start() {
   _ss_agent="${1:-}"
   agent_skills_dir "$_ss_agent" >/dev/null || exit 0
@@ -659,6 +666,7 @@ cmd_session_start() {
   # show a picker on; saying nothing is the whole of the right behaviour.
   [ -n "$_ss_pane" ] || exit 0
   [ -f "$ROOK_CONNECT_FILE" ] || exit 0
+  reports_session "$_ss_agent" || exit 0
   _ss_project="$(json_scalar "$_ss_payload" cwd)"
   [ -n "$_ss_project" ] || _ss_project="$PWD"
   _ss_project="$(project_root_of "$_ss_project")"
@@ -710,6 +718,7 @@ cmd_context() {
   cat > "$_cx_payload" 2>/dev/null || true
   _cx_pane="${TMUX_PANE:-}"
   [ -n "$_cx_pane" ] || exit 0
+  reports_session "$_cx_agent" || exit 0
   _cx_current="$(tmux display-message -p -t "$_cx_pane" "#{$ROOK_PANE_OPT}" 2>/dev/null)"
   case "$_cx_current" in
     ''|"$ROOK_PICK_NONE") exit 0 ;;

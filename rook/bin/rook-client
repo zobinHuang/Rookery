@@ -120,6 +120,12 @@ class RookConfig:
     """rook's own settings."""
 
     CONFIG_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+    """The ways Claude Code is started whose sessions rook reports: in a terminal, or in VS Code. Sessions an
+    other program starts for itself, as Raft's agents (`raft`) or a script's `claude -p` (`sdk-cli`), are no
+    agents the user oversees and no pane rook can reach, so they are left out."""
+    CONFIG_DEFAULT_ENTRYPOINTS = ("cli", "claude-vscode")
+    CONFIG_ENTRYPOINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
+    CONFIG_TRANSCRIPT_HEAD_LINES = 20
 
     @classmethod
     def name(cls) -> str:
@@ -138,6 +144,37 @@ class RookConfig:
         """Whether prompts from Rookery and other agents may be typed into this machine's agents; on unless
         turned off with `rook link prompts off`."""
         return cls._read().get("accepts_prompts") is not False
+
+    @classmethod
+    def reports_entrypoint(cls, entrypoint: str | None) -> bool:
+        """Whether a Claude Code session started this way is reported: those started as the `entrypoints`
+        setting lists, by default in a terminal or in VS Code; one whose start is unknown, as with an older
+        Claude Code, is."""
+        if not entrypoint:
+            return True
+        list_entrypoints = cls._read().get("entrypoints")
+        if not isinstance(list_entrypoints, list):
+            list_entrypoints = list(cls.CONFIG_DEFAULT_ENTRYPOINTS)
+        return entrypoint in list_entrypoints
+
+    @classmethod
+    def entrypoint_of(cls, transcript: Path) -> str | None:
+        """How the session a Claude Code transcript records was started, from its first lines that say."""
+        try:
+            with transcript.open(encoding="utf-8", errors="replace") as handle:
+                for _ in range(cls.CONFIG_TRANSCRIPT_HEAD_LINES):
+                    line = handle.readline()
+                    if not line:
+                        break
+                    try:
+                        map_line = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(map_line, dict) and map_line.get("entrypoint"):
+                        return str(map_line["entrypoint"])
+        except OSError:
+            return None
+        return None
 
     @classmethod
     def update(cls, map_changes: dict[str, object]) -> None:
@@ -1279,6 +1316,17 @@ class RookClient:
     CLIENT_MESSAGE_SEPARATOR = "\n\n---\n\n"
 
     @classmethod
+    def reports_session(cls, harness: str, transcript: str | None = None) -> bool:
+        """Whether a session is one rook reports: every codex session, and a Claude Code session started as
+        `RookConfig.reports_entrypoint` allows, judged by its transcript when given, else by how the calling
+        hook's session was started."""
+        if harness != "claude":
+            return True
+        if transcript:
+            return RookConfig.reports_entrypoint(RookConfig.entrypoint_of(Path(transcript)))
+        return RookConfig.reports_entrypoint(os.environ.get(RookConfig.CONFIG_ENTRYPOINT_ENV))
+
+    @classmethod
     def hook(cls, harness: str) -> int:
         """Take one hook payload from stdin, queue its events, and start a sender. At SessionStart, note the
         pane the session runs in; at Stop, hand the agent the messages held for it, which keeps it going.
@@ -1289,7 +1337,7 @@ class RookClient:
         """
         try:
             map_payload = json.loads(sys.stdin.read() or "{}")
-            if not isinstance(map_payload, dict):
+            if not isinstance(map_payload, dict) or not cls.reports_session(harness):
                 return 0
             mapper = HookEventMapper(harness, map_payload)
             list_events = mapper.events()
@@ -1400,6 +1448,9 @@ def main(list_argv: list[str] | None = None) -> int:
     event_commands = event_parser.add_subparsers(dest="event_command", required=True)
     hook_parser = event_commands.add_parser("hook")
     hook_parser.add_argument("harness", choices=("claude", "codex"))
+    reports_parser = event_commands.add_parser("reports", help="exit 0 if this session is reported, 1 if left out")
+    reports_parser.add_argument("harness", choices=("claude", "codex"))
+    reports_parser.add_argument("--transcript", help="judge by the transcript rather than this process's start")
     event_commands.add_parser("flush")
     playbook_parser = event_commands.add_parser("playbook")
     playbook_parser.add_argument("session_id")
@@ -1414,6 +1465,8 @@ def main(list_argv: list[str] | None = None) -> int:
             return RookClient.hook(args.harness)
         if args.event_command == "playbook":
             return RookClient.report_playbook(args.session_id, args.resolved_path)
+        if args.event_command == "reports":
+            return 0 if RookClient.reports_session(args.harness, args.transcript) else 1
         return RookClient.flush()
     connection = Connection.load()
     if connection is None:

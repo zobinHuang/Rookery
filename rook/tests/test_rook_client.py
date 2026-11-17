@@ -125,6 +125,32 @@ class HookEventMapperTest(RookHomeTest):
         self.assertEqual(rook_client.HookEventMapper("claude", {"hook_event_name": "Stop"}).events(), [])
 
 
+class EntrypointTest(RookHomeTest):
+    """Which Claude Code sessions rook reports, by how they were started."""
+
+    def test_a_session_another_program_started_is_left_out(self) -> None:
+        payload = json.dumps({"session_id": SESSION, "hook_event_name": "SessionStart"})
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_ENTRYPOINT": "raft"}), \
+                mock.patch.object(sys, "stdin", io.StringIO(payload)):
+            self.assertEqual(rook_client.RookClient.hook("claude"), 0)
+        path = rook_client.RookPaths.queue_file()
+        self.assertFalse(path.exists() and path.read_text().strip())
+
+    def test_a_terminal_session_and_an_unknown_one_are_reported(self) -> None:
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_ENTRYPOINT": "cli"}):
+            self.assertTrue(rook_client.RookClient.reports_session("claude"))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
+            self.assertTrue(rook_client.RookClient.reports_session("claude"))
+
+    def test_a_transcript_says_how_its_session_was_started(self) -> None:
+        transcript = self.home / "session.jsonl"
+        transcript.write_text(json.dumps({"type": "user", "entrypoint": "raft"}) + "\n")
+        self.assertFalse(rook_client.RookClient.reports_session("claude", str(transcript)))
+        rook_client.RookConfig.update({"entrypoints": ["cli", "raft"]})
+        self.assertTrue(rook_client.RookClient.reports_session("claude", str(transcript)))
+
+
 class TranscriptLinesTest(unittest.TestCase):
     def test_a_transcript_reads_as_turns_and_tool_calls(self) -> None:
         raw = "\n".join(json.dumps(line) for line in [

@@ -38,34 +38,58 @@ struct TranscriptView: View {
     var body: some View {
         let listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 14) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if reader.startOffset > 0 {
                     earlierButton
+                        .padding(.bottom, 14)
                 }
                 if listBlocks.isEmpty {
                     empty
                 }
-                ForEach(listBlocks) { block in
-                    blockView(block)
+                ForEach(Array(listBlocks.enumerated()), id: \.element.id) { index, block in
+                    let previous = index > 0 ? listBlocks[index - 1] : nil
+                    let next = index + 1 < listBlocks.count ? listBlocks[index + 1] : nil
+                    VStack(spacing: 0) {
+                        if let header = Self.timeHeader(of: block, after: previous) {
+                            Text(header)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(StageColors.tertiaryText)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, previous == nil ? 0 : 14)
+                                .padding(.bottom, 8)
+                        }
+                        blockView(
+                            block,
+                            hasTail: Self.isLastOfRun(block, before: next) && !(next == nil && !listOutgoing.isEmpty && Self.isPrompt(block))
+                        )
+                    }
+                    .padding(.top, Self.spacing(between: previous, and: block))
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.85, anchor: Self.isPrompt(block) ? .bottomTrailing : .bottomLeading).combined(with: .opacity),
+                        removal: .opacity
+                    ))
                 }
                 if isWorking {
-                    HStack(spacing: 6) {
+                    MessageBubble(isTrailing: false, hasTail: true) {
                         AwaitingDots()
-                        Text("Working")
+                            .foregroundStyle(StageColors.secondaryText)
+                            .padding(.vertical, 3)
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(StageColors.tertiaryText)
-                    .transition(.opacity)
+                    .padding(.top, 8)
+                    .transition(.scale(scale: 0.6, anchor: .bottomLeading).combined(with: .opacity))
                 }
-                ForEach(listOutgoing) { outgoing in
-                    outgoingPrompt(outgoing)
+                ForEach(Array(listOutgoing.enumerated()), id: \.element.id) { index, outgoing in
+                    outgoingPrompt(outgoing, hasTail: index == listOutgoing.count - 1)
+                        .padding(.top, index == 0 && !(listBlocks.last.map(Self.isPrompt) ?? false) ? 14 : 3)
                         .transition(.asymmetric(
-                            insertion: .move(edge: .bottom).combined(with: .opacity),
+                            insertion: .scale(scale: 0.6, anchor: .bottomTrailing).combined(with: .opacity),
                             removal: .opacity
                         ))
                 }
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: listOutgoing)
+            .animation(.spring(response: 0.38, dampingFraction: 0.78), value: listOutgoing)
+            .animation(.spring(response: 0.38, dampingFraction: 0.78), value: listBlocks.count)
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isWorking)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
             .textSelection(.enabled)
@@ -83,23 +107,25 @@ struct TranscriptView: View {
     // MARK: - Blocks
 
     @ViewBuilder
-    private func blockView(_ block: TranscriptBlock) -> some View {
+    private func blockView(_ block: TranscriptBlock, hasTail: Bool) -> some View {
         switch block {
         case .entry(let entry):
-            entryView(entry)
+            entryView(entry, hasTail: hasTail)
         case .tools(let listEntries):
             toolRun(listEntries, blockId: block.id)
         }
     }
 
     @ViewBuilder
-    private func entryView(_ entry: TranscriptEntry) -> some View {
+    private func entryView(_ entry: TranscriptEntry, hasTail: Bool) -> some View {
         switch entry.role {
         case .user:
-            prompt(entry)
+            prompt(entry, hasTail: hasTail)
         case .assistant:
-            MarkdownText(text: entry.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            MessageBubble(isTrailing: false, hasTail: hasTail) {
+                MarkdownText(text: entry.text)
+            }
+            .help(entry.timestamp.map(Self.time(of:)) ?? "")
         case .command(let command):
             HStack(spacing: 6) {
                 RookeryIconView(.terminal)
@@ -123,49 +149,36 @@ struct TranscriptView: View {
         }
     }
 
-    private func prompt(_ entry: TranscriptEntry) -> some View {
-        VStack(alignment: .trailing, spacing: 4) {
-            if let timestamp = entry.timestamp {
-                Text(Self.time(of: timestamp))
-                    .font(.system(size: 10))
-                    .foregroundStyle(StageColors.tertiaryText)
-            }
+    private func prompt(_ entry: TranscriptEntry, hasTail: Bool) -> some View {
+        MessageBubble(isTrailing: true, hasTail: hasTail) {
             Text(entry.text)
                 .font(.system(size: 13))
                 .lineSpacing(2)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.leading, 80)
-        .padding(.top, 6)
+        .help(entry.timestamp.map(Self.time(of:)) ?? "")
     }
 
     /// A prompt on its way: as it will read once recorded, with what became of it beneath, and the agent's
     /// answer awaited once it arrived.
-    private func outgoingPrompt(_ outgoing: OutgoingPrompt) -> some View {
+    private func outgoingPrompt(_ outgoing: OutgoingPrompt, hasTail: Bool) -> some View {
         let delivery = mapDeliveries[outgoing.id]
         let isFailed = delivery?.isFailed == true
-        return VStack(alignment: .trailing, spacing: 5) {
-            Text(Self.time(of: outgoing.sentAt))
-                .font(.system(size: 10))
-                .foregroundStyle(StageColors.tertiaryText)
-            Text(outgoing.text)
-                .font(.system(size: 13))
-                .lineSpacing(2)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    isFailed ? AnyShapeStyle(Color.red.opacity(0.12)) : AnyShapeStyle(Color.accentColor.opacity(0.16)),
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .opacity(delivery?.status == "delivered" ? 1 : 0.75)
-            outgoingStatus(delivery)
+        return VStack(alignment: .trailing, spacing: 4) {
+            MessageBubble(isTrailing: true, hasTail: hasTail, isFailed: isFailed) {
+                Text(outgoing.text)
+                    .font(.system(size: 13))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .opacity(delivery?.status == "delivered" || isFailed ? 1 : 0.7)
+            .help(Self.time(of: outgoing.sentAt))
+            if hasTail || isFailed {
+                outgoingStatus(delivery)
+                    .padding(.trailing, 6)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.leading, 80)
-        .padding(.top, 6)
     }
 
     @ViewBuilder
@@ -383,6 +396,87 @@ struct TranscriptView: View {
         }
     }
 
+    private static func isPrompt(_ block: TranscriptBlock) -> Bool {
+        if case .entry(let entry) = block, entry.role == .user {
+            return true
+        }
+        return false
+    }
+
+    private static func isReply(_ block: TranscriptBlock) -> Bool {
+        if case .entry(let entry) = block, entry.role == .assistant {
+            return true
+        }
+        return false
+    }
+
+    /// Whether a message ends a run of messages from the same side, which draws its bubble's tail.
+    private static func isLastOfRun(_ block: TranscriptBlock, before next: TranscriptBlock?) -> Bool {
+        guard let next else {
+            return true
+        }
+        return isPrompt(block) ? !isPrompt(next) : !isReply(next)
+    }
+
+    /// The space above a block: tight within a run from one side, as Messages groups them, and wider where
+    /// the other side speaks or the agent turns to its tools.
+    private static func spacing(between previous: TranscriptBlock?, and block: TranscriptBlock) -> CGFloat {
+        guard let previous else {
+            return 0
+        }
+        if (isPrompt(previous) && isPrompt(block)) || (isReply(previous) && isReply(block)) {
+            return 3
+        }
+        if !isPrompt(previous) && !isPrompt(block) {
+            return 6
+        }
+        return 14
+    }
+
+    /// The time over a message, as Messages shows one: over the first message and wherever ten minutes
+    /// passed since the one before.
+    private static func timeHeader(of block: TranscriptBlock, after previous: TranscriptBlock?) -> String? {
+        guard
+            isPrompt(block) || isReply(block),
+            case .entry(let entry) = block,
+            let timestamp = entry.timestamp
+        else {
+            return nil
+        }
+        if let previous, let previousTime = lastTimestamp(of: previous), timestamp.timeIntervalSince(previousTime) < timeHeaderGap {
+            return nil
+        }
+        return dayAndTime(of: timestamp)
+    }
+
+    private static let timeHeaderGap: TimeInterval = 600
+
+    private static func lastTimestamp(of block: TranscriptBlock) -> Date? {
+        switch block {
+        case .entry(let entry):
+            entry.timestamp
+        case .tools(let listEntries):
+            listEntries.last?.timestamp
+        }
+    }
+
+    /// The day and the time, as a header between messages reads: Today, Yesterday, the weekday this week,
+    /// else the date.
+    private static func dayAndTime(of date: Date) -> String {
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(date) {
+            return "Today \(time)"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "Yesterday \(time)"
+        }
+        if let days = calendar.dateComponents([.day], from: date, to: .now).day, days < 7 {
+            return "\(date.formatted(.dateTime.weekday(.wide))) \(time)"
+        }
+        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+    }
+
     /// When a step happened: the time today, else the day and the time.
     private static func time(of date: Date) -> String {
         if Calendar.current.isDateInToday(date) {
@@ -476,5 +570,94 @@ struct AwaitingDots: View {
             return 0
         }
         return -2 * CGFloat(sin(local * .pi))
+    }
+}
+
+/// A message in a bubble as Messages draws one: the user's on the right in blue, the agent's on the left in
+/// grey, rounded, the last of a run from one side with a tail at its bottom corner. As the conversation
+/// scrolls, a bubble at the edge of the view shrinks a little and fades, and springs back as it comes in.
+struct MessageBubble<Content: View>: View {
+    private static var cornerRadius: CGFloat { 17 }
+    private static var tailWidth: CGFloat { 6 }
+    /// The share of the conversation's width a bubble may take.
+    private static var widthShare: CGFloat { 0.78 }
+
+    let isTrailing: Bool
+    let hasTail: Bool
+    var isFailed = false
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        let widthShare = Self.widthShare
+        let edgeAnchor: UnitPoint = isTrailing ? .trailing : .leading
+        return content()
+            .foregroundStyle(isTrailing ? AnyShapeStyle(StageColors.userBubbleText) : AnyShapeStyle(StageColors.primaryText))
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .background {
+                MessageBubbleShape(isTrailing: isTrailing, hasTail: hasTail)
+                    .fill(fill)
+                    .overlay {
+                        MessageBubbleShape(isTrailing: isTrailing, hasTail: hasTail)
+                            .stroke(isTrailing ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.agentBubbleBorder), lineWidth: 1)
+                    }
+            }
+            .containerRelativeFrame(.horizontal, alignment: isTrailing ? .trailing : .leading) { width, _ in
+                width * widthShare
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: isTrailing ? .trailing : .leading)
+            .padding(isTrailing ? .trailing : .leading, Self.tailWidth)
+            .scrollTransition(.interactive, axis: .vertical) { view, phase in
+                view
+                    .scaleEffect(phase.isIdentity ? 1 : 0.93, anchor: edgeAnchor)
+                    .opacity(phase.isIdentity ? 1 : 0.55)
+                    .offset(y: phase.value * 8)
+            }
+    }
+
+    private var fill: AnyShapeStyle {
+        if isFailed {
+            return AnyShapeStyle(Color.red.opacity(0.75))
+        }
+        return isTrailing ? AnyShapeStyle(StageColors.userBubble) : AnyShapeStyle(StageColors.agentBubble)
+    }
+}
+
+/// A message bubble's outline: a rounded rectangle, with a tail curling out of its bottom corner on its
+/// side when it ends a run.
+struct MessageBubbleShape: Shape {
+    private static var cornerRadius: CGFloat { 17 }
+    private static var tailWidth: CGFloat { 6 }
+
+    let isTrailing: Bool
+    let hasTail: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let radius = min(Self.cornerRadius, rect.height / 2, rect.width / 2)
+        guard hasTail else {
+            return Path(roundedRect: rect, cornerRadius: radius, style: .continuous)
+        }
+        var path = Path()
+        let minX = rect.minX
+        let maxX = rect.maxX
+        let minY = rect.minY
+        let maxY = rect.maxY
+        path.move(to: CGPoint(x: minX + radius, y: minY))
+        path.addLine(to: CGPoint(x: maxX - radius, y: minY))
+        path.addArc(tangent1End: CGPoint(x: maxX, y: minY), tangent2End: CGPoint(x: maxX, y: minY + radius), radius: radius)
+        path.addLine(to: CGPoint(x: maxX, y: maxY - 8))
+        path.addQuadCurve(to: CGPoint(x: maxX + Self.tailWidth, y: maxY), control: CGPoint(x: maxX, y: maxY - 1))
+        path.addQuadCurve(to: CGPoint(x: maxX - 8, y: maxY - 2.5), control: CGPoint(x: maxX - 2, y: maxY + 0.5))
+        path.addQuadCurve(to: CGPoint(x: maxX - 16, y: maxY), control: CGPoint(x: maxX - 11, y: maxY))
+        path.addLine(to: CGPoint(x: minX + radius, y: maxY))
+        path.addArc(tangent1End: CGPoint(x: minX, y: maxY), tangent2End: CGPoint(x: minX, y: maxY - radius), radius: radius)
+        path.addLine(to: CGPoint(x: minX, y: minY + radius))
+        path.addArc(tangent1End: CGPoint(x: minX, y: minY), tangent2End: CGPoint(x: minX + radius, y: minY), radius: radius)
+        path.closeSubpath()
+        guard !isTrailing else {
+            return path
+        }
+        return path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.minX + rect.maxX, ty: 0))
     }
 }

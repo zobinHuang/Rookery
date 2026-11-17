@@ -45,6 +45,32 @@ enum StageColors {
         highContrastLight: .white,
         highContrastDark: .black
     )
+    /// A message bubble the user sent, as Messages draws one: blue with white text; and the agent's, a soft
+    /// grey with the text's own color. The high-contrast themes keep the user's solid and outline the agent's.
+    static let userBubble = StageColor(
+        light: NSColor(srgbRed: 0, green: 0.478, blue: 1, alpha: 1),
+        dark: NSColor(srgbRed: 0.039, green: 0.518, blue: 1, alpha: 1),
+        highContrastLight: NSColor(srgbRed: 0, green: 0.251, blue: 0.867, alpha: 1),
+        highContrastDark: NSColor(srgbRed: 0.251, green: 0.612, blue: 1, alpha: 1)
+    )
+    static let userBubbleText = StageColor(
+        light: .white,
+        dark: .white,
+        highContrastLight: .white,
+        highContrastDark: .black
+    )
+    static let agentBubble = StageColor(
+        light: .white,
+        dark: NSColor(srgbRed: 0.173, green: 0.173, blue: 0.180, alpha: 1),
+        highContrastLight: .white,
+        highContrastDark: .black
+    )
+    static let agentBubbleBorder = StageColor(
+        light: .clear,
+        dark: .clear,
+        highContrastLight: contrastBorderLight,
+        highContrastDark: contrastBorderDark
+    )
     static let idleTab = StageColor(
         light: slate(0x1A2233, alpha: 0.05),
         dark: slate(0xC8D2E6, alpha: 0.05),

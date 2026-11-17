@@ -62,6 +62,8 @@ final class TabHighlightView: NSView {
     private static let springBounce: CGFloat = 0.12
     /// The selected outline, drawn only by the high-contrast themes.
     private static let borderWidth: CGFloat = 1
+    /// The most a frame may shift and still count as the same tab.
+    private static let nudgeLimit: CGFloat = 1.5
 
     private let highlight = CAShapeLayer()
     private var shownFrame: CGRect?
@@ -138,11 +140,20 @@ final class TabHighlightView: NSView {
         highlight.shadowPath = newPath
         CATransaction.commit()
         shownFrame = frame
-        guard oldFrame != nil, let oldPath else {
+        guard let oldFrame, let oldPath, !Self.isNudge(from: oldFrame, to: frame) else {
             return
         }
         highlight.add(Self.slide(keyPath: "path", from: oldPath), forKey: "path")
         highlight.add(Self.slide(keyPath: "shadowPath", from: oldPath), forKey: "shadowPath")
+    }
+
+    /// Whether a frame differs from the last by a layout's small adjustment, not a move to another tab:
+    /// the highlight takes it without starting its slide again, which would make it shudder in place.
+    private static func isNudge(from oldFrame: CGRect, to newFrame: CGRect) -> Bool {
+        abs(oldFrame.minX - newFrame.minX) < nudgeLimit
+            && abs(oldFrame.maxX - newFrame.maxX) < nudgeLimit
+            && abs(oldFrame.minY - newFrame.minY) < nudgeLimit
+            && abs(oldFrame.maxY - newFrame.maxY) < nudgeLimit
     }
 
     private static func slide(keyPath: String, from fromValue: CGPath) -> CASpringAnimation {

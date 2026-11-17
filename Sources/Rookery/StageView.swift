@@ -853,7 +853,7 @@ struct StageView: View {
                     .frame(width: 180)
                 } else {
                     WindowNameText(model: model, windowId: tab.windowId)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -868,7 +868,6 @@ struct StageView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.activeTabText) : AnyShapeStyle(StageColors.secondaryText))
-        .animation(.easeOut(duration: 0.18), value: isSelected)
         .simultaneousGesture(TapGesture(count: 2).onEnded {
             beginRenaming(tab: tab.windowId)
         })

@@ -110,6 +110,31 @@ struct StageView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            stage
+            Footbar(listCities: model.listClockCities)
+                .frame(height: StageModel.footbarHeight)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(StageColors.window)
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .environment(\.chosenTheme, model.shownTheme)
+        .buttonStyle(StageButtonStyle())
+        .opacity(model.isVisible ? 1 : 0)
+        .animation(.easeOut(duration: 0.22), value: model.isVisible)
+        .animation(Self.zoneAnimation, value: model.highlightedZone)
+        .animation(Self.zoneAnimation, value: showsDropZones)
+        .animation(Self.zoneAnimation, value: model.tabInsertBeforeId)
+        .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
+        .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
+        .animation(Self.sidebarAnimation, value: model.isRightSidebarCollapsed)
+        .animation(.easeOut(duration: 0.18), value: model.switchingGroupId)
+        .animation(Self.sidebarAnimation, value: sidebarMode)
+        .animation(Self.sidebarAnimation, value: showsTabBar)
+    }
+
+    /// The sidebars with the tabs and the content between them.
+    private var stage: some View {
         HStack(spacing: 0) {
             sidebar
                 .frame(width: model.sidebarWidth)
@@ -155,21 +180,6 @@ struct StageView: View {
             .frame(width: model.rightSidebarWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(StageColors.window)
-        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
-        .environment(\.chosenTheme, model.shownTheme)
-        .buttonStyle(StageButtonStyle())
-        .opacity(model.isVisible ? 1 : 0)
-        .animation(.easeOut(duration: 0.22), value: model.isVisible)
-        .animation(Self.zoneAnimation, value: model.highlightedZone)
-        .animation(Self.zoneAnimation, value: showsDropZones)
-        .animation(Self.zoneAnimation, value: model.tabInsertBeforeId)
-        .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
-        .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
-        .animation(Self.sidebarAnimation, value: model.isRightSidebarCollapsed)
-        .animation(.easeOut(duration: 0.18), value: model.switchingGroupId)
-        .animation(Self.sidebarAnimation, value: sidebarMode)
-        .animation(Self.sidebarAnimation, value: showsTabBar)
     }
 
     /// The name of the group a switch is bringing forward, while it is under way and its tabs are not yet the
@@ -324,15 +334,6 @@ struct StageView: View {
             }
             if !model.isSidebarCollapsed && !agentUsage.listShownAccounts.isEmpty {
                 AgentUsagePanel(monitor: agentUsage)
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(StageColors.separator)
-                            .frame(height: 1)
-                    }
-                    .transition(.opacity)
-            }
-            if !model.isSidebarCollapsed && !model.listClockCities.isEmpty {
-                WorldClockView(listCities: model.listClockCities)
                     .overlay(alignment: .top) {
                         Rectangle()
                             .fill(StageColors.separator)

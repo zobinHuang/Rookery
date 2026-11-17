@@ -127,6 +127,8 @@ final class StageModel {
     static let rightSidebarWidth: CGFloat = 300
     static let collapsedRightSidebarWidth: CGFloat = 52
     static let tabBarHeight: CGFloat = 44
+    /// The bar along the stage's bottom, one line high, under the sidebars and the content.
+    static let footbarHeight: CGFloat = 24
     static let contentInset: CGFloat = 10
 
     var isVisible = false

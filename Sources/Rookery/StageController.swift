@@ -835,9 +835,9 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         let sidebarWidth = model.sidebarWidth
         return ScreenGeometry.windowServerFrame(fromAppKit: CGRect(
             x: stageFrame.minX + sidebarWidth,
-            y: stageFrame.minY + StageModel.contentInset,
+            y: stageFrame.minY + StageModel.footbarHeight + StageModel.contentInset,
             width: stageFrame.width - sidebarWidth - model.rightSidebarWidth,
-            height: stageFrame.height - StageModel.tabBarHeight - StageModel.contentInset
+            height: stageFrame.height - StageModel.tabBarHeight - StageModel.contentInset - StageModel.footbarHeight
         ))
     }
 

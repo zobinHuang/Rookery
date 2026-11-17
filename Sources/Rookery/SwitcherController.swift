@@ -21,8 +21,12 @@ final class SwitcherController {
     /// The area the open switcher fits in, in AppKit screen coordinates; nil for the display under the cursor.
     private var fitFrame: CGRect?
 
-    init(hotkeyCenter: HotkeyCenter) {
+    /// The theme the user chose, read each time the switcher opens.
+    private let chosenTheme: @MainActor () -> Theme?
+
+    init(hotkeyCenter: HotkeyCenter, chosenTheme: @escaping @MainActor () -> Theme?) {
         self.hotkeyCenter = hotkeyCenter
+        self.chosenTheme = chosenTheme
         panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -77,6 +81,7 @@ final class SwitcherController {
 
     private func open(_ request: SwitcherRequest, step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
         model.listEntries = request.listEntries
+        model.chosenTheme = chosenTheme()
         model.holdSymbols = Hotkey.symbols(for: holdModifiers)
         let count = request.listEntries.count
         model.selectedIndex = ((request.currentIndex + step) % count + count) % count

@@ -31,6 +31,7 @@ struct SwitcherView: View {
         .opacity(model.isVisible ? 1 : 0)
         .animation(Self.appearAnimation, value: model.isVisible)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.chosenTheme, model.chosenTheme)
     }
 
     private var cards: some View {
@@ -76,14 +77,17 @@ struct SwitcherView: View {
             .background {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.9))
+                        .fill(StageColors.selectedSegment)
+                        .strokeBorder(StageColors.contrastActiveBorder, lineWidth: 1.5)
+                        .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
                         .matchedGeometryEffect(id: "selection", in: selectionNamespace)
                 }
             }
     }
 }
 
-/// One card: its applications' icons or its symbol, and its name, with what it is in its tooltip.
+/// One card: its applications' icons or its symbol, the tag of where it belongs (a window's group), and
+/// its name, with what it is in its tooltip; the chosen card in the colors of the theme turned over.
 struct SwitcherCardView: View {
     private static let iconSize: CGFloat = 44
     private static let iconOverlap: CGFloat = -18
@@ -92,36 +96,58 @@ struct SwitcherCardView: View {
     let entry: SwitcherEntry
     let isSelected: Bool
 
+    private var ink: AnyShapeStyle {
+        isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText)
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             artwork
                 .frame(height: Self.iconSize)
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                if entry.isActive {
-                    Circle()
-                        .fill(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.tint))
-                        .frame(width: 6, height: 6)
+            VStack(spacing: 5) {
+                if let tag = entry.tag, !tag.isEmpty {
+                    Text(tag)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText.opacity(0.85)) : AnyShapeStyle(StageColors.secondaryText))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(
+                            isSelected ? AnyShapeStyle(StageColors.selectedSegmentText.opacity(0.16)) : AnyShapeStyle(StageColors.segmentGroove),
+                            in: Capsule()
+                        )
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(isSelected ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.segmentGrooveBorder))
+                        }
                 }
-                Text(entry.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    if entry.isActive {
+                        Circle()
+                            .fill(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(.tint))
+                            .frame(width: 6, height: 6)
+                    }
+                    Text(entry.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(entry.tag == nil ? 2 : 1)
+                }
+                .foregroundStyle(ink)
             }
-            .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
             .help(entry.subtitle)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
         .frame(width: SwitcherLayout.cardSize.width, height: SwitcherLayout.cardSize.height)
         .scaleEffect(isSelected ? 1.04 : 1)
     }
-
 
     @ViewBuilder
     private var artwork: some View {
         if let symbolName = entry.symbolName {
             RookeryIconView(symbolName, scale: 3)
-                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
         } else {
             HStack(spacing: Self.iconOverlap) {
                 ForEach(Array(entry.listBundleIds.prefix(Self.maximumIcons).enumerated()), id: \.offset) { _, bundleId in

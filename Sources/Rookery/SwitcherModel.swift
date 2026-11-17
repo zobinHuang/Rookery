@@ -11,6 +11,8 @@ struct SwitcherEntry: Identifiable {
     /// A symbol shown in place of application icons.
     let symbolName: RookeryIcon?
     let isActive: Bool
+    /// Where the entry belongs, shown as a tag over its title: a window's group, or Rookery for its pages.
+    var tag: String?
 }
 
 /// What one opening of a switcher offers, and what choosing does.
@@ -34,6 +36,8 @@ final class SwitcherModel {
     /// The modifiers to release to choose, as symbols.
     var holdSymbols = "⌥"
     var grid = SwitcherGrid()
+    /// The theme the user chose for Rookery, which the switcher is drawn in; nil to follow the system.
+    var chosenTheme: Theme?
 }
 
 /// A way to move the switcher's selection with the arrow keys.
@@ -80,7 +84,7 @@ struct SwitcherGrid: Equatable {
 
 /// The switcher's measurements, shared by its view and the panel sized around it.
 enum SwitcherLayout {
-    static let cardSize = CGSize(width: 132, height: 118)
+    static let cardSize = CGSize(width: 136, height: 130)
     static let spacing: CGFloat = 10
     static let padding: CGFloat = 16
     static let hintHeight: CGFloat = 14

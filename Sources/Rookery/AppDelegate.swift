@@ -136,7 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subtitle: "Rookery",
             listBundleIds: [],
             symbolName: .gear,
-            isActive: false
+            isActive: false,
+            tag: "Rookery"
         )
         let calendar = SwitcherEntry(
             id: StagePage.calendar.switcherId ?? "",
@@ -144,7 +145,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subtitle: "every account's events",
             listBundleIds: [],
             symbolName: .calendar,
-            isActive: false
+            isActive: false,
+            tag: "Rookery"
         )
         let mail = SwitcherEntry(
             id: StagePage.mail.switcherId ?? "",
@@ -152,7 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subtitle: "every account's mail",
             listBundleIds: [],
             symbolName: .mail,
-            isActive: false
+            isActive: false,
+            tag: "Rookery"
         )
         guard fleetModel.client() != nil else {
             return [calendar, mail, settings]
@@ -163,7 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             subtitle: "every agent, skill, playbook and memory",
             listBundleIds: [],
             symbolName: .crown,
-            isActive: false
+            isActive: false,
+            tag: "Rookery"
         )
         let listAgents = fleetModel.fleet.listSessions.filter { $0.state != .ended }.map { agent in
             SwitcherEntry(
@@ -172,7 +176,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 subtitle: agent.rookName.isEmpty ? agent.state.title : "\(agent.state.title) on \(agent.rookName)",
                 listBundleIds: [],
                 symbolName: .agent,
-                isActive: false
+                isActive: false,
+                tag: "Agent"
             )
         }
         return [calendar, mail, rookmaster] + listAgents + [settings]

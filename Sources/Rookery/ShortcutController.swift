@@ -26,7 +26,9 @@ final class ShortcutController {
     private let preferences: Preferences
     private let hotkeyCenter = HotkeyCenter()
     private let stages: StageCoordinator
-    private lazy var switcher = SwitcherController(hotkeyCenter: hotkeyCenter)
+    private lazy var switcher = SwitcherController(hotkeyCenter: hotkeyCenter) { [preferences] in
+        preferences.theme
+    }
     private lazy var keyInterceptor = KeyInterceptor { [weak self] keyCode, modifiers in
         self?.intercept(keyCode: keyCode, modifiers: modifiers) ?? false
     }

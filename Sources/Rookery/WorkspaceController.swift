@@ -938,11 +938,12 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         let listWindowEntries = listRecentWindows.map { window in
             SwitcherEntry(
                 id: String(window.windowId.rawValue),
-                title: window.displayName,
-                subtitle: workspace.group(containing: window.windowId)?.name ?? "",
+                title: window.application.name,
+                subtitle: window.displayName,
                 listBundleIds: [window.application.bundleId],
                 symbolName: nil,
-                isActive: false
+                isActive: false,
+                tag: workspace.group(containing: window.windowId)?.name
             )
         }
         let listAll = listWindowEntries + pageEntries()

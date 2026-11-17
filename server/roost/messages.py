@@ -349,6 +349,8 @@ class DeliveryStore:
         if sender.kind == ResourceKinds.AGENT.name and self._resources.exists(sender_ref):
             sender_agent = self._resources.get(sender_ref)
             map_prompt["sender_title"] = str(sender_agent.map_attributes.get("title") or sender_agent.name)
+            if self._roster.is_rookery_own(sender_agent):
+                map_prompt["sender_rook"] = TeamRoster.ROSTER_ROOKERY_ROOK
         return map_prompt
 
     def _thread_hops(self, thread: str) -> int:

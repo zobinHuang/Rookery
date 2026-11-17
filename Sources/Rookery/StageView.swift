@@ -61,6 +61,9 @@ struct StageView: View {
     /// edge for it to show.
     private static let tabFadeWidth: CGFloat = 28
     nonisolated private static let tabFadeThreshold: CGFloat = 2
+    /// The most of the sidebar the Windows section takes above the agents, and with the agents folded.
+    private static let windowsShare: CGFloat = 0.45
+    private static let windowsAloneShare: CGFloat = 0.8
     /// A tab's height, from the content's top edge, which it stands on.
     static let tabHeight: CGFloat = 34
     /// The tabs' distance from the content's sides, clear of its rounded corners.
@@ -74,11 +77,14 @@ struct StageView: View {
     let agentUsage: AgentUsageMonitor
     let fleetModel: FleetModel
     unowned let actions: any StageActions
-    @Namespace private var modeNamespace
     @State private var hoveredGroupId: GroupId?
     @State private var sidebarHeight: CGFloat = 0
     /// The height of the area the groups or the mixer scroll in, which their empty space fills.
     @State private var listViewportHeight: CGFloat = 0
+    /// How tall the groups' rows are together, which the Windows section takes up to its share.
+    @State private var groupsContentHeight: CGFloat = 0
+    @State private var isWindowsFolded = false
+    @State private var isAgentsFolded = false
     /// The width the tabs scroll in.
     @State private var tabBarWidth: CGFloat = 0
     /// Whether tabs lie beyond the leading or the trailing edge of the width they scroll in. Only these are
@@ -129,7 +135,6 @@ struct StageView: View {
         .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
         .animation(Self.sidebarAnimation, value: model.isRightSidebarCollapsed)
         .animation(.easeOut(duration: 0.18), value: model.switchingGroupId)
-        .animation(Self.sidebarAnimation, value: sidebarMode)
         .animation(Self.sidebarAnimation, value: showsTabBar)
     }
 
@@ -222,16 +227,52 @@ struct StageView: View {
         model.isReceivingWindow || model.isDraggingTab
     }
 
-    /// What the sidebar shows: the groups whenever a window or tab is being dragged, so it can be dropped
-    /// on one, else the chosen mode.
-    private var sidebarMode: SidebarMode {
-        guard
-            model.isReceivingWindow
-            || model.isDraggingTab
-        else {
-            return listShownModes.contains(model.sidebarMode) ? model.sidebarMode : .groups
+    /// The Windows section's height: its groups', up to half the sidebar while the agents show under it.
+    private var windowsListHeight: CGFloat {
+        let content = max(groupsContentHeight, 1)
+        guard !isAgentsFolded else {
+            return min(content, max(sidebarHeight * Self.windowsAloneShare, 1))
         }
-        return .groups
+        return min(content, max(sidebarHeight * Self.windowsShare, 1))
+    }
+
+    /// A section's heading in the sidebar: its name and how many it holds, folding it away; a hairline in
+    /// the collapsed sidebar.
+    @ViewBuilder
+    private func sectionHeader(_ title: String, count: Int, isFolded: Binding<Bool>) -> some View {
+        if model.isSidebarCollapsed {
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: 1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+        } else {
+            Button {
+                withAnimation(Self.sidebarAnimation) {
+                    isFolded.wrappedValue.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(StageColors.secondaryText)
+                    if count > 0 {
+                        Text("\(count)")
+                            .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                            .foregroundStyle(StageColors.tertiaryText)
+                    }
+                    Spacer(minLength: 0)
+                    RookeryIconView(.chevronDown)
+                        .foregroundStyle(StageColors.tertiaryText)
+                        .rotationEffect(.degrees(isFolded.wrappedValue ? -90 : 0))
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 6)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isFolded.wrappedValue ? "Show the \(title.lowercased())" : "Fold the \(title.lowercased()) away")
+        }
     }
 
     /// The agent whose page the content area shows, if any.
@@ -242,65 +283,40 @@ struct StageView: View {
         return nil
     }
 
-    /// The modes the switch offers.
-    private var listShownModes: [SidebarMode] {
-        SidebarMode.allCases
-    }
-
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 6) {
             sidebarHeader
-            modeSwitch
-            ZStack(alignment: .top) {
-                if sidebarMode == .groups {
-                    ScrollView {
-                        VStack(spacing: 2) {
-                            ForEach(model.listGroups) { row in
-                                groupRow(row)
-                            }
-                            if model.highlightedZone == .newGroup && !model.isSidebarCollapsed {
-                                newGroupPlaceholder
-                                    .transition(.move(edge: .top).combined(with: .opacity))
-                            }
-                            if model.isGroupOverSidebarEnd {
-                                InsertionMark(isVertical: false)
-                            }
+            sectionHeader("Windows", count: model.listGroups.count, isFolded: $isWindowsFolded)
+            if !isWindowsFolded || showsDropZones {
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(model.listGroups) { row in
+                            groupRow(row)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .modifier(EmptySpaceTap(minHeight: listViewportHeight, action: finishEditingOnEmptySpace))
+                        if model.highlightedZone == .newGroup && !model.isSidebarCollapsed {
+                            newGroupPlaceholder
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                        if model.isGroupOverSidebarEnd {
+                            InsertionMark(isVertical: false)
+                        }
                     }
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .leading).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
-                } else if sidebarMode == .agents {
-                    AgentsSidebarView(
-                        fleetModel: fleetModel,
-                        isCollapsed: model.isSidebarCollapsed,
-                        selectedAgentId: shownAgentId,
-                        onSelect: { agentId in
-                            actions.showPage(.agent(agentId))
-                        },
-                        onOpenSettings: {
-                            actions.showPage(.settings)
-                        },
-                        isRookmasterShown: model.shownPage == .rookmaster,
-                        onOpenRookmaster: {
-                            actions.showPage(.rookmaster)
-                        },
-                        onBeginEditing: actions.beginEditing,
-                        onEndEditing: actions.endEditing
-                    )
-                    .transition(.opacity)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        groupsContentHeight = height
+                    }
+                    .modifier(EmptySpaceTap(minHeight: listViewportHeight, action: finishEditingOnEmptySpace))
                 }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-            .clipped()
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.height
-            } action: { height in
-                listViewportHeight = height
+                .frame(height: windowsListHeight)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    listViewportHeight = height
+                }
+                .transition(.opacity)
             }
             if showsDropZones {
                 VStack(spacing: 6) {
@@ -310,13 +326,38 @@ struct StageView: View {
                     }
                 }
                 .padding(.horizontal, 8)
-                .padding(.bottom, 10)
+                .padding(.bottom, 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if sidebarMode == .groups && model.listGroups.isEmpty && !model.isSidebarCollapsed {
+            } else if model.listGroups.isEmpty && !model.isSidebarCollapsed && !isWindowsFolded {
                 Text("Drop a window on New Group to start a group.")
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.secondaryText)
-                    .padding(14)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+            }
+            sectionHeader("Agents", count: fleetModel.fleet.listSessions.filter { $0.state != .ended }.count, isFolded: $isAgentsFolded)
+            if !isAgentsFolded {
+                AgentsSidebarView(
+                    fleetModel: fleetModel,
+                    isCollapsed: model.isSidebarCollapsed,
+                    selectedAgentId: shownAgentId,
+                    onSelect: { agentId in
+                        actions.showPage(.agent(agentId))
+                    },
+                    onOpenSettings: {
+                        actions.showPage(.settings)
+                    },
+                    isRookmasterShown: model.shownPage == .rookmaster,
+                    onOpenRookmaster: {
+                        actions.showPage(.rookmaster)
+                    },
+                    onBeginEditing: actions.beginEditing,
+                    onEndEditing: actions.endEditing
+                )
+                .frame(maxHeight: .infinity, alignment: .top)
+                .transition(.opacity)
+            } else {
+                Spacer(minLength: 0)
             }
             if !model.isSidebarCollapsed && !mixer.browserTabs.pictures.listPictures.isEmpty {
                 SidebarPicturesView(
@@ -420,75 +461,6 @@ struct StageView: View {
                 }
         )
         .help("Drag to move the stage; double-click to fill the display")
-    }
-
-    /// The switch between the groups and the agents: a segmented control, or a column of two buttons in the
-    /// collapsed sidebar.
-    private var modeSwitch: some View {
-        Group {
-            if model.isSidebarCollapsed {
-                VStack(spacing: 4) {
-                    ForEach(listShownModes, id: \.self) { mode in
-                        Button {
-                            model.sidebarMode = mode
-                        } label: {
-                            RookeryIconView(mode.symbol)
-                                .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
-                                .frame(width: 34, height: 26)
-                                .background {
-                                    if sidebarMode == mode {
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .fill(StageColors.selectedSegment)
-                                            .matchedGeometryEffect(id: "mode", in: modeNamespace)
-                                    }
-                                }
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(mode.title)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            } else {
-                HStack(spacing: 2) {
-                    ForEach(listShownModes, id: \.self) { mode in
-                        Button {
-                            model.sidebarMode = mode
-                        } label: {
-                            HStack(spacing: 4) {
-                                RookeryIconView(mode.symbol)
-                                Text(mode.title)
-                                    .font(.system(size: 11.5, weight: .semibold))
-                            }
-                            .fixedSize()
-                            .padding(.horizontal, 3)
-                            .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 24)
-                            .background {
-                                if sidebarMode == mode {
-                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .fill(StageColors.selectedSegment)
-                                        .strokeBorder(StageColors.contrastActiveBorder)
-                                        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-                                        .matchedGeometryEffect(id: "mode", in: modeNamespace)
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(2)
-                .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(StageColors.segmentGroove)
-                        .strokeBorder(StageColors.segmentGrooveBorder)
-                }
-                .padding(.horizontal, 12)
-            }
-        }
-        .padding(.bottom, 4)
     }
 
     /// The stage's tools beside the sidebar's own buttons at its top: a new window, the theme, the screen

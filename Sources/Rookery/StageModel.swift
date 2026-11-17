@@ -74,26 +74,6 @@ struct StageGroupRow: Identifiable, Equatable {
     }
 }
 
-/// What the sidebar shows below its header.
-enum SidebarMode: String, CaseIterable {
-    case groups
-    case agents
-
-    var title: String {
-        switch self {
-        case .groups: "Windows"
-        case .agents: "Agents"
-        }
-    }
-
-    var symbol: RookeryIcon {
-        switch self {
-        case .groups: .windows
-        case .agents: .agent
-        }
-    }
-}
-
 /// What the right sidebar shows: the day's calendar, the unread mail, or the mixer.
 enum RightSidebarTab: String, CaseIterable {
     case calendar
@@ -152,7 +132,6 @@ final class StageModel {
     /// The page shown before this one, which a back button returns to; nil when the page was opened over a
     /// window.
     var pageBefore: StagePage?
-    var sidebarMode = SidebarMode.groups
     var rightSidebarTab = RightSidebarTab.calendar
     /// Whether the shown page's content is built: not while the windows it covers are still being set
     /// aside, when a light placeholder stands in so setting them aside is not held up.

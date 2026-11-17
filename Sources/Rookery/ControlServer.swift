@@ -15,6 +15,7 @@ final class ControlServer: Sendable {
     private let stages: StageCoordinator
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
+    private let mailService: MailService
     private let listener: NWListener
     private let queue = DispatchQueue(label: "Rookery.control.listener")
 
@@ -26,12 +27,14 @@ final class ControlServer: Sendable {
     ///   - stages: the stages to open and close
     ///   - mixerController: the mixer to report and adjust
     ///   - agentUsageMonitor: the code agent limits to report
+    ///   - mailService: the mail and calendars the tools reach
     init(
         tracker: WindowTracker,
         workspaceController: WorkspaceController,
         stages: StageCoordinator,
         mixerController: MixerController,
-        agentUsageMonitor: AgentUsageMonitor
+        agentUsageMonitor: AgentUsageMonitor,
+        mailService: MailService
     ) throws {
         let url = ControlSocket.url
         try FileManager.default.createDirectory(
@@ -49,11 +52,12 @@ final class ControlServer: Sendable {
         self.stages = stages
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
+        self.mailService = mailService
     }
 
     /// Start accepting connections.
     func start() {
-        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController, agentUsageMonitor] connection in
+        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController, agentUsageMonitor, mailService] connection in
             let control = ControlConnection(accepted: connection)
             Task {
                 await Self.serve(
@@ -62,7 +66,8 @@ final class ControlServer: Sendable {
                     workspaceController: workspaceController,
                     stages: stages,
                     mixerController: mixerController,
-                    agentUsageMonitor: agentUsageMonitor
+                    agentUsageMonitor: agentUsageMonitor,
+                    mailService: mailService
                 )
             }
         }
@@ -86,7 +91,8 @@ final class ControlServer: Sendable {
         workspaceController: WorkspaceController,
         stages: StageCoordinator,
         mixerController: MixerController,
-        agentUsageMonitor: AgentUsageMonitor
+        agentUsageMonitor: AgentUsageMonitor,
+        mailService: MailService
     ) async {
         defer { connection.cancel() }
         do {
@@ -197,11 +203,29 @@ final class ControlServer: Sendable {
                     )
                 }
                 try await connection.send(message)
+            case .mailProbe:
+                try await connection.send(ControlMessage.mailProbe(await MailProbe.run()))
+            case .mailTool(let name, let argumentsJSON):
+                try await connection.send(await mailToolResult(name: name, argumentsJSON: argumentsJSON, service: mailService))
             case .browserSession(let browserProcessId):
                 await serveBrowser(connection, browserProcessId: browserProcessId, browserTabs: mixerController.browserTabs)
             }
         } catch {
             logger.info("control session ended: \(error)")
+        }
+    }
+
+    /// Run a mail or calendar tool, its failure given back as the tool's error text rather than ending the
+    /// connection.
+    private static func mailToolResult(name: String, argumentsJSON: String, service: MailService) async -> ControlMessage {
+        guard let tool = MailTool(rawValue: name) else {
+            return .mailToolResult(text: "no tool \(name)", isError: true)
+        }
+        do {
+            let arguments = try JSONDecoder().decode([String: JSONValue].self, from: Data(argumentsJSON.utf8))
+            return .mailToolResult(text: try await service.call(tool, arguments: arguments), isError: false)
+        } catch {
+            return .mailToolResult(text: String(describing: error), isError: true)
         }
     }
 

@@ -26,6 +26,12 @@
 	<string>14.2</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Rookery takes over the sound of the applications you choose, so its mixer can adjust their volume, stereo, equalizer and reverb.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Rookery asks Mail to put a draft you approved in front of you, in the account you chose, and reads which accounts Mail holds. It never sends mail.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Rookery reads your calendars, every account's, so Raven can tell you what is on, and changes an event only when you approve it.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Rookery reads your calendars, every account's, so Raven can tell you what is on, and changes an event only when you approve it.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

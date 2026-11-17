@@ -304,7 +304,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 workspaceController: workspace,
                 stages: stages,
                 mixerController: mixerController,
-                agentUsageMonitor: agentUsageMonitor
+                agentUsageMonitor: agentUsageMonitor,
+                mailService: fleetModel.mailService
             )
             controlServer = server
             server.start()

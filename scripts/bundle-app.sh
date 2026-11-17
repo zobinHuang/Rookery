@@ -11,6 +11,7 @@ app="$root/.build/Rookery.app"
 
 swift build --package-path "$root" -c "$configuration" --product Rookery
 swift build --package-path "$root" -c "$configuration" --product rookery-chrome-host
+swift build --package-path "$root" -c "$configuration" --product rookery-mail
 bin_path=$(swift build --package-path "$root" -c "$configuration" --show-bin-path)
 
 rm -rf "$app"
@@ -27,6 +28,7 @@ cp -R "$root/Resources/Raven" "$app/Contents/Resources/Raven"
 cp "$root/rook/bin/rook-client" "$app/Contents/Resources/Raven/rook-client"
 cp "$bin_path/Rookery" "$app/Contents/MacOS/Rookery"
 cp "$bin_path/rookery-chrome-host" "$app/Contents/MacOS/rookery-chrome-host"
+cp "$bin_path/rookery-mail" "$app/Contents/MacOS/rookery-mail"
 
 if ! security find-identity -p codesigning | grep -q "\"$identity\"" \
     && security find-identity -p codesigning | grep -q "\"$legacy_identity\""; then
@@ -35,12 +37,14 @@ fi
 
 if security find-identity -p codesigning | grep -q "\"$identity\""; then
     codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/rookery-chrome-host"
-    codesign --force --options runtime --sign "$identity" "$app"
+    codesign --force --options runtime --sign "$identity" "$app/Contents/MacOS/rookery-mail"
+    codesign --force --options runtime --entitlements "$root/Resources/Rookery.entitlements" --sign "$identity" "$app"
 else
     echo "warning: signing identity \"$identity\" not found, signing ad hoc;" \
         "Accessibility access will be lost on every rebuild (run scripts/create-dev-certificate.sh)" >&2
     codesign --force --options runtime --sign - "$app/Contents/MacOS/rookery-chrome-host"
-    codesign --force --options runtime --sign - "$app"
+    codesign --force --options runtime --sign - "$app/Contents/MacOS/rookery-mail"
+    codesign --force --options runtime --entitlements "$root/Resources/Rookery.entitlements" --sign - "$app"
 fi
 
 echo "$app"

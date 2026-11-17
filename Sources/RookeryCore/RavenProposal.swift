@@ -20,6 +20,25 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         case leave
         /// Make `team`, named `teamTitle`, toward `goal`.
         case createTeam = "create_team"
+        /// Open a draft in Mail, as `payload` says: its account, recipients, subject, text, and the message
+        /// it replies to.
+        case draftMail = "draft_mail"
+        /// Add the event `payload` describes.
+        case addEvent = "add_event"
+        /// Change the event `payload` names as it says.
+        case changeEvent = "change_event"
+        /// Remove the event `payload` names.
+        case removeEvent = "remove_event"
+        /// Open the event `payload` names in Calendar.
+        case openEvent = "open_event"
+
+        /// Whether the action is on the user's mail or calendars, which Rookery carries out itself.
+        public var isOnMailOrCalendar: Bool {
+            switch self {
+            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent: true
+            default: false
+            }
+        }
     }
 
     /// The answers to an approval prompt Raven may propose.
@@ -50,8 +69,11 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
     public let teamTitle: String?
     public let duty: String
     public let goal: String
+    /// For an action on mail or calendars, its details, as the tool that proposed it checked them.
+    public let mapPayload: [String: JSONValue]
 
     enum CodingKeys: String, CodingKey {
+        case mapPayload = "payload"
         case playbookId = "playbook"
         case listSkillIds = "skills"
         case role
@@ -93,6 +115,7 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         teamTitle = try container.decodeIfPresent(String.self, forKey: .teamTitle)
         duty = try container.decodeIfPresent(String.self, forKey: .duty) ?? ""
         goal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
+        mapPayload = try container.decodeIfPresent([String: JSONValue].self, forKey: .mapPayload) ?? [:]
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -114,6 +137,7 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(teamTitle, forKey: .teamTitle)
         try container.encode(duty, forKey: .duty)
         try container.encode(goal, forKey: .goal)
+        try container.encode(mapPayload, forKey: .mapPayload)
     }
 
     /// The marker the proposal's line starts with in the command's output.

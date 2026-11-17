@@ -30,6 +30,12 @@ public enum ControlRequest: Codable, Sendable {
     /// out, one JSON line each, spelled as `BrowserWire` says, until either side closes. The browser's
     /// process is the one that started the native messaging host.
     case browserSession(browserProcessId: Int32)
+    /// Report what the app can read of Mail and the calendars: its access, the shape of Mail's library, the
+    /// accounts and the calendars; no message's content.
+    case mailProbe
+    /// Run one of Rookery's mail and calendar tools, as the `rookery-mail` MCP server asks for a code agent,
+    /// with its arguments as a JSON object.
+    case mailTool(name: String, argumentsJSON: String)
 }
 
 /// What a mixer track carries: an application's sound, or one browser tab's.
@@ -130,8 +136,37 @@ public enum ControlMessage: Codable, Sendable {
     case mixer(listTracks: [MixerTrackStatus], mapLevels: [String: Float], listTabs: [MixerTabStatus])
     /// The code agent accounts the sidebar shows, with their limits, and when they are read next.
     case agentUsage(listAccounts: [AgentAccountStatus], nextRefreshAt: Date?)
+    case mailProbe(MailProbeReport)
+    /// What a mail or calendar tool gave: its text, and whether it failed.
+    case mailToolResult(text: String, isError: Bool)
     case done
     case failure(message: String)
+}
+
+/// What the app can read of Mail and the calendars, for checking it can before reading messages.
+public struct MailProbeReport: Codable, Sendable {
+    /// Mail's library directory, or nil when it cannot be found.
+    public var libraryPath: String?
+    public var listTables: [MailTableShape]
+    /// Some mailboxes' URLs, which name their account and folder.
+    public var listMailboxURLs: [String]
+    /// Some message files' paths under the library, which show how they are laid out.
+    public var listMessagePaths: [String]
+    public var listAccounts: [MailScriptAccount]
+    public var calendarAuthorization: String
+    public var listCalendars: [CalendarSummary]
+    /// What could not be read, and why.
+    public var listProblems: [String]
+
+    public init() {
+        listTables = []
+        listMailboxURLs = []
+        listMessagePaths = []
+        listAccounts = []
+        calendarAuthorization = ""
+        listCalendars = []
+        listProblems = []
+    }
 }
 
 /// Where the running app listens for control connections.

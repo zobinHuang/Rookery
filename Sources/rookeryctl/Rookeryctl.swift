@@ -14,6 +14,8 @@ enum Rookeryctl {
                rookeryctl switch <group-name-or-position> | --all
                rookeryctl stage on|off
                rookeryctl agents [--json]
+               rookeryctl mail probe
+               rookeryctl mail <tool> [<arguments as a JSON object>]
                rookeryctl audio [--json]
                rookeryctl audio take|release|mute|unmute <bundle-id>|tab:<session>.<tab>
                rookeryctl audio set <bundle-id>|tab:<session>.<tab> <setting>=<value>...
@@ -63,6 +65,11 @@ enum Rookeryctl {
             request = .stage(isOpen: state == "on")
         case "agents":
             request = .agentUsage
+        case "mail":
+            guard let tool = listArguments.dropFirst().first else {
+                exit(withMessage: usage)
+            }
+            request = tool == "probe" ? .mailProbe : .mailTool(name: tool, argumentsJSON: listArguments.dropFirst(2).first ?? "{}")
         case "audio":
             request = await audioRequest(Array(listArguments.dropFirst()))
         case let name where WindowAction(rawValue: name) != nil:
@@ -154,6 +161,15 @@ enum Rookeryctl {
                 }
             }
             Swift.print("next read: \(nextRefreshAt.map { $0.formatted(date: .omitted, time: .standard) } ?? "not scheduled")")
+        case .mailToolResult(let text, let isError):
+            if isError {
+                exit(withMessage: "rookeryctl: \(text)")
+            }
+            Swift.print(text)
+        case .mailProbe(let report):
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            Swift.print(String(decoding: (try? encoder.encode(report)) ?? Data(), as: UTF8.self))
         case .done:
             break
         case .failure(let failure):

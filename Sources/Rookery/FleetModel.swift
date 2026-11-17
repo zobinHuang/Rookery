@@ -40,6 +40,8 @@ final class FleetModel {
     @ObservationIgnored private(set) lazy var raven = RavenAgent(fleetModel: self)
     /// The hosts this Mac reaches over ssh, their workdirs, and the agents launched on them.
     @ObservationIgnored private(set) lazy var hosts = HostsModel(fleetModel: self)
+    /// The Mac's mail and calendars, as Raven's tools reach them.
+    @ObservationIgnored let mailService = MailService()
     /// The transcripts read so far, so an agent's page reopens at once.
     @ObservationIgnored let transcripts = TranscriptCache()
     /// Where the user left the agents' pages and the Rookmaster console.

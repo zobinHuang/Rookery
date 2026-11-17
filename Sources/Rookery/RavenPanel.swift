@@ -308,7 +308,7 @@ struct RavenPanel: View {
             case .done:
                 RookeryIconView(.check)
                     .foregroundStyle(Color.green)
-                Text(Self.done(of: proposal))
+                Text(raven.mapProposalOutcomes[proposal.id] ?? Self.done(of: proposal))
             case .rejected, nil:
                 RookeryIconView(.close)
                     .foregroundStyle(StageColors.tertiaryText)
@@ -339,6 +339,20 @@ struct RavenPanel: View {
         if !proposal.goal.isEmpty {
             listFacts.append("goal: \(proposal.goal)")
         }
+        let mapPayload = proposal.mapPayload
+        for (key, label) in [("replying_to", "replying to"), ("was", "was"), ("subject", "subject"), ("start", "from"), ("end", "until"), ("location", "at")] {
+            if let value = mapPayload[key]?.stringValue, !value.isEmpty {
+                listFacts.append("\(label): \(value)")
+            }
+        }
+        for (key, label) in [("to", "to"), ("cc", "cc")] {
+            if case .array(let listValues) = mapPayload[key], !listValues.isEmpty {
+                listFacts.append("\(label): " + listValues.compactMap(\.stringValue).joined(separator: ", "))
+            }
+        }
+        if proposal.action == .changeEvent, let title = mapPayload["title"]?.stringValue {
+            listFacts.append("new title: \(title)")
+        }
         return listFacts
     }
 
@@ -351,6 +365,9 @@ struct RavenPanel: View {
         case .join: .plus
         case .leave: .minus
         case .createTeam: .board
+        case .draftMail: .send
+        case .addEvent, .changeEvent, .openEvent: .clock
+        case .removeEvent: .minus
         }
     }
 
@@ -367,6 +384,11 @@ struct RavenPanel: View {
         case .join: "Raven would put in team \(proposal.teamTitle ?? proposal.team ?? "")"
         case .leave: "Raven would take out of team \(proposal.teamTitle ?? proposal.team ?? "")"
         case .createTeam: "Raven would make the team"
+        case .draftMail: "Raven would draft, from \(proposal.mapPayload["account"]?.stringValue ?? "your account"),"
+        case .addEvent: "Raven would add to \(proposal.mapPayload["calendar"]?.stringValue ?? "a calendar")"
+        case .changeEvent: "Raven would change"
+        case .removeEvent: "Raven would remove"
+        case .openEvent: "Raven would open in Calendar"
         }
     }
 
@@ -380,6 +402,11 @@ struct RavenPanel: View {
         case .join: "Add"
         case .leave: "Take Out"
         case .createTeam: "Make Team"
+        case .draftMail: "Open Draft"
+        case .addEvent: "Add Event"
+        case .changeEvent: "Change Event"
+        case .removeEvent: "Remove Event"
+        case .openEvent: "Open"
         }
     }
 
@@ -396,6 +423,8 @@ struct RavenPanel: View {
         case .join: "Put \(proposal.agentTitle) in \(proposal.teamTitle ?? proposal.team ?? "")"
         case .leave: "Took \(proposal.agentTitle) out of \(proposal.teamTitle ?? proposal.team ?? "")"
         case .createTeam: "Made the team \(proposal.agentTitle)"
+        case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent:
+            "\(proposal.agentTitle)"
         }
     }
 

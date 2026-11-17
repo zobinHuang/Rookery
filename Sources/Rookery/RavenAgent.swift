@@ -57,6 +57,8 @@ final class RavenAgent {
     private(set) var mapDeliveries: [String: FleetDelivery] = [:]
     /// Why carrying out a proposal failed, by the proposal's id.
     private(set) var mapProposalErrors: [String: String] = [:]
+    /// What carrying out each proposal on mail or calendars did, in a line, by the proposal's id.
+    private(set) var mapProposalOutcomes: [String: String] = [:]
 
     @ObservationIgnored private unowned let fleetModel: FleetModel
     @ObservationIgnored private var mapTasks: [String: Task<Void, Never>] = [:]
@@ -177,6 +179,17 @@ final class RavenAgent {
     /// prompt, or start its new session.
     func approve(_ proposal: RavenProposal, in conversationId: String) async {
         mapProposalErrors[proposal.id] = nil
+        if proposal.action.isOnMailOrCalendar {
+            do {
+                let outcome = try await fleetModel.mailService.carryOut(proposal)
+                mapProposalOutcomes[proposal.id] = outcome
+                conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
+                saveIndex()
+            } catch {
+                mapProposalErrors[proposal.id] = String(describing: error)
+            }
+            return
+        }
         do {
             let client = try fleetModel.requireClient()
             let delivery: FleetDelivery
@@ -198,6 +211,8 @@ final class RavenAgent {
                     role: proposal.role,
                     listTeams: proposal.listTeams
                 ))
+            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent:
+                return
             case .join, .leave, .createTeam:
                 try await changeTeam(proposal, with: client)
                 conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
@@ -226,7 +241,7 @@ final class RavenAgent {
                 mapBody["attributes"] = .object(["goal": .string(proposal.goal)])
             }
             _ = try await fleetModel.create(AgentFleet.teamKind, body: mapBody)
-        case .message, .interrupt, .approve, .spawn:
+        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent:
             return
         }
     }

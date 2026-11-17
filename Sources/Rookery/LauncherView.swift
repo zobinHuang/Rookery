@@ -12,6 +12,7 @@ struct LauncherView: View {
     private static let rowsMaxHeight: CGFloat = 400
     private static let conversationHeight: CGFloat = 430
     private static let iconSize: CGFloat = 28
+    private static let cornerRadius: CGFloat = 20
 
     let controller: LauncherController
     @FocusState private var isFieldFocused: Bool
@@ -52,8 +53,13 @@ struct LauncherView: View {
             }
         }
         .frame(width: Self.width)
-        .modifier(TraySurface(cornerRadius: 22))
-        .shadow(color: .black.opacity(0.22), radius: 26, y: 12)
+        .background(StageColors.window, in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(StageColors.segmentGrooveBorder)
+        }
+        .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
         .scaleEffect(model.isVisible ? 1 : 0.96, anchor: .top)
         .opacity(model.isVisible ? 1 : 0)
         .animation(Self.appearAnimation, value: model.isVisible)
@@ -267,16 +273,11 @@ struct LauncherView: View {
             RookeryIconView(entry.symbolName ?? .window, scale: 1.5)
                 .foregroundStyle(ink)
         case .askRaven:
-            RookeryIconView(.sparkles, scale: 1.5)
-                .foregroundStyle(ink)
+            RavenView(isWorking: false)
+                .scaleEffect(Self.iconSize / CrowSize.regular.rawValue)
         case .conversation(let conversation):
-            if controller.fleetModel.raven.isRunning(conversation.id) {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                RookeryIconView(.bubble, scale: 1.5)
-                    .foregroundStyle(ink)
-            }
+            RavenView(isWorking: controller.fleetModel.raven.isRunning(conversation.id))
+                .scaleEffect(Self.iconSize / CrowSize.regular.rawValue)
         }
     }
 

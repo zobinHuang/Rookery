@@ -64,9 +64,13 @@ final class LauncherController {
     static let panelSize = CGSize(width: 680, height: 600)
     /// How far below the top of the screen the launcher's box sits, as a share of the screen's height.
     private static let topShare: CGFloat = 0.2
+    /// How long the blur behind the launcher takes to come and go.
+    private static let backdropFade: TimeInterval = 0.18
 
     let model = LauncherModel()
     private let panel: LauncherPanel
+    /// The blur over everything behind the launcher, on its display, which closes it when clicked.
+    private let backdrop: NSPanel
     let fleetModel: FleetModel
     private let workspaceController: WorkspaceController
     private let preferences: Preferences
@@ -93,6 +97,18 @@ final class LauncherController {
         panel.level = .popUpMenu
         panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        backdrop = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        backdrop.isOpaque = false
+        backdrop.backgroundColor = .clear
+        backdrop.hasShadow = false
+        backdrop.level = .popUpMenu
+        backdrop.alphaValue = 0
+        backdrop.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        let blur = LauncherBackdropView()
+        blur.material = .fullScreenUI
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        backdrop.contentView = blur
         panel.contentView = LauncherView.makeHostingView(controller: self)
         resignObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
@@ -112,6 +128,7 @@ final class LauncherController {
         resignObserver = nil
         catalogTask?.cancel()
         panel.orderOut(nil)
+        backdrop.orderOut(nil)
     }
 
     /// Open the launcher on the display under the pointer, or close it if it is open.
@@ -137,6 +154,18 @@ final class LauncherController {
                 y: visible.maxY - visible.height * Self.topShare - Self.panelSize.height
             ))
         }
+        if let screen {
+            backdrop.setFrame(screen.frame, display: false)
+            (backdrop.contentView as? LauncherBackdropView)?.onClick = { [weak self] in
+                self?.hide()
+            }
+            backdrop.alphaValue = 0
+            backdrop.orderFront(nil)
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.backdropFade
+                backdrop.animator().alphaValue = 1
+            }
+        }
         panel.makeKeyAndOrderFront(nil)
         model.isVisible = true
     }
@@ -147,6 +176,16 @@ final class LauncherController {
         }
         model.isVisible = false
         panel.orderOut(nil)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.backdropFade
+            backdrop.animator().alphaValue = 0
+        } completionHandler: { [backdrop] in
+            MainActor.assumeIsolated {
+                if backdrop.alphaValue == 0 {
+                    backdrop.orderOut(nil)
+                }
+            }
+        }
     }
 
     // MARK: - Finding
@@ -355,3 +394,37 @@ final class LauncherPanel: NSPanel {
         true
     }
 }
+
+/// The blur behind the launcher, with a faint shade over it, closing the launcher when clicked.
+final class LauncherBackdropView: NSVisualEffectView {
+    private static let shadeAlpha: CGFloat = 0.12
+
+    var onClick: (() -> Void)?
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        let shade = CALayer()
+        shade.backgroundColor = NSColor.black.withAlphaComponent(Self.shadeAlpha).cgColor
+        shade.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        layer?.addSublayer(shade)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.sublayers?.last?.frame = bounds
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+}
+

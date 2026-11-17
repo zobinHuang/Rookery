@@ -69,6 +69,12 @@ final class FleetModel {
         runTask = nil
     }
 
+    /// The code agent a new conversation with Raven runs on.
+    var ravenEngine: String {
+        get { preferences.ravenEngine }
+        set { preferences.ravenEngine = newValue }
+    }
+
     /// The address of the roost set, as the user typed it.
     var roostAddress: String {
         preferences.roostAddress

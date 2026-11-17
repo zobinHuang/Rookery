@@ -469,6 +469,7 @@ struct RavenPanel: View {
                 suggestions
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
+            engineRow
             AgentComposer(
                 text: $draft,
                 placeholder: isReady ? "Ask Raven" : "Connect to roost first",
@@ -490,6 +491,32 @@ struct RavenPanel: View {
         }
         .padding(12)
         .animation(.easeOut(duration: 0.15), value: listSuggestions.map(\.id))
+    }
+
+    /// Which code agent the conversation runs on: chosen for a new one, shown for one under way.
+    @ViewBuilder
+    private var engineRow: some View {
+        if let openId, let conversation = raven.conversations.conversation(openId) {
+            Text("On \(conversation.engine == RavenConversation.engineCodex ? "Codex" : "Claude Code")")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(StageColors.tertiaryText)
+                .padding(.leading, 4)
+        } else {
+            HStack(spacing: 6) {
+                Text("Run on")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(StageColors.tertiaryText)
+                Picker("Run on", selection: Binding(get: { fleetModel.ravenEngine }, set: { fleetModel.ravenEngine = $0 })) {
+                    Text("Claude Code").tag(RavenConversation.engineClaude)
+                    Text("Codex").tag(RavenConversation.engineCodex)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.mini)
+                .fixedSize()
+            }
+            .padding(.leading, 4)
+        }
     }
 
     private var suggestions: some View {

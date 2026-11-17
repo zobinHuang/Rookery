@@ -1,9 +1,22 @@
 import Foundation
 
-/// Where Claude Code is installed.
+/// A code agent that runs headless: Claude Code or Codex.
+public enum AgentProgram: String, Codable, CaseIterable, Sendable {
+    case claude
+    case codex
+
+    /// What the user knows it as.
+    public var title: String {
+        switch self {
+        case .claude: "Claude Code"
+        case .codex: "Codex"
+        }
+    }
+}
+
+/// Where a code agent is installed.
 public enum ClaudeCodeExecutable {
-    private static let executableName = "claude"
-    /// Where Claude Code installs itself, as an app started from Finder does not see the shell's path.
+    /// Where the code agents install themselves, as an app started from Finder does not see the shell's path.
     private static let listSearchDirectories = [
         "~/.local/bin",
         "~/.claude/local",
@@ -11,33 +24,33 @@ public enum ClaudeCodeExecutable {
         "/usr/local/bin",
     ]
 
-    /// The `claude` executable, or nil when none is installed.
-    public static func url() -> URL? {
+    /// A code agent's executable, Claude Code's unless another is named, or nil when it is not installed.
+    public static func url(of program: AgentProgram = .claude) -> URL? {
         let listDirectories = listSearchDirectories.map { NSString(string: $0).expandingTildeInPath }
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
         return listDirectories
-            .map { URL(filePath: $0).appending(path: executableName) }
+            .map { URL(filePath: $0).appending(path: program.rawValue) }
             .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 }
 
 /// A failure running a headless code agent.
 public enum HeadlessAgentError: Error, CustomStringConvertible, Sendable {
-    case notInstalled
-    case failedToStart(String)
+    case notInstalled(AgentProgram)
+    case failedToStart(AgentProgram, String)
     /// The agent exited with a status other than zero, and what it printed to its error output.
-    case exited(Int32, String)
+    case exited(AgentProgram, Int32, String)
 
     public var description: String {
         switch self {
-        case .notInstalled: "Claude Code is not installed"
-        case .failedToStart(let reason): "Claude Code didn't start: \(reason)"
-        case .exited(let status, let errors): errors.isEmpty ? "Claude Code exited with status \(status)" : errors
+        case .notInstalled(let program): "\(program.title) is not installed"
+        case .failedToStart(let program, let reason): "\(program.title) didn't start: \(reason)"
+        case .exited(let program, let status, let errors): errors.isEmpty ? "\(program.title) exited with status \(status)" : errors
         }
     }
 }
 
-/// A code agent run headless: one Claude Code process given one prompt, whose stream-json output arrives
+/// A code agent run headless: one Claude Code or Codex process given one prompt, whose JSON output arrives
 /// line by line. Cancelling the stream kills the process.
 public struct HeadlessAgent: Sendable {
     /// How the process runs.
@@ -46,14 +59,22 @@ public struct HeadlessAgent: Sendable {
         public let workingDirectory: URL
         /// Variables set or replaced in the app's own environment; nil removes one.
         public let mapEnvironment: [String: String?]
-        /// The program to run in place of the installed Claude Code, or nil for it.
+        /// The program to run in place of the installed code agent, or nil for it.
         public let executable: URL?
+        public let program: AgentProgram
 
-        public init(arguments: [String], workingDirectory: URL, mapEnvironment: [String: String?], executable: URL? = nil) {
+        public init(
+            arguments: [String],
+            workingDirectory: URL,
+            mapEnvironment: [String: String?],
+            executable: URL? = nil,
+            program: AgentProgram = .claude
+        ) {
             self.arguments = arguments
             self.workingDirectory = workingDirectory
             self.mapEnvironment = mapEnvironment
             self.executable = executable
+            self.program = program
         }
     }
 
@@ -72,8 +93,8 @@ public struct HeadlessAgent: Sendable {
     public func run() -> AsyncThrowingStream<Data, any Error> {
         let launch = launch
         return AsyncThrowingStream { continuation in
-            guard let executable = launch.executable ?? ClaudeCodeExecutable.url() else {
-                continuation.finish(throwing: HeadlessAgentError.notInstalled)
+            guard let executable = launch.executable ?? ClaudeCodeExecutable.url(of: launch.program) else {
+                continuation.finish(throwing: HeadlessAgentError.notInstalled(launch.program))
                 return
             }
             let process = Process()
@@ -108,13 +129,13 @@ public struct HeadlessAgent: Sendable {
                 if finished.terminationStatus == 0 || finished.terminationReason == .uncaughtSignal {
                     continuation.finish()
                 } else {
-                    continuation.finish(throwing: HeadlessAgentError.exited(finished.terminationStatus, errorTail.text))
+                    continuation.finish(throwing: HeadlessAgentError.exited(launch.program, finished.terminationStatus, errorTail.text))
                 }
             }
             do {
                 try process.run()
             } catch {
-                continuation.finish(throwing: HeadlessAgentError.failedToStart(error.localizedDescription))
+                continuation.finish(throwing: HeadlessAgentError.failedToStart(launch.program, error.localizedDescription))
                 return
             }
             continuation.onTermination = { _ in

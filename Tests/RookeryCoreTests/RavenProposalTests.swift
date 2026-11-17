@@ -83,3 +83,28 @@ struct RavenProposalTests {
         #expect(try JSONDecoder().decode(RavenProposal.self, from: JSONEncoder().encode(made)) == made)
     }
 }
+
+struct CodexEventsTests {
+    private func line(_ text: String) -> Data {
+        Data(text.utf8)
+    }
+
+    @Test func aThreadAndATurnAreNoted() {
+        #expect(CodexTranslation.of(line(#"{"type":"thread.started","thread_id":"t-1"}"#)).threadId == "t-1")
+        #expect(CodexTranslation.of(line(#"{"type":"turn.completed","usage":{}}"#)).turnEnd == .succeeded)
+        #expect(CodexTranslation.of(line(#"{"type":"turn.failed","error":{"message":"quota"}}"#)).turnEnd == .failed("quota"))
+        #expect(CodexTranslation.of(line(#"{"type":"item.completed","item":{"id":"0","type":"reasoning","text":"hm"}}"#)).listLines.isEmpty)
+    }
+
+    @Test func aToolCallBecomesAToolUseAndItsResultAndAProposalIsFound() throws {
+        let started = CodexTranslation.of(line(#"{"type":"item.started","item":{"id":"i3","type":"mcp_tool_call","server":"mail","tool":"propose_draft","arguments":{"body":"Hi"},"status":"in_progress"}}"#))
+        var reader = TranscriptReader()
+        reader.append(started.listLines[0] + Data("\n".utf8))
+        let proposalText = #"{\"proposal\": {\"id\": \"p-9\", \"action\": \"draft_mail\", \"agent_title\": \"Re: hi\", \"text\": \"Hi\", \"payload\": {}}}\nProposed."#
+        let completed = CodexTranslation.of(line(#"{"type":"item.completed","item":{"id":"i3","type":"mcp_tool_call","server":"mail","tool":"propose_draft","arguments":{},"result":{"content":[{"type":"text","text":"\#(proposalText)"}]},"error":null,"status":"completed"}}"#))
+        #expect(RavenProposal.proposals(in: completed.listLines[0]).map(\.action) == [.draftMail])
+        let message = CodexTranslation.of(line(#"{"type":"item.completed","item":{"id":"i4","type":"agent_message","text":"Done."}}"#))
+        reader.append(message.listLines[0] + Data("\n".utf8))
+        #expect(!reader.listEntries.isEmpty)
+    }
+}

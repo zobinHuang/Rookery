@@ -143,7 +143,7 @@ final class RavenAgent {
         } else {
             sessionId = UUID().uuidString.lowercased()
             isFirstTurn = true
-            conversations.open(sessionId, with: request, at: now)
+            conversations.open(sessionId, with: request, at: now, engine: fleetModel.ravenEngine)
         }
         saveIndex()
         openConversationId = sessionId
@@ -312,7 +312,7 @@ final class RavenAgent {
         await report(sessionId, [
             Self.event(sessionId, "started", detail: [
                 "name": .string(Self.agentName),
-                "harness": .string("claude"),
+                "harness": .string(conversations.conversation(sessionId)?.engine ?? RavenConversation.engineClaude),
                 "rook_name": .string(Self.rookName),
                 "tab": .string("raven"),
                 "cwd": .string(workspace.path),
@@ -320,16 +320,11 @@ final class RavenAgent {
             ]),
             Self.event(sessionId, "state", detail: ["state": .string(AgentState.thinking.rawValue)]),
         ], to: client)
-        let listSessionArguments = isFirstTurn ? ["--session-id", sessionId] : ["--resume", sessionId]
+        let isCodex = conversations.conversation(sessionId)?.engine == RavenConversation.engineCodex
         let agent = HeadlessAgent(launch: HeadlessAgent.Launch(
-            arguments: ["-p", prompt] + listSessionArguments + [
-                "--output-format", "stream-json",
-                "--verbose",
-                "--setting-sources", "project",
-                "--mcp-config", workspace.appending(path: Self.mcpConfigName).path,
-                "--strict-mcp-config",
-                "--allowedTools",
-            ] + Self.listAllowedTools,
+            arguments: isCodex
+                ? codexArguments(prompt: prompt, threadId: isFirstTurn ? nil : conversations.conversation(sessionId)?.codexThreadId)
+                : claudeArguments(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, workspace: workspace),
             workingDirectory: workspace,
             mapEnvironment: [
                 "PATH": workspace.appending(path: "bin").path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
@@ -339,12 +334,17 @@ final class RavenAgent {
                 "TMUX": nil,
                 "TMUX_PANE": nil,
             ],
-            executable: executableOverride
+            executable: executableOverride,
+            program: isCodex ? .codex : .claude
         ))
         var finalState = AgentState.done
         do {
             for try await line in agent.run() {
-                take(line, into: sessionId)
+                if isCodex {
+                    takeCodex(line, into: sessionId)
+                } else {
+                    take(line, into: sessionId)
+                }
             }
             if Task.isCancelled {
                 finish(sessionId, .cancelled)
@@ -386,6 +386,60 @@ final class RavenAgent {
         } else {
             mapStatuses[sessionId] = .finished(costUSD: costUSD)
         }
+    }
+
+    /// Take one event of Codex's JSON output: steps of the conversation, kept in its history in Claude
+    /// Code's form, the thread it opened, or the turn's end.
+    private func takeCodex(_ line: Data, into sessionId: String) {
+        let translation = CodexTranslation.of(line)
+        for translated in translation.listLines {
+            record(translated, in: sessionId)
+        }
+        if let threadId = translation.threadId {
+            conversations.noteCodexThread(threadId, in: sessionId)
+            saveIndex()
+        }
+        switch translation.turnEnd {
+        case .succeeded:
+            mapStatuses[sessionId] = .finished(costUSD: nil)
+        case .failed(let reason):
+            mapStatuses[sessionId] = .failed(reason)
+        case nil:
+            break
+        }
+    }
+
+    private func claudeArguments(prompt: String, sessionId: String, isFirstTurn: Bool, workspace: URL) -> [String] {
+        ["-p", prompt] + (isFirstTurn ? ["--session-id", sessionId] : ["--resume", sessionId]) + [
+            "--output-format", "stream-json",
+            "--verbose",
+            "--setting-sources", "project",
+            "--mcp-config", workspace.appending(path: Self.mcpConfigName).path,
+            "--strict-mcp-config",
+            "--allowedTools",
+        ] + Self.listAllowedTools
+    }
+
+    /// Codex run on its own: none of the user's configuration, commands sandboxed to the workspace with the
+    /// network open for rook-client, nothing asked of anyone, and `rookery-mail` as its one MCP server; a
+    /// later turn resumes the conversation's thread.
+    private func codexArguments(prompt: String, threadId: String?) -> [String] {
+        var listOptions = [
+            "--json",
+            "--skip-git-repo-check",
+            "--ignore-user-config",
+            "-c", "sandbox_mode=\"workspace-write\"",
+            "-c", "sandbox_workspace_write.network_access=true",
+            "-c", "approval_policy=\"never\"",
+            "-c", "shell_environment_policy.inherit=\"all\"",
+        ]
+        if let executable = Self.mailServerURL() {
+            listOptions += ["-c", "mcp_servers.\(Self.mailServerName).command=\"\(executable.path)\""]
+        }
+        if let threadId {
+            return ["exec", "resume", threadId] + listOptions + [prompt]
+        }
+        return ["exec"] + listOptions + [prompt]
     }
 
     private func finish(_ sessionId: String, _ status: RavenTurnStatus) {
@@ -477,6 +531,11 @@ final class RavenAgent {
         try? fileManager.removeItem(at: skills)
         try fileManager.copyItem(at: bundled.appending(path: "skills"), to: skills)
         try Self.replace(workspace.appending(path: "CLAUDE.md"), with: bundled.appending(path: "CLAUDE.md"))
+        let codexSkills = workspace.appending(path: ".agents/skills")
+        try fileManager.createDirectory(at: codexSkills.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? fileManager.removeItem(at: codexSkills)
+        try fileManager.copyItem(at: bundled.appending(path: "skills"), to: codexSkills)
+        try Self.replace(workspace.appending(path: "AGENTS.md"), with: bundled.appending(path: "CLAUDE.md"))
         let client = bin.appending(path: "rook-client")
         try Self.replace(client, with: bundled.appending(path: "rook-client"))
         try fileManager.setAttributes([.posixPermissions: Self.executableMode], ofItemAtPath: client.path)
@@ -531,13 +590,21 @@ final class RavenAgent {
     /// calendars through the running app; none when it is missing, as in a build run outside the bundle.
     private static func mcpConfig() throws -> Data {
         var mapServers: [String: JSONValue] = [:]
-        if
-            let executable = Bundle.main.executableURL?.deletingLastPathComponent().appending(path: mailServerExecutable),
-            FileManager.default.isExecutableFile(atPath: executable.path)
-        {
+        if let executable = mailServerURL() {
             mapServers[mailServerName] = .object(["command": .string(executable.path), "args": .array([])])
         }
         return try JSONEncoder().encode(JSONValue.object(["mcpServers": .object(mapServers)]))
+    }
+
+    /// `rookery-mail` beside the app's executable, or nil when it is missing.
+    private static func mailServerURL() -> URL? {
+        guard
+            let executable = Bundle.main.executableURL?.deletingLastPathComponent().appending(path: mailServerExecutable),
+            FileManager.default.isExecutableFile(atPath: executable.path)
+        else {
+            return nil
+        }
+        return executable
     }
 
     private static func replace(_ destination: URL, with source: URL) throws {

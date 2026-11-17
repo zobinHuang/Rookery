@@ -16,8 +16,17 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public var costUSD: Double
     /// What the user decided about each of Raven's proposals in it, by the proposal's id.
     public var mapDecisions: [String: RavenDecision]
+    /// The code agent it runs on, `claude` or `codex`; one conversation keeps to one.
+    public var engine: String
+    /// For a conversation on Codex, the thread its turns resume.
+    public var codexThreadId: String?
+
+    public static let engineClaude = "claude"
+    public static let engineCodex = "codex"
 
     enum CodingKeys: String, CodingKey {
+        case engine
+        case codexThreadId
         case id
         case title
         case createdAt
@@ -34,7 +43,9 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         lastAt: Date,
         turnCount: Int,
         costUSD: Double,
-        mapDecisions: [String: RavenDecision] = [:]
+        mapDecisions: [String: RavenDecision] = [:],
+        engine: String = RavenConversation.engineClaude,
+        codexThreadId: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -43,6 +54,8 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         self.turnCount = turnCount
         self.costUSD = costUSD
         self.mapDecisions = mapDecisions
+        self.engine = engine
+        self.codexThreadId = codexThreadId
     }
 
     public init(from decoder: any Decoder) throws {
@@ -54,6 +67,8 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         turnCount = try container.decode(Int.self, forKey: .turnCount)
         costUSD = try container.decode(Double.self, forKey: .costUSD)
         mapDecisions = try container.decodeIfPresent([String: RavenDecision].self, forKey: .mapDecisions) ?? [:]
+        engine = try container.decodeIfPresent(String.self, forKey: .engine) ?? Self.engineClaude
+        codexThreadId = try container.decodeIfPresent(String.self, forKey: .codexThreadId)
     }
 
     /// A title from the request that opened the conversation: its first line, cut at a word to fit.
@@ -92,7 +107,7 @@ public struct RavenConversations: Codable, Equatable, Sendable {
     ///   - conversationId: the session id chosen for it
     ///   - request: the first request, which titles it
     ///   - date: when it was made
-    public mutating func open(_ conversationId: String, with request: String, at date: Date) {
+    public mutating func open(_ conversationId: String, with request: String, at date: Date, engine: String = RavenConversation.engineClaude) {
         listConversations.removeAll { $0.id == conversationId }
         listConversations.insert(
             RavenConversation(
@@ -101,7 +116,8 @@ public struct RavenConversations: Codable, Equatable, Sendable {
                 createdAt: date,
                 lastAt: date,
                 turnCount: 1,
-                costUSD: 0
+                costUSD: 0,
+                engine: engine
             ),
             at: 0
         )
@@ -124,6 +140,14 @@ public struct RavenConversations: Codable, Equatable, Sendable {
             return
         }
         listConversations[index].costUSD += costUSD
+    }
+
+    /// Note the Codex thread a conversation's first turn opened.
+    public mutating func noteCodexThread(_ threadId: String, in conversationId: String) {
+        guard let index = listConversations.firstIndex(where: { $0.id == conversationId }) else {
+            return
+        }
+        listConversations[index].codexThreadId = threadId
     }
 
     public mutating func rename(_ conversationId: String, to title: String) {

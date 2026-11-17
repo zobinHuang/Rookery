@@ -20,13 +20,22 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public var engine: String
     /// For a conversation on Codex, the thread its turns resume.
     public var codexThreadId: String?
+    /// Where the title came from: nil for the first request, `generated` once Rookery wrote one from the
+    /// conversation, `user` once the user named it.
+    public var titleSource: String?
 
     public static let engineClaude = "claude"
     public static let engineCodex = "codex"
+    public static let titleSourceGenerated = "generated"
+    public static let titleSourceUser = "user"
+    /// The most characters a written title keeps.
+    public static let writtenTitleLength = 48
+    private static let excerptLength = 600
 
     enum CodingKeys: String, CodingKey {
         case engine
         case codexThreadId
+        case titleSource
         case id
         case title
         case createdAt
@@ -69,6 +78,36 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         mapDecisions = try container.decodeIfPresent([String: RavenDecision].self, forKey: .mapDecisions) ?? [:]
         engine = try container.decodeIfPresent(String.self, forKey: .engine) ?? Self.engineClaude
         codexThreadId = try container.decodeIfPresent(String.self, forKey: .codexThreadId)
+        titleSource = try container.decodeIfPresent(String.self, forKey: .titleSource)
+    }
+
+    /// The request to a model for a conversation's title, from its first request and Raven's answer.
+    public static func titlePrompt(request: String, answer: String) -> String {
+        """
+        Write a title for this conversation between a user and their assistant, as a chat app lists it: \
+        3 to 7 words naming what it is about, in the language the user wrote in, no quotes, no period, \
+        nothing else.
+
+        The user: \(request.prefix(excerptLength))
+
+        The assistant: \(answer.prefix(excerptLength))
+        """
+    }
+
+    /// A title as a model wrote it, kept to its first line, quotes and a trailing period taken off and
+    /// cut to fit; nil when nothing is left.
+    public static func writtenTitle(of answer: String) -> String? {
+        let firstLine = answer
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init) ?? ""
+        let trimmed = firstLine
+            .replacingOccurrences(of: "Title:", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " \t\"'“”‘’「」《》.。#*"))
+        guard !trimmed.isEmpty else {
+            return nil
+        }
+        return String(trimmed.prefix(writtenTitleLength))
     }
 
     /// A title from the request that opened the conversation: its first line, cut at a word to fit.
@@ -156,6 +195,23 @@ public struct RavenConversations: Codable, Equatable, Sendable {
             return
         }
         listConversations[index].title = trimmed
+        listConversations[index].titleSource = RavenConversation.titleSourceUser
+    }
+
+    /// Give a conversation the title Rookery wrote, unless it has one written or the user's already.
+    ///
+    /// - Returns: whether the title changed
+    @discardableResult
+    public mutating func retitle(_ conversationId: String, to title: String) -> Bool {
+        guard
+            let index = listConversations.firstIndex(where: { $0.id == conversationId }),
+            listConversations[index].titleSource == nil
+        else {
+            return false
+        }
+        listConversations[index].title = title
+        listConversations[index].titleSource = RavenConversation.titleSourceGenerated
+        return true
     }
 
     /// Record what the user decided about a proposal.

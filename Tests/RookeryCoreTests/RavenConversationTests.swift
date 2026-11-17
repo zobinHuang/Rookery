@@ -3,6 +3,33 @@ import RookeryCore
 import Testing
 
 struct RavenConversationTests {
+    @Test func aWrittenTitleReplacesOnlyTheRequestsAndNeverTheUsers() {
+        var conversations = RavenConversations()
+        conversations.open("a", with: "hi raven, what can you do?", at: .now)
+        conversations.open("b", with: "plan tomorrow", at: .now)
+        conversations.rename("b", to: "My plan")
+        let isFirstRetitled = conversations.retitle("a", to: "Raven's abilities")
+        let isSecondRetitled = conversations.retitle("a", to: "Something else")
+        let isUsersRetitled = conversations.retitle("b", to: "Tomorrow's plan")
+        #expect(isFirstRetitled)
+        #expect(!isSecondRetitled)
+        #expect(!isUsersRetitled)
+        #expect(conversations.conversation("a")?.title == "Raven's abilities")
+        #expect(conversations.conversation("b")?.title == "My plan")
+    }
+
+    @Test func aModelsTitleIsKeptToALineWithoutQuotes() {
+        #expect(RavenConversation.writtenTitle(of: "\"明天的日程安排\"\nmore") == "明天的日程安排")
+        #expect(RavenConversation.writtenTitle(of: "Title: Q4 plan review.") == "Q4 plan review")
+        #expect(RavenConversation.writtenTitle(of: "  \n") == nil)
+    }
+
+    @Test func aConversationKeptBeforeTitlesWereWrittenReadsWithItsRequestsTitle() throws {
+        let older = Data(#"{"id": "a", "title": "hi", "createdAt": 0, "lastAt": 0, "turnCount": 1, "costUSD": 0}"#.utf8)
+        let conversation = try JSONDecoder().decode(RavenConversation.self, from: older)
+        #expect(conversation.titleSource == nil)
+    }
+
     @Test func titlesAConversationByItsFirstLineCutAtAWord() {
         #expect(RavenConversation.title(of: "What is G-Watch doing?\nand why") == "What is G-Watch doing?")
         let long = "Which agents are stuck or waiting on me and on what exactly are they waiting right now"

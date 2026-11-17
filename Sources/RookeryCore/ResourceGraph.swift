@@ -123,7 +123,8 @@ public struct ResourceGraph: Equatable, Sendable {
     }
 
     /// How the log names a resource: its kind and, in brackets, its own name, as `Agent [studio/api]` or
-    /// `Skill [humanize]`, rather than a session's title; `You` for the user.
+    /// `Skill [humanize]`, rather than a session's title; a conversation with Raven, every one of which
+    /// has the same name, by its title, as `Raven [Tomorrow's schedule]`; `You` for the user.
     ///
     /// - Parameter ref: the resource
     /// - Returns: the label
@@ -138,6 +139,9 @@ public struct ResourceGraph: Equatable, Sendable {
                 return "\(kindTitle) [\(resource(parent)?.name ?? parent.id) › subagent]"
             }
             return "\(kindTitle) [\(ref.id)]"
+        }
+        if resource.isRookeryOwn {
+            return "Raven [\(resource.displayName)]"
         }
         return "\(kindTitle) [\(resource.name)]"
     }

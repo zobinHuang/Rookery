@@ -36,6 +36,8 @@ struct ResourceGraphTests {
         #expect(graph.logLabel(of: FleetRef(kind: "agent", id: "s-1~sub")) == "Agent [studio/api › subagent]")
         #expect(graph.logLabel(of: FleetRef(kind: "skill", id: "humanize")) == "Skill [humanize]")
         #expect(graph.logLabel(of: FleetRef(kind: "person", id: "me")) == "You")
+        graph.put(FleetResource(kind: "agent", id: "r-1", name: "rookery/raven", mapAttributes: ["rook_name": .string("rookery"), "title": .string("Tomorrow's schedule")], lastUsedAt: "2"))
+        #expect(graph.logLabel(of: FleetRef(kind: "agent", id: "r-1")) == "Raven [Tomorrow's schedule]")
     }
 
     @Test func drawsAndCountsRelationsAndMarksUse() {

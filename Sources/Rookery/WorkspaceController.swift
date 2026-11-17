@@ -106,6 +106,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private var isSwitching = false
     /// How many switches have been asked for, which tells whether one was asked for in the meantime.
     private var switchRequestCount = 0
+    /// The window the latest switch asked for brings to the front, until it is done, so stepping through
+    /// a group's windows faster than they come forward steps on from the one asked for.
+    private var pendingFrontWindowId: WindowId?
     /// Whether the workspace changed during the running layout change, which tells the views once when it
     /// ends rather than once for every window it moves.
     private var isChangePending = false
@@ -126,9 +129,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Called after a structural or user initiated workspace change.
     var onChange: (() -> Void)?
-    /// Told the group a switch is bringing forward as soon as it is asked for, and nil once the last switch
-    /// asked for is done, so a stage can show the switch under way before its windows are in place.
-    var onSwitchTarget: ((GroupId?) -> Void)?
+    /// Told the group a switch is bringing forward, and the window it brings to the front if it names
+    /// one, as soon as it is asked for, and nil once the last switch asked for is done, so a stage can show
+    /// the switch under way before its windows are in place.
+    var onSwitchTarget: ((GroupId?, WindowId?) -> Void)?
     /// Called when a managed window's displayed title changes, without changing workspace structure.
     var onWindowTitleChange: ((WindowId) -> Void)?
     /// The browsers playing a video in the sidebar, which are never hidden: a hidden browser stops drawing
@@ -558,14 +562,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func switchTo(_ groupId: GroupId?, bringingToFront frontWindowId: WindowId? = nil, onStage stageId: StageId? = nil) async {
         switchRequestCount += 1
         let requestCount = switchRequestCount
+        pendingFrontWindowId = frontWindowId
         if let groupId {
-            onSwitchTarget?(groupId)
+            onSwitchTarget?(groupId, frontWindowId)
         }
         await enqueue {
             await self.performSwitch(to: groupId, bringingToFront: frontWindowId, onStage: stageId)
         }
         if switchRequestCount == requestCount {
-            onSwitchTarget?(nil)
+            pendingFrontWindowId = nil
+            onSwitchTarget?(nil, nil)
         }
     }
 
@@ -1007,20 +1013,27 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Bring the next window of the frontmost active group to the front, cycling through its members in
     /// join order.
     func cycleActiveGroupWindow() async {
+        await stepActiveGroupWindow(by: 1)
+    }
+
+    /// Bring forward the window some places after the one in front, or before it with a negative step, in
+    /// the frontmost active group's join order, which is the order of its tabs, wrapping around.
+    func stepActiveGroupWindow(by step: Int) async {
         guard let group = frontmostActiveGroup(), group.listMembers.count > 1 else {
             return
         }
+        let count = group.listMembers.count
         if let stageId = stage(showing: group.groupId) {
-            let frontId = group.listMembersFrontToBack.first?.windowId
-            let frontIndex = group.listMembers.firstIndex { $0.windowId == frontId } ?? -1
-            let nextId = group.listMembers[(frontIndex + 1) % group.listMembers.count].windowId
+            let frontId = pendingFrontWindowId ?? group.listMembersFrontToBack.first?.windowId
+            let frontIndex = group.listMembers.firstIndex { $0.windowId == frontId } ?? 0
+            let nextId = group.listMembers[((frontIndex + step) % count + count) % count].windowId
             await switchTo(group.groupId, bringingToFront: nextId, onStage: stageId)
             return
         }
         let listServerOrder = WindowServer.listWindows().map(\.windowId)
         let frontId = listServerOrder.first { windowId in group.listMembers.contains { $0.windowId == windowId } }
-        let frontIndex = group.listMembers.firstIndex { $0.windowId == frontId } ?? -1
-        try? await focus(group.listMembers[(frontIndex + 1) % group.listMembers.count].windowId)
+        let frontIndex = group.listMembers.firstIndex { $0.windowId == frontId } ?? 0
+        try? await focus(group.listMembers[((frontIndex + step) % count + count) % count].windowId)
     }
 
     /// Whether a managed window belongs to the application in front, whose focus is the user's doing.

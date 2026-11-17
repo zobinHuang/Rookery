@@ -219,9 +219,9 @@ final class StageCoordinator: DropSurface {
     }
 
     /// Show the group a switch is bringing forward on the stage that holds it, until the switch is done.
-    func noteSwitchTarget(_ groupId: GroupId?) {
+    func noteSwitchTarget(_ groupId: GroupId?, frontWindow windowId: WindowId?) {
         for stage in listStages where !stage.isClosed {
-            stage.noteSwitchTarget(groupId)
+            stage.noteSwitchTarget(groupId, frontWindow: windowId)
         }
     }
 

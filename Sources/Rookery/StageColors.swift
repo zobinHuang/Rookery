@@ -31,6 +31,20 @@ enum StageColors {
         highContrastLight: .white,
         highContrastDark: .black
     )
+    /// The tab of the window in front, in the colors of the theme turned over: dark in the light themes,
+    /// light in the dark ones, so it stands out from the tabs beside it.
+    static let activeTab = StageColor(
+        light: slate(0x232836),
+        dark: slate(0xE9EDF4),
+        highContrastLight: .black,
+        highContrastDark: .white
+    )
+    static let activeTabText = StageColor(
+        light: .white,
+        dark: slate(0x151821),
+        highContrastLight: .white,
+        highContrastDark: .black
+    )
     static let idleTab = StageColor(
         light: slate(0x1A2233, alpha: 0.05),
         dark: slate(0xC8D2E6, alpha: 0.05),

@@ -393,9 +393,6 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             return
         }
         leavePage()
-        if model.listTabs.contains(where: { $0.windowId == windowId }) {
-            model.selectedWindowId = windowId
-        }
         Task { [workspaceController, stageId] in
             await workspaceController.switchTo(groupId, bringingToFront: windowId, onStage: stageId)
         }
@@ -482,8 +479,12 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     }
 
     /// Show a switch under way to one of this stage's groups once it has taken longer than a moment, so a
-    /// quick switch does not flicker; clear it when the switch is done.
-    func noteSwitchTarget(_ groupId: GroupId?) {
+    /// quick switch does not flicker, and move to the tab of the window it brings forward at once, so the
+    /// tab slides while the windows trade places; clear it when the switch is done.
+    func noteSwitchTarget(_ groupId: GroupId?, frontWindow windowId: WindowId?) {
+        if let windowId, model.listTabs.contains(where: { $0.windowId == windowId }) {
+            model.selectedWindowId = windowId
+        }
         switchIndicatorTask?.cancel()
         guard let groupId, workspaceController.groups(ofStage: stageId).contains(where: { $0.groupId == groupId }) else {
             model.switchingGroupId = nil
@@ -832,7 +833,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         return ScreenGeometry.windowServerFrame(fromAppKit: CGRect(
             x: stageFrame.minX + sidebarWidth,
             y: stageFrame.minY + StageModel.contentInset,
-            width: stageFrame.width - sidebarWidth - StageModel.contentInset - model.rightSidebarWidth,
+            width: stageFrame.width - sidebarWidth - model.rightSidebarWidth,
             height: stageFrame.height - StageModel.tabBarHeight - StageModel.contentInset
         ))
     }

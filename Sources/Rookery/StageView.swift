@@ -143,7 +143,6 @@ struct StageView: View {
                             .allowsHitTesting(false)
                         }
                     }
-                    .padding(.trailing, isPageFullBleed ? 0 : StageModel.contentInset)
                     .padding(.bottom, isPageFullBleed ? 0 : StageModel.contentInset)
             }
             RightSidebarView(
@@ -868,7 +867,8 @@ struct StageView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.activeTabText) : AnyShapeStyle(StageColors.secondaryText))
+        .animation(.easeOut(duration: 0.18), value: isSelected)
         .simultaneousGesture(TapGesture(count: 2).onEnded {
             beginRenaming(tab: tab.windowId)
         })
@@ -1351,7 +1351,8 @@ struct SwitchingTabs: View {
             .padding(.leading, 12)
             .padding(.trailing, 16)
             .frame(height: StageView.tabHeight)
-            .background(StageColors.selectedTab, in: FolderTabShape())
+            .foregroundStyle(StageColors.activeTabText)
+            .background(StageColors.activeTab, in: FolderTabShape())
             ForEach(Self.placeholderWidths, id: \.self) { width in
                 FolderTabShape()
                     .fill(StageColors.idleTab)

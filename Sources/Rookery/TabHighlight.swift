@@ -112,7 +112,7 @@ final class TabHighlightView: NSView {
     }
 
     override func updateLayer() {
-        highlight.fillColor = StageColors.selectedTab.color(in: theme).cgColor
+        highlight.fillColor = StageColors.activeTab.color(in: theme).cgColor
         highlight.strokeColor = StageColors.contrastActiveBorder.color(in: theme).cgColor
     }
 

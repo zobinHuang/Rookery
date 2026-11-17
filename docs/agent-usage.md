@@ -1,6 +1,6 @@
 # Code agent usage
 
-The sidebar's Token HP panel, above the world clock, shows how much of each code agent account's plan limits is left and when each resets.
+The sidebar's Token HP panel, at its bottom, shows how much of each code agent account's plan limits is left and when each resets.
 
 ## Reading the limits
 

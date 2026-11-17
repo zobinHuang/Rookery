@@ -45,7 +45,7 @@ Warnings are errors and the Swift 6 language mode is on everywhere; see `Package
 `AppDelegate` creates and wires the long-lived controllers:
 
 - `WorkspaceController` (Accessibility granted): owns the `Workspace` (groups of managed windows), applies actions through `WindowTracker`, runs the stages' layout, the MRU order and the switchers' requests. Persists to `workspace.json`.
-- `StageCoordinator` / `StageController` / `StageModel` / `StageView`: the stage windows. Each stage is a borderless panel kept just beneath its front window; its SwiftUI view hosts the sidebar (windows, agents or mixer, sidebar videos, agent limits, world clock, toolbar) and the tab bar.
+- `StageCoordinator` / `StageController` / `StageModel` / `StageView`: the stage windows. Each stage is a borderless panel kept just beneath its front window; its SwiftUI view hosts the sidebar (windows, agents or mixer, sidebar videos, agent limits, toolbar), the tab bar, and the footbar along the bottom with the world clock.
 - `MixerController`: per-app tracks over `AudioMixer`, settings persisted per bundle id; owns `BrowserTabMixer`, the per-tab state from the extension, which owns `BrowserPictures`, the sidebar videos.
 - `FleetModel`: the agents roost knows of, kept current over its live link, and the user's local groups of them; backs the sidebar's Agents mode and each agent's page. See `docs/agents.md`.
 - `AgentUsageMonitor`: reads the shown code agent accounts' limits on a schedule and groups accounts signed in to one login.

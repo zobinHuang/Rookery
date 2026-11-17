@@ -311,7 +311,7 @@ Something on its way to an agent through its rook: a prompt from a person or a m
 | | |
 |---|---|
 | `POST /v1/messages` | `{"to": "<agent id>", "text": "..."}`, with `actor` as for resources; answers `201` with the delivery. A prompt's `options` take the `thread` it answers and `no_reply: true` when no answer is wanted; `{"team": "<team id>", "text": "..."}` instead sends to every other member of a team and answers with `{"messages": [...]}`. `kind` (default `prompt`) also takes `interrupt` (no text) and `approve` with `options` `{"choice": "once" \| "deny"}`; `{"kind": "spawn", "rook": "<rook>", "text": "<first prompt>", "options": {"cwd": "/abs/path", "harness": "claude" \| "codex"}}` asks a rook to start a new session |
-| `GET /v1/messages` | the latest deliveries, or one agent's with `agent=<id>`; `limit` up to 500 |
+| `GET /v1/messages` | the latest deliveries, those for one agent with `agent=<id>`, or those one agent sent with `sender=<id>`; `limit` up to 500 |
 | `GET /v1/messages/<id>` | one delivery |
 | `POST /v1/messages/<id>/release` | let a `held` delivery go; its thread may then go as far again |
 | `POST /v1/messages/<id>/cancel` | drop a `held` delivery; it becomes `cancelled` |
@@ -324,7 +324,7 @@ Something on its way to an agent through its rook: a prompt from a person or a m
 
 A prompt belongs to a `thread`, made for it unless it names the one it answers; its options carry the thread, its `hop` (how many messages the thread holds with it) and, for a team message, the `team`. An agent messages only agents it shares a team with; a person, and Rookery's own agents (rook `rookery`), message anyone. A message from an agent that goes past its teams' limits is `held` for the user to release or cancel, and its `messaged` event carries `held` with the reason: by default a thread past 20 messages, or a sender past 30 messages in 10 minutes. A team sets its own in `attributes.limits` as `thread_hops`, `sends_per_window` and `window_minutes`; between agents sharing several teams, the loosest apply. A held delivery not decided in a day is `expired`.
 
-A spawn's `options` may also name the `launch` id the new session names as it starts (one is made otherwise, and returned), the `playbook` and further `skills` to install first, the `role` it takes, and the `teams` it joins as `[{"team": "<id>", "duty": "..."}]`. When an agent starts with `launch` in its `started` event's detail, it takes that role, unless it has one, and joins those teams.
+A spawn's `options` may also name the `launch` id the new session names as it starts (one is made otherwise, and returned), the `playbook` and further `skills` to install first, the `role` it takes, and the `teams` it joins as `[{"team": "<id>", "duty": "..."}]`. When an agent starts with `launch` in its `started` event's detail, it takes that role, unless it has one, and joins those teams. `GET /v1/launches/<launch id>/resolve` answers with what the session installs, as a playbook's resolution: the playbook's, with the further skills at their latest version, or the skills alone under an empty `id`. A message from an agent carries its `sender_title` in its options.
 
 ## Teams
 

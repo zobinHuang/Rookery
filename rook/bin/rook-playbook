@@ -49,7 +49,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage:
   rook-playbook list
-  rook-playbook install <playbook-id> [--agent <a>] [--project <dir>] [--pane <%n>]
+  rook-playbook install <playbook-id> [--agent <a>] [--project <dir>] [--pane <%n>] [--launch <id>]
   rook-playbook uninstall [--agent <a>] [--project <dir>] [--pane <%n>]
   rook-playbook current [--pane <%n>]
   rook-playbook resolve <playbook-id>
@@ -321,9 +321,11 @@ cmd_install() {
   _in_project=""
   _in_pane=""
   _in_quiet=0
+  _in_launch=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --agent)   _in_agents="${2:-}"; shift 2 ;;
+      --launch)  _in_launch="${2:-}"; shift 2 ;;
       --project) _in_project="${2:-}"; shift 2 ;;
       --pane)    _in_pane="${2:-}"; shift 2 ;;
       --quiet)   _in_quiet=1; shift ;;
@@ -339,7 +341,10 @@ cmd_install() {
   _in_work="$(mktemp -d "${TMPDIR:-/tmp}/rook-playbook.XXXXXX")" || die "no temp dir"
   trap 'rm -rf "$_in_work"' EXIT HUP INT TERM
 
-  if ! api_get "/v1/playbooks/$_in_id/resolve" "$_in_work/resolved.json"; then
+  # A launch installs its playbook with the further skills it names, as the server resolves them together.
+  _in_resolve="/v1/playbooks/$_in_id/resolve"
+  [ -z "$_in_launch" ] || _in_resolve="/v1/launches/$_in_launch/resolve"
+  if ! api_get "$_in_resolve" "$_in_work/resolved.json"; then
     die "server would not resolve playbook '$_in_id' (http $ROOK_STATUS)"
   fi
   json_rows "$_in_work/resolved.json" skills \

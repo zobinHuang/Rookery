@@ -431,6 +431,13 @@ if _rook_install_or_fail bin/rook-playbook "$HOME/.local/bin/rook-playbook" "roo
   info "Installed rook-playbook"
 fi
 
+# The skill that tells Claude Code how to work with its teammates, which rook names to it as a session starts.
+ROOK_TEAM_SKILL_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills/rook-team"
+if mkdir -p "$ROOK_TEAM_SKILL_DIR" \
+  && _rook_install_or_fail skills/rook-team/SKILL.md "$ROOK_TEAM_SKILL_DIR/SKILL.md" "the rook-team skill"; then
+  info "Installed the rook-team skill into $ROOK_TEAM_SKILL_DIR"
+fi
+
 # ─── 4. install rook command ─────────────────────────────────────
 echo ""
 echo "── rook command ──────────────────────────────"

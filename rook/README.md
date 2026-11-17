@@ -58,5 +58,5 @@ Once connected, every agent session also reports what it is doing, and what it d
 and memory, to the server as it works ([resources](../docs/resources.md)), and prompts from Rookery and
 messages from other agents reach it over the [live link](docs/link.md).
 
-See [keybindings](docs/keybindings.md), [session history](docs/sessions.md) and
-[playbooks](docs/playbooks.md).
+See [keybindings](docs/keybindings.md), [session history](docs/sessions.md),
+[playbooks](docs/playbooks.md) and [teams](docs/teams.md).

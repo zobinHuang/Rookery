@@ -223,13 +223,20 @@ class Connection:
             return None
         return cls(base_url, token, map_connect.get("insecure") in (True, "true", 1))
 
-    def request(self, method: str, path: str, map_body: object = None) -> dict[str, object]:
+    def request(
+        self,
+        method: str,
+        path: str,
+        map_body: object = None,
+        timeout_seconds: float = CONNECTION_TIMEOUT_SECONDS,
+    ) -> dict[str, object]:
         """Send one request to roost.
 
         Args:
             method: the HTTP method
             path: the path, starting with `/v1/`
             map_body: the JSON body, or None for none
+            timeout_seconds: how long to wait for roost
 
         Returns:
             the decoded response
@@ -237,7 +244,7 @@ class Connection:
         Raises:
             RookClientError: if roost cannot be reached or refuses the request
         """
-        raw = self.request_bytes(method, path, map_body)
+        raw = self.request_bytes(method, path, map_body, timeout_seconds)
         return json.loads(raw) if raw else {}
 
     def transcript_tail(self, session_id: str, nb_tail_bytes: int) -> bytes:
@@ -284,7 +291,13 @@ class Connection:
         context.verify_mode = ssl.CERT_NONE
         return context
 
-    def request_bytes(self, method: str, path: str, map_body: object = None) -> bytes:
+    def request_bytes(
+        self,
+        method: str,
+        path: str,
+        map_body: object = None,
+        timeout_seconds: float = CONNECTION_TIMEOUT_SECONDS,
+    ) -> bytes:
         """Send one request to roost and take its answer as it came, for answers that are not one object.
 
         Raises:
@@ -296,7 +309,7 @@ class Connection:
         if data is not None:
             request.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(request, timeout=self.CONNECTION_TIMEOUT_SECONDS, context=self._context()) as response:
+            with urllib.request.urlopen(request, timeout=timeout_seconds, context=self._context()) as response:
                 raw = response.read()
         except urllib.error.HTTPError as err:
             detail = err.read().decode("utf-8", errors="replace")
@@ -319,6 +332,8 @@ class HookEventMapper:
     MAPPER_SUBPROCESS_TIMEOUT_SECONDS = 2
     MAPPER_TITLE_TAIL_BYTES = 256 * 1024
     MAPPER_TITLE_TYPES = {"custom-title": "customTitle", "ai-title": "aiTitle"}
+    """Set by rook-link in a session it starts for a launch, which the session names as it starts."""
+    MAPPER_LAUNCH_ENV = "ROOK_LAUNCH"
     MAPPER_NOTIFICATION_STATES = {
         "permission_prompt": "needs_approval",
         "elicitation_dialog": "needs_input",
@@ -492,7 +507,9 @@ class HookEventMapper:
         cwd = str(self._map_payload.get("cwd") or "")
         tab = self._tab()
         rook_name = RookConfig.name()
+        map_launch = {"launch": os.environ[self.MAPPER_LAUNCH_ENV]} if os.environ.get(self.MAPPER_LAUNCH_ENV) else {}
         return {
+            **map_launch,
             "name": f"{rook_name}/{tab}" if tab else rook_name,
             "harness": self._harness,
             "rook_name": rook_name,
@@ -1278,6 +1295,8 @@ class MessageCommands:
         parser.add_argument("agent", help="the agent's id, its session id")
         parser.add_argument("text", nargs="+")
         parser.add_argument("--as-person", action="store_true", help="send as a person even inside an agent's pane")
+        parser.add_argument("--thread", help="the thread this answers, as the message you answer names it")
+        parser.add_argument("--no-reply", action="store_true", help="tell the agent no answer is wanted")
 
     @staticmethod
     def run(args: argparse.Namespace, connection: Connection) -> int:
@@ -1289,13 +1308,347 @@ class MessageCommands:
         Raises:
             RookClientError: if roost refuses it
         """
-        map_body: dict[str, object] = {"to": args.agent, "text": " ".join(args.text)}
+        map_body: dict[str, object] = {
+            "to": args.agent,
+            "text": " ".join(args.text),
+            "options": TeamCommands.prompt_options(args),
+        }
         session_id = None if args.as_person else AgentPane.session_here()
         if session_id:
             map_body["actor"] = {"kind": "agent", "id": session_id}
         map_delivery = connection.request("POST", "/v1/messages", map_body)
-        print(map_delivery["id"])
+        TeamCommands.print_sent([map_delivery])
         return 0
+
+
+class TeamCommands:
+    """`rook team`: the teams the agent in this pane is in, who is in each and with what duty, and messages to
+    a whole team."""
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the team subcommands to a parser."""
+        commands = parser.add_subparsers(dest="action", required=True)
+        list_parser = commands.add_parser("list", help="the teams this agent is in, or every team outside one")
+        list_parser.add_argument("--all", action="store_true", help="every team")
+        list_parser.add_argument("--json", action="store_true")
+        roster_parser = commands.add_parser("roster", help="who is in a team, with what duty, doing what")
+        roster_parser.add_argument("team", help="the team's id")
+        roster_parser.add_argument("--json", action="store_true")
+        send_parser = commands.add_parser("send", help="message every other member of a team")
+        send_parser.add_argument("team", help="the team's id")
+        send_parser.add_argument("text", nargs="+")
+        send_parser.add_argument("--thread", help="the thread this answers, as the message you answer names it")
+        send_parser.add_argument("--no-reply", action="store_true", help="tell them no answer is wanted")
+
+    @classmethod
+    def run(cls, args: argparse.Namespace, connection: Connection) -> int:
+        """Carry out one subcommand, printing its result.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if roost refuses it
+        """
+        session_id = AgentPane.session_here()
+        if args.action == "send":
+            map_body: dict[str, object] = {
+                "team": args.team,
+                "text": " ".join(args.text),
+                "options": cls.prompt_options(args),
+            }
+            if session_id:
+                map_body["actor"] = {"kind": "agent", "id": session_id}
+            cls.print_sent(connection.request("POST", "/v1/messages", map_body)["messages"])
+            return 0
+        if args.action == "roster":
+            map_team = connection.request("GET", f"/v1/teams/{urllib.parse.quote(args.team, safe='')}")
+            print(json.dumps(map_team, indent=2) if args.json else TeamBriefing.team_text(map_team, session_id))
+            return 0
+        path = "/v1/teams" if args.all or not session_id else f"/v1/teams?agent={urllib.parse.quote(session_id, safe='')}"
+        list_teams = connection.request("GET", path)["teams"]
+        if args.json:
+            print(json.dumps(list_teams, indent=2))
+        elif not list_teams:
+            print("no teams" if args.all or not session_id else "this agent is in no team")
+        else:
+            print("\n\n".join(TeamBriefing.team_text(map_team, session_id) for map_team in list_teams))
+        return 0
+
+    @staticmethod
+    def prompt_options(args: argparse.Namespace) -> dict[str, object]:
+        """A message's thread and whether it wants an answer, from its command line."""
+        map_options: dict[str, object] = {}
+        if getattr(args, "thread", None):
+            map_options["thread"] = args.thread
+        if getattr(args, "no_reply", False):
+            map_options["no_reply"] = True
+        return map_options
+
+    @staticmethod
+    def print_sent(list_deliveries: list[dict[str, object]]) -> None:
+        """Say what became of messages just sent: their thread, and any held for the user."""
+        for map_delivery in list_deliveries:
+            map_options = map_delivery.get("options") or {}
+            line = f"{map_delivery['id']} to {map_delivery['agent_id']} in thread {map_options.get('thread', '-')}"
+            if map_delivery.get("status") == "held":
+                line += f", held for the user: {(map_delivery.get('detail') or {}).get('reason', '')}"
+            print(line)
+
+
+class MeCommands:
+    """`rook me`: who the agent in this pane is to its teammates: its role, and what it works on now."""
+
+    ME_TEXT_MAX_CHARS = 300
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the subcommands to a parser."""
+        commands = parser.add_subparsers(dest="action")
+        role_parser = commands.add_parser("role", help="who you are to your teammates, kept until changed")
+        role_parser.add_argument("text", nargs="+")
+        focus_parser = commands.add_parser("focus", help="what you work on now; set it as you start and finish")
+        focus_parser.add_argument("text", nargs="+")
+
+    @classmethod
+    def run(cls, args: argparse.Namespace, connection: Connection) -> int:
+        """Show this agent's card, or set its role or its focus.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if this is no agent's pane, or roost refuses it
+        """
+        session_id = AgentPane.session_here()
+        if not session_id:
+            raise RookClientError("rook me works inside an agent's pane")
+        path = f"/v1/resources/agent/{urllib.parse.quote(session_id, safe='')}"
+        if args.action in ("role", "focus"):
+            text = " ".join(args.text).strip()[: cls.ME_TEXT_MAX_CHARS]
+            map_attributes: dict[str, object] = {args.action: text}
+            if args.action == "focus":
+                map_attributes["focus_at"] = HookEventMapper.now()
+            connection.request(
+                "PATCH",
+                path,
+                {"attributes": map_attributes, "actor": {"kind": "agent", "id": session_id}},
+            )
+            TeamBriefing.forget(session_id)
+            print(f"{args.action}: {text}")
+            return 0
+        map_attributes = connection.request("GET", path).get("attributes") or {}
+        print(f"agent {session_id}")
+        for key in ("title", "role", "focus", "state", "cwd"):
+            print(f"  {key}: {map_attributes.get(key) or '-'}")
+        list_teams = connection.request("GET", f"/v1/teams?agent={urllib.parse.quote(session_id, safe='')}")["teams"]
+        print(f"  teams: {', '.join(team['id'] for team in list_teams) or '-'}")
+        return 0
+
+
+class InboxCommands:
+    """`rook inbox`: the messages the agent in this pane received and sent lately, which a compacted
+    conversation may have lost."""
+
+    INBOX_DEFAULT_LIMIT = 20
+    INBOX_PREVIEW_CHARS = 300
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the arguments to a parser."""
+        parser.add_argument("--limit", type=int, default=InboxCommands.INBOX_DEFAULT_LIMIT)
+        parser.add_argument("--thread", help="only one thread's messages")
+
+    @classmethod
+    def run(cls, args: argparse.Namespace, connection: Connection) -> int:
+        """Print the messages, oldest first.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if this is no agent's pane, or roost refuses it
+        """
+        session_id = AgentPane.session_here()
+        if not session_id:
+            raise RookClientError("rook inbox works inside an agent's pane")
+        quoted = urllib.parse.quote(session_id, safe="")
+        list_messages = (
+            connection.request("GET", f"/v1/messages?agent={quoted}&limit={args.limit}")["messages"]
+            + connection.request("GET", f"/v1/messages?sender={quoted}&limit={args.limit}")["messages"]
+        )
+        list_messages = [
+            message
+            for message in list_messages
+            if message.get("kind") == "prompt"
+            and (not args.thread or (message.get("options") or {}).get("thread") == args.thread)
+        ]
+        list_messages.sort(key=lambda message: str(message["created_at"]))
+        if not list_messages:
+            print("no messages")
+        for message in list_messages[-args.limit:]:
+            map_options = message.get("options") or {}
+            if message["agent_id"] == session_id:
+                party = f"from {message['sender']['kind']} {map_options.get('sender_title') or message['sender']['id']}"
+            else:
+                party = f"to {message['agent_id']}"
+            text = str(message["text"])[: cls.INBOX_PREVIEW_CHARS]
+            print(f"{message['created_at'][:16]}  {party}  thread {map_options.get('thread', '-')}  {message['status']}")
+            print(f"  {text}")
+        return 0
+
+
+class TeamBriefing:
+    """What an agent is told of its teams through its hooks: as its session starts, every team it is in,
+    each member's card and duty, and how to reach them; then, before a prompt, what changed in its teams
+    since it was last told. Each read waits on roost for a few seconds at most, and a prompt checks at
+    most once a minute."""
+
+    BRIEFING_TIMEOUT_SECONDS = 3
+    BRIEFING_CHECK_SECONDS = 60
+    BRIEFING_DIR_NAME = "teams"
+
+    @classmethod
+    def at_start(cls, connection: Connection, session_id: str) -> str:
+        """The briefing for a session starting, or empty when it is in no team; what it was told is kept.
+
+        Raises:
+            RookClientError: if roost cannot be reached
+        """
+        list_teams = cls._fetch(connection, session_id)
+        cls._remember(session_id, list_teams)
+        if not list_teams:
+            return ""
+        return "\n\n".join([
+            f"[rook] You are agent {session_id}, one of a team of code agents that reach one another through "
+            "rook. Your teams, each member with who they are (role), their duty here and what they do now:",
+            *[cls.team_text(map_team, session_id) for map_team in list_teams],
+            cls._commands_text(),
+        ])
+
+    @classmethod
+    def changes(cls, connection: Connection, session_id: str) -> str:
+        """What changed in a session's teams since it was last told, or empty when nothing did or it was
+        checked within the minute.
+
+        Raises:
+            RookClientError: if roost cannot be reached
+        """
+        map_known = cls._recall(session_id) or {}
+        if time.time() - float(map_known.get("checked_at") or 0) < cls.BRIEFING_CHECK_SECONDS:
+            return ""
+        list_teams = cls._fetch(connection, session_id)
+        map_old = map_known.get("teams") or {}
+        map_new = cls._digest(list_teams)
+        cls._remember(session_id, list_teams)
+        list_lines: list[str] = []
+        for team_id, map_team in map_new.items():
+            map_before = map_old.get(team_id)
+            if map_before is None:
+                list_lines.append(f"You joined team {map_team['name']} ({team_id}) as: {map_team['duty'] or 'member'}.")
+                continue
+            for agent_id, duty in map_team["members"].items():
+                if agent_id not in map_before["members"]:
+                    list_lines.append(f"Team {team_id}: agent {agent_id} joined as: {duty or 'member'}.")
+                elif map_before["members"][agent_id] != duty:
+                    list_lines.append(f"Team {team_id}: agent {agent_id}'s duty is now: {duty or 'none'}.")
+            for agent_id in map_before["members"]:
+                if agent_id not in map_team["members"]:
+                    list_lines.append(f"Team {team_id}: agent {agent_id} left.")
+            if map_before.get("goal") != map_team.get("goal"):
+                list_lines.append(f"Team {team_id}'s goal is now: {map_team.get('goal') or 'none'}.")
+        for team_id, map_before in map_old.items():
+            if team_id not in map_new:
+                list_lines.append(f"You are no longer in team {map_before['name']} ({team_id}).")
+        if not list_lines:
+            return ""
+        return "[rook] Your teams changed:\n" + "\n".join(list_lines) + "\nrook team roster <team> shows them now."
+
+    @staticmethod
+    def team_text(map_team: dict[str, object], session_id: str | None) -> str:
+        """One team as an agent reads it: its goal, and a line for each member."""
+        map_attributes = map_team.get("attributes") or {}
+        list_lines = [f"Team {map_team.get('name')} (id {map_team.get('id')})"]
+        if map_attributes.get("goal"):
+            list_lines[0] += f", goal: {map_attributes['goal']}"
+        for map_member in map_team.get("members") or []:
+            is_self = map_member.get("id") == session_id
+            list_parts = [f"- {'you, ' if is_self else ''}agent {map_member.get('id')}"]
+            if map_member.get("title"):
+                list_parts.append(f'"{map_member["title"]}"')
+            list_parts.append(f"on {map_member.get('hostname') or map_member.get('rook_name') or '?'}")
+            list_parts.append(f"in {map_member.get('cwd') or '?'}")
+            list_parts.append(f"[{map_member.get('state') or 'unknown'}]")
+            list_lines.append(" ".join(list_parts))
+            for key, label in (("role", "role"), ("duty", "duty here"), ("focus", "now")):
+                if map_member.get(key):
+                    list_lines.append(f"    {label}: {map_member[key]}")
+        return "\n".join(list_lines)
+
+    @classmethod
+    def forget(cls, session_id: str) -> None:
+        """Have the next prompt check the session's teams again at once."""
+        map_known = cls._recall(session_id)
+        if map_known is not None:
+            map_known["checked_at"] = 0
+            cls._path(session_id).write_text(json.dumps(map_known), encoding="utf-8")
+
+    @staticmethod
+    def _commands_text() -> str:
+        return "\n".join([
+            "How to work with them (the rook-team skill says when and how):",
+            '- rook message <agent id> "..." to one teammate; rook team send <team> "..." to a whole team',
+            "- answer within the thread a message names with --thread <id>; add --no-reply when you need no answer",
+            "- rook team roster <team> for who is in it now; rook inbox for messages you received and sent",
+            '- rook me role "..." for who you are; rook me focus "..." as you start and finish a piece of work',
+        ])
+
+    @classmethod
+    def _fetch(cls, connection: Connection, session_id: str) -> list[dict[str, object]]:
+        map_body = connection.request(
+            "GET",
+            f"/v1/teams?agent={urllib.parse.quote(session_id, safe='')}",
+            timeout_seconds=cls.BRIEFING_TIMEOUT_SECONDS,
+        )
+        list_teams = map_body.get("teams")
+        return [team for team in list_teams if isinstance(team, dict)] if isinstance(list_teams, list) else []
+
+    @staticmethod
+    def _digest(list_teams: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+        map_digest: dict[str, dict[str, object]] = {}
+        for map_team in list_teams:
+            map_members = {
+                str(member.get("id")): str(member.get("duty") or "")
+                for member in map_team.get("members") or []
+            }
+            map_digest[str(map_team.get("id"))] = {
+                "name": map_team.get("name"),
+                "goal": (map_team.get("attributes") or {}).get("goal"),
+                "members": map_members,
+            }
+        return map_digest
+
+    @classmethod
+    def _remember(cls, session_id: str, list_teams: list[dict[str, object]]) -> None:
+        path = cls._path(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        map_digest = cls._digest(list_teams)
+        for map_team in map_digest.values():
+            map_team["duty"] = map_team["members"].get(session_id, "")
+        path.write_text(json.dumps({"checked_at": time.time(), "teams": map_digest}), encoding="utf-8")
+
+    @classmethod
+    def _recall(cls, session_id: str) -> dict[str, object] | None:
+        try:
+            map_known = json.loads(cls._path(session_id).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return map_known if isinstance(map_known, dict) else None
+
+    @classmethod
+    def _path(cls, session_id: str) -> Path:
+        return RookPaths.state_dir() / cls.BRIEFING_DIR_NAME / RookPaths.key_of(session_id)
 
 
 class RookLinkProcess:
@@ -1317,6 +1670,10 @@ class RookClient:
 
     CLIENT_SELF = Path(__file__).resolve()
     CLIENT_STOP_HOOK = "Stop"
+    CLIENT_START_HOOK = "SessionStart"
+    CLIENT_PROMPT_HOOK = "UserPromptSubmit"
+    """The harnesses whose hooks take context to add to the conversation, as rook tells an agent of its teams."""
+    CLIENT_CONTEXT_HARNESSES = frozenset({"claude"})
     CLIENT_MESSAGE_SEPARATOR = "\n\n---\n\n"
 
     @classmethod
@@ -1371,6 +1728,7 @@ class RookClient:
                     )
                     list_events = [cls._still_thinking(event) for event in list_events]
             list_events = [event for event in list_events if cls._is_worth_sending(mapper, event)]
+            cls._brief(harness, mapper, map_payload, list_events)
             if not list_events:
                 return 0
             EventQueue.append(list_events)
@@ -1379,6 +1737,42 @@ class RookClient:
         except (OSError, ValueError) as err:
             EventQueue.log(f"hook {harness} could not queue its events: {err}")
         return 0
+
+    @classmethod
+    def _brief(
+        cls,
+        harness: str,
+        mapper: HookEventMapper,
+        map_payload: dict[str, object],
+        list_events: list[dict[str, object]],
+    ) -> None:
+        """Tell a starting session of its teams, and a prompted one of what changed in them; a session a launch
+        started has its start sent first, so roost puts it in the teams the launch asked for."""
+        hook = map_payload.get("hook_event_name")
+        if harness not in cls.CLIENT_CONTEXT_HARNESSES or not mapper.session_id or "~" in mapper.session_id:
+            return
+        if hook not in (cls.CLIENT_START_HOOK, cls.CLIENT_PROMPT_HOOK):
+            return
+        connection = Connection.load()
+        if connection is None:
+            return
+        try:
+            if hook == cls.CLIENT_START_HOOK:
+                if os.environ.get(HookEventMapper.MAPPER_LAUNCH_ENV):
+                    connection.request(
+                        "POST",
+                        "/v1/events",
+                        {"events": [mapper.started_event()]},
+                        timeout_seconds=TeamBriefing.BRIEFING_TIMEOUT_SECONDS,
+                    )
+                context = TeamBriefing.at_start(connection, mapper.session_id)
+            else:
+                context = TeamBriefing.changes(connection, mapper.session_id)
+        except RookClientError as err:
+            EventQueue.log(f"could not brief {mapper.session_id} on its teams: {err.message}")
+            return
+        if context:
+            json.dump({"hookSpecificOutput": {"hookEventName": hook, "additionalContext": context}}, sys.stdout)
 
     @classmethod
     def report_playbook(cls, session_id: str, resolved_path: str) -> int:
@@ -1463,6 +1857,9 @@ def main(list_argv: list[str] | None = None) -> int:
     MessageCommands.build_parser(commands.add_parser("message"))
     AgentCommands.build_parser(commands.add_parser("agent"))
     ProposeCommands.build_parser(commands.add_parser("propose"))
+    TeamCommands.build_parser(commands.add_parser("team"))
+    MeCommands.build_parser(commands.add_parser("me"))
+    InboxCommands.build_parser(commands.add_parser("inbox"))
     args = parser.parse_args(list_argv)
     if args.command == "event":
         if args.event_command == "hook":
@@ -1483,6 +1880,12 @@ def main(list_argv: list[str] | None = None) -> int:
             return AgentCommands.run(args, connection)
         if args.command == "propose":
             return ProposeCommands.run(args, connection)
+        if args.command == "team":
+            return TeamCommands.run(args, connection)
+        if args.command == "me":
+            return MeCommands.run(args, connection)
+        if args.command == "inbox":
+            return InboxCommands.run(args, connection)
         return ResourceCommands.run(args, connection)
     except RookClientError as err:
         sys.stderr.write(f"rook: {err.message}\n")

@@ -175,6 +175,23 @@ class TeamTest(unittest.TestCase):
         self.assertEqual([team.id for team in list_teams], ["api"])
         self.assertEqual(self.server.roster.members_of(list_teams[0])["d"]["duty"], "benchmarks")
 
+    def test_a_launch_resolves_what_it_installs(self) -> None:
+        self.server.events.record([{"actor": {"kind": "rook", "id": "laptop"}, "verb": "connected"}])
+        spawn = self.server.link.spawn_on_rook(self.PERSON, "laptop", "", {"cwd": "/src", "launch": "l-one"})
+        self.assertEqual(spawn.map_options["launch"], "l-one")
+        status, map_resolved = self.request("GET", "/v1/launches/l-one/resolve")
+        self.assertEqual((status, map_resolved["id"], map_resolved["skills"]), (200, "", []))
+        status, _ = self.request("GET", "/v1/launches/l-none/resolve")
+        self.assertEqual(status, 404)
+
+    def test_a_message_names_its_sender_and_lists_by_sender(self) -> None:
+        self.request("PATCH", "/v1/resources/agent/a", {"attributes": {"title": "API server"}})
+        delivery = self.send("a", "b")
+        self.assertEqual(delivery.map_options["sender_title"], "API server")
+        self.send("b", "a")
+        status, map_body = self.request("GET", "/v1/messages?sender=a")
+        self.assertEqual((status, [message["id"] for message in map_body["messages"]]), (200, [delivery.id]))
+
     def test_a_launch_names_only_teams_and_skills_that_exist(self) -> None:
         self.server.events.record([{"actor": {"kind": "rook", "id": "laptop"}, "verb": "connected"}])
         with self.assertRaises(NotFoundError):

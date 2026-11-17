@@ -4,7 +4,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from roost.errors import NotFoundError, ValidationError
-from roost.events import EventLog, EventVerbs
+from roost.events import Event, EventLog, EventVerbs
 from roost.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
 from roost.teams import TeamLimits, TeamRoster
 
@@ -147,7 +147,7 @@ class DeliveryStore:
         held_reason = ""
         if kind == Delivery.KIND_PROMPT:
             list_teams = self._teams_between(sender, agent_ref.id)
-            map_options = self._prompt_options(map_options, None)
+            map_options = self._prompt_options(map_options, sender, None)
             held_reason = self._held_reason(sender, str(map_options["thread"]), int(map_options["hop"]), list_teams)
         return self._hold(
             sender=sender,
@@ -188,7 +188,7 @@ class DeliveryStore:
         map_members = TeamRoster.members_of(team)
         if self._is_bound_agent(sender) and sender.id.split("~")[0] not in map_members:
             raise ValidationError(f"agent {sender.id} is not in team {team.name}")
-        map_options = self._prompt_options(dict(map_options or {}), team.id)
+        map_options = self._prompt_options(dict(map_options or {}), sender, team.id)
         map_options["batch"] = "b-" + secrets.token_urlsafe(self.DELIVERY_ID_BYTES)
         held_reason = self._held_reason(sender, str(map_options["thread"]), int(map_options["hop"]), [team])
         list_deliveries: list[Delivery] = []
@@ -247,6 +247,56 @@ class DeliveryStore:
         }])
         return delivery
 
+    def launch(self, launch_id: str) -> Delivery:
+        """The spawn that asked for a launch.
+
+        Raises:
+            NotFoundError: if no spawn names that launch
+        """
+        with self._resources.database.reading() as connection:
+            row = connection.execute(
+                "SELECT * FROM deliveries WHERE kind = ? AND json_extract(options, '$.launch') = ?",
+                (Delivery.KIND_SPAWN, launch_id),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError(f"no such launch: {launch_id}")
+        return self._delivery_of(row)
+
+    def bind_launches(self, list_events: list[Event]) -> None:
+        """Give each agent a launch started its identity and teams, as the launch asked; the agent names its
+        launch as it starts."""
+        for event in list_events:
+            launch_id = str(event.map_detail.get("launch") or "")
+            if event.verb != EventVerbs.STARTED or event.actor.kind != ResourceKinds.AGENT.name or not launch_id:
+                continue
+            try:
+                spawn = self.launch(launch_id)
+            except NotFoundError:
+                continue
+            self._apply_launch(event.actor.id, spawn.map_options)
+
+    def _apply_launch(self, agent_id: str, map_launch: dict[str, object]) -> None:
+        agent_ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=agent_id)
+        role = str(map_launch.get("role") or "")
+        if role:
+            with self._resources.database.transaction() as connection:
+                agent = self._resources.get(agent_ref)
+                is_new_role = not agent.map_attributes.get("role")
+                if is_new_role:
+                    agent.map_attributes["role"] = role
+                    self._resources.put(agent, connection)
+            if is_new_role:
+                self._events.record_change(None, EventVerbs.UPDATED, agent_ref)
+        list_teams = map_launch.get("teams")
+        for map_team in list_teams if isinstance(list_teams, list) else []:
+            team_ref = ResourceRef(kind=ResourceKinds.TEAM.name, id=str(map_team.get("team") or ""))
+            if (
+                not self._resources.exists(team_ref)
+                or agent_id in TeamRoster.members_of(self._resources.get(team_ref))
+            ):
+                continue
+            self._roster.join(team_ref.id, agent_id, str(map_team.get("duty") or ""), None)
+
     def _decide_held(self, delivery_id: str, status: str) -> Delivery:
         delivery = self.get(delivery_id)
         if delivery.status != Delivery.STATUS_HELD:
@@ -281,7 +331,12 @@ class DeliveryStore:
             )
         return list_teams
 
-    def _prompt_options(self, map_options: dict[str, object], team_id: str | None) -> dict[str, object]:
+    def _prompt_options(
+        self,
+        map_options: dict[str, object],
+        sender: ResourceRef,
+        team_id: str | None,
+    ) -> dict[str, object]:
         thread = str(map_options.get("thread") or "")
         if thread and not ResourceRef.REF_ID_PATTERN.match(thread):
             raise ValidationError(f"unusable thread: {thread!r}")
@@ -292,6 +347,10 @@ class DeliveryStore:
             map_prompt["no_reply"] = True
         if team_id:
             map_prompt["team"] = team_id
+        sender_ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=sender.id.split("~")[0])
+        if sender.kind == ResourceKinds.AGENT.name and self._resources.exists(sender_ref):
+            sender_agent = self._resources.get(sender_ref)
+            map_prompt["sender_title"] = str(sender_agent.map_attributes.get("title") or sender_agent.name)
         return map_prompt
 
     def _thread_hops(self, thread: str) -> int:
@@ -517,12 +576,13 @@ class DeliveryStore:
             ).fetchall()
         return [self._delivery_of(row) for row in list_rows]
 
-    def list_recent(self, agent_id: str | None, limit: int) -> list[Delivery]:
+    def list_recent(self, agent_id: str | None, limit: int, sender_id: str | None = None) -> list[Delivery]:
         """The latest deliveries, newest first.
 
         Args:
             agent_id: only those for this agent, or None for all
             limit: the greatest number to return
+            sender_id: only those this agent sent, or None for all
 
         Returns:
             the deliveries
@@ -532,6 +592,9 @@ class DeliveryStore:
         if agent_id:
             list_conditions.append("agent_id = ?")
             list_params.append(agent_id)
+        if sender_id:
+            list_conditions.append("sender_kind = ? AND sender_id = ?")
+            list_params.extend([ResourceKinds.AGENT.name, sender_id])
         list_params.append(max(1, min(limit, self.DELIVERY_LIST_MAX)))
         with self._resources.database.reading() as connection:
             list_rows = connection.execute(

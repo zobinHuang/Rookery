@@ -1,7 +1,6 @@
-import json
 from dataclasses import dataclass
 from roost.errors import NotFoundError, ValidationError
-from roost.events import Event, EventLog, EventVerbs
+from roost.events import EventLog, EventVerbs
 from roost.resources import Resource, ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
 
 
@@ -175,59 +174,6 @@ class TeamRoster:
             list_members.append(map_card)
         map_payload["members"] = list_members
         return map_payload
-
-    def bind_launches(self, list_events: list[Event]) -> None:
-        """Give each agent a launch started its identity and teams, as the launch asked: a launch's options
-        name its `role` and its `teams`, each a team and a duty; the agent names its launch as it starts."""
-        for event in list_events:
-            if event.verb != EventVerbs.STARTED or event.actor.kind != ResourceKinds.AGENT.name:
-                continue
-            launch_id = str(event.map_detail.get("launch") or "")
-            if not launch_id:
-                continue
-            map_launch = self._launch(launch_id)
-            if map_launch is None:
-                continue
-            self._apply_launch(event.actor.id, map_launch)
-
-    def _launch(self, launch_id: str) -> dict[str, object] | None:
-        with self._resources.database.reading() as connection:
-            row = connection.execute(
-                "SELECT options FROM deliveries WHERE kind = 'spawn' AND json_extract(options, '$.launch') = ?",
-                (launch_id,),
-            ).fetchone()
-        if row is None:
-            return None
-        map_options = json.loads(row["options"])
-        return map_options if isinstance(map_options, dict) else None
-
-    def _apply_launch(self, agent_id: str, map_launch: dict[str, object]) -> None:
-        agent_ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=agent_id)
-        role = str(map_launch.get("role") or "").strip()
-        if role:
-            with self._resources.database.transaction() as connection:
-                agent = self._resources.get(agent_ref)
-                if agent.map_attributes.get("role"):
-                    role = ""
-                else:
-                    agent.map_attributes["role"] = role
-                    self._resources.put(agent, connection)
-            if role:
-                self._events.record_change(None, EventVerbs.UPDATED, agent_ref)
-        list_teams = map_launch.get("teams")
-        if not isinstance(list_teams, list):
-            return
-        for map_team in list_teams:
-            if not isinstance(map_team, dict):
-                continue
-            team_ref = ResourceRef(kind=ResourceKinds.TEAM.name, id=str(map_team.get("team") or ""))
-            if (
-                not self._resources.exists(team_ref)
-                or agent_id in self.members_of(self._resources.get(team_ref))
-            ):
-                continue
-            team_id = team_ref.id
-            self.join(team_id, agent_id, str(map_team.get("duty") or ""), None)
 
     @classmethod
     def members_of(cls, team: Resource) -> dict[str, dict[str, object]]:

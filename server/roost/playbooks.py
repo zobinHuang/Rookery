@@ -405,6 +405,50 @@ class PlaybookIndex:
         )
         return list_record[:limit]
 
+    def resolve_launch(self, playbook_id: str, list_skill_ids: list[str]) -> dict[str, object]:
+        """What a launched session installs: its playbook resolved, if it names one, with further skills at
+        their latest version; with none, the skills alone under no playbook id.
+
+        Args:
+            playbook_id: the playbook, or empty for none
+            list_skill_ids: the further skills
+
+        Returns:
+            a resolution as `resolve` renders it
+
+        Raises:
+            NotFoundError: if the playbook is not stored
+        """
+        if playbook_id:
+            map_resolved = self.resolve(playbook_id).as_payload()
+        else:
+            map_resolved = {
+                "id": "",
+                "name": "Skills chosen at launch",
+                "description": "",
+                "prompt": "",
+                "skills": [],
+                "unresolved": [],
+                "resolved_at": GitRefResolver.now_timestamp(),
+            }
+        list_skills = map_resolved["skills"]
+        set_present = {skill["skill_id"] for skill in list_skills if isinstance(skill, dict)}
+        for skill_id in list_skill_ids:
+            if skill_id in set_present:
+                continue
+            try:
+                skill, version = self._skills.resolve_version(skill_id, SkillPin.PIN_LATEST)
+            except (NotFoundError, ValidationError) as err:
+                map_resolved["unresolved"].append({
+                    "skill_id": skill_id,
+                    "pin": SkillPin.PIN_LATEST,
+                    "reason": err.message,
+                })
+                continue
+            list_skills.append(ResolvedSkill.of(skill, version, SkillPin.PIN_LATEST).as_payload())
+            set_present.add(skill_id)
+        return map_resolved
+
     def resolve(self, record_id: str) -> ResolvedPlaybook:
         """Pin every skill of a playbook to a commit, asking upstream as needed.
 

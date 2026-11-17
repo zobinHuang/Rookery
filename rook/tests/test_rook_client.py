@@ -348,3 +348,87 @@ class AgentCommandsTest(QueueAndSendTest):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TeamCommandsTest(QueueAndSendTest):
+    """Teams as an agent sees them through rook: told at its start, told of changes, and messaging them."""
+
+    report = AgentCommandsTest.report
+    run_client = AgentCommandsTest.run_client
+    start_agent = AgentCommandsTest.start_agent
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.server = self.start_server()
+        self.connect(self.server.bound_port())
+        for agent_id in ("a", "b", "c"):
+            self.start_agent(agent_id, "idle", "2026-11-17T10:00:00.000+00:00", {"title": f"agent {agent_id}"})
+        self.server.catalog.create("team", {"id": "api", "name": "API", "attributes": {"goal": "ship v2"}})
+        self.server.roster.join("api", "a", "server", None)
+        self.server.roster.join("api", "b", "tests", None)
+        patcher = mock.patch.object(rook_client.AgentPane, "session_here", return_value="a")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def hook_output(self, payload: dict[str, object]) -> dict[str, object] | None:
+        stdout = io.StringIO()
+        with mock.patch.object(sys, "stdout", stdout):
+            self.hook(payload)
+        return json.loads(stdout.getvalue()) if stdout.getvalue() else None
+
+    def test_a_starting_session_is_told_its_teams_and_teammates(self) -> None:
+        output = self.hook_output({"session_id": "a", "hook_event_name": "SessionStart"})
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("Team API (id api), goal: ship v2", context)
+        self.assertIn("- you, agent a", context)
+        self.assertIn("duty here: tests", context)
+        self.assertIn("rook team send", context)
+
+    def test_a_session_in_no_team_is_told_nothing(self) -> None:
+        self.assertIsNone(self.hook_output({"session_id": "c", "hook_event_name": "SessionStart"}))
+
+    def test_a_launched_session_joins_its_teams_before_it_is_told_them(self) -> None:
+        self.report([{"actor": {"kind": "rook", "id": "studio"}, "verb": "connected"}])
+        self.server.link.spawn_on_rook(
+            ResourceRef("person", "user"),
+            "studio",
+            "",
+            {"cwd": "/src", "launch": "l-new", "teams": [{"team": "api", "duty": "docs"}]},
+        )
+        with mock.patch.dict(os.environ, {"ROOK_LAUNCH": "l-new"}):
+            output = self.hook_output({"session_id": "d", "hook_event_name": "SessionStart"})
+        self.assertIn("- you, agent d", output["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(self.server.roster.members_of(self.server.roster.teams()[0])["d"]["duty"], "docs")
+
+    def test_a_prompt_is_told_what_changed_in_its_teams(self) -> None:
+        self.hook_output({"session_id": "a", "hook_event_name": "SessionStart"})
+        self.server.roster.join("api", "c", "docs", None)
+        self.server.roster.leave("api", "b", None)
+        with mock.patch.object(rook_client.TeamBriefing, "BRIEFING_CHECK_SECONDS", 0):
+            output = self.hook_output({"session_id": "a", "hook_event_name": "UserPromptSubmit"})
+            context = output["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("agent c joined as: docs", context)
+            self.assertIn("agent b left", context)
+            self.assertIsNone(self.hook_output({"session_id": "a", "hook_event_name": "UserPromptSubmit"}))
+
+    def test_an_answer_and_a_team_message_carry_their_thread(self) -> None:
+        first = self.run_client(["message", "b", "does", "the", "schema", "hold?"]).split()
+        thread = first[first.index("thread") + 1]
+        self.run_client(["message", "b", "--thread", thread, "--no-reply", "never", "mind"])
+        list_sent = self.server.deliveries.list_recent(agent_id="b", limit=10)
+        self.assertEqual({delivery.map_options["thread"] for delivery in list_sent}, {thread})
+        self.assertTrue(list_sent[0].map_options["no_reply"])
+        self.run_client(["team", "send", "api", "v2", "is", "tagged"])
+        self.assertEqual(self.server.deliveries.list_recent(agent_id="b", limit=10)[0].map_options["team"], "api")
+        inbox = self.run_client(["inbox"])
+        self.assertIn("to b", inbox)
+        self.assertIn("v2 is tagged", inbox)
+
+    def test_role_and_focus_go_on_the_agents_card(self) -> None:
+        self.run_client(["me", "role", "API", "owner"])
+        self.run_client(["me", "focus", "auth", "tokens"])
+        map_attributes = self.server.resources.get(ResourceRef("agent", "a")).map_attributes
+        self.assertEqual((map_attributes["role"], map_attributes["focus"]), ("API owner", "auth tokens"))
+        self.assertIn("role: API owner", self.run_client(["me"]))
+        self.assertIn("now: auth tokens", self.run_client(["team", "roster", "api"]))
+

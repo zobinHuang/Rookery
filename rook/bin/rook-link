@@ -148,6 +148,9 @@ class DeliveryDesk:
     DESK_UNKNOWN_STATE = "idle"
     DESK_KEEP_FINISHED_SECONDS = 2 * 24 * 3600
     DESK_OPEN = "open"
+    """Named in a session a launch starts, which the session reports as it starts."""
+    DESK_LAUNCH_ENV = "ROOK_LAUNCH"
+    DESK_PLAYBOOK_TOOL = ".local/bin/rook-playbook"
 
     def __init__(self, typer: PaneTyper) -> None:
         self._typer = typer
@@ -217,14 +220,28 @@ class DeliveryDesk:
 
     @staticmethod
     def framed(map_delivery: dict[str, object]) -> str:
-        """The text as the agent reads it: a person's as written, another agent's with who sent it and how
-        to answer."""
+        """The text as the agent reads it: a person's as written, another agent's with who sent it, in which
+        team and thread, and how to answer, or that no answer is wanted."""
         text = str(map_delivery["text"])
         map_sender = map_delivery["sender"]
         if map_sender.get("kind") != "agent":
             return text
         sender_id = map_sender["id"]
-        return f'Message from agent {sender_id}, through rook:\n\n{text}\n\nTo answer: rook message {sender_id} "..."'
+        map_options = map_delivery.get("options") or {}
+        thread = str(map_options.get("thread") or "")
+        team = str(map_options.get("team") or "")
+        sender = f'agent {sender_id}' + (f' ("{map_options["sender_title"]}")' if map_options.get("sender_title") else "")
+        heading = f"Message from {sender}" + (f" to team {team}" if team else "") + ", through rook"
+        if thread:
+            heading += f" (thread {thread})"
+        if map_options.get("no_reply"):
+            footer = "No answer wanted: do not reply to this message."
+        else:
+            thread_flag = f" --thread {thread}" if thread else ""
+            footer = f'To answer: rook message {sender_id}{thread_flag} "..."'
+            if team:
+                footer += f'; to answer the whole team: rook team send {team}{thread_flag} "..."'
+        return f"{heading}:\n\n{text}\n\n{footer}"
 
     def _advance(self, map_record: dict[str, object], accepts_prompts: bool) -> None:
         map_delivery = map_record["delivery"]
@@ -325,12 +342,36 @@ class DeliveryDesk:
             return
         prompt = str(map_delivery.get("text") or "")
         command = f"{harness} {shlex.quote(prompt)}" if prompt else harness
+        launch_id = str(map_options.get("launch") or "")
+        if launch_id:
+            command = f"{self.DESK_LAUNCH_ENV}={shlex.quote(launch_id)} {command}"
+            if map_options.get("playbook") or map_options.get("skills"):
+                command = f"{self._install_command(launch_id, harness, map_options)}; {command}"
         try:
             pane = self._typer.open_window(rook_client.AgentPane.latest_tmux_socket(), cwd, command)
         except RookLinkError as err:
             self._finish(map_record, "failed", err.message)
             return
         self._finish(map_record, "delivered", f"started {harness} in {cwd}, pane {pane}")
+
+    @classmethod
+    def _install_command(cls, launch_id: str, harness: str, map_options: dict[str, object]) -> str:
+        """The shell command that installs a launch's playbook and skills into the directory its session
+        starts in, bound to the session's pane, before the session starts."""
+        install_id = str(map_options.get("playbook") or launch_id)
+        return " ".join([
+            shlex.quote(str(Path.home() / cls.DESK_PLAYBOOK_TOOL)),
+            "install",
+            shlex.quote(install_id),
+            "--launch",
+            shlex.quote(launch_id),
+            "--agent",
+            shlex.quote(harness),
+            "--project",
+            ".",
+            '--pane "$TMUX_PANE"',
+            "--quiet",
+        ])
 
     def _finish(self, map_record: dict[str, object], status: str, reason: str) -> None:
         map_record["status"] = status

@@ -137,6 +137,27 @@ class DeliveryDeskTest(AgentInPaneTest):
         self.assertIn("Message from agent s-9", self.typer.list_typed[0])
         self.assertIn('rook message s-9 "..."', self.typer.list_typed[0])
 
+    def test_a_team_message_names_its_thread_and_how_to_answer_it(self) -> None:
+        self.start_session()
+        self.desk.accept(self.delivery(
+            "d-1",
+            "v2 is tagged",
+            {"kind": "agent", "id": "s-9"},
+            options={"thread": "t-1", "team": "api", "sender_title": "API server"},
+        ))
+        self.desk.accept(self.delivery("d-22", "done", {"kind": "agent", "id": "s-9"}, options={"thread": "t-1", "no_reply": True}))
+        self.desk.process(accepts_prompts=True)
+        typed = self.typer.list_typed[0]
+        self.assertIn('Message from agent s-9 ("API server") to team api, through rook (thread t-1)', typed)
+        self.assertIn('rook message s-9 --thread t-1 "..."', typed)
+        self.assertIn('rook team send api --thread t-1 "..."', typed)
+        self.assertIn("No answer wanted", rook_link.DeliveryDesk.framed(self.delivery(
+            "d-22",
+            "done",
+            {"kind": "agent", "id": "s-9"},
+            options={"thread": "t-1", "no_reply": True},
+        )))
+
     def test_nothing_is_typed_when_prompts_are_off(self) -> None:
         self.start_session()
         self.desk.accept(self.delivery("d-1", "rm -rf"))
@@ -196,6 +217,22 @@ class DeliveryDeskTest(AgentInPaneTest):
         self.assertEqual(self.typer.list_opened, [(directory, "claude 'fix the flaky test'")])
         self.assertEqual(self.outcome("d-1")["status"], "delivered")
         self.assertEqual(self.outcome("d-22")["status"], "failed")
+
+    def test_a_launch_names_itself_and_installs_its_playbook_first(self) -> None:
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        self.desk.accept(self.delivery(
+            "d-1",
+            "",
+            kind="spawn",
+            options={"cwd": directory, "harness": "claude", "launch": "l-1", "playbook": "review"},
+        ))
+        self.desk.process(accepts_prompts=True)
+        [(opened_in, command)] = self.typer.list_opened
+        self.assertEqual(opened_in, directory)
+        install, _, start = command.partition("; ")
+        self.assertIn("rook-playbook install review --launch l-1 --agent claude --project .", install)
+        self.assertEqual(start, "ROOK_LAUNCH=l-1 claude")
 
     def test_an_ended_session_cannot_be_reached(self) -> None:
         self.start_session()

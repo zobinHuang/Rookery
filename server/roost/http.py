@@ -122,6 +122,16 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             self._route_messages(method, list_segments, map_query)
         elif collection == "teams":
             self._route_teams(method, list_segments, map_query)
+        elif collection == "launches" and len(list_segments) == 3 and list_segments[2] == "resolve" and method == "GET":
+            map_options = self.server.deliveries.launch(list_segments[1]).map_options
+            list_skills = map_options.get("skills")
+            self._respond_json(
+                HTTPStatus.OK,
+                self.server.playbooks.resolve_launch(
+                    str(map_options.get("playbook") or ""),
+                    [str(skill_id) for skill_id in list_skills] if isinstance(list_skills, list) else [],
+                ),
+            )
         else:
             raise NotFoundError(self._no_such_route(method, list_segments))
 
@@ -434,8 +444,9 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             return
         if list_segments == ["messages"] and method == "GET":
             list_deliveries = self.server.deliveries.list_recent(
-                self._query_text(map_query, "agent"),
-                self._index_limit(map_query, DeliveryStore.DELIVERY_LIST_MAX),
+                agent_id=self._query_text(map_query, "agent"),
+                limit=self._index_limit(map_query, DeliveryStore.DELIVERY_LIST_MAX),
+                sender_id=self._query_text(map_query, "sender"),
             )
             self._respond_json(
                 HTTPStatus.OK,
@@ -749,8 +760,8 @@ class RoostServer(ThreadingHTTPServer):
         self.events = EventLog(self.resources, store.title_of)
         self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)
         self.roster = TeamRoster(self.resources, self.events)
-        self.events.add_listener(self.roster.bind_launches)
         self.deliveries = DeliveryStore(self.resources, self.events, self.roster)
+        self.events.add_listener(self.deliveries.bind_launches)
         self.link = LinkHub(config, self.resources, self.events, self.deliveries)
         self._name_untitled_agents()
         self.stream_slots = threading.BoundedSemaphore(self.SERVER_STREAMS_MAX)

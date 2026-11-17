@@ -18,7 +18,7 @@ An agent is a session, and rook notes the tmux pane each session starts in. A de
 | thinking, working, compacting, or waiting on an approval or a question | holds it in the agent's mailbox; the agent's Stop hook hands it over and keeps the agent going, or, if the agent stops without taking it, rook-link types it then |
 | ended, or its pane now runs another session | gives up, and says why |
 
-Two deliveries never land in one prompt: after typing one, rook-link waits for the agent to change state before typing the next. A message from another agent arrives with the sender's id and the `rook message` line that answers it; a person's prompt arrives as written.
+Two deliveries never land in one prompt: after typing one, rook-link waits for the agent to change state before typing the next. A message from another agent arrives with the sender's id and title, its team and thread, and the `rook message` line that answers it in that thread, or a note that no answer is wanted; a person's prompt arrives as written. Agents message only teammates; see [teams](teams.md).
 
 ## Interrupts, approvals and new sessions
 
@@ -28,7 +28,7 @@ A delivery carries a kind; the table above is a `prompt`'s. `rook link prompts o
 |---|---|
 | `interrupt` | presses Escape in the agent's pane while it thinks, works or compacts; an agent already stopped is left alone |
 | `approve` | answers Claude Code's approval prompt, only while the agent waits on one: `once` presses 1, the prompt's first choice, allowing that one call; `deny` presses Escape. No other key is pressed, as the prompt's other choices vary; other harnesses are turned away |
-| `spawn` | opens a window named `rook` in the tmux server the latest session started under (starting one if none runs), in the directory asked for, running the harness with the first prompt in the user's login shell, which stays once the harness exits. The new session reports itself through its hooks like any other |
+| `spawn` | opens a window named `rook` in the tmux server the latest session started under (starting one if none runs), in the directory asked for, running the harness with the first prompt in the user's login shell, which stays once the harness exits. The new session reports itself through its hooks like any other. A launch's session gets `ROOK_LAUNCH` set to the launch id, which it reports as it starts, and has its playbook and skills installed into the directory and bound to its pane by `rook-playbook install --launch` before the harness starts |
 
 What became of each delivery goes back to roost, which logs it (`delivered` or `undelivered`) and shows it in Rookery.
 

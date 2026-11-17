@@ -96,6 +96,7 @@ final class Preferences {
     private static let switcherHotkeyKey = "switcherHotkey"
     private static let cycleHotkeyKey = "cycleHotkey"
     private static let stageHotkeyKey = "stageHotkey"
+    private static let rightSidebarHotkeyKey = "rightSidebarHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let stageRightSidebarCollapsedKey = "isStageRightSidebarCollapsed"
     private static let stageRightSidebarTabKey = "stageRightSidebarTab"
@@ -117,6 +118,7 @@ final class Preferences {
     static let defaultSwitcherHotkey = Hotkey(keyCode: kVK_Tab, modifiers: [.option])
     static let defaultCycleHotkey = Hotkey(keyCode: kVK_ANSI_Grave, modifiers: [.control, .option])
     static let defaultStageHotkey = Hotkey(keyCode: kVK_Return, modifiers: [.control, .option])
+    static let defaultRightSidebarHotkey = Hotkey(keyCode: kVK_ANSI_Backslash, modifiers: [.control, .option])
     /// What the screen saver says while the user has set nothing.
     static let defaultScreenSaverText = "Be right back"
     static let defaultScreenSaverTextSize: Double = 72
@@ -280,6 +282,13 @@ final class Preferences {
         }
     }
 
+    /// Folds the stage's right sidebar to a strip of icons, or opens it.
+    var rightSidebarHotkey: Hotkey {
+        didSet {
+            store(rightSidebarHotkey, forKey: Self.rightSidebarHotkeyKey)
+        }
+    }
+
     /// Opens or closes the stage.
     var stageHotkey: Hotkey {
         didSet {
@@ -311,6 +320,7 @@ final class Preferences {
         switcherHotkey = Self.load(forKey: Self.switcherHotkeyKey, from: defaults) ?? Self.defaultSwitcherHotkey
         cycleHotkey = Self.load(forKey: Self.cycleHotkeyKey, from: defaults) ?? Self.defaultCycleHotkey
         stageHotkey = Self.load(forKey: Self.stageHotkeyKey, from: defaults) ?? Self.defaultStageHotkey
+        rightSidebarHotkey = Self.load(forKey: Self.rightSidebarHotkeyKey, from: defaults) ?? Self.defaultRightSidebarHotkey
     }
 
     /// Put every shortcut back to its default.
@@ -320,6 +330,7 @@ final class Preferences {
         switcherHotkey = Self.defaultSwitcherHotkey
         cycleHotkey = Self.defaultCycleHotkey
         stageHotkey = Self.defaultStageHotkey
+        rightSidebarHotkey = Self.defaultRightSidebarHotkey
     }
 
     private func store(_ hotkey: Hotkey, forKey key: String) {

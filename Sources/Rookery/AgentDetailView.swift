@@ -215,7 +215,7 @@ struct AgentDetailView: View {
                 } label: {
                     Text("Allow Once")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(StageButtonStyle(kind: .prominent))
                 .help("Allow the call it waits to run, this once")
             }
         }

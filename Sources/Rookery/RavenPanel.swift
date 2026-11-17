@@ -275,7 +275,7 @@ struct RavenPanel: View {
                         Text(Self.verb(of: proposal))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(StageButtonStyle(kind: .prominent))
                 .disabled(isSending)
             }
             .controlSize(.small)
@@ -506,14 +506,12 @@ struct RavenPanel: View {
                 Text("Run on")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(StageColors.tertiaryText)
-                Picker("Run on", selection: Binding(get: { fleetModel.ravenEngine }, set: { fleetModel.ravenEngine = $0 })) {
-                    Text("Claude Code").tag(RavenConversation.engineClaude)
-                    Text("Codex").tag(RavenConversation.engineCodex)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.mini)
-                .fixedSize()
+                StageSegmentedControl(
+                    selection: Binding(get: { fleetModel.ravenEngine }, set: { fleetModel.ravenEngine = $0 }),
+                    listOptions: [RavenConversation.engineClaude, RavenConversation.engineCodex],
+                    title: { $0 == RavenConversation.engineCodex ? "Codex" : "Claude Code" },
+                    isSmall: true
+                )
             }
             .padding(.leading, 4)
         }

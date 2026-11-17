@@ -126,6 +126,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
 
     /// Called after a structural or user initiated workspace change.
     var onChange: (() -> Void)?
+    /// Told the group a switch is bringing forward as soon as it is asked for, and nil once the last switch
+    /// asked for is done, so a stage can show the switch under way before its windows are in place.
+    var onSwitchTarget: ((GroupId?) -> Void)?
     /// Called when a managed window's displayed title changes, without changing workspace structure.
     var onWindowTitleChange: ((WindowId) -> Void)?
     /// The browsers playing a video in the sidebar, which are never hidden: a hidden browser stops drawing
@@ -554,8 +557,15 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     ///     it, else the one under the cursor
     func switchTo(_ groupId: GroupId?, bringingToFront frontWindowId: WindowId? = nil, onStage stageId: StageId? = nil) async {
         switchRequestCount += 1
+        let requestCount = switchRequestCount
+        if let groupId {
+            onSwitchTarget?(groupId)
+        }
         await enqueue {
             await self.performSwitch(to: groupId, bringingToFront: frontWindowId, onStage: stageId)
+        }
+        if switchRequestCount == requestCount {
+            onSwitchTarget?(nil)
         }
     }
 

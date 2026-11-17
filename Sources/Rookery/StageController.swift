@@ -47,6 +47,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private static let fadeOutDelay = Duration.milliseconds(240)
     private static let mouseReleasePollInterval = Duration.milliseconds(100)
     private static let snapDuration: TimeInterval = 0.28
+    /// How long a switch runs before the stage shows it under way.
+    private static let switchIndicatorDelay: Duration = .milliseconds(160)
 
     let stageId: StageId
     private let workspaceController: WorkspaceController
@@ -72,6 +74,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     /// Where the stage was when the user started dragging it.
     private var moveStartOrigin: CGPoint?
     private var tabDragTask: Task<Void, Never>?
+    private var switchIndicatorTask: Task<Void, Never>?
     /// The frame to go back to when a maximized stage is double-clicked again.
     private var unmaximizedFrame: CGRect?
     /// Whether the stage is moving along with its dragged front window, which then moves itself.
@@ -468,6 +471,23 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         model.isSidebarCollapsed.toggle()
         preferences.isStageSidebarCollapsed = model.isSidebarCollapsed
         relayout()
+    }
+
+    /// Show a switch under way to one of this stage's groups once it has taken longer than a moment, so a
+    /// quick switch does not flicker; clear it when the switch is done.
+    func noteSwitchTarget(_ groupId: GroupId?) {
+        switchIndicatorTask?.cancel()
+        guard let groupId, workspaceController.groups(ofStage: stageId).contains(where: { $0.groupId == groupId }) else {
+            model.switchingGroupId = nil
+            return
+        }
+        switchIndicatorTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.switchIndicatorDelay)
+            guard !Task.isCancelled else {
+                return
+            }
+            self?.model.switchingGroupId = groupId
+        }
     }
 
     func toggleRightSidebar() {

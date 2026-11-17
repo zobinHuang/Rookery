@@ -152,6 +152,8 @@ final class StageModel {
     var pageBefore: StagePage?
     var sidebarMode = SidebarMode.groups
     var rightSidebarTab = RightSidebarTab.calendar
+    /// The group a switch is bringing forward, while it takes long enough to show; nil otherwise.
+    var switchingGroupId: GroupId?
     var isRightSidebarCollapsed = false
     /// The theme Rookery draws in now, chosen or the system's, which picks the theme button's symbol.
     var shownTheme = Theme.light

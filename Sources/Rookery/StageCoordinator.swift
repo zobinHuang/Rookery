@@ -84,6 +84,11 @@ final class StageCoordinator: DropSurface {
         }
     }
 
+    /// Fold or open the right sidebar of the stage under the cursor, if one is open there.
+    func toggleRightSidebarOnCursorDisplay() {
+        stage(at: NSEvent.mouseLocation)?.toggleRightSidebar()
+    }
+
     /// Open a stage unless one is open already, filling the display under the cursor.
     func openOnCursorDisplay() {
         guard !isAnyOpen else {
@@ -211,6 +216,13 @@ final class StageCoordinator: DropSurface {
             stage.refresh()
         }
         listStages.removeAll { $0.isClosed }
+    }
+
+    /// Show the group a switch is bringing forward on the stage that holds it, until the switch is done.
+    func noteSwitchTarget(_ groupId: GroupId?) {
+        for stage in listStages where !stage.isClosed {
+            stage.noteSwitchTarget(groupId)
+        }
     }
 
     /// Update only the title-bearing rows affected by a window title change.

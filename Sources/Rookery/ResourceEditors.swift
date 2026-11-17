@@ -102,7 +102,7 @@ struct EditorActions: View {
                     Text("Save")
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(StageButtonStyle(kind: .prominent))
             .disabled(!isChanged || isSaving)
             .keyboardShortcut("s", modifiers: .command)
         }
@@ -769,7 +769,7 @@ struct AgentInspector: View {
             } label: {
                 RookeryLabel("Open Agent", icon: .arrowRight, spacing: 4)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(StageButtonStyle(kind: .prominent))
             .controlSize(.regular)
         }
     }

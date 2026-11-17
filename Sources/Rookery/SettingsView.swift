@@ -86,6 +86,7 @@ struct SettingsView: View {
         .background(onClose == nil ? StageColors.window : .clear)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, preferences.theme)
+        .buttonStyle(StageButtonStyle())
     }
 
     private var general: some View {
@@ -188,7 +189,7 @@ struct SettingsView: View {
                     Button("Connect") {
                         connectRoost()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
                     .disabled(roostAddressDraft.isEmpty || roostTokenDraft.isEmpty)
                 }
             }
@@ -205,13 +206,7 @@ struct SettingsView: View {
                 SettingsMessage(text: roostError)
             }
             SettingsRow(title: "Log Times", detail: "in Rookmaster's log") {
-                Picker("", selection: $preferences.logClock) {
-                    ForEach(LogClock.allCases, id: \.self) { clock in
-                        Text(clock.title).tag(clock)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
+                StageSegmentedControl(selection: $preferences.logClock, listOptions: LogClock.allCases, title: \.title)
             }
         }
         .onAppear {
@@ -296,17 +291,17 @@ struct SettingsView: View {
         let address = account.listAddresses.first ?? account.name
         return SettingsRow(title: address, detail: account.isEnabled ? account.name : "\(account.name), off in Mail") {
             HStack(spacing: 10) {
-                Picker("Kind", selection: Binding(
-                    get: { settings.kind(of: address).isEmpty ? MailAccountSettings.kindPersonal : settings.kind(of: address) },
-                    set: { kind in
-                        updateMailSettings { $0.mapKinds[address.lowercased()] = kind }
-                    }
-                )) {
-                    Text("Personal").tag(MailAccountSettings.kindPersonal)
-                    Text("Work").tag(MailAccountSettings.kindWork)
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
+                StageSegmentedControl(
+                    selection: Binding(
+                        get: { settings.kind(of: address).isEmpty ? MailAccountSettings.kindPersonal : settings.kind(of: address) },
+                        set: { kind in
+                            updateMailSettings { $0.mapKinds[address.lowercased()] = kind }
+                        }
+                    ),
+                    listOptions: [MailAccountSettings.kindPersonal, MailAccountSettings.kindWork],
+                    title: { $0 == MailAccountSettings.kindWork ? "Work" : "Personal" },
+                    isSmall: true
+                )
                 Toggle("Raven may read", isOn: Binding(
                     get: { settings.isMailAllowed(address) },
                     set: { isAllowed in
@@ -405,6 +400,7 @@ struct SettingsView: View {
                 .fixedSize()
             }
             recorderRow("Open or Close Stage", hotkey: preferences.stageHotkey) { preferences.stageHotkey = $0 }
+            recorderRow("Fold or Open Right Sidebar", hotkey: preferences.rightSidebarHotkey) { preferences.rightSidebarHotkey = $0 }
             recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
             recorderRow("Group Switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
             recorderRow("Next Window in Group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
@@ -568,7 +564,7 @@ struct SettingsView: View {
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .frame(minWidth: 96)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(StageButtonStyle())
             .tint(isRecording ? .accentColor : nil)
         }
     }

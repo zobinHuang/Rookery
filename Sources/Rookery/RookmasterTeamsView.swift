@@ -414,7 +414,7 @@ private struct TeamDetail: View {
                     Button("Let It Go") {
                         decide(delivery, isReleased: true)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
                 }
                 .controlSize(.small)
             }

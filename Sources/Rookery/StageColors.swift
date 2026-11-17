@@ -58,12 +58,48 @@ enum StageColors {
         highContrastLight: contrastActiveBorderLight,
         highContrastDark: contrastActiveBorderDark
     )
-    /// The chosen segment of a segmented switch.
+    /// The chosen segment of a segmented switch or a row of tabs: a raised white tinted with the accent in
+    /// the light theme, a lit accent wash in the dark one.
     static let selectedSegment = StageColor(
-        light: .white,
-        dark: slate(0x2A2F3A),
+        light: NSColor.white.blended(withFraction: 0.1, of: .controlAccentColor) ?? .white,
+        dark: NSColor.controlAccentColor.withAlphaComponent(0.26),
         highContrastLight: .white,
         highContrastDark: .black
+    )
+    /// The groove a segmented switch or a row of tabs sits in.
+    static let segmentGroove = StageColor(
+        light: slate(0x1A2233, alpha: 0.06),
+        dark: slate(0xC8D2E6, alpha: 0.07),
+        highContrastLight: .white,
+        highContrastDark: .black
+    )
+    /// A button's face, and under the pointer.
+    static let control = StageColor(
+        light: NSColor(white: 1, alpha: 0.95),
+        dark: slate(0xC8D2E6, alpha: 0.1),
+        highContrastLight: .white,
+        highContrastDark: .black
+    )
+    static let controlHovered = StageColor(
+        light: .white,
+        dark: slate(0xC8D2E6, alpha: 0.16),
+        highContrastLight: contrastActiveBorderLight.withAlphaComponent(0.12),
+        highContrastDark: contrastActiveBorderDark.withAlphaComponent(0.2)
+    )
+    static let controlBorder = StageColor(
+        light: slate(0x1A2233, alpha: 0.12),
+        dark: slate(0xC8D2E6, alpha: 0.1),
+        highContrastLight: contrastBorderLight,
+        highContrastDark: contrastBorderDark
+    )
+    /// The lines of a calendar's grid: as faint as the separators in the regular themes, and in the
+    /// high-contrast ones a quiet grey of the text's color rather than the panels' outline, so the hours
+    /// read without caging the events.
+    static let gridLine = StageColor(
+        light: slate(0x1A2233, alpha: 0.08),
+        dark: slate(0xC8D2E6, alpha: 0.07),
+        highContrastLight: NSColor(white: 0, alpha: 0.16),
+        highContrastDark: NSColor(white: 1, alpha: 0.2)
     )
     /// A sidebar row under the pointer: a faint wash, tinted with the selected outline's color in the
     /// high-contrast themes.

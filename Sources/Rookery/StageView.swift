@@ -109,13 +109,36 @@ struct StageView: View {
                 .frame(width: model.sidebarWidth)
             VStack(spacing: 0) {
                 tabBar
-                    .frame(height: showsTabBar ? StageModel.tabBarHeight : StageModel.contentInset)
+                    .opacity(switchingGroupName == nil ? 1 : 0)
+                    .overlay(alignment: .leading) {
+                        if let switchingGroupName {
+                            SwitchingTabs(groupName: switchingGroupName)
+                                .transition(.opacity)
+                        }
+                    }
+                    .frame(height: showsTabBar ? StageModel.tabBarHeight : (isPageFullBleed ? 0 : StageModel.contentInset))
                     .opacity(showsTabBar ? 1 : 0)
                     .clipped()
                     .allowsHitTesting(showsTabBar)
                 content
-                    .padding(.trailing, StageModel.contentInset)
-                    .padding(.bottom, StageModel.contentInset)
+                    .overlay {
+                        if let switchingGroupName, model.shownPage == nil {
+                            VStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.regular)
+                                Text("Bringing up \(switchingGroupName)…")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(StageColors.secondaryText)
+                            }
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 14)
+                            .background(StageColors.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    .padding(.trailing, isPageFullBleed ? 0 : StageModel.contentInset)
+                    .padding(.bottom, isPageFullBleed ? 0 : StageModel.contentInset)
             }
             RightSidebarView(
                 model: model,
@@ -130,6 +153,7 @@ struct StageView: View {
         .background(StageColors.window)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, model.shownTheme)
+        .buttonStyle(StageButtonStyle())
         .opacity(model.isVisible ? 1 : 0)
         .animation(.easeOut(duration: 0.22), value: model.isVisible)
         .animation(Self.zoneAnimation, value: model.highlightedZone)
@@ -138,8 +162,24 @@ struct StageView: View {
         .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
         .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
         .animation(Self.sidebarAnimation, value: model.isRightSidebarCollapsed)
+        .animation(.easeOut(duration: 0.18), value: model.switchingGroupId)
         .animation(Self.sidebarAnimation, value: sidebarMode)
         .animation(Self.sidebarAnimation, value: showsTabBar)
+    }
+
+    /// The name of the group a switch is bringing forward, while it is under way and its tabs are not yet the
+    /// ones shown.
+    private var switchingGroupName: String? {
+        guard let switchingGroupId = model.switchingGroupId else {
+            return nil
+        }
+        return model.listGroups.first { $0.groupId == switchingGroupId && !$0.isActive }?.name
+    }
+
+    /// Whether a page of Rookery's own fills the content area edge to edge, between the sidebars, rather
+    /// than sitting in the rounded frame a window is laid in: while one is shown and nothing is dragged.
+    private var isPageFullBleed: Bool {
+        model.shownPage != nil && !showsDropZones
     }
 
     /// Whether the tabs show above the content: not while a page of Rookery's own fills it, unless a window
@@ -496,6 +536,11 @@ struct StageView: View {
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
+                        if model.switchingGroupId == row.groupId && !row.isActive {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .transition(.opacity)
+                        }
                         if isHovered && model.editingGroupId != row.groupId {
                             groupMenu(row)
                                 .transition(.opacity)
@@ -861,9 +906,13 @@ struct StageView: View {
 
     // MARK: - Content
 
+    private var contentCornerRadius: CGFloat {
+        isPageFullBleed ? 0 : 12
+    }
+
     private var content: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous)
                 .fill(StageColors.content)
             if model.shownPage == .settings {
                 SettingsView(
@@ -926,10 +975,10 @@ struct StageView: View {
                 .transition(.opacity)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(StageColors.contrastBorder)
+            RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous)
+                .strokeBorder(isPageFullBleed ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.contrastBorder))
                 .allowsHitTesting(false)
         }
         .animation(Self.zoneAnimation, value: model.shownPage)
@@ -1257,3 +1306,53 @@ struct ZoneFrameReporter: ViewModifier {
         }
     }
 }
+
+/// The tab bar while a switch brings a group forward: the group's name with a spinner, and placeholder
+/// tabs a light sweeps across, until the group's own tabs arrive.
+struct SwitchingTabs: View {
+    private static let placeholderWidths: [CGFloat] = [150, 120, 170]
+
+    let groupName: String
+
+    @State private var phase: CGFloat = -1
+
+    var body: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text(groupName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(StageColors.selectedTab, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            ForEach(Self.placeholderWidths, id: \.self) { width in
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(StageColors.idleTab)
+                    .frame(width: width, height: 30)
+                    .overlay {
+                        GeometryReader { proxy in
+                            LinearGradient(
+                                colors: [.clear, Color.white.opacity(0.18), .clear],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                            .frame(width: proxy.size.width * 0.6)
+                            .offset(x: phase * proxy.size.width * 1.6)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 6)
+        .onAppear {
+            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
+                phase = 1
+            }
+        }
+    }
+}
+

@@ -363,7 +363,7 @@ private struct ResourceInspector: View {
                                 Text("Save")
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(StageButtonStyle(kind: .prominent))
                         .disabled(!isChanged || isSaving)
                         .keyboardShortcut("s", modifiers: .command)
                     }

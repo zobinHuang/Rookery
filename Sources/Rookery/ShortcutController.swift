@@ -81,6 +81,9 @@ final class ShortcutController {
         bind(preferences.stageHotkey, name: "stage") { [weak self] in
             self?.stages.toggleOnCursorDisplay()
         }
+        bind(preferences.rightSidebarHotkey, name: "right sidebar") { [weak self] in
+            self?.stages.toggleRightSidebarOnCursorDisplay()
+        }
         bind(preferences.showAllHotkey, name: "all windows") { [weak self] in
             guard let workspaceController = self?.workspaceController else {
                 return

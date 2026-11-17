@@ -275,7 +275,7 @@ private struct HostDetail: View {
             } label: {
                 RookeryLabel("New Agent", icon: .plus, spacing: 5)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(StageButtonStyle(kind: .prominent))
             .disabled(rookName.map(hosts.isOnline) != true)
         }
     }
@@ -583,7 +583,7 @@ private struct WorkdirEditor: View {
                     saved.role = saved.role.trimmingCharacters(in: .whitespacesAndNewlines)
                     onSave(saved)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(StageButtonStyle(kind: .prominent))
                 .disabled(!workdir.path.trimmingCharacters(in: .whitespaces).hasPrefix("/"))
             }
         }

@@ -24,13 +24,11 @@ struct LaunchOptionsEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             EditorSection(title: "Agent") {
-                Picker("Agent", selection: $workdir.harness) {
-                    Text("Claude Code").tag(Workdir.harnessClaude)
-                    Text("Codex").tag(Workdir.harnessCodex)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 220)
+                StageSegmentedControl(
+                    selection: $workdir.harness,
+                    listOptions: Workdir.listHarnesses,
+                    title: { $0 == Workdir.harnessCodex ? "Codex" : "Claude Code" }
+                )
             }
             EditorSection(title: "Playbook", hint: "installed into the directory before it starts") {
                 Picker("Playbook", selection: $workdir.playbookId) {
@@ -209,7 +207,7 @@ struct RemoteDirectoryBrowser: View {
                         onChoose(path)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(StageButtonStyle(kind: .prominent))
                 .disabled(directory == nil || isLoading)
             }
             .controlSize(.small)
@@ -401,7 +399,7 @@ struct LaunchForm: View {
                     Button("Cancel", action: close)
                         .keyboardShortcut(.cancelAction)
                     Button("Start Agent", action: start)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(StageButtonStyle(kind: .prominent))
                         .keyboardShortcut(.defaultAction)
                         .disabled(blocker != nil)
                 }

@@ -135,7 +135,7 @@ struct AgentDetailView: View {
         let listTeams = fleetModel.teams.listTeams.filter { $0.listAgentIds.contains(agent.id) }
         return HStack(spacing: 8) {
             if let roleDraft {
-                TextField("Who it is to its teammates", text: Binding(get: { roleDraft }, set: { self.roleDraft = $0 }))
+                TextField("Who it is to its teammates; empty lets Rookery write it", text: Binding(get: { roleDraft }, set: { self.roleDraft = $0 }))
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 12))
                     .frame(width: 260)
@@ -148,7 +148,19 @@ struct AgentDetailView: View {
                     isRoleFocused = true
                 } label: {
                     HStack(spacing: 4) {
-                        Text(agent.role.isEmpty ? "Give it a role" : agent.role)
+                        if agent.roleSource == AgentIdentity.sourceAuto && !agent.role.isEmpty {
+                            Text("auto")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(StageColors.tertiaryText)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .strokeBorder(StageColors.separator)
+                                }
+                                .help("Rookery writes this role from the agent's work and keeps it up to date")
+                        }
+                        Text(agent.role.isEmpty ? "Rookery writes its role after its first prompt" : agent.role)
                             .foregroundStyle(agent.role.isEmpty ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColors.secondaryText))
                             .lineLimit(1)
                         RookeryIconView(.chevronDown)
@@ -180,9 +192,16 @@ struct AgentDetailView: View {
         guard role != agent.role else {
             return
         }
+        let source = role.isEmpty ? AgentIdentity.sourceAuto : AgentIdentity.sourceUser
         Task {
             do {
-                try await fleetModel.update(FleetRef(kind: AgentFleet.agentKind, id: agent.id), body: ["attributes": .object(["role": .string(role)])])
+                try await fleetModel.update(
+                    FleetRef(kind: AgentFleet.agentKind, id: agent.id),
+                    body: ["attributes": .object(role.isEmpty
+                        ? ["role": .string(role), AgentIdentity.roleSourceKey: .string(source), AgentIdentity.checkedOffsetKey: .null]
+                        : ["role": .string(role), AgentIdentity.roleSourceKey: .string(source)]
+                    )]
+                )
             } catch {
                 sendError = FleetModel.describe(error)
             }

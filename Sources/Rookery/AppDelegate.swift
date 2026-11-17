@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mixerController = MixerController()
     private lazy var agentUsageMonitor = AgentUsageMonitor(preferences: preferences)
     private lazy var fleetModel = FleetModel(preferences: preferences)
+    private lazy var identityKeeper = AgentIdentityKeeper(fleetModel: fleetModel)
     private var settingsWindowController: SettingsWindowController?
     /// Records a new shortcut in the settings, wherever they show, with the shortcuts suspended meanwhile.
     private lazy var shortcutRecorder = ShortcutRecorder(
@@ -78,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         agentUsageMonitor.start()
         fleetModel.start()
+        identityKeeper.start()
         preferences.onAgentAccountsChange = { [weak self] in
             self?.agentUsageMonitor.accountsDidChange()
         }
@@ -117,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controlServer?.stop()
         mixerController.stop()
         agentUsageMonitor.stop()
+        identityKeeper.stop()
         fleetModel.stop()
     }
 

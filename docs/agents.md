@@ -13,7 +13,7 @@ The sidebar's Agents mode shows every code agent roost knows of, one crow each p
 - Sessions only; a session's subagents fold under it behind a count.
 - The user's teams first, then the rest by last activity, then those that ended, folded away.
 - Teams live on roost ([teams](../rook/docs/teams.md)), so their agents know them too; an agent may be in several, and shows under each, tagged with the others. This Mac keeps only the layout in `agent-teams.json`: the order of the teams and of the agents in each, and which are folded. Teams made here before roost held them are carried over to it once. Drag an agent onto a team to add it, holding Option to move it out of the team it was dragged from; onto an agent in a team to put it before; onto New Team to start one; or onto Unassigned to take it out of the team it came from. Drag a team's header to reorder teams. A change shows at once and is written to roost; if roost refuses it, the sidebar says why and takes roost's teams back.
-- Each agent's row shows what it works on now, or its role, as it set them with `rook me`.
+- Each agent's row shows what it works on now, or its role, as Rookery keeps them or the agent set them with `rook me`.
 - A machine whose rook is offline dims its agents.
 
 ## The crows
@@ -49,6 +49,8 @@ New Agent, in the Agents list, on a host's page and on each workdir, starts an a
 ## Teams
 
 The Teams tab of Rookmaster shows each team: its goal, which its agents are told; its members' cards with their role, focus, state and host, and their duty in the team, which the user edits in place; the messages its agents sent one another and to the whole team, oldest first; a box to speak to the whole team as the user; and the limits past which roost holds a message. A held message shows its reason with Cancel and Let It Go; the tab and the team's row count those still held. An agent's page shows its role, which the user may change, its focus and its teams.
+
+Rookery keeps every rook agent's role (who it is to its teammates) and focus (what it works on now) written, so no one has to (`AgentIdentityKeeper`). Every 90 seconds it reads what each live agent's transcript grew by on roost, through a `TranscriptReader` begun where it last stopped, and digests it (`TranscriptDigest`: how many prompts and compactions, the first and latest prompts, the latest compaction summary and reply). An agent's identity is due once the user first prompts it and it lacks a role or a focus, and again after its context is compacted or 20 prompts later; Rookery then asks the code agent Raven runs on, with its smallest model, no tools and no session kept (`claude -p --model haiku --tools "" --no-session-persistence`, or `codex exec --ephemeral`), for one JSON line of each, and writes them with `role_source` and `focus_source` set to `auto` and `identity_checked_offset` set to the transcript's length. Where each came from decides what it may overwrite: a role the user wrote on the agent's page (`user`) or the agent wrote with `rook me role` (`agent`) is kept as written; one a launch gave (`launch`, which Raven always writes when it proposes an agent) is the starting point and is brought up to date like Rookery's own; a focus the agent set itself stands for an hour. Emptying the role on the agent's page hands it back to Rookery. A transcript first seen, or grown by more than 8 MB since, is read only at its last 2 MB, and its start for the first prompt; an agent the model failed for waits ten minutes.
 
 ## Raven
 

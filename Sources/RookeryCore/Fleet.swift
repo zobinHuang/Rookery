@@ -204,6 +204,8 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
     public var role: String
     /// What it works on now, as it last said; empty when unset.
     public var focus: String
+    /// Where the role came from: the user, the agent itself, its launch or Rookery; empty when unknown.
+    public var roleSource: String
 
     public init(
         id: String,
@@ -220,7 +222,8 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
         parentId: String? = nil,
         lastUsedAt: String = "",
         role: String = "",
-        focus: String = ""
+        focus: String = "",
+        roleSource: String = ""
     ) {
         self.id = id
         self.name = name
@@ -237,6 +240,7 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
         self.lastUsedAt = lastUsedAt
         self.role = role
         self.focus = focus
+        self.roleSource = roleSource
     }
 
     /// The agent an agent resource describes.
@@ -260,7 +264,8 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
             parentId: mapAttributes["parent"]?.stringValue,
             lastUsedAt: resource.lastUsedAt,
             role: mapAttributes["role"]?.stringValue ?? "",
-            focus: mapAttributes["focus"]?.stringValue ?? ""
+            focus: mapAttributes["focus"]?.stringValue ?? "",
+            roleSource: mapAttributes[AgentIdentity.roleSourceKey]?.stringValue ?? ""
         )
     }
 

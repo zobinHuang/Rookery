@@ -36,6 +36,8 @@ struct CalendarPage: View {
     @State private var isAdding = false
     @State private var eventToRemove: CalendarEventSummary?
     @State private var problem: String?
+    /// The calendar a new event starts on, as the user set in the settings.
+    @State private var defaultCalendarId: String?
     /// Whether the events of the span shown have been read once.
     @State private var hasLoaded = false
     /// The event being dragged to a new time, and how far it has moved.
@@ -107,7 +109,7 @@ struct CalendarPage: View {
         }
         .overlay {
             if isAdding {
-                NewEventForm(listCalendars: listCalendars.filter(\.isWritable), day: anchor) { calendarId, title, start, end, isAllDay, location in
+                NewEventForm(listCalendars: listCalendars.filter(\.isWritable), defaultCalendarId: defaultCalendarId, day: anchor) { calendarId, title, start, end, isAllDay, location in
                     add(calendarId: calendarId, title: title, start: start, end: end, isAllDay: isAllDay, location: location)
                 } onCancel: {
                     isAdding = false
@@ -546,6 +548,7 @@ struct CalendarPage: View {
         }
         do {
             listCalendars = try await service.allowedCalendars()
+            defaultCalendarId = await service.defaultCalendarId()
             listEvents = try await service.events(from: first, to: end)
             problem = nil
         } catch {
@@ -628,6 +631,8 @@ struct CalendarCheckStyle: ToggleStyle {
 /// the calendar page.
 struct NewEventForm: View {
     let listCalendars: [CalendarSummary]
+    /// The calendar chosen when the form opens: the user's default, if it takes events.
+    var defaultCalendarId: String?
     let day: Date
     let onAdd: (String, String, Date, Date, Bool, String) -> Void
     let onCancel: () -> Void
@@ -683,7 +688,7 @@ struct NewEventForm: View {
             .transition(.scale(scale: 0.96).combined(with: .opacity))
         }
         .onAppear {
-            calendarId = listCalendars.first?.id ?? ""
+            calendarId = listCalendars.first { $0.id == defaultCalendarId }?.id ?? listCalendars.first?.id ?? ""
             let hour = Calendar.current.component(.hour, from: .now) + 1
             start = Calendar.current.date(bySettingHour: min(hour, 23), minute: 0, second: 0, of: day) ?? day
             end = start.addingTimeInterval(3600)

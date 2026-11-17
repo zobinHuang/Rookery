@@ -88,14 +88,14 @@ public enum MailTool: String, CaseIterable, Sendable {
             ], required: ["body"])
         case .proposeEvent:
             Self.schema([
-                "calendar_id": Self.text("The calendar's id, from list_accounts"),
+                "calendar_id": Self.text("The calendar's id, from list_accounts; left out, the user's default calendar, marked `default` there"),
                 "title": Self.text("The title"),
                 "start": Self.text("ISO 8601"),
                 "end": Self.text("ISO 8601"),
                 "all_day": Self.flag("A day-long event"),
                 "location": Self.text("Where"),
                 "notes": Self.text("Notes"),
-            ], required: ["calendar_id", "title", "start", "end"])
+            ], required: ["title", "start", "end"])
         case .proposeEventChange:
             Self.schema([
                 "event_id": Self.text("The event's id, from list_events"),

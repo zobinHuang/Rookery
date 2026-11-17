@@ -9,6 +9,8 @@ protocol MailSource: Actor {
     func unreadCount() async throws -> Int
     func events(from start: Date, to end: Date) async throws -> [CalendarEventSummary]
     func allowedCalendars() async throws -> [CalendarSummary]
+    /// The calendar new events go on when none is named, by its id; nil when the user chose none.
+    func defaultCalendarId() async -> String?
     func search(_ query: MailQuery) async throws -> [MailMessageSummary]
     func inboxCounts() async throws -> [String: MailboxCount]
     func message(_ messageId: Int) async throws -> MailMessageDetail?

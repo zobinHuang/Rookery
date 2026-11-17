@@ -134,6 +134,17 @@ struct MailDataTests {
         #expect(!settings.isCalendarAccountAllowed("iCloud"))
         #expect(settings.kind(of: "ME@work.com") == "work")
     }
+
+    @Test func settingsKeptBeforeTheDefaultCalendarReadWithNone() throws {
+        let older = Data(#"{"setHiddenMail": [], "setHiddenCalendarAccounts": ["iCloud"], "mapKinds": {}}"#.utf8)
+        let settings = try JSONDecoder().decode(MailAccountSettings.self, from: older)
+        #expect(settings.defaultCalendarId == nil)
+        #expect(!settings.isCalendarAccountAllowed("iCloud"))
+        var chosen = settings
+        chosen.defaultCalendarId = "work-calendar"
+        let roundTrip = try JSONDecoder().decode(MailAccountSettings.self, from: JSONEncoder().encode(chosen))
+        #expect(roundTrip.defaultCalendarId == "work-calendar")
+    }
 }
 
 struct CalendarDayTests {

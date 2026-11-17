@@ -368,11 +368,19 @@ public struct MailAccountSettings: Codable, Equatable, Sendable {
     public var setHiddenCalendarAccounts: Set<String>
     /// Each account's kind, `personal` or `work`, by address.
     public var mapKinds: [String: String]
+    /// The calendar new events go on when no other is named, by its id; nil when the user chose none.
+    public var defaultCalendarId: String?
 
-    public init(setHiddenMail: Set<String> = [], setHiddenCalendarAccounts: Set<String> = [], mapKinds: [String: String] = [:]) {
+    public init(
+        setHiddenMail: Set<String> = [],
+        setHiddenCalendarAccounts: Set<String> = [],
+        mapKinds: [String: String] = [:],
+        defaultCalendarId: String? = nil
+    ) {
         self.setHiddenMail = setHiddenMail
         self.setHiddenCalendarAccounts = setHiddenCalendarAccounts
         self.mapKinds = mapKinds
+        self.defaultCalendarId = defaultCalendarId
     }
 
     /// Whether Raven may read a mail account.

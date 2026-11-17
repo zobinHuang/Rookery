@@ -123,7 +123,11 @@ actor MailService: MailSource {
             title = try await checkDraft(&mapPayload)
         case .proposeEvent:
             action = .addEvent
-            let calendarId = try Self.string(mapArguments, "calendar_id")
+            let namedId = mapArguments["calendar_id"]?.stringValue ?? ""
+            guard let calendarId = namedId.isEmpty ? loadSettings().defaultCalendarId : namedId else {
+                throw MailToolError.badArgument("name a calendar_id: the user has no default calendar; ask which calendar to use")
+            }
+            mapPayload["calendar_id"] = .string(calendarId)
             guard let calendar = try calendars.calendars().first(where: { $0.id == calendarId }), calendar.isWritable else {
                 throw MailToolError.badArgument("no calendar \(calendarId) that takes events")
             }
@@ -309,6 +313,10 @@ actor MailService: MailSource {
     }
 
     /// The calendars Raven and the stage may show.
+    func defaultCalendarId() -> String? {
+        loadSettings().defaultCalendarId
+    }
+
     func allowedCalendars() async throws -> [CalendarSummary] {
         let setAllowed = try await allowedCalendarIds()
         return try calendars.calendars().filter { setAllowed.contains($0.id) }
@@ -476,6 +484,7 @@ actor MailService: MailSource {
                 "title": .string(calendar.title),
                 "account": .string(calendar.accountTitle),
                 "takes_events": .bool(calendar.isWritable),
+                "default": .bool(calendar.id == settings.defaultCalendarId),
             ])
         }
         return .object(["mail_accounts": .array(listMail), "calendars": .array(listCalendarRows)])

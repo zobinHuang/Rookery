@@ -438,8 +438,18 @@ public struct AgentLaunch: Equatable, Identifiable, Sendable {
     public let startedAt: Date
     public var deliveryId: String?
     public var phase: Phase
+    /// Where the rook started it, as it reported.
+    public var paneNote: String = ""
 
-    public init(launchId: String, title: String, rookName: String, cwd: String, startedAt: Date, deliveryId: String? = nil, phase: Phase = .starting) {
+    public init(
+        launchId: String,
+        title: String,
+        rookName: String,
+        cwd: String,
+        startedAt: Date,
+        deliveryId: String? = nil,
+        phase: Phase = .starting
+    ) {
         self.launchId = launchId
         self.title = title
         self.rookName = rookName

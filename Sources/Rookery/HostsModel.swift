@@ -240,10 +240,14 @@ final class HostsModel {
                 }
                 if delivery.status == "delivered" {
                     deliveredAt = .now
+                    launch.paneNote = delivery.reason
                 }
             }
             if let deliveredAt, Date.now.timeIntervalSince(deliveredAt) > Self.reportInDeadline {
-                launch.phase = .failed("the rook started it, but the session never reported in")
+                launch.phase = .failed(
+                    "The rook started it (\(launch.paneNote)), but the session never reported in. "
+                        + "It may be waiting in its tmux pane, at Claude Code's prompt to trust a new folder."
+                )
                 update(launch)
                 return
             }

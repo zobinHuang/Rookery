@@ -103,7 +103,7 @@ struct RookmasterTeamsView: View {
     private func row(_ team: FleetResource) -> some View {
         let ref = FleetRef(kind: AgentFleet.teamKind, id: team.id)
         let isSelected = selectedRef == ref
-        let listMembers = AgentTeams.memberIds(of: team).compactMap { fleetModel.fleet.mapAgents[$0] }
+        let listMembers = AgentTeams.memberIds(of: team).compactMap { fleetModel.fleet.mapAgents[$0] }.filter { !$0.isRookeryOwn }
         let heldCount = fleetModel.heldCount(in: team.id)
         return Button {
             withAnimation(.easeOut(duration: 0.15)) {

@@ -82,6 +82,17 @@ struct FleetTests {
         #expect(graph.name(of: FleetRef(kind: "agent", id: "s-1~a3c5")) == "G-Watch › subagent")
     }
 
+    @Test func leavesOutWhatTheHarnessAddsInTheUsersName() {
+        var reader = TranscriptReader()
+        let lines = [
+            #"{"type":"user","message":{"role":"user","content":"what is running?"}}"#,
+            #"{"type":"user","isSynthetic":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /x"}]}}"#,
+            #"{"type":"user","isMeta":true,"message":{"role":"user","content":"Caveat: the messages below"}}"#,
+        ]
+        reader.append(Data((lines.joined(separator: "\n") + "\n").utf8))
+        #expect(reader.listEntries.map(\.text) == ["what is running?"])
+    }
+
     @Test func readsASubagentsTranscriptFromTheSessionTheHarnessWroteIt() {
         #expect(FleetAgent.transcriptSessionId(of: "6ca28427~a3c52ad0") == "agent-a3c52ad0")
         #expect(FleetAgent.transcriptSessionId(of: "6ca28427") == "6ca28427")

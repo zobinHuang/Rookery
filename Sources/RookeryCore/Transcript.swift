@@ -177,7 +177,10 @@ public struct TranscriptReader: Sendable {
             add(.command(command), "", timestamp: timestamp)
             return
         }
-        guard object["isMeta"]?.boolValue != true else {
+        guard
+            object["isMeta"]?.boolValue != true,
+            object["isSynthetic"]?.boolValue != true
+        else {
             return
         }
         let role: TranscriptEntry.Role = type == "user" ? .user : .assistant

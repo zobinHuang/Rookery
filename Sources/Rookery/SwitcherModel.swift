@@ -87,8 +87,6 @@ enum SwitcherLayout {
     static let cardSize = CGSize(width: 136, height: 130)
     static let spacing: CGFloat = 10
     static let padding: CGFloat = 16
-    static let hintHeight: CGFloat = 14
-    static let hintSpacing: CGFloat = 12
     /// Room around the cards for the selected one, which grows a little.
     static let cardInset: CGFloat = 4
     /// Room around the switcher for its shadow.
@@ -102,7 +100,7 @@ enum SwitcherLayout {
         let maxColumns = max(1, Int((usableWidth + spacing) / (cardSize.width + spacing)))
         let columns = max(1, min(count, maxColumns))
         let rows = (count + columns - 1) / columns
-        let usableHeight = area.height - (fitInset + shadowMargin + padding + cardInset) * 2 - hintHeight - hintSpacing
+        let usableHeight = area.height - (fitInset + shadowMargin + padding + cardInset) * 2
         let maxRows = max(1, Int((usableHeight + spacing) / (cardSize.height + spacing)))
         return SwitcherGrid(columns: columns, rows: rows, visibleRows: min(rows, maxRows))
     }
@@ -113,7 +111,7 @@ enum SwitcherLayout {
             width: CGFloat(grid.columns) * cardSize.width + CGFloat(grid.columns - 1) * spacing
                 + (padding + shadowMargin + cardInset) * 2,
             height: CGFloat(grid.visibleRows) * cardSize.height + CGFloat(grid.visibleRows - 1) * spacing
-                + hintSpacing + hintHeight + (padding + shadowMargin + cardInset) * 2
+                + (padding + shadowMargin + cardInset) * 2
         )
     }
 }

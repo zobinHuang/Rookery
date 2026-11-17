@@ -16,15 +16,8 @@ struct SwitcherView: View {
     }
 
     var body: some View {
-        VStack(spacing: SwitcherLayout.hintSpacing) {
-            cards
-            Text("⇥ or arrow keys to move   release \(model.holdSymbols) to switch   esc to cancel")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(height: SwitcherLayout.hintHeight)
-        }
-        .padding(SwitcherLayout.padding)
+        cards
+            .padding(SwitcherLayout.padding)
         .modifier(TraySurface(cornerRadius: 26))
         .shadow(color: .black.opacity(0.2), radius: 24, y: 10)
         .scaleEffect(model.isVisible ? 1 : 0.94)

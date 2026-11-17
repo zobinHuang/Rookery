@@ -91,13 +91,17 @@ struct RavenPanel: View {
                     Spacer(minLength: 0)
                 }
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(openId == nil ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                .foregroundStyle(openId == nil ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(
-                    openId == nil ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColor.clear),
-                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                )
+                .background {
+                    if openId == nil {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(StageColors.selectedRow)
+                            .strokeBorder(StageColors.contrastActiveBorder)
+                            .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                    }
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -132,7 +136,7 @@ struct RavenPanel: View {
                         }
                 } else {
                     FittingText(conversation.title, size: 12, weight: .semibold)
-                        .foregroundStyle(isOpen ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
+                        .foregroundStyle(StageColors.primaryText)
                 }
                 HStack(spacing: 5) {
                     if raven.isRunning(conversation.id) {
@@ -150,10 +154,14 @@ struct RavenPanel: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                isOpen ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColor.clear),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
+            .background {
+                if isOpen {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(StageColors.selectedRow)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

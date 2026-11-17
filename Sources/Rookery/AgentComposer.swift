@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The box to write to an agent in. At rest it is one line in a capsule, its button at the end; once the
@@ -80,6 +81,9 @@ struct AgentComposer: View {
             .focused(isFocused)
             .disabled(!isEnabled)
             .onKeyPress(phases: .down) { keyPress in
+                guard !Self.isComposing else {
+                    return .ignored
+                }
                 if let onKey, onKey(keyPress) == .handled {
                     return .handled
                 }
@@ -91,6 +95,13 @@ struct AgentComposer: View {
                 }
                 return .handled
             }
+    }
+
+    /// Whether an input method is composing in the focused field, as Pinyin does before its candidate is
+    /// chosen: Return then commits the candidate and the arrows move among candidates, so neither sends or
+    /// works the suggestions.
+    private static var isComposing: Bool {
+        (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
     }
 
     @ViewBuilder

@@ -1791,32 +1791,25 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Where a window belongs when it is shown: its place before Rookery hid it, or where it is now.
-    /// Note a managed window that is not where its stage keeps it, so it is put back: one on a stage that is
-    /// no longer in place, as when the user resizes it or its application moves it, and, while the stages
-    /// are open, one on screen though its stage does not show it, as Telegram's when it shows its window
-    /// again by itself. Where a window is is where the window server draws it: an application can report a
-    /// frame it does not draw at. Managed windows stay with their stage until released.
+    /// Note a managed window on a stage that is no longer where its stage keeps it, as when the user resizes
+    /// it or its application moves it, so it is put back: managed windows stay with their stage until
+    /// released. Where a window is is where the window server draws it: an application can report a frame
+    /// it does not draw at.
     private func noteIfDisplaced(_ record: WindowRecord) {
         guard
             !record.isMinimized,
             !record.isFullscreen,
-            let group = workspace.group(containing: record.windowId)
+            let group = workspace.group(containing: record.windowId),
+            let stageId = mapGroupStageIds[group.groupId],
+            let contentFrame = mapStageContentFrames[stageId],
+            !Self.isFrame(record.seenFrame, closeTo: contentFrame),
+            mapUnfitFrames[record.windowId].map({ Self.isFrame(record.seenFrame, closeTo: $0) }) != true
         else {
             return
         }
-        if !isShownOnStage(record.windowId, in: group) {
-            guard isStageOpen, record.isOnScreen else {
-                return
-            }
-        } else {
-            guard
-                let stageId = mapGroupStageIds[group.groupId],
-                let contentFrame = mapStageContentFrames[stageId],
-                !Self.isFrame(record.seenFrame, closeTo: contentFrame),
-                mapUnfitFrames[record.windowId].map({ Self.isFrame(record.seenFrame, closeTo: $0) }) != true
-            else {
-                return
-            }
+        let isHidden = workspace.listHiddenWindows.contains { $0.windowId == record.windowId }
+        if !isHidden && !isShownOnStage(record.windowId, in: group) {
+            return
         }
         setDisplacedIds.insert(record.windowId)
         guard putBackTask == nil else {
@@ -1846,7 +1839,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     /// Put a displaced managed window back where its stage keeps it: in the content area if it is its
-    /// stage's front window, minimized again if it is hidden, and hidden if it shows though no stage does.
+    /// stage's front window, minimized again if it is hidden.
     private func putBack(_ windowId: WindowId) async {
         if workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) {
             await minimizeAgain(windowId)
@@ -1856,20 +1849,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return
         }
         guard isShownOnStage(windowId, in: group) else {
-            guard isStageOpen, WindowServer.window(withId: windowId)?.isOnScreen == true else {
-                return
-            }
-            if isInFrontmostApplication(windowId) {
-                Self.logger.notice("window \(windowId.rawValue) shows off its stage in the application in front; following it")
-                await performSwitch(to: group.groupId, bringingToFront: windowId, onStage: focusedStageId())
-                return
-            }
-            Self.logger.notice("window \(windowId.rawValue) shows though no stage shows it; hiding it")
-            do {
-                try await hide(windowId)
-            } catch {
-                Self.logger.error("cannot hide window \(windowId.rawValue) that shows off its stage: \(error, privacy: .public)")
-            }
             return
         }
         guard

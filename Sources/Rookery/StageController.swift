@@ -111,6 +111,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         panel.minSize = Self.minimumSize
         panel.collectionBehavior = [.fullScreenNone]
         model.isSidebarCollapsed = preferences.isStageSidebarCollapsed
+        model.isRightSidebarCollapsed = preferences.isStageRightSidebarCollapsed
+        model.rightSidebarTab = RightSidebarTab(rawValue: preferences.stageRightSidebarTab) ?? .calendar
 
         let background = NSView()
         background.wantsLayer = true
@@ -468,6 +470,20 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         relayout()
     }
 
+    func toggleRightSidebar() {
+        model.isRightSidebarCollapsed.toggle()
+        preferences.isStageRightSidebarCollapsed = model.isRightSidebarCollapsed
+        relayout()
+    }
+
+    func showRightSidebarTab(_ tab: RightSidebarTab) {
+        model.rightSidebarTab = tab
+        preferences.stageRightSidebarTab = tab.rawValue
+        if model.isRightSidebarCollapsed {
+            toggleRightSidebar()
+        }
+    }
+
     func exitStage() {
         close()
     }
@@ -740,7 +756,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         return ScreenGeometry.windowServerFrame(fromAppKit: CGRect(
             x: stageFrame.minX + sidebarWidth,
             y: stageFrame.minY + StageModel.contentInset,
-            width: stageFrame.width - sidebarWidth - StageModel.contentInset,
+            width: stageFrame.width - sidebarWidth - StageModel.contentInset - model.rightSidebarWidth,
             height: stageFrame.height - StageModel.tabBarHeight - StageModel.contentInset
         ))
     }

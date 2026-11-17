@@ -78,13 +78,11 @@ struct StageGroupRow: Identifiable, Equatable {
 enum SidebarMode: String, CaseIterable {
     case groups
     case agents
-    case mixer
 
     var title: String {
         switch self {
         case .groups: "Windows"
         case .agents: "Agents"
-        case .mixer: "Mixer"
         }
     }
 
@@ -92,7 +90,29 @@ enum SidebarMode: String, CaseIterable {
         switch self {
         case .groups: .windows
         case .agents: .agent
-        case .mixer: .mixer
+        }
+    }
+}
+
+/// What the right sidebar shows: the day's calendar, the unread mail, or the mixer.
+enum RightSidebarTab: String, CaseIterable {
+    case calendar
+    case mail
+    case mixer
+
+    var title: String {
+        switch self {
+        case .calendar: "Today"
+        case .mail: "Unread"
+        case .mixer: "Mixer"
+        }
+    }
+
+    var symbol: RookeryIcon {
+        switch self {
+        case .calendar: .calendar
+        case .mail: .mail
+        case .mixer: .sliders
         }
     }
 }
@@ -104,6 +124,8 @@ final class StageModel {
     /// Fixed sizes shared by the view and the window layout, in points.
     static let sidebarWidth: CGFloat = 232
     static let collapsedSidebarWidth: CGFloat = 64
+    static let rightSidebarWidth: CGFloat = 300
+    static let collapsedRightSidebarWidth: CGFloat = 52
     static let tabBarHeight: CGFloat = 44
     static let contentInset: CGFloat = 10
 
@@ -129,6 +151,8 @@ final class StageModel {
     /// window.
     var pageBefore: StagePage?
     var sidebarMode = SidebarMode.groups
+    var rightSidebarTab = RightSidebarTab.calendar
+    var isRightSidebarCollapsed = false
     /// The theme Rookery draws in now, chosen or the system's, which picks the theme button's symbol.
     var shownTheme = Theme.light
     /// The cities the world clock shows.
@@ -171,6 +195,11 @@ final class StageModel {
         isSidebarCollapsed ? Self.collapsedSidebarWidth : Self.sidebarWidth
     }
 
+    /// The right sidebar's width as laid out now.
+    var rightSidebarWidth: CGFloat {
+        isRightSidebarCollapsed ? Self.collapsedRightSidebarWidth : Self.rightSidebarWidth
+    }
+
     /// The zone to light up, from a dragged window or a dragged tab.
     var highlightedZone: StageZone? {
         if let hoveredZone {
@@ -195,8 +224,14 @@ enum StagePage: Hashable {
     case agent(String)
     /// The console over every resource roost manages.
     case rookmaster
+    /// Every account's calendars, by day, week or month.
+    case calendar
+    /// Every account's mail, by folder, with a reader.
+    case mail
 
     private static let rookmasterId = "page:rookmaster"
+    private static let calendarId = "page:calendar"
+    private static let mailId = "page:mail"
     private static let settingsId = "page:settings"
     private static let agentPrefix = "page:agent:"
 
@@ -206,6 +241,8 @@ enum StagePage: Hashable {
         case .rookmaster: Self.rookmasterId
         case .settings: Self.settingsId
         case .agent(let agentId): Self.agentPrefix + agentId
+        case .calendar: Self.calendarId
+        case .mail: Self.mailId
         case .screenSaver: nil
         }
     }
@@ -216,6 +253,10 @@ enum StagePage: Hashable {
             self = .rookmaster
         } else if switcherId == Self.settingsId {
             self = .settings
+        } else if switcherId == Self.calendarId {
+            self = .calendar
+        } else if switcherId == Self.mailId {
+            self = .mail
         } else if switcherId.hasPrefix(Self.agentPrefix) {
             self = .agent(String(switcherId.dropFirst(Self.agentPrefix.count)))
         } else {

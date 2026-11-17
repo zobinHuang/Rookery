@@ -129,3 +129,49 @@ public enum MailDrafts {
     }
 }
 
+/// Changes the user asks Mail to make to a message, found in its inboxes by its `Message-ID`.
+@MainActor
+public enum MailActions {
+    /// Mark a message read or unread.
+    ///
+    /// - Throws: `MailScriptingError`
+    public static func markRead(messageId: String, isRead: Bool) throws {
+        _ = try MailScripting.run("""
+            tell application "Mail"
+                set read status of (every message of inbox whose message id is \(MailDrafts.quoted(messageId))) to \(isRead)
+            end tell
+            """)
+    }
+
+    /// Flag a message, or take its flag off.
+    ///
+    /// - Throws: `MailScriptingError`
+    public static func flag(messageId: String, isFlagged: Bool) throws {
+        _ = try MailScripting.run("""
+            tell application "Mail"
+                set flagged status of (every message of inbox whose message id is \(MailDrafts.quoted(messageId))) to \(isFlagged)
+            end tell
+            """)
+    }
+
+    /// Open Mail's reply to an inbox message, for the user to write and send.
+    ///
+    /// - Throws: `MailScriptingError`
+    public static func reply(messageId: String) throws {
+        _ = try MailScripting.run("""
+            tell application "Mail"
+                set theMessages to (every message of inbox whose message id is \(MailDrafts.quoted(messageId)))
+                if (count of theMessages) is 0 then error "the message is not in an inbox"
+                reply (item 1 of theMessages) opening window yes
+                activate
+            end tell
+            """)
+    }
+
+    /// The address that opens a message in Mail.
+    public nonisolated static func url(messageId: String) -> URL? {
+        let encoded = ("<" + messageId + ">").addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: ".@-_"))) ?? messageId
+        return URL(string: "message://" + encoded)
+    }
+}
+

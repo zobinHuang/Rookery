@@ -51,19 +51,23 @@ public struct CalendarSummary: Codable, Equatable, Sendable {
     /// The account's kind: `caldav` (Google, iCloud), `exchange`, `local`, `subscribed` or `birthdays`.
     public let accountKind: String
     public let isWritable: Bool
+    /// Its color, as `#rrggbb`.
+    public let colorHex: String
 
     public init(
         id: String,
         title: String,
         accountTitle: String,
         accountKind: String,
-        isWritable: Bool
+        isWritable: Bool,
+        colorHex: String = ""
     ) {
         self.id = id
         self.title = title
         self.accountTitle = accountTitle
         self.accountKind = accountKind
         self.isWritable = isWritable
+        self.colorHex = colorHex
     }
 }
 
@@ -116,6 +120,21 @@ public enum MailFolder: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// The folder's name as a list of folders shows it.
+    public var title: String {
+        switch self {
+        case .inbox: "Inbox"
+        case .sent: "Sent"
+        case .drafts: "Drafts"
+        case .junk: "Junk"
+        case .trash: "Trash"
+        case .archive: "Archive"
+        case .starred: "Starred"
+        case .important: "Important"
+        case .other: "Other"
+        }
+    }
+
     /// Whether messages here are left out of a search unless asked for.
     public var isHiddenByDefault: Bool {
         self == .junk || self == .trash
@@ -134,7 +153,7 @@ public struct MailAddress: Codable, Equatable, Sendable {
 }
 
 /// A message as a search lists it.
-public struct MailMessageSummary: Codable, Equatable, Sendable {
+public struct MailMessageSummary: Codable, Equatable, Identifiable, Sendable {
     /// Its row in Mail's library, which `read_mail` takes.
     public let id: Int
     /// The account's address.
@@ -190,6 +209,8 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
     /// Whether Mail holds only part of it: attachments or long parts not yet downloaded, which opening it in
     /// Mail fetches; its text is usually there.
     public let isPartial: Bool
+    /// Its `Message-ID` header, without the angle brackets, by which Mail finds it.
+    public let messageIdHeader: String
 
     public init(
         summary: MailMessageSummary,
@@ -197,7 +218,8 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
         listCc: [MailAddress],
         text: String,
         listAttachments: [String],
-        isPartial: Bool
+        isPartial: Bool,
+        messageIdHeader: String = ""
     ) {
         self.summary = summary
         self.listTo = listTo
@@ -205,6 +227,7 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
         self.text = text
         self.listAttachments = listAttachments
         self.isPartial = isPartial
+        self.messageIdHeader = messageIdHeader
     }
 }
 
@@ -247,7 +270,7 @@ public struct CalendarAttendee: Codable, Equatable, Sendable {
 }
 
 /// An event on one of the Mac's calendars.
-public struct CalendarEventSummary: Codable, Equatable, Sendable {
+public struct CalendarEventSummary: Codable, Equatable, Identifiable, Sendable {
     /// Its id on this Mac, which a change or a removal names.
     public let id: String
     /// The id it shares across calendars and accounts, by which copies of one meeting are matched.
@@ -267,6 +290,8 @@ public struct CalendarEventSummary: Codable, Equatable, Sendable {
     public let isRecurring: Bool
     /// The other calendars the same meeting shows on, when copies were merged.
     public var listAlsoOn: [String]
+    /// Its calendar's color, as `#rrggbb`.
+    public var colorHex: String
 
     public init(
         id: String,
@@ -284,7 +309,8 @@ public struct CalendarEventSummary: Codable, Equatable, Sendable {
         organizer: String,
         listAttendees: [CalendarAttendee],
         isRecurring: Bool,
-        listAlsoOn: [String] = []
+        listAlsoOn: [String] = [],
+        colorHex: String = ""
     ) {
         self.id = id
         self.globalId = globalId
@@ -302,6 +328,7 @@ public struct CalendarEventSummary: Codable, Equatable, Sendable {
         self.listAttendees = listAttendees
         self.isRecurring = isRecurring
         self.listAlsoOn = listAlsoOn
+        self.colorHex = colorHex
     }
 
     /// Events with copies of one meeting merged: the first copy kept, the others' calendars noted on it.

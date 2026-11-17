@@ -180,7 +180,8 @@ extension MailLibrary {
             listCc: listRecipients.filter { $0[0] == Self.recipientCc }.map { MailAddress(address: $0[1] ?? "", name: $0[2] ?? "") },
             text: mime?.text ?? "",
             listAttachments: mime?.listAttachmentNames ?? [],
-            isPartial: file == nil || file?.lastPathComponent.hasSuffix(".partial.emlx") == true
+            isPartial: file == nil || file?.lastPathComponent.hasSuffix(".partial.emlx") == true,
+            messageIdHeader: (mime?.header("message-id") ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> "))
         )
     }
 

@@ -79,6 +79,14 @@ enum RookeryIcon: String, CaseIterable {
     case width
     case window
     case chevronLeft = "chevron-left"
+    case calendar
+    case mail
+    case sidebarRight = "sidebar-right"
+    case video
+    case expand
+    case envelopeOpen = "envelope-open"
+    case flag
+    case sliders
 
     private static let setBadges: Set<RookeryIcon> = [
         .agent, .board, .command, .crown, .gauge, .gear, .globe, .hand, .machine, .memory, .mixer, .moon,
@@ -175,6 +183,14 @@ enum RookeryIcon: String, CaseIterable {
         case .width: "arrow.left.and.right"
         case .window: "macwindow"
         case .chevronLeft: "chevron.left"
+        case .calendar: "calendar"
+        case .mail: "envelope"
+        case .sidebarRight: "sidebar.right"
+        case .video: "video.fill"
+        case .expand: "arrow.up.left.and.arrow.down.right"
+        case .envelopeOpen: "envelope.open"
+        case .flag: "flag.fill"
+        case .sliders: "slider.vertical.3"
         }
     }
 

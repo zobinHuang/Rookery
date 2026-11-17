@@ -20,7 +20,7 @@ enum MailToolError: Error, CustomStringConvertible {
 /// The Mac's mail and calendars as the tools of `rookery-mail` reach them: Mail's library read in place,
 /// the accounts Mail holds, the calendars through EventKit; proposals checked and returned for the user to
 /// approve, and carried out here once they do. Only the accounts the user allows are seen.
-actor MailService {
+actor MailService: MailSource {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "mail")
     private static let accountsLifetime: TimeInterval = 300
     private static let maximumEventSpan: TimeInterval = 4 * 366 * 24 * 3600
@@ -262,6 +262,145 @@ actor MailService {
         }
     }
 
+    // MARK: - For the stage
+
+    /// The unread messages in every allowed account's inbox, newest first.
+    func unreadInbox(limit: Int) async throws -> [MailMessageSummary] {
+        var query = MailQuery()
+        query.folder = .inbox
+        query.isUnreadOnly = true
+        query.limit = limit
+        return try await openLibrary().search(query, accounts: allowedAccountAddresses())
+    }
+
+    /// How many messages are unread in every allowed account's inbox.
+    func unreadCount() async throws -> Int {
+        var query = MailQuery()
+        query.folder = .inbox
+        query.isUnreadOnly = true
+        return try await openLibrary().count(query, accounts: allowedAccountAddresses())
+    }
+
+    /// The events between two moments on every allowed calendar, copies of one meeting merged.
+    func events(from start: Date, to end: Date) async throws -> [CalendarEventSummary] {
+        CalendarEventSummary.merged(try calendars.events(from: start, to: end, calendarIds: try await allowedCalendarIds()))
+    }
+
+    /// The messages a query matches in the allowed accounts, newest first.
+    func search(_ query: MailQuery) async throws -> [MailMessageSummary] {
+        try await openLibrary().search(query, accounts: allowedAccountAddresses())
+    }
+
+    /// The messages of a message's conversation, oldest first.
+    func thread(of summary: MailMessageSummary) async throws -> [MailMessageSummary] {
+        try await openLibrary().thread(summary.conversationId, accounts: allowedAccountAddresses())
+    }
+
+    /// The allowed accounts' addresses with their inbox counts, by address.
+    func inboxCounts() async throws -> [String: MailboxCount] {
+        let mapAddresses = try await allowedAccountAddresses()
+        var mapCounts: [String: MailboxCount] = [:]
+        for (accountId, count) in try openLibrary().inboxCounts() {
+            if let address = mapAddresses[accountId] {
+                mapCounts[address] = count
+            }
+        }
+        return mapCounts
+    }
+
+    /// The calendars Raven and the stage may show.
+    func allowedCalendars() async throws -> [CalendarSummary] {
+        let setAllowed = try await allowedCalendarIds()
+        return try calendars.calendars().filter { setAllowed.contains($0.id) }
+    }
+
+    /// Add an event the user made, on a calendar they may use.
+    ///
+    /// - Throws: `CalendarLibraryError`
+    func addEvent(
+        calendarId: String,
+        title: String,
+        startsAt: Date,
+        endsAt: Date,
+        isAllDay: Bool,
+        location: String
+    ) throws -> CalendarEventSummary {
+        try calendars.addEvent(
+            calendarId: calendarId,
+            title: title,
+            startsAt: startsAt,
+            endsAt: endsAt,
+            isAllDay: isAllDay,
+            location: location,
+            notes: ""
+        )
+    }
+
+    /// Remove an event the user chose, this occurrence only for a recurring one.
+    func removeEvent(_ eventId: String) throws {
+        try calendars.removeEvent(eventId)
+    }
+
+    /// Open Mail's reply to a message, or the message itself when it is not in an inbox.
+    func reply(to summary: MailMessageSummary) async throws {
+        guard let header = try await message(summary.id)?.messageIdHeader, !header.isEmpty else {
+            throw MailToolError.unavailable("Mail's copy of the message cannot be found")
+        }
+        do {
+            try await MainActor.run { try MailActions.reply(messageId: header) }
+        } catch {
+            if let url = MailActions.url(messageId: header) {
+                await MainActor.run {
+                    _ = NSWorkspace.shared.open(url)
+                }
+            }
+        }
+    }
+
+    /// Open a message in Mail.
+    func openInMail(_ summary: MailMessageSummary) async throws {
+        guard let header = try await message(summary.id)?.messageIdHeader, let url = MailActions.url(messageId: header) else {
+            throw MailToolError.unavailable("Mail's copy of the message cannot be found")
+        }
+        await MainActor.run {
+            _ = NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// One message read whole, from an allowed account.
+    func message(_ messageId: Int) async throws -> MailMessageDetail? {
+        try await openLibrary().message(messageId, accounts: allowedAccountAddresses())
+    }
+
+    /// Mark a message read or unread in Mail.
+    ///
+    /// - Throws: `MailToolError` when Mail's copy cannot be found, `MailScriptingError`
+    func markRead(_ summary: MailMessageSummary, isRead: Bool) async throws {
+        guard let header = try await message(summary.id)?.messageIdHeader, !header.isEmpty else {
+            throw MailToolError.unavailable("Mail's copy of the message cannot be found")
+        }
+        try await MainActor.run { try MailActions.markRead(messageId: header, isRead: isRead) }
+    }
+
+    /// Flag a message, or take its flag off, in Mail.
+    func flag(_ summary: MailMessageSummary, isFlagged: Bool) async throws {
+        guard let header = try await message(summary.id)?.messageIdHeader, !header.isEmpty else {
+            throw MailToolError.unavailable("Mail's copy of the message cannot be found")
+        }
+        try await MainActor.run { try MailActions.flag(messageId: header, isFlagged: isFlagged) }
+    }
+
+    /// When Mail last wrote its library, which changes as mail arrives or is read.
+    nonisolated static func libraryStamp() -> Date? {
+        guard let root = try? MailLibrary.locate() else {
+            return nil
+        }
+        let data = root.appending(path: "MailData")
+        return ["Envelope Index", "Envelope Index-wal"].compactMap { name in
+            (try? FileManager.default.attributesOfItem(atPath: data.appending(path: name).path))?[.modificationDate] as? Date
+        }.max()
+    }
+
     // MARK: - Accounts
 
     /// How Rookery stands with the mail and calendars, asking Mail for its accounts afresh.
@@ -280,6 +419,9 @@ actor MailService {
         access.listCalendarAccounts = Array(Set(((try? calendars.calendars()) ?? []).map(\.accountTitle))).sorted()
         access.isMailRunning = await MainActor.run {
             !NSRunningApplication.runningApplications(withBundleIdentifier: Self.mailBundleId).isEmpty
+        }
+        guard access.hasFullDiskAccess else {
+            return access
         }
         accountsReadAt = nil
         do {

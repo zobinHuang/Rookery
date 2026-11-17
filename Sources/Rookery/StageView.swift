@@ -26,6 +26,10 @@ protocol StageActions: AnyObject {
     /// Move a tab to just before another tab, or to the end with nil.
     func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?)
     func toggleSidebar()
+    /// Show the right sidebar as a strip of icons, or whole.
+    func toggleRightSidebar()
+    /// Show a tab of the right sidebar, opening the sidebar if it is a strip.
+    func showRightSidebarTab(_ tab: RightSidebarTab)
     /// Switch between the light and the dark theme, keeping the contrast.
     func toggleTheme()
     /// Fill the display with the stage, or go back to its earlier frame.
@@ -113,6 +117,14 @@ struct StageView: View {
                     .padding(.trailing, StageModel.contentInset)
                     .padding(.bottom, StageModel.contentInset)
             }
+            RightSidebarView(
+                model: model,
+                preferences: preferences,
+                mixer: mixer,
+                fleetModel: fleetModel,
+                actions: actions
+            )
+            .frame(width: model.rightSidebarWidth)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(StageColors.window)
@@ -125,6 +137,7 @@ struct StageView: View {
         .animation(Self.zoneAnimation, value: model.tabInsertBeforeId)
         .animation(Self.zoneAnimation, value: model.groupInsertBeforeId)
         .animation(Self.sidebarAnimation, value: model.isSidebarCollapsed)
+        .animation(Self.sidebarAnimation, value: model.isRightSidebarCollapsed)
         .animation(Self.sidebarAnimation, value: sidebarMode)
         .animation(Self.sidebarAnimation, value: showsTabBar)
     }
@@ -171,9 +184,9 @@ struct StageView: View {
         return nil
     }
 
-    /// The modes the switch offers: the mixer only while the settings turn it on.
+    /// The modes the switch offers.
     private var listShownModes: [SidebarMode] {
-        SidebarMode.allCases.filter { $0 != .mixer || preferences.isMixerEnabled }
+        SidebarMode.allCases
     }
 
     private var sidebar: some View {
@@ -222,15 +235,6 @@ struct StageView: View {
                         onEndEditing: actions.endEditing
                     )
                     .transition(.opacity)
-                } else if sidebarMode == .mixer {
-                    ScrollView {
-                        MixerView(mixer: mixer, isCollapsed: model.isSidebarCollapsed)
-                            .padding(.vertical, 2)
-                    }
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .trailing).combined(with: .opacity)
-                    ))
                 }
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -360,7 +364,7 @@ struct StageView: View {
         .help("Drag to move the stage; double-click to fill the display")
     }
 
-    /// The switch between the groups and the mixer: a segmented control, or a column of two buttons in the
+    /// The switch between the groups and the agents: a segmented control, or a column of two buttons in the
     /// collapsed sidebar.
     private var modeSwitch: some View {
         Group {
@@ -870,6 +874,14 @@ struct StageView: View {
                     onClose: actions.closePage
                 )
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if model.shownPage == .calendar {
+                CalendarPage(fleetModel: fleetModel, onClose: actions.closePage)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if model.shownPage == .mail {
+                MailPage(fleetModel: fleetModel, onClose: actions.closePage) {
+                    actions.showPage(.rookmaster)
+                }
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .rookmaster {
                 RookmasterView(
                     fleetModel: fleetModel,

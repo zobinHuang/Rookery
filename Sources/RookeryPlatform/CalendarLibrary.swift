@@ -1,3 +1,4 @@
+import CoreGraphics
 import EventKit
 import Foundation
 import RookeryCore
@@ -61,7 +62,8 @@ public final class CalendarLibrary: @unchecked Sendable {
                 title: calendar.title,
                 accountTitle: calendar.source?.title ?? "",
                 accountKind: Self.kind(of: calendar.source?.sourceType),
-                isWritable: calendar.allowsContentModifications
+                isWritable: calendar.allowsContentModifications,
+                colorHex: Self.hex(of: calendar.cgColor)
             )
         }
     }
@@ -190,8 +192,21 @@ public final class CalendarLibrary: @unchecked Sendable {
                     isMe: participant.isCurrentUser
                 )
             },
-            isRecurring: event.hasRecurrenceRules
+            isRecurring: event.hasRecurrenceRules,
+            colorHex: event.calendar.map { hex(of: $0.cgColor) } ?? ""
         )
+    }
+
+    private static func hex(of color: CGColor?) -> String {
+        guard
+            let color,
+            let converted = color.converted(to: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(), intent: .defaultIntent, options: nil),
+            let listComponents = converted.components,
+            listComponents.count >= 3
+        else {
+            return ""
+        }
+        return String(format: "#%02x%02x%02x", Int(listComponents[0] * 255), Int(listComponents[1] * 255), Int(listComponents[2] * 255))
     }
 
     private static func address(of participant: EKParticipant) -> String {

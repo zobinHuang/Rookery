@@ -97,6 +97,8 @@ final class Preferences {
     private static let cycleHotkeyKey = "cycleHotkey"
     private static let stageHotkeyKey = "stageHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
+    private static let stageRightSidebarCollapsedKey = "isStageRightSidebarCollapsed"
+    private static let stageRightSidebarTabKey = "stageRightSidebarTab"
     private static let themeKey = "theme"
     private static let screenSaverTextKey = "screenSaverText"
     private static let screenSaverTextSizeKey = "screenSaverTextSize"
@@ -264,6 +266,20 @@ final class Preferences {
         }
     }
 
+    /// Whether the stage shows its right sidebar as a narrow strip of icons.
+    var isStageRightSidebarCollapsed: Bool {
+        didSet {
+            defaults.set(isStageRightSidebarCollapsed, forKey: Self.stageRightSidebarCollapsedKey)
+        }
+    }
+
+    /// The right sidebar's tab: `calendar`, `mail` or `mixer`.
+    var stageRightSidebarTab: String {
+        didSet {
+            defaults.set(stageRightSidebarTab, forKey: Self.stageRightSidebarTabKey)
+        }
+    }
+
     /// Opens or closes the stage.
     var stageHotkey: Hotkey {
         didSet {
@@ -277,6 +293,8 @@ final class Preferences {
         isReturningDroppedWindows = defaults.object(forKey: Self.returnDroppedKey) as? Bool ?? true
         isMixerEnabled = defaults.bool(forKey: Self.mixerEnabledKey)
         isStageSidebarCollapsed = defaults.bool(forKey: Self.stageSidebarCollapsedKey)
+        isStageRightSidebarCollapsed = defaults.bool(forKey: Self.stageRightSidebarCollapsedKey)
+        stageRightSidebarTab = defaults.string(forKey: Self.stageRightSidebarTabKey) ?? "calendar"
         theme = defaults.string(forKey: Self.themeKey).flatMap(Theme.init(rawValue:))
         screenSaverText = defaults.string(forKey: Self.screenSaverTextKey) ?? ""
         roostAddress = defaults.string(forKey: Self.roostAddressKey) ?? ""

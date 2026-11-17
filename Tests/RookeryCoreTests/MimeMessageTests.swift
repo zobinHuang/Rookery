@@ -102,3 +102,33 @@ struct MailDataTests {
         #expect(settings.kind(of: "ME@work.com") == "work")
     }
 }
+
+struct CalendarDayTests {
+    private func event(_ id: String, from start: Double, to end: Double, location: String = "", notes: String = "") -> CalendarEventSummary {
+        CalendarEventSummary(
+            id: id, globalId: id, calendarId: "c", calendar: "c", account: "a", title: id,
+            startsAt: Date(timeIntervalSince1970: start * 3600), endsAt: Date(timeIntervalSince1970: end * 3600),
+            isAllDay: false, location: location, notes: notes, url: "", organizer: "", listAttendees: [], isRecurring: false
+        )
+    }
+
+    @Test func aMeetingLinkIsFoundInThePlaceOrTheNotes() {
+        #expect(MeetingLink.of(event("a", from: 9, to: 10, location: "Room 3", notes: "Join: https://us02web.zoom.us/j/123?pwd=x"))?.host() == "us02web.zoom.us")
+        #expect(MeetingLink.of(event("b", from: 9, to: 10, location: "https://meet.google.com/abc-defg-hij"))?.host() == "meet.google.com")
+        #expect(MeetingLink.of(event("c", from: 9, to: 10, notes: "see https://example.com/agenda")) == nil)
+    }
+
+    @Test func overlappingEventsStandSideBySide() {
+        let listPlacements = CalendarPlacement.lanes(of: [
+            event("a", from: 9, to: 10),
+            event("b", from: 9.5, to: 11),
+            event("c", from: 10, to: 10.5),
+            event("d", from: 12, to: 13),
+        ])
+        let mapPlacements = Dictionary(uniqueKeysWithValues: listPlacements.map { ($0.eventId, $0) })
+        #expect(mapPlacements["a"] == CalendarPlacement(eventId: "a", lane: 0, laneCount: 2))
+        #expect(mapPlacements["b"]?.lane == 1)
+        #expect(mapPlacements["c"]?.lane == 0)
+        #expect(mapPlacements["d"] == CalendarPlacement(eventId: "d", lane: 0, laneCount: 1))
+    }
+}

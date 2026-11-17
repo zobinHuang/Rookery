@@ -9,6 +9,8 @@ import SwiftUI
 @Observable
 final class PageMemory {
     var rookmasterTab = RookmasterTab.board
+    /// The message the mail page shows, by its id in Mail's library.
+    var selectedMailId: Int?
     var rookmasterSelectedRef: FleetRef?
     var panelTab = RookmasterPanelTab.raven
     /// The height the user dragged the panel to.

@@ -46,6 +46,11 @@ final class FleetModel {
     @ObservationIgnored private(set) lazy var hosts = HostsModel(fleetModel: self)
     /// The Mac's mail and calendars, as Raven's tools reach them.
     @ObservationIgnored let mailService = MailService()
+    /// Where the stage's calendar and mail come from: the Mac's own, or sample data set before the stage is
+    /// first drawn offscreen.
+    @ObservationIgnored lazy var mailSource: any MailSource = mailService
+    /// The user's day and unread mail, for the stage's right sidebar and pages.
+    @ObservationIgnored private(set) lazy var personal = PersonalDataModel(service: mailSource)
     /// The transcripts read so far, so an agent's page reopens at once.
     @ObservationIgnored let transcripts = TranscriptCache()
     /// Where the user left the agents' pages and the Rookmaster console.

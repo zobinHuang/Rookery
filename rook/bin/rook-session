@@ -28,6 +28,8 @@ ROOK_LOG="$ROOK_STATE_DIR/upload.log"
 ROOK_SELF="$HOME/.local/bin/rook-session"
 ROOK_CLIENT="$HOME/.local/bin/rook-client"
 ROOK_PREFIX_BYTES=4096
+# The most bytes one write sends, well under the server's body limit.
+ROOK_CHUNK_BYTES="${ROOK_CHUNK_BYTES:-$((16 * 1024 * 1024))}"
 ROOK_FLUSH_MAX=20
 ROOK_LOG_MAX_LINES=2000
 ROOK_HTTP_TIMEOUT=60
@@ -450,26 +452,35 @@ send_from() {
     return 0
   fi
 
-  tail -c "+$((_sf_cursor + 1))" "$_sf_file" > "$ROOK_WORK/chunk" 2>/dev/null || return 1
-  _sf_query="offset=$_sf_cursor"
-  [ "$_sf_reset" -eq 1 ] && _sf_query="$_sf_query&reset=1"
-  if api PUT "/v1/sessions/$_sf_id/data?$_sf_query" "$ROOK_WORK/chunk"; then
-    log "sent $(file_size "$ROOK_WORK/chunk") bytes of $_sf_id from $_sf_cursor"
-    return 0
-  fi
-
-  # A conflict means something else moved the cursor between the begin and
-  # the write. The server hands back the offset to resume from, so one
-  # retry against that offset is enough.
-  if [ "$ROOK_STATUS" = "409" ]; then
-    _sf_cursor="$(json_get "$ROOK_RESPONSE" cursor)"
-    _sf_remote_prefix="$(json_get "$ROOK_RESPONSE" prefix_sha256)"
-    log "cursor conflict on $_sf_id, resuming from $_sf_cursor"
-    tail -c "+$((_sf_cursor + 1))" "$_sf_file" > "$ROOK_WORK/chunk" 2>/dev/null || return 1
-    api PUT "/v1/sessions/$_sf_id/data?offset=$_sf_cursor" "$ROOK_WORK/chunk" && return 0
-  fi
-  log "data failed for $_sf_id (status $ROOK_STATUS)"
-  return 1
+  # The rest goes up a chunk at a time, as the server refuses a body past
+  # its limit and a long session's transcript outgrows it. A conflict means
+  # something else moved the cursor between the begin and the write; the
+  # server hands back the offset to resume from, and one retry is enough.
+  _sf_reset_query=""
+  [ "$_sf_reset" -eq 1 ] && _sf_reset_query="&reset=1"
+  _sf_conflicts=0
+  while [ "$_sf_cursor" -lt "$_sf_size" ] || [ -n "$_sf_reset_query" ]; do
+    tail -c "+$((_sf_cursor + 1))" "$_sf_file" 2>/dev/null \
+      | head -c "$ROOK_CHUNK_BYTES" > "$ROOK_WORK/chunk" || return 1
+    _sf_sent="$(file_size "$ROOK_WORK/chunk")"
+    if api PUT "/v1/sessions/$_sf_id/data?offset=$_sf_cursor$_sf_reset_query" "$ROOK_WORK/chunk"; then
+      log "sent $_sf_sent bytes of $_sf_id from $_sf_cursor"
+      _sf_cursor=$((_sf_cursor + _sf_sent))
+      _sf_reset_query=""
+      [ "$_sf_sent" -gt 0 ] || return 0
+      continue
+    fi
+    if [ "$ROOK_STATUS" = "409" ] && [ "$_sf_conflicts" -eq 0 ]; then
+      _sf_conflicts=1
+      _sf_cursor="$(json_get "$ROOK_RESPONSE" cursor)"
+      case "$_sf_cursor" in ''|*[!0-9]*) log "data failed for $_sf_id (no cursor in the conflict)"; return 1 ;; esac
+      log "cursor conflict on $_sf_id, resuming from $_sf_cursor"
+      continue
+    fi
+    log "data failed for $_sf_id (status $ROOK_STATUS)"
+    return 1
+  done
+  return 0
 }
 
 # ─── work area, held for one invocation ───────────────────────────────

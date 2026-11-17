@@ -3,6 +3,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -253,6 +254,49 @@ class QueueAndSendTest(RookHomeTest):
         agent = server.resources.get(ResourceRef("agent", SESSION))
         self.assertEqual(agent.map_attributes["state"], "thinking")
 
+
+
+class SessionUploadTest(QueueAndSendTest):
+    """`rook-session` sending a transcript to a roost whose body limit it outgrows."""
+
+    TEST_CHUNK_BYTES = 256 * 1024
+    TEST_TRANSCRIPT_LINES = 12000
+
+    def upload(self, path_transcript: Path) -> None:
+        path_payload = self.home / "payload.json"
+        path_payload.write_text(json.dumps({
+            "session_id": SESSION,
+            "hook_event_name": "Stop",
+            "cwd": str(self.home),
+            "transcript_path": str(path_transcript),
+        }))
+        map_env = {
+            **os.environ,
+            "HOME": str(self.home),
+            "ROOK_CHUNK_BYTES": str(self.TEST_CHUNK_BYTES),
+        }
+        subprocess.run(
+            ["sh", str(REPO_ROOT / "rook" / "bin" / "rook-session"), "run-upload", "claude", str(path_payload)],
+            env=map_env,
+            check=True,
+            timeout=60,
+        )
+
+    def test_a_transcript_past_the_body_limit_goes_up_in_chunks(self) -> None:
+        server = self.start_server()
+        self.connect(server.bound_port())
+        path_transcript = self.home / f"{SESSION}.jsonl"
+        list_lines = [json.dumps({"type": "user", "n": index, "text": "x" * 200}) for index in range(self.TEST_TRANSCRIPT_LINES)]
+        path_transcript.write_text("\n".join(list_lines) + "\n")
+        self.assertGreater(path_transcript.stat().st_size, 2 * 1024 * 1024)
+        self.upload(path_transcript)
+        chunk = server.store.read_transcript(session_id=SESSION, offset=0, limit=None)
+        self.assertEqual(chunk.data, path_transcript.read_bytes())
+        with path_transcript.open("a") as handle:
+            handle.write(json.dumps({"type": "assistant", "text": "more"}) + "\n")
+        self.upload(path_transcript)
+        chunk = server.store.read_transcript(session_id=SESSION, offset=0, limit=None)
+        self.assertEqual(chunk.data, path_transcript.read_bytes())
 
 
 class AgentCommandsTest(QueueAndSendTest):

@@ -99,18 +99,43 @@ class TeamTest(unittest.TestCase):
         status, _ = self.request("DELETE", "/v1/teams/api/members/c")
         self.assertEqual(status, 404)
 
-    def test_rookerys_own_agents_join_no_team(self) -> None:
-        with self.assertRaises(ValidationError):
-            self.server.roster.join("api", "raven", "", None)
+    def test_rookerys_own_agents_join_a_team_the_user_puts_them_in(self) -> None:
+        status, map_team = self.request("POST", "/v1/teams/api/members", {"agent": "raven", "duty": "directs the team"})
+        self.assertEqual(status, 200)
+        map_card = next(member for member in map_team["members"] if member["id"] == "raven")
+        self.assertEqual((map_card["rook_name"], map_card["duty"]), ("rookery", "directs the team"))
 
     def test_an_agent_messages_only_its_teammates(self) -> None:
         self.assertEqual(self.send("a", "b").status, Delivery.STATUS_PENDING)
         with self.assertRaises(ValidationError):
             self.send("a", "c")
 
-    def test_a_person_and_rookerys_own_agents_message_anyone(self) -> None:
-        self.server.link.send_to_agent(self.PERSON, "c", "hi")
-        self.assertEqual(self.send("raven", "c").status, Delivery.STATUS_PENDING)
+    def test_a_person_messages_anyone(self) -> None:
+        self.assertEqual(self.server.link.send_to_agent(self.PERSON, "c", "hi").status, Delivery.STATUS_PENDING)
+
+    def test_rookerys_own_agents_message_only_the_teams_they_are_in(self) -> None:
+        with self.assertRaises(ValidationError):
+            self.send("raven", "a")
+        with self.assertRaises(ValidationError):
+            self.server.link.send_to_team(ResourceRef("agent", "raven"), "api", "status?")
+        self.server.roster.join("api", "raven", "directs the team", None)
+        self.assertEqual(self.send("raven", "a").status, Delivery.STATUS_PENDING)
+        with self.assertRaises(ValidationError):
+            self.send("raven", "c")
+
+    def test_rookery_reads_and_reports_the_messages_for_its_own_agents(self) -> None:
+        self.server.roster.join("api", "raven", "directs the team", None)
+        question = self.send("raven", "a", "is v2 tagged?")
+        answer = self.send("a", "raven", "yes", thread=question.map_options["thread"])
+        status, map_body = self.request("GET", "/v1/messages?rook=rookery")
+        self.assertEqual(status, 200)
+        self.assertEqual([message["id"] for message in map_body["messages"]], [answer.id])
+        status, map_delivery = self.request("POST", f"/v1/messages/{answer.id}/report", {"status": "delivered"})
+        self.assertEqual((status, map_delivery["status"]), (200, Delivery.STATUS_DELIVERED))
+        status, map_body = self.request("GET", "/v1/messages?rook=rookery")
+        self.assertEqual(map_body["messages"], [])
+        status, _ = self.request("POST", f"/v1/messages/{question.id}/report", {"status": "delivered"})
+        self.assertEqual(status, 404)
 
     def test_an_answer_carries_on_its_thread(self) -> None:
         first = self.send("a", "b", "does the schema hold?")

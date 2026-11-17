@@ -47,7 +47,8 @@ class TeamLimits:
 class TeamRoster:
     """Who is in which team and with what duty, kept in each team's `members` attribute, and every agent's
     card: who it is (its role), what it does now (its focus), where it runs and how it stands. An agent may
-    be in several teams. Rookery's own agents, as Raven, are no team's members and may message anyone."""
+    be in several teams. Rookery's own agents, as Raven's conversations, join a team when the user puts
+    them in it, to direct it for the user, and are told apart in every roster by their rook."""
 
     ROSTER_MEMBERS_KEY = "members"
     ROSTER_DUTY_MAX_CHARS = 300
@@ -81,7 +82,7 @@ class TeamRoster:
             the team as stored
 
         Raises:
-            ValidationError: if the duty is too long or the agent is Rookery's own
+            ValidationError: if the duty is too long
             NotFoundError: if there is no such team or agent
         """
         duty = duty.strip()
@@ -89,8 +90,7 @@ class TeamRoster:
             raise ValidationError(f"a duty is at most {self.ROSTER_DUTY_MAX_CHARS} characters")
         team_ref = ResourceRef.of(ResourceKinds.TEAM.name, team_id)
         agent_ref = ResourceRef.of(ResourceKinds.AGENT.name, agent_id)
-        if self.is_rookery_own(self._resources.get(agent_ref)):
-            raise ValidationError("Rookery's own agents are in no team")
+        self._resources.get(agent_ref)
         with self._resources.database.transaction() as connection:
             team = self._resources.get(team_ref)
             map_members = self.members_of(team)

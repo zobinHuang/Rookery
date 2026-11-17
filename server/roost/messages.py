@@ -313,14 +313,11 @@ class DeliveryStore:
             )
         return delivery
 
-    def _is_bound_agent(self, sender: ResourceRef) -> bool:
-        """Whether the sender is an agent held to its teams, rather than a person or one of Rookery's own."""
-        if sender.kind != ResourceKinds.AGENT.name:
-            return False
-        sender_ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=sender.id.split("~")[0])
-        if not self._resources.exists(sender_ref):
-            return True
-        return not self._roster.is_rookery_own(self._resources.get(sender_ref))
+    @staticmethod
+    def _is_bound_agent(sender: ResourceRef) -> bool:
+        """Whether the sender is an agent, held to its teams, rather than a person; Rookery's own agents
+        are held as any other, so Raven messages only the teams the user put it in."""
+        return sender.kind == ResourceKinds.AGENT.name
 
     def _teams_between(self, sender: ResourceRef, agent_id: str) -> list[Resource]:
         if not self._is_bound_agent(sender):
@@ -576,6 +573,24 @@ class DeliveryStore:
                 (rook_name, *sorted(Delivery.SET_OPEN_STATUSES)),
             ).fetchall()
         return [self._delivery_of(row) for row in list_rows]
+
+    def report_for_rookery(self, delivery_id: str, status: str, reason: str) -> Delivery:
+        """Record what Rookery did with a message for one of its own agents, which it reads over HTTP rather
+        than through a link.
+
+        Args:
+            delivery_id: the delivery
+            status: `waiting`, `delivered` or `failed`
+            reason: why, or how it was delivered
+
+        Returns:
+            the delivery as updated
+
+        Raises:
+            ValidationError: if the status is not one a rook reports
+            NotFoundError: if there is no such delivery for Rookery's own agents
+        """
+        return self.report(TeamRoster.ROSTER_ROOKERY_ROOK, delivery_id, status, reason)
 
     def list_recent(self, agent_id: str | None, limit: int, sender_id: str | None = None) -> list[Delivery]:
         """The latest deliveries, newest first.

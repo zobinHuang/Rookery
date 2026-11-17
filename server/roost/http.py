@@ -442,6 +442,13 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
                 )
             self._respond_json(HTTPStatus.CREATED, delivery.as_payload())
             return
+        if list_segments == ["messages"] and method == "GET" and self._query_text(map_query, "rook"):
+            list_deliveries = self.server.deliveries.open_for_rook(self._query_text(map_query, "rook") or "")
+            self._respond_json(
+                HTTPStatus.OK,
+                {"messages": [delivery.as_payload() for delivery in list_deliveries]},
+            )
+            return
         if list_segments == ["messages"] and method == "GET":
             list_deliveries = self.server.deliveries.list_recent(
                 agent_id=self._query_text(map_query, "agent"),
@@ -458,6 +465,15 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             return
         if len(list_segments) == 3 and method == "POST" and list_segments[2] == "release":
             self._respond_json(HTTPStatus.OK, self.server.link.release(list_segments[1]).as_payload())
+            return
+        if len(list_segments) == 3 and method == "POST" and list_segments[2] == "report":
+            map_body = self._read_json_body()
+            delivery = self.server.deliveries.report_for_rookery(
+                list_segments[1],
+                str(map_body.get("status") or ""),
+                str(map_body.get("reason") or ""),
+            )
+            self._respond_json(HTTPStatus.OK, delivery.as_payload())
             return
         if len(list_segments) == 3 and method == "POST" and list_segments[2] == "cancel":
             self._respond_json(HTTPStatus.OK, self.server.deliveries.cancel(list_segments[1]).as_payload())

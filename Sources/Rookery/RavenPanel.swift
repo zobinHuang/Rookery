@@ -615,5 +615,6 @@ struct RavenPanel: View {
         sendToken += 1
         draft = ""
         listMentions = []
+        isFocused = true
     }
 }

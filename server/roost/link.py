@@ -28,9 +28,11 @@ class LinkPeer:
         role: str,
         rook_name: str | None,
         subscribed_after: int | None,
+        is_owner: bool = False,
     ) -> None:
         self.connection = connection
         self.role = role
+        self.is_owner = is_owner
         self.rook_name = rook_name
         self.subscribed_after = subscribed_after
         self.is_closed = False
@@ -66,6 +68,8 @@ class LinkHub:
     LINK_CLOSE_REPLACED = 4000
     LINK_CLOSE_BAD_HELLO = 4001
     LINK_MAX_MESSAGE_BYTES = 4 * 1024 * 1024
+    LINK_OWNER = "owner"
+    LINK_FLEET = "fleet"
 
     def __init__(
         self,
@@ -80,6 +84,7 @@ class LinkHub:
         self._deliveries = deliveries
         self._lock = threading.Lock()
         self._map_rooks: dict[str, LinkPeer] = {}
+        self._list_desktops: list[LinkPeer] = []
         self._is_stopping = False
         self._server: Server | None = None
 
@@ -199,10 +204,39 @@ class LinkHub:
         if request.path.split("?")[0] != self.LINK_PATH:
             return connection.respond(HTTPStatus.NOT_FOUND, "no such route\n")
         header = request.headers.get("Authorization", "")
-        offered = header[len(self.LINK_BEARER_PREFIX):] if header.startswith(self.LINK_BEARER_PREFIX) else ""
-        if not offered or not secrets.compare_digest(offered, self._config.token):
+        if self._token_role(request) is None:
             return connection.respond(HTTPStatus.UNAUTHORIZED, "bearer token not accepted\n")
         return None
+
+    def _token_role(self, request: Request | None) -> str | None:
+        """Whose token a connection offered: `owner`, `fleet`, or None for neither."""
+        header = request.headers.get("Authorization", "") if request is not None else ""
+        offered = header[len(self.LINK_BEARER_PREFIX):] if header.startswith(self.LINK_BEARER_PREFIX) else ""
+        if not offered:
+            return None
+        if self._config.owner_token and secrets.compare_digest(offered, self._config.owner_token):
+            return self.LINK_OWNER
+        if secrets.compare_digest(offered, self._config.token):
+            return self.LINK_FLEET
+        return None
+
+    def notify_owner(self, map_message: dict[str, object]) -> int:
+        """Send a message to every desktop holding the link with the owner's token, as a change to their
+        mail or calendars, which the event log, read by every rook, never carries.
+
+        Returns:
+            how many desktops it reached
+        """
+        with self._lock:
+            list_peers = [peer for peer in self._list_desktops if peer.is_owner and not peer.is_closed]
+        reached = 0
+        for peer in list_peers:
+            try:
+                peer.send(map_message)
+                reached += 1
+            except ConnectionClosed:
+                continue
+        return reached
 
     def _handle(self, connection: ServerConnection) -> None:
         try:
@@ -239,7 +273,10 @@ class LinkHub:
         rook_name = None
         if role == LinkPeer.ROLE_ROOK:
             rook_name = ResourceRef.of(ResourceKinds.ROOK.name, str(map_hello.get("rook") or "")).id
-        peer = LinkPeer(connection, role, rook_name, after)
+        peer = LinkPeer(connection, role, rook_name, after, self._token_role(connection.request) == self.LINK_OWNER)
+        if role == LinkPeer.ROLE_DESKTOP:
+            with self._lock:
+                self._list_desktops.append(peer)
         if rook_name:
             with self._lock:
                 previous = self._map_rooks.get(rook_name)
@@ -323,6 +360,9 @@ class LinkHub:
 
     def _forget(self, peer: LinkPeer) -> None:
         if not peer.rook_name:
+            with self._lock:
+                if peer in self._list_desktops:
+                    self._list_desktops.remove(peer)
             return
         with self._lock:
             if self._map_rooks.get(peer.rook_name) is not peer:

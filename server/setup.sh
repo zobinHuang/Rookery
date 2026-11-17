@@ -112,7 +112,7 @@ ROOST_CONFIG="$HOME/.config/roost/config.json"
 ROOST_BIN="$HOME/.local/bin/roost"
 
 mkdir -p "$ROOST_APP_DIR/roost" "$HOME/.local/bin"
-for MODULE in __init__.py __main__.py catalog.py config.py database.py errors.py events.py http.py link.py messages.py playbooks.py records.py resources.py skills.py store.py teams.py; do
+for MODULE in __init__.py __main__.py accounts.py catalog.py config.py database.py errors.py events.py http.py link.py messages.py playbooks.py records.py resources.py skills.py store.py teams.py vault.py; do
   if ! roost_install_file "server/roost/$MODULE" "$ROOST_APP_DIR/roost/$MODULE"; then
     err "Failed to install roost/$MODULE"
     exit 1
@@ -126,12 +126,14 @@ info "Installed roost to $ROOST_APP_DIR"
 # environment of roost's own, so the system's Python is left as it is.
 ROOST_VENV="$HOME/.local/share/roost/venv"
 ROOST_WEBSOCKETS_SPEC='websockets>=13,<17'
+# The owner's account credentials are sealed with AES-GCM from the cryptography package.
+ROOST_CRYPTOGRAPHY_SPEC='cryptography>=42'
 if [ ! -x "$ROOST_VENV/bin/python" ] && ! python3 -m venv "$ROOST_VENV"; then
   err "Could not create a virtual environment at $ROOST_VENV (on Debian: apt install python3-venv)"
   exit 1
 fi
-if ! "$ROOST_VENV/bin/python" -m pip install --quiet --disable-pip-version-check "$ROOST_WEBSOCKETS_SPEC"; then
-  err "Could not install $ROOST_WEBSOCKETS_SPEC into $ROOST_VENV"
+if ! "$ROOST_VENV/bin/python" -m pip install --quiet --disable-pip-version-check "$ROOST_WEBSOCKETS_SPEC" "$ROOST_CRYPTOGRAPHY_SPEC"; then
+  err "Could not install $ROOST_WEBSOCKETS_SPEC and $ROOST_CRYPTOGRAPHY_SPEC into $ROOST_VENV"
   exit 1
 fi
 info "websockets $("$ROOST_VENV/bin/python" -c 'import websockets; print(websockets.__version__)') in $ROOST_VENV"

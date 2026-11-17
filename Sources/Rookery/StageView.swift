@@ -923,6 +923,11 @@ struct StageView: View {
 
     // MARK: - Content
 
+    /// Whether a managed window fills the content area, which then draws nothing of its own around it.
+    private var isWindowShown: Bool {
+        model.shownPage == nil && model.selectedWindowId != nil && !showsDropZones
+    }
+
     private var contentCornerRadius: CGFloat {
         isPageFullBleed ? 0 : 12
     }
@@ -930,7 +935,7 @@ struct StageView: View {
     private var content: some View {
         ZStack {
             RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous)
-                .fill(StageColors.content)
+                .fill(isWindowShown ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.content))
             if let page = model.shownPage, !model.isPageReady {
                 PageLoading(title: Self.loadingTitle(of: page))
                     .transition(.opacity)
@@ -998,7 +1003,7 @@ struct StageView: View {
         .clipShape(RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous)
-                .strokeBorder(isPageFullBleed ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.contrastBorder))
+                .strokeBorder(isPageFullBleed || isWindowShown ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.contrastBorder))
                 .allowsHitTesting(false)
         }
         .animation(Self.zoneAnimation, value: model.shownPage)

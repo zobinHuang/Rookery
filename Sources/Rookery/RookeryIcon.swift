@@ -37,6 +37,7 @@ enum RookeryIcon: String, CaseIterable {
     case book
     case branch
     case bubble
+    case camera
     case check
     case chevronDown = "chevron-down"
     case chevronRight = "chevron-right"
@@ -57,6 +58,7 @@ enum RookeryIcon: String, CaseIterable {
     case minus
     case offline
     case pause
+    case photo
     case pin
     case pip
     case pipEnter = "pip-enter"
@@ -142,6 +144,8 @@ enum RookeryIcon: String, CaseIterable {
         case .book: "book"
         case .branch: "arrow.triangle.branch"
         case .bubble: "text.bubble"
+        case .photo: "photo"
+        case .camera: "camera.fill"
         case .check: "checkmark.circle.fill"
         case .chevronDown: "chevron.down"
         case .chevronRight: "chevron.right"

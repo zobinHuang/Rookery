@@ -13,6 +13,8 @@ final class PeopleStore {
     private static let photoFolderName = "people"
     /// The side of a photo kept, in pixels, enough for the largest mark at twice the scale.
     private static let photoSide: CGFloat = 256
+    /// The longest side of the whole picture kept for framing the photo again.
+    private static let originalSide: CGFloat = 1600
 
     private(set) var book = PeopleBook()
     /// Changes whenever a photo does, so marks drawn from it are drawn again.
@@ -44,19 +46,38 @@ final class PeopleStore {
     func remove(_ personId: String) {
         book.remove(personId)
         try? FileManager.default.removeItem(at: photoURL(of: personId))
+        try? FileManager.default.removeItem(at: originalURL(of: personId))
         mapPhotos[personId] = nil
         save()
     }
 
-    /// Keep a picture as a person's photo, cut to a square and made small.
+    /// Read a picture the user chose for a photo.
     ///
-    /// - Throws: when the picture cannot be read or the photo kept
-    func takePhoto(from url: URL, for personId: String) throws {
-        guard var person = book.person(withId: personId), let image = NSImage(contentsOf: url), let data = Self.squarePNG(of: image) else {
+    /// - Throws: when it cannot be read as a picture
+    static func picture(at url: URL) throws -> NSImage {
+        guard let image = NSImage(contentsOf: url), image.size.width > 0, image.size.height > 0 else {
             throw PeopleError.unreadablePicture(url.lastPathComponent)
+        }
+        return image
+    }
+
+    /// Keep the part of a picture the user framed as a person's photo, made small, and the picture
+    /// itself, so the framing can be changed later.
+    ///
+    /// - Parameters:
+    ///   - image: the picture
+    ///   - source: the square framed, in the picture's points, from its bottom left
+    ///   - personId: whose photo it is
+    /// - Throws: when the photo cannot be drawn or kept
+    func takePhoto(_ image: NSImage, cropping source: CGRect, for personId: String) throws {
+        guard var person = book.person(withId: personId), let data = Self.squarePNG(of: image, from: source) else {
+            throw PeopleError.unreadablePicture(person(withId: personId)?.name ?? personId)
         }
         try FileManager.default.createDirectory(at: photoFolder, withIntermediateDirectories: true)
         try data.write(to: photoURL(of: personId), options: .atomic)
+        if let original = Self.png(of: image) {
+            try original.write(to: originalURL(of: personId), options: .atomic)
+        }
         mapPhotos[personId] = NSImage(data: data)
         person.hasPhoto = true
         book.put(person)
@@ -69,6 +90,7 @@ final class PeopleStore {
             return
         }
         try? FileManager.default.removeItem(at: photoURL(of: personId))
+        try? FileManager.default.removeItem(at: originalURL(of: personId))
         mapPhotos[personId] = nil
         person.hasPhoto = false
         book.put(person)
@@ -111,8 +133,27 @@ final class PeopleStore {
         }
     }
 
+    /// The whole picture a person's photo was framed from, to frame it again; nil for a photo kept
+    /// before pictures were.
+    func originalPicture(of personId: String) -> NSImage? {
+        NSImage(contentsOf: originalURL(of: personId))
+    }
+
+    /// Whether the whole picture a person's photo was framed from is kept.
+    func hasOriginalPicture(of personId: String) -> Bool {
+        FileManager.default.fileExists(atPath: originalURL(of: personId).path)
+    }
+
+    private func person(withId personId: String) -> Person? {
+        book.person(withId: personId)
+    }
+
     private func photoURL(of personId: String) -> URL {
         photoFolder.appending(path: "\(personId).png")
+    }
+
+    private func originalURL(of personId: String) -> URL {
+        photoFolder.appending(path: "\(personId)-original.png")
     }
 
     private func load() {
@@ -137,21 +178,43 @@ final class PeopleStore {
         }
     }
 
-    /// A picture cut to its middle square and drawn at the photo's side, as PNG.
-    private static func squarePNG(of image: NSImage) -> Data? {
-        let size = image.size
-        let side = min(size.width, size.height)
-        guard side > 0 else {
+    /// A square of a picture drawn at the photo's side, as PNG.
+    private static func squarePNG(of image: NSImage, from source: CGRect) -> Data? {
+        guard source.width > 0, source.height > 0 else {
             return nil
         }
-        let source = CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: side, height: side)
         let output = NSImage(size: CGSize(width: photoSide, height: photoSide), flipped: false) { rect in
             image.draw(in: rect, from: source, operation: .copy, fraction: 1)
             return true
         }
-        guard let tiff = output.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else {
+        return png(of: output)
+    }
+
+    /// A picture as PNG, at most the original's side kept so a large picture stays small on disk.
+    private static func png(of image: NSImage) -> Data? {
+        let scale = min(1, originalSide / max(image.size.width, image.size.height))
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        guard
+            let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: Int(size.width),
+                pixelsHigh: Int(size.height),
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+            )
+        else {
             return nil
         }
+        bitmap.size = size
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        image.draw(in: CGRect(origin: .zero, size: size), from: .zero, operation: .copy, fraction: 1)
         return bitmap.representation(using: .png, properties: [:])
     }
 }

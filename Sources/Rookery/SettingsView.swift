@@ -1206,25 +1206,33 @@ private struct PersonEditor: View {
     @State private var listAddresses: [String] = []
     @State private var newAddress = ""
     @State private var problem: String?
+    /// The picture being framed for the photo, while it is.
+    @State private var croppedPicture: NSImage?
+    @State private var isPhotoHovered = false
     @FocusState private var isNameFocused: Bool
+
+    private static let photoSide: CGFloat = 64
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                PersonMark(person: people.book.person(withId: person.id) ?? person, size: 44)
-                VStack(alignment: .leading, spacing: 6) {
+            if let croppedPicture {
+                PhotoCropper(image: croppedPicture) { source in
+                    keepPhoto(croppedPicture, cropping: source)
+                } onCancel: {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        self.croppedPicture = nil
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            } else {
+                HStack(alignment: .top, spacing: 14) {
+                    photoControl
                     TextField("Name", text: $name)
                         .textFieldStyle(.roundedBorder)
                         .focused($isNameFocused)
-                    HStack(spacing: 8) {
-                        Button("Choose Photo…", action: choosePhoto)
-                        if people.book.person(withId: person.id)?.hasPhoto == true {
-                            Button("Remove Photo") {
-                                people.removePhoto(of: person.id)
-                            }
-                        }
-                    }
+                        .padding(.top, 4)
                 }
+                .transition(.opacity)
             }
             VStack(alignment: .leading, spacing: 5) {
                 Text("Addresses")
@@ -1308,6 +1316,77 @@ private struct PersonEditor: View {
         onDone()
     }
 
+    /// The person's mark, which is the button that chooses their photo; under it, for a photo, framing it
+    /// again and removing it.
+    private var photoControl: some View {
+        let shown = people.book.person(withId: person.id) ?? person
+        return VStack(spacing: 6) {
+            Button(action: choosePhoto) {
+                PersonMark(person: shown, fallbackName: name, size: Self.photoSide)
+                    .overlay {
+                        ZStack {
+                            Circle()
+                                .fill(.black.opacity(isPhotoHovered ? 0.45 : 0))
+                            if isPhotoHovered || !shown.hasPhoto {
+                                VStack(spacing: 2) {
+                                    RookeryIconView(.camera)
+                                    if isPhotoHovered {
+                                        Text(shown.hasPhoto ? "Change" : "Add Photo")
+                                            .font(.system(size: 9.5, weight: .semibold))
+                                    }
+                                }
+                                .foregroundStyle(.white.opacity(isPhotoHovered ? 1 : 0.85))
+                                .offset(y: isPhotoHovered ? 0 : Self.photoSide * 0.3)
+                                .scaleEffect(isPhotoHovered ? 1 : 0.8)
+                            }
+                        }
+                    }
+                    .clipShape(Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(StageColors.separator)
+                    }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .onHover { isHovered in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isPhotoHovered = isHovered
+                }
+            }
+            .help(shown.hasPhoto ? "Choose another photo" : "Choose a photo")
+            if shown.hasPhoto {
+                HStack(spacing: 8) {
+                    if people.hasOriginalPicture(of: person.id) {
+                        Button("Adjust") {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                croppedPicture = people.originalPicture(of: person.id)
+                            }
+                        }
+                    }
+                    Button("Remove") {
+                        people.removePhoto(of: person.id)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(StageColors.secondaryText)
+            }
+        }
+    }
+
+    private func keepPhoto(_ picture: NSImage, cropping source: CGRect) {
+        do {
+            try people.takePhoto(picture, cropping: source, for: person.id)
+            problem = nil
+        } catch {
+            problem = String(describing: error)
+        }
+        withAnimation(.easeOut(duration: 0.2)) {
+            croppedPicture = nil
+        }
+    }
+
     private func choosePhoto() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
@@ -1320,8 +1399,11 @@ private struct PersonEditor: View {
             }
             MainActor.assumeIsolated {
                 do {
-                    try people.takePhoto(from: url, for: person.id)
+                    let picture = try PeopleStore.picture(at: url)
                     problem = nil
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        croppedPicture = picture
+                    }
                 } catch {
                     problem = String(describing: error)
                 }

@@ -166,7 +166,7 @@ struct SettingsView: View {
                     .multilineTextAlignment(.trailing)
                     .frame(width: Self.fieldWidth)
             }
-            SettingsRow(title: "Token", detail: "kept in the keychain") {
+            SettingsRow(title: "Token", detail: "kept on this Mac, for you alone") {
                 SecureField("roost token", text: $roostTokenDraft)
                     .textFieldStyle(.roundedBorder)
                     .multilineTextAlignment(.trailing)

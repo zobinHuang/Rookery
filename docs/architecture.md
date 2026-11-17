@@ -66,7 +66,7 @@ UI state is `@MainActor`; the window tracker is an actor with a run loop thread 
 | Per-app mixer settings | `UserDefaults` key `mixerTracks` | Permanent, by bundle id |
 | Per-tab mixer settings | The extension's `chrome.storage.session` | While the tab and the browser live |
 | Agent limits | In memory | Read again on launch |
-| roost's address; its token | `UserDefaults` key `roostAddress`; the login keychain, service `io.github.zobinhuang.rookery`, account `roost-token` | Permanent |
+| roost's address; its token | `UserDefaults` key `roostAddress`; `~/Library/Application Support/Rookery/roost-token`, mode 0600, moved once from the login keychain (service `io.github.zobinhuang.rookery`, account `roost-token`), which asked again after every rebuild of an app signed with a self-made certificate | Permanent |
 | Teams of agents | roost's `team` resources; their layout in `~/Library/Application Support/Rookery/agent-teams.json` | Permanent |
 | Hosts and workdirs | `~/Library/Application Support/Rookery/hosts.json`; hosts read from `~/.ssh/config` | Permanent |
 | Chrome native host registration | `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/io.github.zobinhuang.rookery.json` | Rewritten by the app at launch when it changed |

@@ -21,8 +21,12 @@ enum FleetConnection: Equatable {
 @Observable
 final class FleetModel {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "agents")
-    /// Where the app keeps roost's token.
-    static let keychainToken = KeychainSecret(account: "roost-token")
+    /// Where the app keeps roost's token: a file only the user may read, moved there once from the keychain,
+    /// where it was kept before.
+    static let tokenFile = FileSecret(
+        url: DataDirectory.file(named: "roost-token"),
+        formerStore: KeychainSecret(account: "roost-token")
+    )
     private static let firstRetryDelay: Duration = .seconds(2)
     private static let longestRetryDelay: Duration = .seconds(60)
 
@@ -50,7 +54,7 @@ final class FleetModel {
     @ObservationIgnored private var runTask: Task<Void, Never>?
     private var cachedToken: String??
 
-    init(preferences: Preferences, tokenStore: any SecretStore = FleetModel.keychainToken) {
+    init(preferences: Preferences, tokenStore: any SecretStore = FleetModel.tokenFile) {
         self.preferences = preferences
         self.tokenStore = tokenStore
         teams = Self.loadTeams()
@@ -100,7 +104,7 @@ final class FleetModel {
             cachedToken = .some(token)
         } catch {
             Self.logger.error("cannot read roost's token: \(error, privacy: .public)")
-            cachedToken = .some(nil)
+            cachedToken = nil
         }
     }
 

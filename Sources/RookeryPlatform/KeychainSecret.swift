@@ -93,3 +93,46 @@ public struct KeychainSecret: SecretStore {
         ]
     }
 }
+
+/// One secret Rookery keeps in a file of its data directory that only the user may read or write, as rook
+/// keeps its token. The keychain asks again each time an app signed by a self-made certificate is rebuilt,
+/// and a prompt left unanswered left the app unconnected; a file does not, and the user's account is what
+/// guards both.
+public struct FileSecret: SecretStore {
+    private static let fileMode = 0o600
+
+    public let url: URL
+    /// Where the secret was kept before, read once when the file does not exist yet, then moved here.
+    public let formerStore: (any SecretStore)?
+
+    public init(url: URL, formerStore: (any SecretStore)? = nil) {
+        self.url = url
+        self.formerStore = formerStore
+    }
+
+    public func read() throws -> String? {
+        if let data = try? Data(contentsOf: url) {
+            let secret = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            return secret.isEmpty ? nil : secret
+        }
+        guard let former = try formerStore?.read(), !former.isEmpty else {
+            return nil
+        }
+        try write(former)
+        return former
+    }
+
+    public func write(_ secret: String) throws {
+        if secret.isEmpty {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: Self.fileMode])
+        }
+        try FileManager.default.setAttributes([.posixPermissions: Self.fileMode], ofItemAtPath: url.path)
+        try Data(secret.utf8).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: Self.fileMode], ofItemAtPath: url.path)
+    }
+}

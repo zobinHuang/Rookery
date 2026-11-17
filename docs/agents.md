@@ -4,7 +4,7 @@ The sidebar's Agents mode shows every code agent roost knows of, one crow each p
 
 ## Following roost
 
-`FleetModel` (one for the app) holds the fleet. With an address in Settings and the token in the keychain (`KeychainSecret`, account `roost-token`), it reads the agents and rooks over HTTP, then opens roost's live link as a desktop and applies each event to `AgentFleet` (`RookeryCore`): a state or an end changes the agent in place, a new agent is fetched. When the link drops it shows the last fleet with a banner and retries, backing off from 2 to 60 seconds, then reads everything afresh, so nothing between the drop and the reconnect is missed.
+`FleetModel` (one for the app) holds the fleet. With an address in Settings and the token in a file only the user may read (`FileSecret`, `roost-token` in the data directory, moved once from the keychain, where an unanswered prompt after a rebuild had left the app unconnected; a failed read is tried again on the next connect), it reads the agents and rooks over HTTP, then opens roost's live link as a desktop and applies each event to `AgentFleet` (`RookeryCore`): a state or an end changes the agent in place, a new agent is fetched. When the link drops it shows the last fleet with a banner and retries, backing off from 2 to 60 seconds, then reads everything afresh, so nothing between the drop and the reconnect is missed.
 
 `RoostClient` (`RookeryPlatform`) is the only code that speaks roost's API.
 
@@ -26,7 +26,7 @@ The sidebar's Agents mode shows every code agent roost knows of, one crow each p
 
 ## Checking it without a person
 
-Seed a roost of your own with agents (`POST /v1/events` with `started` and `state` events, a transcript through the session upload API) and render `StageView` offscreen with a `FleetModel` given an in-memory `SecretStore`, so the render never touches the keychain; see docs/development.md for the harness.
+Seed a roost of your own with agents (`POST /v1/events` with `started` and `state` events, a transcript through the session upload API) and render `StageView` offscreen with a `FleetModel` given an in-memory `SecretStore`, so the render never touches the token file; see docs/development.md for the harness.
 
 ## Rookmaster
 

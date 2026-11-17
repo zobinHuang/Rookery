@@ -29,6 +29,8 @@ final class RavenAgent {
     private static let indexName = "conversations.json"
     /// The most conversations titled at once when Raven first loads.
     private static let backfilledTitleLimit = 20
+    /// How many times, five seconds apart, titling waits for roost to be set up after launch.
+    private static let titleClientWaits = 24
     private static let resourceFolder = "Raven"
     /// The name Raven's MCP config gives `rookery-mail`, which its tools are named under.
     static let mailServerName = "mail"
@@ -113,7 +115,12 @@ final class RavenAgent {
     /// Title the latest conversations still titled by their first request, kept from before Rookery wrote
     /// titles, one after another.
     private func writeMissingTitles() async {
-        guard let client = fleetModel.client() else {
+        var client = fleetModel.client()
+        for _ in 0..<Self.titleClientWaits where client == nil {
+            try? await Task.sleep(for: .seconds(5))
+            client = fleetModel.client()
+        }
+        guard let client else {
             return
         }
         let listUntitled = conversations.listConversations

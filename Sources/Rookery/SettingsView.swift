@@ -22,12 +22,10 @@ struct SettingsView: View {
     private static let contentMaxWidth: CGFloat = 1100
     private static let pagePadding: CGFloat = 44
     private static let narrowPadding: CGFloat = 24
-    private static let sectionSpacing: CGFloat = 44
     private static let railWidth: CGFloat = 210
-    /// The least width that shows the sections down the left.
+    private static let compactRailWidth: CGFloat = 54
+    /// The least width that names the sections in the rail rather than showing their icons alone.
     private static let railThreshold: CGFloat = 760
-    /// How far down the scrolled view a section's top must be to count as the one in view.
-    private static let shownPaneLine: CGFloat = 140
     /// The width of a row's name, the column its control starts after.
     static let labelWidth: CGFloat = 240
     private static let fieldWidth: CGFloat = 200
@@ -52,9 +50,8 @@ struct SettingsView: View {
     @State private var isTestingRoost = false
     @State private var roostError: String?
     @State private var mailAccess: MailAccess?
-    @State private var showsRail = false
-    @State private var shownPane = SettingsPane.general
-    @State private var requestedPane: SettingsPane?
+    @State private var isRailCompact = false
+    @State private var selectedPane = SettingsPane.general
     @Namespace private var railNamespace
     @State private var mailError: String?
     /// The calendars Rookery may use that take events, offered as the default calendar.
@@ -78,19 +75,18 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if showsRail {
-                rail
-                Rectangle()
-                    .fill(StageColors.separator)
-                    .frame(width: 1)
-            }
-            pages
+        let railThreshold = Self.railThreshold
+        return HStack(spacing: 0) {
+            rail
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(width: 1)
+            page
         }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            showsRail = width >= Self.railThreshold
+        .onGeometryChange(for: Bool.self) { proxy in
+            proxy.size.width < railThreshold
+        } action: { isNarrow in
+            isRailCompact = isNarrow
         }
         .background(onClose == nil ? StageColors.window : .clear)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
@@ -99,99 +95,97 @@ struct SettingsView: View {
         .buttonStyle(StageButtonStyle())
     }
 
-    /// The sections down the left, the one in view lit; a click scrolls to one.
+    /// The sections down the left, the one shown lit; on a narrow stage, their icons alone.
     private var rail: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Settings")
-                .font(.system(size: 20, weight: .bold))
-                .padding(.horizontal, 10)
-                .padding(.top, 26)
-                .padding(.bottom, 14)
-            ForEach(SettingsPane.allCases, id: \.self) { pane in
-                let isShown = shownPane == pane
-                Button {
-                    requestedPane = pane
-                } label: {
-                    HStack(spacing: 9) {
-                        RookeryIconView(pane.symbol)
-                            .foregroundStyle(isShown ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
-                            .frame(width: 18)
-                        Text(pane.title)
-                            .font(.system(size: 13, weight: isShown ? .semibold : .regular))
-                        Spacer(minLength: 0)
-                    }
+        VStack(alignment: isRailCompact ? .center : .leading, spacing: 2) {
+            if !isRailCompact {
+                Text("Settings")
+                    .font(.system(size: 20, weight: .bold))
                     .padding(.horizontal, 10)
-                    .frame(height: 30)
-                    .background {
-                        if isShown {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(StageColors.selectedRow)
-                                .strokeBorder(StageColors.contrastActiveBorder)
-                                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-                                .matchedGeometryEffect(id: "pane", in: railNamespace)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                    .padding(.bottom, 14)
+            }
+            ForEach(SettingsPane.allCases, id: \.self) { pane in
+                railItem(pane)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
-        .frame(width: Self.railWidth)
-        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: shownPane)
+        .padding(.top, isRailCompact ? 20 : 26)
+        .padding(.horizontal, isRailCompact ? 8 : 10)
+        .frame(width: isRailCompact ? Self.compactRailWidth : Self.railWidth)
+        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: selectedPane)
     }
 
-    /// Every section, one after another, scrolled to the one chosen in the rail.
-    private var pages: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: Self.sectionSpacing) {
-                    if !showsRail {
-                        header
-                    }
-                    general
-                roost
-                mailSettings
-                calendarSettings
-                PeopleSettingsSection(people: fleetModel.people)
-                codeAgents
-                worldClock
-                screenSaver
-                    dragging
-                    shortcuts
+    private func railItem(_ pane: SettingsPane) -> some View {
+        let isSelected = selectedPane == pane
+        return Button {
+            selectedPane = pane
+        } label: {
+            HStack(spacing: 9) {
+                RookeryIconView(pane.symbol)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+                    .frame(width: 18)
+                if !isRailCompact {
+                    Text(pane.title)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    Spacer(minLength: 0)
                 }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(StageColors.selectedRow)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+                        .matchedGeometryEffect(id: "pane", in: railNamespace)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isRailCompact ? pane.title : "")
+    }
+
+    /// The section chosen in the rail, alone.
+    private var page: some View {
+        ScrollView {
+            paneContent
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
                 .frame(maxWidth: Self.contentMaxWidth, alignment: .leading)
-                .padding(.horizontal, showsRail ? Self.pagePadding : Self.narrowPadding)
-                .padding(.top, showsRail ? 26 : 20)
+                .padding(.horizontal, isRailCompact ? Self.narrowPadding : Self.pagePadding)
+                .padding(.top, isRailCompact ? 20 : 26)
                 .padding(.bottom, 60)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .id(selectedPane)
+        .transition(.opacity)
+        .animation(.easeOut(duration: 0.15), value: selectedPane)
+        .scrollIndicators(.automatic)
+        .overlay(alignment: .topTrailing) {
+            if let onClose {
+                SettingsCloseButton(action: onClose)
+                    .padding(.top, 22)
+                    .padding(.trailing, 24)
             }
-            .scrollIndicators(.automatic)
-            .overlay(alignment: .topTrailing) {
-                if showsRail, let onClose {
-                    SettingsCloseButton(action: onClose)
-                        .padding(.top, 22)
-                        .padding(.trailing, 24)
-                }
-            }
-            .coordinateSpace(.named(SettingsPane.scrollSpace))
-            .onPreferenceChange(SettingsPanePositions.self) { mapPositions in
-                let listPassed = SettingsPane.allCases.filter { (mapPositions[$0] ?? .infinity) <= Self.shownPaneLine }
-                shownPane = listPassed.last ?? .general
-            }
-            .onChange(of: requestedPane) { _, pane in
-                guard let pane else {
-                    return
-                }
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    proxy.scrollTo(pane, anchor: .top)
-                }
-                requestedPane = nil
-            }
+        }
+    }
+
+    @ViewBuilder
+    private var paneContent: some View {
+        switch selectedPane {
+        case .general: general
+        case .roost: roost
+        case .mail: mailSettings
+        case .calendars: calendarSettings
+        case .people: PeopleSettingsSection(people: fleetModel.people)
+        case .codeAgents: codeAgents
+        case .worldClock: worldClock
+        case .screenSaver: screenSaver
+        case .dragging: dragging
+        case .shortcuts: shortcuts
         }
     }
 
@@ -612,18 +606,6 @@ struct SettingsView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center) {
-            Text("Settings")
-                .font(.system(size: 22, weight: .bold))
-            Spacer()
-            if let onClose {
-                SettingsCloseButton(action: onClose)
-            }
-        }
-        .padding(.horizontal, 4)
-    }
-
     @ViewBuilder
     private var clockCities: some View {
         ForEach(preferences.listClockCities) { city in
@@ -781,8 +763,8 @@ struct SettingsView: View {
     }
 }
 
-/// One of the settings' sections: its name large over its rows, with nothing boxing them in; it tells the
-/// page where it is, so the rail can light the one in view, and is the place the rail scrolls to.
+/// One of the settings' sections, shown alone when chosen in the rail: its name large over its rows, with
+/// nothing boxing them in.
 private struct SettingsSection<Content: View>: View {
     let pane: SettingsPane
     @ViewBuilder let content: Content
@@ -810,15 +792,6 @@ private struct SettingsSection<Content: View>: View {
                     .frame(height: SettingsSeparator.height)
             }
         }
-        .id(pane)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: SettingsPanePositions.self,
-                    value: [pane: proxy.frame(in: .named(SettingsPane.scrollSpace)).minY]
-                )
-            }
-        }
     }
 }
 
@@ -834,8 +807,6 @@ enum SettingsPane: String, CaseIterable {
     case screenSaver
     case dragging
     case shortcuts
-
-    static let scrollSpace = "settings"
 
     var title: String {
         switch self {
@@ -881,15 +852,6 @@ enum SettingsPane: String, CaseIterable {
         case .dragging: "How windows join the stage when dragged."
         case .shortcuts: "The keys that work Rookery from anywhere."
         }
-    }
-}
-
-/// Where each section's top is in the scrolled settings, gathered so the rail can light the one in view.
-private struct SettingsPanePositions: PreferenceKey {
-    static let defaultValue: [SettingsPane: CGFloat] = [:]
-
-    static func reduce(value: inout [SettingsPane: CGFloat], nextValue: () -> [SettingsPane: CGFloat]) {
-        value.merge(nextValue()) { $1 }
     }
 }
 

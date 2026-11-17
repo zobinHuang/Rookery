@@ -653,13 +653,14 @@ struct MessageBubble<Content: View>: View {
 }
 
 /// A message bubble's outline: a rounded rectangle, with a tail curling out of its bottom corner on its
-/// side when it ends a run.
+/// side when it ends a run, or out of its top corner, toward a mark above it.
 struct MessageBubbleShape: Shape {
     private static var cornerRadius: CGFloat { 17 }
     private static var tailWidth: CGFloat { 6 }
 
     let isTrailing: Bool
     let hasTail: Bool
+    var isTailOnTop = false
 
     func path(in rect: CGRect) -> Path {
         let radius = min(Self.cornerRadius, rect.height / 2, rect.width / 2)
@@ -683,9 +684,12 @@ struct MessageBubbleShape: Shape {
         path.addLine(to: CGPoint(x: minX, y: minY + radius))
         path.addArc(tangent1End: CGPoint(x: minX, y: minY), tangent2End: CGPoint(x: minX + radius, y: minY), radius: radius)
         path.closeSubpath()
-        guard !isTrailing else {
-            return path
+        if !isTrailing {
+            path = path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.minX + rect.maxX, ty: 0))
         }
-        return path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.minX + rect.maxX, ty: 0))
+        if isTailOnTop {
+            path = path.applying(CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: rect.minY + rect.maxY))
+        }
+        return path
     }
 }

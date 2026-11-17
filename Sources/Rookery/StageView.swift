@@ -39,6 +39,8 @@ protocol StageActions: AnyObject {
     func newStage()
     /// Show a page in the content area, or close it if it shows.
     func showPage(_ page: StagePage)
+    /// Show a page in the content area, leaving it there if it shows already.
+    func open(_ page: StagePage)
     /// Close the page shown in the content area and bring its front window back.
     func closePage()
     /// The user is dragging the stage by its sidebar header, towards another display.

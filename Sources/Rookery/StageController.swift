@@ -539,18 +539,30 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         model.shownPage = page
         refreshScreenSaverKeyMonitor()
         panel.makeKey()
-        guard let windowId = model.selectedWindowId else {
-            return
-        }
+        let setHiddenIds = Set(workspaceController.workspace.listHiddenWindows.map(\.windowId))
+        let listOtherShownIds = (workspaceController.group(onStage: stageId)?.listMembers ?? [])
+            .map(\.windowId)
+            .filter { $0 != model.selectedWindowId && !setHiddenIds.contains($0) }
+        let selectedWindowId = model.selectedWindowId
         Task { [weak self, workspaceController] in
+            for windowId in listOtherShownIds {
+                do {
+                    try await workspaceController.perform(.hide, on: windowId)
+                } catch {
+                    Self.logger.error("cannot set \(windowId.rawValue) aside for a page: \(error, privacy: .public)")
+                }
+            }
+            guard let selectedWindowId else {
+                return
+            }
             do {
-                try await workspaceController.perform(.hide, on: windowId)
+                try await workspaceController.perform(.hide, on: selectedWindowId)
             } catch {
-                Self.logger.error("cannot set \(windowId.rawValue) aside for a page: \(error, privacy: .public)")
+                Self.logger.error("cannot set \(selectedWindowId.rawValue) aside for a page: \(error, privacy: .public)")
                 return
             }
             if self?.model.shownPage != nil {
-                self?.asideWindowId = windowId
+                self?.asideWindowId = selectedWindowId
             }
         }
     }

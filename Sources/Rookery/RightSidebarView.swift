@@ -230,7 +230,7 @@ struct RightSidebarView: View {
 
     private func openMessage(_ message: MailMessageSummary) {
         fleetModel.pageMemory.selectedMailId = message.id
-        actions.showPage(.mail)
+        actions.open(.mail)
     }
 }
 

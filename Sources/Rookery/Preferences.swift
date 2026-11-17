@@ -97,6 +97,8 @@ final class Preferences {
     private static let cycleHotkeyKey = "cycleHotkey"
     private static let stageHotkeyKey = "stageHotkey"
     private static let rightSidebarHotkeyKey = "rightSidebarHotkey"
+    private static let previousTabHotkeyKey = "previousTabHotkey"
+    private static let nextTabHotkeyKey = "nextTabHotkey"
     private static let stageSidebarCollapsedKey = "isStageSidebarCollapsed"
     private static let stageRightSidebarCollapsedKey = "isStageRightSidebarCollapsed"
     private static let stageRightSidebarTabKey = "stageRightSidebarTab"
@@ -119,6 +121,8 @@ final class Preferences {
     static let defaultCycleHotkey = Hotkey(keyCode: kVK_ANSI_Grave, modifiers: [.control, .option])
     static let defaultStageHotkey = Hotkey(keyCode: kVK_Return, modifiers: [.control, .option])
     static let defaultRightSidebarHotkey = Hotkey(keyCode: kVK_ANSI_Backslash, modifiers: [.control, .option])
+    static let defaultPreviousTabHotkey = Hotkey(keyCode: kVK_LeftArrow, modifiers: [.option])
+    static let defaultNextTabHotkey = Hotkey(keyCode: kVK_RightArrow, modifiers: [.option])
     /// What the screen saver says while the user has set nothing.
     static let defaultScreenSaverText = "Be right back"
     static let defaultScreenSaverTextSize: Double = 72
@@ -282,6 +286,20 @@ final class Preferences {
         }
     }
 
+    /// Brings forward the tab before the front one in its group.
+    var previousTabHotkey: Hotkey {
+        didSet {
+            store(previousTabHotkey, forKey: Self.previousTabHotkeyKey)
+        }
+    }
+
+    /// Brings forward the tab after the front one in its group.
+    var nextTabHotkey: Hotkey {
+        didSet {
+            store(nextTabHotkey, forKey: Self.nextTabHotkeyKey)
+        }
+    }
+
     /// Folds the stage's right sidebar to a strip of icons, or opens it.
     var rightSidebarHotkey: Hotkey {
         didSet {
@@ -321,6 +339,8 @@ final class Preferences {
         cycleHotkey = Self.load(forKey: Self.cycleHotkeyKey, from: defaults) ?? Self.defaultCycleHotkey
         stageHotkey = Self.load(forKey: Self.stageHotkeyKey, from: defaults) ?? Self.defaultStageHotkey
         rightSidebarHotkey = Self.load(forKey: Self.rightSidebarHotkeyKey, from: defaults) ?? Self.defaultRightSidebarHotkey
+        previousTabHotkey = Self.load(forKey: Self.previousTabHotkeyKey, from: defaults) ?? Self.defaultPreviousTabHotkey
+        nextTabHotkey = Self.load(forKey: Self.nextTabHotkeyKey, from: defaults) ?? Self.defaultNextTabHotkey
     }
 
     /// Put every shortcut back to its default.
@@ -331,6 +351,8 @@ final class Preferences {
         cycleHotkey = Self.defaultCycleHotkey
         stageHotkey = Self.defaultStageHotkey
         rightSidebarHotkey = Self.defaultRightSidebarHotkey
+        previousTabHotkey = Self.defaultPreviousTabHotkey
+        nextTabHotkey = Self.defaultNextTabHotkey
     }
 
     private func store(_ hotkey: Hotkey, forKey key: String) {

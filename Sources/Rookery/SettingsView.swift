@@ -404,6 +404,8 @@ struct SettingsView: View {
             recorderRow("Show All Windows", hotkey: preferences.showAllHotkey) { preferences.showAllHotkey = $0 }
             recorderRow("Group Switcher", hotkey: preferences.switcherHotkey) { preferences.switcherHotkey = $0 }
             recorderRow("Next Window in Group", hotkey: preferences.cycleHotkey) { preferences.cycleHotkey = $0 }
+            recorderRow("Previous Tab", hotkey: preferences.previousTabHotkey) { preferences.previousTabHotkey = $0 }
+            recorderRow("Next Tab", hotkey: preferences.nextTabHotkey) { preferences.nextTabHotkey = $0 }
             SettingsActionRow(title: "Restore Default Shortcuts", symbol: .undo) {
                 preferences.restoreDefaultShortcuts()
             }

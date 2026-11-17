@@ -92,6 +92,22 @@ final class ShortcutController {
                 await workspaceController.switchTo(nil)
             }
         }
+        bind(preferences.previousTabHotkey, name: "previous tab") { [weak self] in
+            guard let workspaceController = self?.workspaceController else {
+                return
+            }
+            Task {
+                await workspaceController.stepActiveGroupWindow(by: -1)
+            }
+        }
+        bind(preferences.nextTabHotkey, name: "next tab") { [weak self] in
+            guard let workspaceController = self?.workspaceController else {
+                return
+            }
+            Task {
+                await workspaceController.stepActiveGroupWindow(by: 1)
+            }
+        }
         bind(preferences.cycleHotkey, name: "cycle windows") { [weak self] in
             guard let workspaceController = self?.workspaceController else {
                 return

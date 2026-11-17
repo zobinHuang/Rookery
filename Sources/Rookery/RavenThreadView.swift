@@ -21,8 +21,35 @@ struct RavenThreadView: View {
         fleetModel.raven
     }
 
+    /// The conversation's title, written from it once Raven first answers, and how much was asked and when.
+    private func header(_ conversation: RavenConversation) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(conversation.title)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .contentTransition(.opacity)
+            Text("\(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests"), last \(conversation.lastAt.formatted(.relative(presentation: .named)))")
+                .font(.system(size: 11))
+                .foregroundStyle(StageColors.tertiaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: 1)
+        }
+        .animation(.easeOut(duration: 0.25), value: conversation.title)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            if let conversation = raven.conversations.conversation(conversationId) {
+                header(conversation)
+            }
             TranscriptView(
                 reader: raven.reader(of: conversationId),
                 agentId: conversationId,

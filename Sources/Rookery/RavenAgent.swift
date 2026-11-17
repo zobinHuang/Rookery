@@ -27,6 +27,8 @@ final class RavenAgent {
     private static let workspaceName = "raven"
     private static let historyName = "raven-history"
     private static let indexName = "conversations.json"
+    /// The most conversations titled at once when Raven first loads.
+    private static let backfilledTitleLimit = 20
     private static let resourceFolder = "Raven"
     /// The name Raven's MCP config gives `rookery-mail`, which its tools are named under.
     static let mailServerName = "mail"
@@ -50,6 +52,7 @@ final class RavenAgent {
     ]
 
     private(set) var conversations = RavenConversations()
+    @ObservationIgnored private var titleTask: Task<Void, Never>?
     /// What was said in each conversation opened since launch, as read from its history.
     private(set) var mapReaders: [String: TranscriptReader] = [:]
     /// How the latest request of each conversation went, since launch.
@@ -101,6 +104,23 @@ final class RavenAgent {
             conversations = RavenConversations()
         } catch {
             Self.logger.error("cannot read Raven's conversations: \(error, privacy: .public)")
+        }
+        titleTask = Task { [weak self] in
+            await self?.writeMissingTitles()
+        }
+    }
+
+    /// Title the latest conversations still titled by their first request, kept from before Rookery wrote
+    /// titles, one after another.
+    private func writeMissingTitles() async {
+        guard let client = fleetModel.client() else {
+            return
+        }
+        let listUntitled = conversations.listConversations
+            .filter { $0.titleSource == nil && !isRunning($0.id) }
+            .prefix(Self.backfilledTitleLimit)
+        for conversation in listUntitled where !Task.isCancelled {
+            await writeTitle(of: conversation.id, client: client)
         }
     }
 
@@ -298,6 +318,12 @@ final class RavenAgent {
     func rename(_ conversationId: String, to title: String) {
         conversations.rename(conversationId, to: title)
         saveIndex()
+        guard let client = fleetModel.client(), let renamed = conversations.conversation(conversationId)?.title else {
+            return
+        }
+        Task {
+            await report(conversationId, [Self.event(conversationId, "renamed", detail: ["title": .string(renamed)])], to: client)
+        }
     }
 
     // MARK: - A request
@@ -363,6 +389,34 @@ final class RavenAgent {
             Self.event(sessionId, "state", detail: ["state": .string(finalState.rawValue)]),
             Self.event(sessionId, "ended", detail: [:]),
         ], to: client)
+        if case .finished = mapStatuses[sessionId], conversations.conversation(sessionId)?.titleSource == nil {
+            await writeTitle(of: sessionId, client: client)
+        }
+    }
+
+    /// Title a conversation from its first request and Raven's answer, as a chat app does, in place of the
+    /// request's first line, and tell roost; `claude -p` writes no title of its own.
+    private func writeTitle(of conversationId: String, client: RoostClient) async {
+        let listEntries = reader(of: conversationId).listEntries
+        guard
+            let conversation = conversations.conversation(conversationId),
+            let request = listEntries.first(where: { $0.role == .user })?.text,
+            let answer = listEntries.last(where: { $0.role == .assistant })?.text
+        else {
+            return
+        }
+        let written: String
+        do {
+            written = try await QuickModel.answer(RavenConversation.titlePrompt(request: request, answer: answer), engine: conversation.engine)
+        } catch {
+            Self.logger.error("cannot title conversation \(conversationId, privacy: .public): \(String(describing: error), privacy: .public)")
+            return
+        }
+        guard let title = RavenConversation.writtenTitle(of: written), conversations.retitle(conversationId, to: title) else {
+            return
+        }
+        saveIndex()
+        await report(conversationId, [Self.event(conversationId, "renamed", detail: ["title": .string(title)])], to: client)
     }
 
     /// Take one line of the agent's stream-json output: a step of its conversation, kept in its history, or

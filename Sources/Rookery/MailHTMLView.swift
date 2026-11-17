@@ -3,9 +3,10 @@ import os
 import SwiftUI
 import WebKit
 
-/// A message's HTML shown as its sender formatted it, safely: no script runs, nothing is fetched from the
-/// network unless the user lets this message load its images, and a link opens in the browser rather than
-/// here.
+/// A message's HTML shown as its sender formatted it, safely: no script of the message's runs, nothing is
+/// fetched from the network unless the user lets this message load its images, and a link opens in the
+/// browser rather than here. Given a way to report its height, it takes the height its content needs and
+/// leaves scrolling to the view around it.
 struct MailHTMLView: NSViewRepresentable {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "mail")
     private static let remoteRuleIdentifier = "rookery-block-remote"
@@ -14,6 +15,8 @@ struct MailHTMLView: NSViewRepresentable {
     let html: String
     /// Whether the message may fetch its images and other remote content.
     let isRemoteAllowed: Bool
+    /// Told the height the message's content needs once it is laid out; nil to scroll inside the view.
+    var onHeight: ((CGFloat) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -23,7 +26,8 @@ struct MailHTMLView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         configuration.websiteDataStore = .nonPersistent()
-        let view = WKWebView(frame: .zero, configuration: configuration)
+        let view = MailWebView(frame: .zero, configuration: configuration)
+        view.isScrollingOuter = onHeight != nil
         view.navigationDelegate = context.coordinator
         return view
     }
@@ -34,6 +38,7 @@ struct MailHTMLView: NSViewRepresentable {
             return
         }
         context.coordinator.loadedKey = key
+        context.coordinator.onHeight = onHeight
         let html = html
         let isRemoteAllowed = isRemoteAllowed
         WKContentRuleListStore.default()?.compileContentRuleList(
@@ -66,7 +71,24 @@ struct MailHTMLView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
+        private static let heightScript = "return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+
         var loadedKey = ""
+        var onHeight: ((CGFloat) -> Void)?
+
+        /// Read how tall the laid out message is, by a script of Rookery's own: the message's own scripts
+        /// stay off.
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let onHeight else {
+                return
+            }
+            Task { @MainActor in
+                let height = try? await webView.callAsyncJavaScript(Self.heightScript, contentWorld: .defaultClient)
+                if let height = height as? Double {
+                    onHeight(CGFloat(height))
+                }
+            }
+        }
 
         func webView(
             _ webView: WKWebView,
@@ -82,3 +104,17 @@ struct MailHTMLView: NSViewRepresentable {
         }
     }
 }
+
+/// The web view of a message that takes its content's height: scrolling over it scrolls the view around it.
+final class MailWebView: WKWebView {
+    var isScrollingOuter = false
+
+    override func scrollWheel(with event: NSEvent) {
+        if isScrollingOuter {
+            nextResponder?.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
+}
+

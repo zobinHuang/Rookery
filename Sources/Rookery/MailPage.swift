@@ -59,6 +59,18 @@ struct MailPage: View {
     /// Shows the Rookmaster console, where Raven's conversations are.
     let onShowRookmaster: () -> Void
 
+    /// The widest the reader's conversation runs.
+    private static let readerMaxWidth: CGFloat = 860
+    private static let threadLineWidth: CGFloat = 1.5
+    private static let threadDotSize: CGFloat = 11
+    /// How far down its card a message's dot sits, level with the sender's name.
+    private static let threadDotTop: CGFloat = 22
+    /// A formatted message's height until its own is read, and the least it takes.
+    private static let bodyStartHeight: CGFloat = 160
+    private static let bodyMinimumHeight: CGFloat = 40
+    /// The colors of senders' marks.
+    private static let listSenderColors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
+
     @State private var place = MailPlace.allInboxes
     @State private var searchText = ""
     @State private var listMessages: [MailMessageSummary] = []
@@ -68,8 +80,12 @@ struct MailPage: View {
     @State private var loadedMessageId: Int?
     @State private var isLoading = false
     @State private var problem: String?
-    /// Whether a message with HTML is shown formatted rather than as plain text.
-    @State private var isFormatted = true
+    /// The conversation of the message chosen, oldest first, and of its messages those read in full, those
+    /// open, and how tall each one's formatted text is.
+    @State private var listThread: [MailMessageSummary] = []
+    @State private var mapDetails: [Int: MailMessageDetail] = [:]
+    @State private var setOpenIds: Set<Int> = []
+    @State private var mapBodyHeights: [Int: CGFloat] = [:]
 
     private var service: any MailSource {
         fleetModel.mailSource
@@ -304,38 +320,18 @@ struct MailPage: View {
                 Rectangle()
                     .fill(StageColors.separator)
                     .frame(height: 1)
-                if isFormatted && !message.html.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        readerHeader(message)
-                        formatRow(message)
-                        MailHTMLView(html: message.html, isRemoteAllowed: true)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .strokeBorder(StageColors.separator)
-                            }
-                    }
-                    .padding(20)
-                } else {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 12) {
-                            readerHeader(message)
-                            if !message.html.isEmpty {
-                                formatRow(message)
-                            }
-                            Rectangle()
-                                .fill(StageColors.separator)
-                                .frame(height: 1)
-                            Text(message.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : message.text)
-                                .font(.system(size: 13))
-                                .lineSpacing(3)
-                                .foregroundStyle(message.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        threadHeader(message)
+                            .padding(.bottom, 18)
+                        ForEach(Array(listThread.enumerated()), id: \.element.id) { index, summary in
+                            threadItem(summary, isFirst: index == 0, isLast: index == listThread.count - 1)
                         }
-                        .padding(20)
-                        .frame(maxWidth: 780, alignment: .leading)
                     }
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 20)
+                    .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         } else {
@@ -343,44 +339,181 @@ struct MailPage: View {
         }
     }
 
-    /// The subject, who it is from and to, when, in which account, and its attachments.
-    private func readerHeader(_ message: MailMessageDetail) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+    /// The conversation's subject, how many messages it holds and which account it is in.
+    private func threadHeader(_ message: MailMessageDetail) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(message.summary.subject.isEmpty ? "No subject" : message.summary.subject)
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: 19, weight: .bold))
                 .textSelection(.enabled)
-            VStack(alignment: .leading, spacing: 3) {
-                readerLine("From", Self.people([message.summary.from]))
-                if !message.listTo.isEmpty {
-                    readerLine("To", Self.people(message.listTo))
-                }
-                if !message.listCc.isEmpty {
-                    readerLine("Cc", Self.people(message.listCc))
-                }
-                readerLine("Date", message.summary.receivedAt.formatted(date: .complete, time: .shortened))
-                readerLine("Account", message.summary.account)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(AccountColor.of(message.summary.account))
+                    .frame(width: 7, height: 7)
+                Text(listThread.count == 1 ? "1 message in \(message.summary.account)" : "\(listThread.count) messages in \(message.summary.account)")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StageColors.secondaryText)
             }
-            if !message.listAttachments.isEmpty {
-                FlowRow(spacing: 5) {
-                    ForEach(message.listAttachments, id: \.self) { name in
-                        InfoTag(name)
+        }
+    }
+
+    /// One message of the conversation on its line: a dot on the line that runs through them all, the
+    /// line drawn from the message before to the one after, and the message's card beside it.
+    private func threadItem(_ summary: MailMessageSummary, isFirst: Bool, isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(isFirst ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.separator))
+                    .frame(width: Self.threadLineWidth, height: Self.threadDotTop)
+                Circle()
+                    .fill(summary.isRead ? AnyShapeStyle(StageColors.window) : AnyShapeStyle(Color.accentColor))
+                    .overlay {
+                        Circle()
+                            .strokeBorder(summary.isRead ? AnyShapeStyle(StageColors.secondaryText.opacity(0.6)) : AnyShapeStyle(Color.accentColor), lineWidth: 1.5)
                     }
+                    .frame(width: Self.threadDotSize, height: Self.threadDotSize)
+                Rectangle()
+                    .fill(isLast ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.separator))
+                    .frame(width: Self.threadLineWidth)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(width: Self.threadDotSize)
+            messageCard(summary)
+                .padding(.bottom, isLast ? 0 : 12)
+        }
+    }
+
+    /// A message in its card: its sender, to whom and when, then its text, formatted as sent when it has
+    /// HTML, with its attachments; folded to its opening while closed. Its head opens and closes it.
+    private func messageCard(_ summary: MailMessageSummary) -> some View {
+        let isOpen = setOpenIds.contains(summary.id)
+        let detail = mapDetails[summary.id]
+        let isChosen = summary.id == selectedId
+        return VStack(alignment: .leading, spacing: 10) {
+            Button {
+                toggle(summary)
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(Self.initials(of: summary.from))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Self.color(of: summary.from.address), in: Circle())
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(summary.from.name.isEmpty ? summary.from.address : summary.from.name)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                            Spacer(minLength: 6)
+                            Text(summary.receivedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 11).monospacedDigit())
+                                .foregroundStyle(StageColors.tertiaryText)
+                        }
+                        if isOpen, let detail, !detail.listTo.isEmpty {
+                            Text("to \(Self.names(detail.listTo + detail.listCc))")
+                                .font(.system(size: 11))
+                                .foregroundStyle(StageColors.secondaryText)
+                                .lineLimit(2)
+                        } else if !isOpen {
+                            Text(summary.snippet)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(StageColors.secondaryText)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isOpen ? "Fold this message" : "Open this message")
+            if isOpen {
+                if let detail {
+                    messageBody(detail)
+                        .transition(.opacity)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+        .padding(14)
+        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(isChosen ? AnyShapeStyle(StageColors.secondaryText.opacity(0.35)) : AnyShapeStyle(StageColors.separator))
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isOpen)
+    }
+
+    /// A message's text: as sent, on a page of its own, when it has HTML; else its plain text; then its
+    /// attachments.
+    @ViewBuilder
+    private func messageBody(_ detail: MailMessageDetail) -> some View {
+        if !detail.html.isEmpty {
+            MailHTMLView(html: detail.html, isRemoteAllowed: true) { height in
+                mapBodyHeights[detail.summary.id] = height
+            }
+            .frame(height: max(mapBodyHeights[detail.summary.id] ?? Self.bodyStartHeight, Self.bodyMinimumHeight))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(StageColors.separator)
+            }
+        } else {
+            Text(detail.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : detail.text)
+                .font(.system(size: 13))
+                .lineSpacing(3)
+                .foregroundStyle(detail.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if !detail.listAttachments.isEmpty {
+            FlowRow(spacing: 5) {
+                ForEach(detail.listAttachments, id: \.self) { name in
+                    InfoTag(name)
                 }
             }
         }
     }
 
-    /// The switch between the message as formatted and as plain text.
-    private func formatRow(_ message: MailMessageDetail) -> some View {
-        HStack(spacing: 10) {
-            StageSegmentedControl(
-                selection: $isFormatted,
-                listOptions: [true, false],
-                title: { $0 ? "Formatted" : "Plain Text" },
-                isSmall: true
-            )
-            Spacer(minLength: 0)
+    /// Open a message of the conversation, reading it first, or fold it.
+    private func toggle(_ summary: MailMessageSummary) {
+        if setOpenIds.contains(summary.id) {
+            setOpenIds.remove(summary.id)
+            return
         }
+        setOpenIds.insert(summary.id)
+        guard mapDetails[summary.id] == nil else {
+            return
+        }
+        Task {
+            do {
+                mapDetails[summary.id] = try await service.message(summary.id)
+            } catch {
+                problem = String(describing: error)
+            }
+        }
+    }
+
+    /// A sender's initials, for the round mark before their name.
+    private static func initials(of address: MailAddress) -> String {
+        let name = address.name.isEmpty ? address.address : address.name
+        let listWords = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "@" }).prefix(2)
+        return listWords.compactMap(\.first).map { String($0).uppercased() }.joined()
+    }
+
+    /// A sender's color, the same for the same address every time.
+    private static func color(of address: String) -> Color {
+        let sum = address.lowercased().unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
+        return listSenderColors[sum % listSenderColors.count]
+    }
+
+    private static func names(_ listPeople: [MailAddress]) -> String {
+        listPeople.map { $0.name.isEmpty ? $0.address : $0.name }.joined(separator: ", ")
     }
 
     /// What the user can do to the message: with titles where they fit, as icons alone where they do not.
@@ -427,18 +560,6 @@ struct MailPage: View {
         .help(title)
     }
 
-    private func readerLine(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title)
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(StageColors.tertiaryText)
-                .frame(width: 56, alignment: .leading)
-            Text(value)
-                .font(.system(size: 12))
-                .textSelection(.enabled)
-        }
-    }
-
     private static func people(_ listPeople: [MailAddress]) -> String {
         listPeople.map { $0.name.isEmpty ? $0.address : "\($0.name) <\($0.address)>" }.joined(separator: ", ")
     }
@@ -466,7 +587,20 @@ struct MailPage: View {
             return
         }
         do {
-            shownMessage = try await service.message(selectedId)
+            let detail = try await service.message(selectedId)
+            shownMessage = detail
+            if let detail {
+                mapDetails[selectedId] = detail
+                let listFound = try await service.thread(of: detail.summary)
+                listThread = listFound.contains(where: { $0.id == selectedId }) ? listFound : [detail.summary]
+                setOpenIds = [selectedId]
+                if let latestId = listThread.last?.id, latestId != selectedId {
+                    setOpenIds.insert(latestId)
+                    mapDetails[latestId] = try await service.message(latestId)
+                }
+            } else {
+                listThread = []
+            }
         } catch {
             problem = String(describing: error)
         }

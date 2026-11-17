@@ -113,6 +113,8 @@ struct RightSidebarView: View {
                         .foregroundStyle(StageColors.secondaryText)
                 }
             }
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
             .padding(.horizontal, 8)
             .padding(.vertical, 5)

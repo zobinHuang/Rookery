@@ -335,6 +335,12 @@ struct StageView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 6)
             }
+            if !model.isSidebarCollapsed {
+                Rectangle()
+                    .fill(StageColors.separator)
+                    .frame(height: 1)
+                    .padding(.top, 6)
+            }
             sectionHeader("Agents", count: fleetModel.fleet.listSessions.filter { $0.state != .ended }.count, isFolded: $isAgentsFolded)
             if !isAgentsFolded {
                 AgentsSidebarView(

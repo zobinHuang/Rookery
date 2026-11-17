@@ -8,6 +8,7 @@ struct TodayCalendarView: View {
     static let hourHeight: CGFloat = 46
     private static let hourLabelWidth: CGFloat = 38
     private static let minimumEventHeight: CGFloat = 18
+    private static let detailAnimation = Animation.spring(response: 0.32, dampingFraction: 0.88)
 
     let personal: PersonalDataModel
     let onOpenPage: () -> Void
@@ -43,10 +44,19 @@ struct TodayCalendarView: View {
                 timeline
             }
         }
-        .popover(item: $shownEvent, arrowEdge: .leading) { event in
-            EventDetailView(event: event)
-                .frame(width: 320)
+        .overlay {
+            if let shownEvent {
+                EventDetailView(event: shownEvent) {
+                    withAnimation(Self.detailAnimation) {
+                        self.shownEvent = nil
+                    }
+                }
+                .padding(10)
+                .id(shownEvent.id)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
+        .animation(Self.detailAnimation, value: shownEvent?.id)
     }
 
     private var dayHeader: some View {
@@ -307,79 +317,137 @@ struct NextEventCard: View {
     }
 }
 
-/// An event in full: when, where, the link to join, who organized it and who is invited with their
-/// answers, and its notes; with ways to open it in Calendar.
+/// One event in full, as a card in the stage's colors: its calendar's color down its side, its title and
+/// time, where it is, who organized it and who comes and how they answered, its notes, and buttons to join
+/// its meeting and open it in Calendar; with a button to close it.
 struct EventDetailView: View {
     let event: CalendarEventSummary
+    /// Removes the event, offered for one on a calendar that takes changes.
+    var onRemove: (() -> Void)?
+    let onClose: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 8) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(AccountColor.calendar(event.colorHex))
-                        .frame(width: 4, height: 34)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(event.title)
-                            .font(.system(size: 14, weight: .bold))
-                            .textSelection(.enabled)
-                        Text(timeText)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(AccountColor.calendar(event.colorHex))
+                    .frame(width: 4)
+                    .frame(maxHeight: .infinity)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(event.title)
+                        .font(.system(size: 15, weight: .bold))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(timeText)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(StageColors.secondaryText)
+                }
+                Spacer(minLength: 4)
+                Button(action: onClose) {
+                    RookeryIconView(.close)
+                        .foregroundStyle(StageColors.secondaryText)
+                        .frame(width: 22, height: 22)
+                        .background(StageColors.tile, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("Close")
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: 1)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    fact(.folder, "\(event.calendar), \(event.account)" + (event.listAlsoOn.isEmpty ? "" : "; also on \(event.listAlsoOn.joined(separator: ", "))"))
+                    if !event.location.isEmpty && !event.location.contains("://") {
+                        fact(.pin, event.location)
+                    }
+                    if !event.organizer.isEmpty {
+                        fact(.person, "Organized by \(event.organizer)")
+                    }
+                    if !event.listAttendees.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("\(event.listAttendees.count) invited")
+                                .font(.system(size: 10.5, weight: .semibold))
+                                .foregroundStyle(StageColors.tertiaryText)
+                            ForEach(event.listAttendees, id: \.address) { attendee in
+                                HStack(spacing: 7) {
+                                    Circle()
+                                        .fill(Self.statusColor(attendee.status))
+                                        .frame(width: 6, height: 6)
+                                    Text(attendee.name.isEmpty ? attendee.address : attendee.name)
+                                        .font(.system(size: 11.5, weight: attendee.isMe ? .semibold : .regular))
+                                        .lineLimit(1)
+                                    Spacer(minLength: 4)
+                                    Text(Self.statusTitle(attendee.status))
+                                        .font(.system(size: 10.5))
+                                        .foregroundStyle(StageColors.tertiaryText)
+                                }
+                            }
+                        }
+                    }
+                    if !event.notes.isEmpty {
+                        Text(event.notes)
                             .font(.system(size: 11.5))
                             .foregroundStyle(StageColors.secondaryText)
+                            .lineSpacing(2)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                 }
-                fact(.folder, "\(event.calendar), \(event.account)" + (event.listAlsoOn.isEmpty ? "" : "; also on \(event.listAlsoOn.joined(separator: ", "))"))
-                if !event.location.isEmpty {
-                    fact(.pin, event.location)
-                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Rectangle()
+                .fill(StageColors.separator)
+                .frame(height: 1)
+            HStack(spacing: 8) {
                 if let link = MeetingLink.of(event) {
                     Button {
                         NSWorkspace.shared.open(link)
                     } label: {
-                        RookeryLabel("Join the Meeting", icon: .video, spacing: 5)
+                        RookeryLabel("Join", icon: .video, spacing: 5)
                     }
                     .buttonStyle(StageButtonStyle(kind: .prominent))
-                    .controlSize(.small)
                 }
-                if !event.organizer.isEmpty {
-                    fact(.person, "Organized by \(event.organizer)")
+                if let onRemove {
+                    Button("Remove…", role: .destructive, action: onRemove)
                 }
-                if !event.listAttendees.isEmpty {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(event.listAttendees, id: \.address) { attendee in
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(Self.statusColor(attendee.status))
-                                    .frame(width: 6, height: 6)
-                                Text(attendee.name.isEmpty ? attendee.address : attendee.name)
-                                    .font(.system(size: 11.5, weight: attendee.isMe ? .semibold : .regular))
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                                Text(attendee.status)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(StageColors.tertiaryText)
-                            }
-                        }
-                    }
-                }
-                if !event.notes.isEmpty {
-                    Text(event.notes)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(StageColors.secondaryText)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Spacer(minLength: 0)
                 Button("Open in Calendar") {
                     let encoded = event.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? event.id
                     if let url = URL(string: "ical://ekevent/\(encoded)?method=show&options=more") {
                         NSWorkspace.shared.open(url)
                     }
                 }
-                .controlSize(.small)
             }
-            .padding(14)
+            .controlSize(.small)
+            .buttonStyle(StageButtonStyle())
+            .padding(12)
         }
-        .frame(maxHeight: 460)
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(StageColors.separator)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
+    }
+
+    private static func statusTitle(_ status: String) -> String {
+        switch status {
+        case "accepted": "Going"
+        case "declined": "Declined"
+        case "tentative": "Maybe"
+        case "pending": "Not answered"
+        default: status.capitalized
+        }
     }
 
     private var timeText: String {

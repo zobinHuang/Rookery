@@ -33,6 +33,8 @@ struct CalendarPage: View {
     @State private var listCalendars: [CalendarSummary] = []
     @State private var setHiddenCalendarIds: Set<String> = []
     @State private var shownEvent: CalendarEventSummary?
+    private static let eventCardWidth: CGFloat = 340
+    private static let eventCardMaxHeight: CGFloat = 560
     @State private var isAdding = false
     @State private var eventToRemove: CalendarEventSummary?
     @State private var problem: String?
@@ -116,6 +118,16 @@ struct CalendarPage: View {
                 }
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if let shownEvent {
+                eventCard(shownEvent)
+                    .id(shownEvent.id)
+                    .padding(.top, 70)
+                    .padding(.trailing, 20)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: shownEvent?.id)
         .animation(.spring(response: 0.28, dampingFraction: 0.9), value: isAdding)
         .confirmationDialog("Remove \(eventToRemove?.title ?? "")?", isPresented: Binding(get: { eventToRemove != nil }, set: { if !$0 { eventToRemove = nil } }), titleVisibility: .visible) {
             Button("Remove", role: .destructive) {
@@ -340,9 +352,6 @@ struct CalendarPage: View {
                             shownEvent = event
                         }
                         .gesture(moveGesture(event, columnWidth: proxy.size.width))
-                        .popover(item: Binding(get: { shownEvent?.id == event.id ? shownEvent : nil }, set: { shownEvent = $0 }), arrowEdge: .trailing) { shown in
-                            eventPopover(shown)
-                        }
                 }
                 if Calendar.current.isDateInToday(day) {
                     Rectangle()
@@ -520,24 +529,23 @@ struct CalendarPage: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .popover(item: Binding(get: { shownEvent?.id == event.id ? shownEvent : nil }, set: { shownEvent = $0 }), arrowEdge: .trailing) { shown in
-            eventPopover(shown)
-        }
     }
 
-    private func eventPopover(_ event: CalendarEventSummary) -> some View {
-        VStack(spacing: 0) {
-            EventDetailView(event: event)
-            if listCalendars.first(where: { $0.id == event.calendarId })?.isWritable == true {
-                Button("Remove Event…", role: .destructive) {
-                    shownEvent = nil
-                    eventToRemove = event
-                }
-                .controlSize(.small)
-                .padding(.bottom, 12)
-            }
+    /// The event chosen, in full, as a card floating at the page's right.
+    private func eventCard(_ event: CalendarEventSummary) -> some View {
+        let isWritable = listCalendars.first(where: { $0.id == event.calendarId })?.isWritable == true
+        return EventDetailView(
+            event: event,
+            onRemove: isWritable ? {
+                shownEvent = nil
+                eventToRemove = event
+            } : nil
+        ) {
+            shownEvent = nil
         }
-        .frame(width: 320)
+        .frame(width: Self.eventCardWidth)
+        .frame(maxHeight: Self.eventCardMaxHeight)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Work

@@ -432,12 +432,12 @@ struct StageView: View {
                             model.sidebarMode = mode
                         } label: {
                             RookeryIconView(mode.symbol)
-                                .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                                .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
                                 .frame(width: 34, height: 26)
                                 .background {
                                     if sidebarMode == mode {
                                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .fill(Color.accentColor.opacity(0.16))
+                                            .fill(StageColors.selectedSegment)
                                             .matchedGeometryEffect(id: "mode", in: modeNamespace)
                                     }
                                 }
@@ -545,7 +545,7 @@ struct StageView: View {
                             } else {
                                 Text(row.name)
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(row.isActive ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
+                                    .foregroundStyle(StageColors.primaryText)
                                     .lineLimit(1)
                             }
                             GroupSubtitleText(model: model, row: row)
@@ -572,6 +572,7 @@ struct StageView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(rowFill(isActive: row.isActive, isHovered: isHovered, isDropTarget: isDropTarget))
                     .strokeBorder(row.isActive ? StageColors.contrastActiveBorder : .clear)
+                    .shadow(color: row.isActive && !isDropTarget ? .black.opacity(0.08) : .clear, radius: 3, y: 1)
             }
             .overlay {
                 if isDropTarget {
@@ -582,7 +583,7 @@ struct StageView: View {
             .overlay(alignment: .leading) {
                 if row.isActive {
                     Capsule()
-                        .fill(Color.accentColor)
+                        .fill(StageColors.primaryText)
                         .frame(width: 3, height: 20)
                         .offset(x: -6)
                         .transition(.opacity)
@@ -662,7 +663,7 @@ struct StageView: View {
             return AnyShapeStyle(Color.accentColor.opacity(0.18))
         }
         if isActive {
-            return AnyShapeStyle(Color.accentColor.opacity(isHovered ? 0.2 : 0.15))
+            return AnyShapeStyle(isHovered ? StageColors.selectedRowHovered : StageColors.selectedRow)
         }
         return isHovered ? AnyShapeStyle(StageColors.hoveredRow) : AnyShapeStyle(.clear)
     }

@@ -93,6 +93,20 @@ enum StageColors {
     /// front tab and the user's messages are; and the label on it.
     static let selectedSegment = activeTab
     static let selectedSegmentText = activeTabText
+    /// A row of a list the user chose, as a group or an agent in the sidebar: lifted off the list like a
+    /// card, in no color of its own, its text in full ink; and under the pointer.
+    static let selectedRow = StageColor(
+        light: .white,
+        dark: slate(0xC8D2E6, alpha: 0.11),
+        highContrastLight: .white,
+        highContrastDark: .black
+    )
+    static let selectedRowHovered = StageColor(
+        light: .white,
+        dark: slate(0xC8D2E6, alpha: 0.15),
+        highContrastLight: contrastActiveBorderLight.withAlphaComponent(0.08),
+        highContrastDark: contrastActiveBorderDark.withAlphaComponent(0.14)
+    )
     /// The track a switch or a row of tabs sits in: barely there, set off by a hairline, rather than a
     /// grey well.
     static let segmentGroove = StageColor(

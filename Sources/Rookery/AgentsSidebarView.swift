@@ -119,7 +119,7 @@ struct AgentsSidebarView: View {
                 if !isCollapsed {
                     Text("Rookmaster")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isRookmasterShown ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
+                        .foregroundStyle(StageColors.primaryText)
                     Spacer(minLength: 0)
                     RookeryIconView(.chevronRight)
                         .foregroundStyle(StageColors.tertiaryText)
@@ -130,7 +130,9 @@ struct AgentsSidebarView: View {
             .frame(maxWidth: .infinity, alignment: isCollapsed ? .center : .leading)
             .background {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isRookmasterShown ? AnyShapeStyle(Color.accentColor.opacity(0.15)) : AnyShapeStyle(StageColors.tile))
+                    .fill(isRookmasterShown ? AnyShapeStyle(StageColors.selectedRow) : AnyShapeStyle(StageColors.tile))
+                    .strokeBorder(isRookmasterShown ? StageColors.contrastActiveBorder : .clear)
+                    .shadow(color: isRookmasterShown ? .black.opacity(0.08) : .clear, radius: 3, y: 1)
             }
             .contentShape(Rectangle())
         }
@@ -396,7 +398,7 @@ struct AgentsSidebarView: View {
                 CrowView(state: agent.state)
                 VStack(alignment: .leading, spacing: 1) {
                     FittingText(agent.displayName, size: isSubagent ? 12 : 13, weight: .semibold)
-                        .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
+                        .foregroundStyle(StageColors.primaryText)
                     tags(of: agent, isReachable: isReachable)
                     if !isSubagent {
                         identity(of: agent, shownIn: teamId)
@@ -415,11 +417,12 @@ struct AgentsSidebarView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(rowFill(isSelected: isSelected, isHovered: isHovered, isTargeted: isTargeted))
                     .strokeBorder(isSelected ? StageColors.contrastActiveBorder : .clear)
+                    .shadow(color: isSelected && !isTargeted ? .black.opacity(0.08) : .clear, radius: 3, y: 1)
             }
             .overlay(alignment: .leading) {
                 if isSelected {
                     Capsule()
-                        .fill(Color.accentColor)
+                        .fill(StageColors.primaryText)
                         .frame(width: 3, height: 20)
                         .offset(x: -6)
                         .transition(.opacity)
@@ -614,7 +617,7 @@ struct AgentsSidebarView: View {
             return AnyShapeStyle(Color.accentColor.opacity(0.18))
         }
         if isSelected {
-            return AnyShapeStyle(Color.accentColor.opacity(isHovered ? 0.2 : 0.15))
+            return AnyShapeStyle(isHovered ? StageColors.selectedRowHovered : StageColors.selectedRow)
         }
         return isHovered ? AnyShapeStyle(StageColors.hoveredRow) : AnyShapeStyle(StageColor.clear)
     }
@@ -634,7 +637,7 @@ struct AgentsSidebarView: View {
 
     private func collapsedCrow(_ agent: FleetAgent) -> some View {
         let isSelected = selectedAgentId == agent.id
-        let fill = isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(StageColor.clear)
+        let fill = isSelected ? AnyShapeStyle(StageColors.selectedRow) : AnyShapeStyle(StageColor.clear)
         return Button {
             onSelect(agent.id)
         } label: {

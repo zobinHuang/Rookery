@@ -100,3 +100,18 @@ struct HostsTests {
         #expect(RemoteDirectory.parse("/\n").parent == nil)
     }
 }
+
+struct LoginChallengeTests {
+    @Test func theChallengeIsTheVerifiersSHA256AsRFC7636Says() {
+        let challenge = LoginChallenge(verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk", state: "s")
+        #expect(challenge.challenge == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM")
+    }
+
+    @Test func aCodeIsTakenOnlyWithItsState() {
+        let challenge = LoginChallenge(verifier: "v", state: "abc")
+        #expect(challenge.code(inQuery: "state=abc&code=4%2F0Ab&scope=x") == "4/0Ab")
+        #expect(challenge.code(inQuery: "state=evil&code=4%2F0Ab") == nil)
+        #expect(challenge.code(inQuery: "state=abc&error=access_denied") == nil)
+        #expect(LoginChallenge.make() != LoginChallenge.make())
+    }
+}

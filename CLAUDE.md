@@ -14,7 +14,7 @@ A macOS app that manages windows one by one inside its own stage, with a sidebar
 
 - [docs/architecture.md](docs/architecture.md): the modules, the processes, how they talk and where state lives.
 - [docs/development.md](docs/development.md): building, testing, installing, and how to verify each part without a person at the keyboard.
-- One document per subsystem: [windows](docs/windows.md), [agents](docs/agents.md), [audio](docs/audio.md), [Chrome extension](docs/chrome-extension.md), [agent usage](docs/agent-usage.md).
+- One document per subsystem: [windows](docs/windows.md), [agents](docs/agents.md), [audio](docs/audio.md), [Chrome extension](docs/chrome-extension.md), [agent usage](docs/agent-usage.md), [mail and calendar accounts](docs/accounts.md).
 - [docs/development-plan.md](docs/development-plan.md): the original plan and the decisions behind it, in Chinese.
 - rook and roost: [rook/README.md](rook/README.md) and its [docs](rook/docs/) (keybindings, session upload, playbooks, the live link), [server/README.md](server/README.md) and the [API](server/API.md). Both came from the vibebox repository, whose history is merged in.
 

@@ -4,11 +4,11 @@ A macOS app that manages windows one by one inside its own stage, with a sidebar
 
 ## Conventions
 
-@humanize/skills/git-conventions/SKILL.md
-@humanize/skills/python-coding-conventions/SKILL.md
-@humanize/skills/readme-conventions/SKILL.md
-@humanize/skills/swift-coding-conventions/SKILL.md
-@humanize/skills/typescript-coding-conventions/SKILL.md
+@humanize/skills/humanize/git-conventions.md
+@humanize/skills/humanize/python-coding-conventions.md
+@humanize/skills/humanize/readme-conventions.md
+@humanize/skills/humanize/swift-coding-conventions.md
+@humanize/skills/humanize/typescript-coding-conventions.md
 
 ## Where to start
 

@@ -43,6 +43,7 @@ struct AgentDetailView: View {
     @State private var isSending = false
     @State private var sendError: String?
     @State private var roleDraft: String?
+    private static let identityLabelWidth: CGFloat = 38
     @FocusState private var isComposerFocused: Bool
     @FocusState private var isRoleFocused: Bool
 
@@ -115,8 +116,10 @@ struct AgentDetailView: View {
                     identity(agent)
                 }
             }
+            .layoutPriority(1)
             Spacer(minLength: 12)
             controls(agent)
+                .fixedSize()
             Button(action: onClose) {
                 RookeryIconView(.close)
                     .foregroundStyle(StageColors.secondaryText)
@@ -130,59 +133,97 @@ struct AgentDetailView: View {
         .padding(.vertical, 18)
     }
 
-    /// Who the agent is to its teammates, which the user may change, what it works on now, and its teams.
+    /// Who the agent is to its teammates, which the user may change, what it works on now, and its teams,
+    /// each on a line of its own and wrapping when long.
     private func identity(_ agent: FleetAgent) -> some View {
         let listTeams = fleetModel.teams.listTeams.filter { $0.listAgentIds.contains(agent.id) }
-        return HStack(spacing: 8) {
-            if let roleDraft {
-                TextField("Who it is to its teammates; empty lets Rookery write it", text: Binding(get: { roleDraft }, set: { self.roleDraft = $0 }))
-                    .textFieldStyle(.roundedBorder)
+        return VStack(alignment: .leading, spacing: 5) {
+            identityLine(label: "Role") {
+                if let roleDraft {
+                    TextField(
+                        "Who it is to its teammates; empty lets Rookery write it",
+                        text: Binding(get: { roleDraft }, set: { self.roleDraft = $0 }),
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.plain)
                     .font(.system(size: 12))
-                    .frame(width: 260)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.6))
+                    }
+                    .frame(maxWidth: 520, alignment: .leading)
                     .focused($isRoleFocused)
                     .onSubmit { saveRole(agent) }
                     .onExitCommand { self.roleDraft = nil }
-            } else {
-                Button {
-                    roleDraft = agent.role
-                    isRoleFocused = true
-                } label: {
-                    HStack(spacing: 4) {
-                        if agent.roleSource == AgentIdentity.sourceAuto && !agent.role.isEmpty {
-                            Text("auto")
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(StageColors.tertiaryText)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .strokeBorder(StageColors.separator)
-                                }
-                                .help("Rookery writes this role from the agent's work and keeps it up to date")
+                    .onChange(of: isRoleFocused) { _, isFocused in
+                        if !isFocused, self.roleDraft != nil {
+                            saveRole(agent)
                         }
-                        Text(agent.role.isEmpty ? "Rookery writes its role after its first prompt" : agent.role)
-                            .foregroundStyle(agent.role.isEmpty ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColors.secondaryText))
-                            .lineLimit(1)
-                        RookeryIconView(.chevronDown)
-                            .foregroundStyle(StageColors.tertiaryText)
-                            .opacity(0.6)
                     }
-                    .font(.system(size: 12))
-                    .contentShape(Rectangle())
+                } else {
+                    Button {
+                        roleDraft = agent.role
+                        isRoleFocused = true
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Text(agent.role.isEmpty ? "Rookery writes its role after its first prompt" : agent.role)
+                                .foregroundStyle(agent.role.isEmpty ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColors.primaryText))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                            if agent.roleSource == AgentIdentity.sourceAuto && !agent.role.isEmpty {
+                                Text("auto")
+                                    .font(.system(size: 9.5, weight: .semibold))
+                                    .foregroundStyle(StageColors.tertiaryText)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .strokeBorder(StageColors.separator)
+                                    }
+                                    .help("Rookery writes this role from the agent's work and keeps it up to date")
+                            }
+                        }
+                        .font(.system(size: 12))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Who it is to its teammates; click to change it")
                 }
-                .buttonStyle(.plain)
-                .help("Who it is to its teammates; click to change it")
             }
             if !agent.focus.isEmpty {
-                Text("now: \(agent.focus)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(StageColors.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                identityLine(label: "Now") {
+                    Text(agent.focus)
+                        .font(.system(size: 12))
+                        .foregroundStyle(StageColors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
             }
-            ForEach(listTeams) { team in
-                InfoTag(team.title, tint: .teal)
+            if !listTeams.isEmpty {
+                identityLine(label: "Teams") {
+                    FlowRow(spacing: 5) {
+                        ForEach(listTeams) { team in
+                            InfoTag(team.title, tint: .teal)
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    /// One line of the agent's identity: a fixed-width label and what it says, wrapping beside the label.
+    private func identityLine(label: String, @ViewBuilder content: () -> some View) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(StageColors.tertiaryText)
+                .frame(width: Self.identityLabelWidth, alignment: .leading)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -303,11 +344,14 @@ struct AgentDetailView: View {
                         .frame(width: 7, height: 7)
                 }
                 .help(isOnline ? "\(agent.rookName) is online" : "\(agent.rookName) is offline")
+                .fixedSize()
             }
             if !agent.harness.isEmpty {
                 RookeryLabel(agent.harness, icon: .chip)
+                    .fixedSize()
                 if !agent.model.isEmpty {
                     InfoTag(agent.model)
+                        .fixedSize()
                 }
             }
             if !agent.cwd.isEmpty {
@@ -317,8 +361,11 @@ struct AgentDetailView: View {
             }
             if !agent.gitBranch.isEmpty {
                 RookeryLabel(agent.gitBranch, icon: .branch)
+                    .lineLimit(1)
+                    .fixedSize()
             }
         }
+        .lineLimit(1)
         .font(.system(size: 12))
         .foregroundStyle(StageColors.secondaryText)
         .labelStyle(.titleAndIcon)
@@ -462,6 +509,7 @@ struct AgentDetailView: View {
         }
         isSending = true
         sendError = nil
+        isComposerFocused = true
         Task {
             do {
                 let delivery = try await fleetModel.send(text, to: agent.id)

@@ -978,7 +978,8 @@ struct StageView: View {
                     },
                     onClose: actions.closePage
                 )
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .id(agentId)
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .screenSaver {
                 ScreenSaverView(
                     text: preferences.shownScreenSaverText,

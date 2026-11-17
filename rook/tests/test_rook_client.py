@@ -37,6 +37,7 @@ class RookHomeTest(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {
             "XDG_CONFIG_HOME": str(self.home / "config"),
             "XDG_STATE_HOME": str(self.home / "state"),
+            "ROOK_SESSION": "1",
         })
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -144,12 +145,43 @@ class EntrypointTest(RookHomeTest):
             os.environ.pop("CLAUDE_CODE_ENTRYPOINT", None)
             self.assertTrue(rook_client.RookClient.reports_session("claude"))
 
+    def note_pane(self) -> None:
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/t.sock,1,0", "TMUX_PANE": "%3"}):
+            rook_client.AgentPane.record(SESSION, "claude")
+
     def test_a_transcript_says_how_its_session_was_started(self) -> None:
-        transcript = self.home / "session.jsonl"
+        self.note_pane()
+        transcript = self.home / f"{SESSION}.jsonl"
         transcript.write_text(json.dumps({"type": "user", "entrypoint": "raft"}) + "\n")
         self.assertFalse(rook_client.RookClient.reports_session("claude", str(transcript)))
         rook_client.RookConfig.update({"entrypoints": ["cli", "raft"]})
         self.assertTrue(rook_client.RookClient.reports_session("claude", str(transcript)))
+
+    def test_a_transcript_of_a_session_rook_never_noted_is_left_out(self) -> None:
+        transcript = self.home / f"rollout-2026-11-17T10-00-00-{SESSION}.jsonl"
+        transcript.write_text(json.dumps({"type": "session_meta"}) + "\n")
+        self.assertFalse(rook_client.RookClient.reports_session("codex", str(transcript)))
+        self.note_pane()
+        self.assertTrue(rook_client.RookClient.reports_session("codex", str(transcript)))
+
+
+class RookSessionTest(RookHomeTest):
+    """Only agents that run where rook started them are reported."""
+
+    def test_an_agent_outside_tmux_without_the_mark_is_not_reported(self) -> None:
+        with mock.patch.dict(os.environ, {"ROOK_SESSION": ""}):
+            os.environ.pop("TMUX", None)
+            self.assertFalse(rook_client.RookConfig.is_rook_session())
+            self.assertFalse(rook_client.RookClient.reports_session("codex"))
+
+    def test_an_agent_in_a_tmux_pane_is_reported_only_when_rook_marked_it(self) -> None:
+        with mock.patch.dict(os.environ, {"ROOK_SESSION": "", "TMUX": "/tmp/t.sock,1,0", "TMUX_PANE": "%3"}):
+            with mock.patch.object(rook_client.subprocess, "run") as run:
+                run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="\n")
+                self.assertFalse(rook_client.RookConfig.is_rook_session())
+                run.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="1\n")
+                self.assertTrue(rook_client.RookConfig.is_rook_session())
+                self.assertEqual(run.call_args.args[0][-1], "#{@rook-session}")
 
 
 class TranscriptLinesTest(unittest.TestCase):

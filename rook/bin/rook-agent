@@ -23,6 +23,8 @@ set -u
 PANE_OPT='@rook-agent-pane'
 WIN_OPT='@rook-agent'
 SIG_OPT='@rook-bar-sig'
+# Set by rook on the sessions and windows it opens: only their agents are rook's.
+MARK_OPT='@rook-session'
 
 usage() {
   cat >&2 <<'EOF'
@@ -207,7 +209,11 @@ cmd_set() {
   # almost always re-assert the state the pane is already in, so one read
   # short-circuits the five reads and writes a real update costs. This
   # also doubles as the "does this pane still exist" check.
-  _cur="$(tmux display-message -p -t "$_pane" "#{$PANE_OPT}" 2>/dev/null)" || exit 0
+  # The same read tells whether rook opened the pane's window or session;
+  # agents anywhere else are none of rook's and their panes are left alone.
+  _read="$(tmux display-message -p -t "$_pane" "#{$MARK_OPT}|#{$PANE_OPT}" 2>/dev/null)" || exit 0
+  [ -n "${_read%%|*}" ] || [ "${ROOK_SESSION:-}" = 1 ] || exit 0
+  _cur="${_read#*|}"
   [ "$_cur" = "$_state" ] && exit 0
   if [ -n "$_state" ]; then
     tmux set-option -p -t "$_pane" "$PANE_OPT" "$_state" 2>/dev/null || exit 0

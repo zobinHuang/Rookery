@@ -125,6 +125,11 @@ class RookConfig:
     agents the user oversees and no pane rook can reach, so they are left out."""
     CONFIG_DEFAULT_ENTRYPOINTS = ("cli", "claude-vscode")
     CONFIG_ENTRYPOINT_ENV = "CLAUDE_CODE_ENTRYPOINT"
+    """The tmux option rook sets on the sessions and windows it opens, and the variable a program that starts
+    an agent of rook's outside tmux, as Rookery starts Raven, sets instead. Only agents in one are rook's."""
+    CONFIG_SESSION_MARK = "@rook-session"
+    CONFIG_SESSION_ENV = "ROOK_SESSION"
+    CONFIG_TMUX_TIMEOUT_SECONDS = 2
     CONFIG_TRANSCRIPT_HEAD_LINES = 20
 
     @classmethod
@@ -156,6 +161,30 @@ class RookConfig:
         if not isinstance(list_entrypoints, list):
             list_entrypoints = list(cls.CONFIG_DEFAULT_ENTRYPOINTS)
         return entrypoint in list_entrypoints
+
+    @classmethod
+    def is_rook_session(cls) -> bool:
+        """Whether the calling hook's agent runs where rook started it: in a tmux session or window rook
+        opened, or with the variable set by a program that starts agents of rook's outside tmux.
+
+        Returns:
+            whether the agent is rook's
+        """
+        if os.environ.get(cls.CONFIG_SESSION_ENV) == "1":
+            return True
+        pane = os.environ.get("TMUX_PANE")
+        if not pane or not os.environ.get("TMUX"):
+            return False
+        try:
+            result = subprocess.run(
+                ["tmux", "display-message", "-p", "-t", pane, "#{" + cls.CONFIG_SESSION_MARK + "}"],
+                capture_output=True,
+                text=True,
+                timeout=cls.CONFIG_TMUX_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        return result.returncode == 0 and result.stdout.strip() != ""
 
     @classmethod
     def entrypoint_of(cls, transcript: Path) -> str | None:
@@ -1801,17 +1830,38 @@ class RookClient:
     """The harnesses whose hooks take context to add to the conversation, as rook tells an agent of its teams."""
     CLIENT_CONTEXT_HARNESSES = frozenset({"claude"})
     CLIENT_MESSAGE_SEPARATOR = "\n\n---\n\n"
+    CLIENT_SESSION_ID_PATTERN = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
     @classmethod
     def reports_session(cls, harness: str, transcript: str | None = None) -> bool:
-        """Whether a session is one rook reports: every codex session, and a Claude Code session started as
-        `RookConfig.reports_entrypoint` allows, judged by its transcript when given, else by how the calling
-        hook's session was started."""
+        """Whether a session is one rook reports: one that runs where rook started it, and of those every codex
+        session, and a Claude Code session started as `RookConfig.reports_entrypoint` allows. Judged by its
+        transcript when given, as when catching up on sessions under way, where only a session rook already
+        noted the pane of counts; else by how the calling hook's session was started."""
+        if transcript:
+            if AgentPane.of(cls.session_id_of_transcript(Path(transcript))) is None:
+                return False
+        elif not RookConfig.is_rook_session():
+            return False
         if harness != "claude":
             return True
         if transcript:
             return RookConfig.reports_entrypoint(RookConfig.entrypoint_of(Path(transcript)))
         return RookConfig.reports_entrypoint(os.environ.get(RookConfig.CONFIG_ENTRYPOINT_ENV))
+
+    @classmethod
+    def session_id_of_transcript(cls, transcript: Path) -> str:
+        """The session a transcript is of, by its file name: Claude Code names it for the session, and codex
+        ends its name with it.
+
+        Args:
+            transcript: the transcript's path
+
+        Returns:
+            the session id
+        """
+        match = cls.CLIENT_SESSION_ID_PATTERN.search(transcript.stem)
+        return match.group(0) if match else transcript.stem
 
     @classmethod
     def hook(cls, harness: str) -> int:

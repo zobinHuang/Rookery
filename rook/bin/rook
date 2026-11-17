@@ -114,6 +114,8 @@ case "$CMD" in
       exit 1
     fi
     tmux new-session -d -s "$SESSION_NAME" -c "$HOME"
+    # Only agents in a session or window rook opened are rook's to report.
+    tmux set-option -t "$SESSION_NAME" @rook-session 1
     tmux attach-session -t "$SESSION_NAME"
     ;;
   connect|disconnect)

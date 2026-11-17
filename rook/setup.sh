@@ -654,6 +654,32 @@ else
   info "No running tmux session to reload"
 fi
 
+# Only agents in a session or window rook opened are reported, by the
+# @rook-session mark rook now sets when it opens one. Sessions opened by
+# an older rook carry no mark yet: `rook new` named them <user>-<name>,
+# and a launch opened a window named rook. Mark those, so agents running
+# in them right now keep reporting through the upgrade.
+if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+  ROOK_USER_PREFIX="$(whoami)-"
+  ROOK_MARKED=0
+  while IFS=' ' read -r ROOK_SESSION_ID ROOK_SESSION_NAME; do
+    case "$ROOK_SESSION_NAME" in
+      "$ROOK_USER_PREFIX"*)
+        tmux set-option -t "$ROOK_SESSION_ID" @rook-session 1 2>/dev/null && ROOK_MARKED=$((ROOK_MARKED + 1))
+        ;;
+    esac
+  done <<EOF_SESSIONS
+$(tmux list-sessions -F '#{session_id} #{session_name}' 2>/dev/null)
+EOF_SESSIONS
+  while IFS= read -r ROOK_WINDOW_ID; do
+    [ -n "$ROOK_WINDOW_ID" ] || continue
+    tmux set-option -w -t "$ROOK_WINDOW_ID" @rook-session 1 2>/dev/null && ROOK_MARKED=$((ROOK_MARKED + 1))
+  done <<EOF_WINDOWS
+$(tmux list-windows -a -F '#{window_id} #{window_name}' 2>/dev/null | awk '$2 == "rook" { print $1 }')
+EOF_WINDOWS
+  info "Marked $ROOK_MARKED running rook session(s) and window(s) as rook's"
+fi
+
 # Agents that were already running when this ran have just been given the
 # upload hooks, but nothing would push them until their next turn — and
 # codex will not fire a hook at all until its new config is trusted. Push

@@ -64,13 +64,15 @@ class PaneTyper:
             RookLinkError: if tmux cannot open the window
         """
         shell = pwd.getpwuid(os.getuid()).pw_shell or self.TYPER_FALLBACK_SHELL
-        shell_command = f"{shlex.quote(shell)} -lc {shlex.quote(f'{command}; exec {shlex.quote(shell)} -l')}"
+        marked_command = f"export {rook_client.RookConfig.CONFIG_SESSION_ENV}=1; {command}; exec {shlex.quote(shell)} -l"
+        shell_command = f"{shlex.quote(shell)} -lc {shlex.quote(marked_command)}"
         list_socket = ["-S", tmux_socket] if tmux_socket else []
         list_format = ["-P", "-F", "#{pane_id}"]
         try:
             pane = self._run([*list_socket, "new-window", "-d", "-c", cwd, "-n", self.TYPER_WINDOW_NAME, *list_format, shell_command])
         except RookLinkError:
             pane = self._run([*list_socket, "new-session", "-d", "-c", cwd, "-s", self.TYPER_WINDOW_NAME, *list_format, shell_command])
+        self._run([*list_socket, "set-option", "-w", "-t", pane.strip(), rook_client.RookConfig.CONFIG_SESSION_MARK, "1"])
         return pane.strip()
 
     def runs_program(self, agent_pane: "rook_client.AgentPane") -> bool:

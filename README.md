@@ -21,6 +21,8 @@ Rookery watches over your code agents. `rook` runs them in tmux on each of your 
     scripts/create-dev-certificate.sh   # once, so permissions survive rebuilds
     make install
 
+For quick window switches, set System Settings → Desktop & Dock → Minimize windows using → Scale Effect; Rookery hides windows by minimizing them, and the default Genie effect is slow.
+
 Then in Rookery's settings, under Roost, enter `https://<roost host>:8787` and the token, and connect. To upgrade any of them, `git pull` and run the same command again.
 
 ## Use

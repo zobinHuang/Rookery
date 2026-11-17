@@ -18,6 +18,8 @@ struct RavenPanel: View {
     @State private var renamingId: String?
     @State private var renameDraft = ""
     @State private var setSendingIds: Set<String> = []
+    /// Changes with every request sent, to bring the conversation's end into view.
+    @State private var sendToken = 0
     @FocusState private var isFocused: Bool
 
     private var raven: RavenAgent {
@@ -168,6 +170,7 @@ struct RavenPanel: View {
                     agentId: openId,
                     memory: fleetModel.pageMemory,
                     hasTranscript: true,
+                    sendToken: sendToken,
                     isWorking: raven.isRunning(openId)
                 ) {}
                 .id(openId)
@@ -502,6 +505,7 @@ struct RavenPanel: View {
         withAnimation(.easeOut(duration: 0.2)) {
             _ = raven.ask(request, mentioning: listNamed, in: openId)
         }
+        sendToken += 1
         draft = ""
         listMentions = []
     }

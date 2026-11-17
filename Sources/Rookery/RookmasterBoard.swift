@@ -188,10 +188,10 @@ struct RookmasterBoard: View {
         }
         .padding(2)
         .frame(height: Self.controlHeight)
-        .background(StageColors.groove.opacity(0.7), in: Capsule())
+        .background(StageColors.segmentGroove, in: Capsule())
         .overlay {
             Capsule()
-                .strokeBorder(StageColors.contrastBorder)
+                .strokeBorder(StageColors.segmentGrooveBorder)
         }
     }
 
@@ -199,7 +199,7 @@ struct RookmasterBoard: View {
     private func segment<Label: View>(isOn: Bool, @ViewBuilder label: () -> Label) -> some View {
         label()
             .font(.system(size: 11, weight: isOn ? .semibold : .medium))
-            .foregroundStyle(isOn ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.tertiaryText))
+            .foregroundStyle(isOn ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
             .padding(.horizontal, 9)
             .frame(height: Self.controlHeight - 4)
             .background {
@@ -238,7 +238,7 @@ struct RookmasterBoard: View {
         .font(.system(size: 12))
         .padding(.horizontal, 11)
         .frame(height: Self.controlHeight)
-        .background(StageColors.groove.opacity(0.7), in: Capsule())
+        .background(StageColors.segmentGroove, in: Capsule())
         .overlay {
             Capsule()
                 .strokeBorder(

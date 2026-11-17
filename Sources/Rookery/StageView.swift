@@ -461,7 +461,7 @@ struct StageView: View {
                             }
                             .fixedSize()
                             .padding(.horizontal, 3)
-                            .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+                            .foregroundStyle(sidebarMode == mode ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
                             .frame(maxWidth: .infinity)
                             .frame(height: 24)
                             .background {
@@ -469,7 +469,7 @@ struct StageView: View {
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                                         .fill(StageColors.selectedSegment)
                                         .strokeBorder(StageColors.contrastActiveBorder)
-                                        .shadow(color: .black.opacity(0.12), radius: 1.5, y: 0.5)
+                                        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
                                         .matchedGeometryEffect(id: "mode", in: modeNamespace)
                                 }
                             }
@@ -481,7 +481,8 @@ struct StageView: View {
                 .padding(2)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(StageColors.groove.opacity(0.7))
+                        .fill(StageColors.segmentGroove)
+                        .strokeBorder(StageColors.segmentGrooveBorder)
                 }
                 .padding(.horizontal, 12)
             }

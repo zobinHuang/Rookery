@@ -117,7 +117,7 @@ struct StageSegmentedControl<Value: Hashable>: View {
                 } label: {
                     Text(title(option))
                         .font(.system(size: isSmall ? 10.5 : 11.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+                        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
                         .padding(.horizontal, isSmall ? 7 : 10)
                         .padding(.vertical, isSmall ? 2.5 : 4)
                         .background {
@@ -138,7 +138,11 @@ struct StageSegmentedControl<Value: Hashable>: View {
             }
         }
         .padding(2)
-        .background(StageColors.segmentGroove, in: RoundedRectangle(cornerRadius: isSmall ? 7 : 8, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: isSmall ? 7 : 8, style: .continuous)
+                .fill(StageColors.segmentGroove)
+                .strokeBorder(StageColors.segmentGrooveBorder)
+        }
         .fixedSize()
     }
 }

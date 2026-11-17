@@ -89,19 +89,23 @@ enum StageColors {
         highContrastDark: contrastActiveBorderDark
     )
     /// The chosen segment of a segmented switch or a row of tabs: a raised white tinted with the accent in
-    /// the light theme, a lit accent wash in the dark one.
-    static let selectedSegment = StageColor(
-        light: NSColor.white.blended(withFraction: 0.1, of: .controlAccentColor) ?? .white,
-        dark: NSColor.controlAccentColor.withAlphaComponent(0.26),
+    /// The chosen segment of a switch or a row of tabs, in the colors of the theme turned over, as the
+    /// front tab and the user's messages are; and the label on it.
+    static let selectedSegment = activeTab
+    static let selectedSegmentText = activeTabText
+    /// The track a switch or a row of tabs sits in: barely there, set off by a hairline, rather than a
+    /// grey well.
+    static let segmentGroove = StageColor(
+        light: NSColor(white: 1, alpha: 0.55),
+        dark: slate(0xC8D2E6, alpha: 0.035),
         highContrastLight: .white,
         highContrastDark: .black
     )
-    /// The groove a segmented switch or a row of tabs sits in.
-    static let segmentGroove = StageColor(
-        light: slate(0x1A2233, alpha: 0.06),
-        dark: slate(0xC8D2E6, alpha: 0.07),
-        highContrastLight: .white,
-        highContrastDark: .black
+    static let segmentGrooveBorder = StageColor(
+        light: slate(0x1A2233, alpha: 0.1),
+        dark: slate(0xC8D2E6, alpha: 0.1),
+        highContrastLight: contrastBorderLight,
+        highContrastDark: contrastBorderDark
     )
     /// A button's face, and under the pointer.
     static let control = StageColor(

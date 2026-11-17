@@ -113,7 +113,11 @@ struct RookmasterView: View {
             tabButton(.hosts, title: "Hosts", symbol: .machine)
         }
         .padding(3)
-        .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(StageColors.segmentGroove)
+                .strokeBorder(StageColors.segmentGrooveBorder)
+        }
     }
 
     private func tabButton(_ target: RookmasterTab, title: String, symbol: RookeryIcon) -> some View {
@@ -137,7 +141,7 @@ struct RookmasterView: View {
                 }
             }
                 .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+                .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
                 .background {
@@ -339,7 +343,11 @@ struct RookmasterPanel: View {
                 panelTab(.log, title: "Log", count: listShown.count, isBusy: false)
             }
             .padding(2)
-            .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(StageColors.segmentGroove)
+                    .strokeBorder(StageColors.segmentGrooveBorder)
+            }
             Spacer(minLength: 8)
             if memory.isPanelExpanded && memory.panelTab == .log {
                 HStack(spacing: 5) {
@@ -381,14 +389,14 @@ struct RookmasterPanel: View {
                 if let count {
                     Text("\(count)")
                         .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(StageColors.tertiaryText)
+                        .opacity(0.6)
                 }
                 if isBusy {
                     ProgressView()
                         .controlSize(.mini)
                 }
             }
-            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
             .background {

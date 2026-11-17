@@ -81,7 +81,11 @@ struct RightSidebarView: View {
                 }
             }
             .padding(3)
-            .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(StageColors.segmentGroove)
+                    .strokeBorder(StageColors.segmentGrooveBorder)
+            }
             Spacer(minLength: 0)
             Button(action: actions.toggleRightSidebar) {
                 RookeryIconView(.sidebarRight)
@@ -110,12 +114,12 @@ struct RightSidebarView: View {
                 if tab == .mail, personal.unreadTotal > 0 {
                     Text(Self.count(personal.unreadTotal))
                         .font(.system(size: 9.5, weight: .bold).monospacedDigit())
-                        .foregroundStyle(StageColors.secondaryText)
+                        .opacity(0.6)
                 }
             }
             .lineLimit(1)
             .fixedSize()
-            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background {

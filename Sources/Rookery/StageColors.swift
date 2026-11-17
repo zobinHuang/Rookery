@@ -178,6 +178,19 @@ enum StageColors {
         highContrastLight: NSColor(white: 0, alpha: 0.45),
         highContrastDark: NSColor(white: 1, alpha: 0.45)
     )
+    /// Content still on its way, drawn as its shape, and the light that sweeps across it.
+    static let skeleton = StageColor(
+        light: slate(0x1A2233, alpha: 0.07),
+        dark: slate(0xC8D2E6, alpha: 0.08),
+        highContrastLight: NSColor(white: 0, alpha: 0.12),
+        highContrastDark: NSColor(white: 1, alpha: 0.16)
+    )
+    static let skeletonLight = StageColor(
+        light: NSColor(white: 1, alpha: 0.75),
+        dark: NSColor(white: 1, alpha: 0.07),
+        highContrastLight: NSColor(white: 1, alpha: 0.85),
+        highContrastDark: NSColor(white: 1, alpha: 0.2)
+    )
     /// Text and symbols, at the three levels of emphasis: the system's own in the regular themes, close to
     /// solid in the high-contrast ones, where even the quietest text must read clearly.
     static let primaryText = StageTextStyle(

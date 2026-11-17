@@ -60,6 +60,15 @@ class EventLogTest(unittest.TestCase):
         self.events.record([{"actor": AGENT, "verb": "state", "detail": {"state": "thinking"}}])
         self.assertEqual(self.agent()["attributes"]["state"], "thinking")
 
+    def test_an_agent_first_heard_of_at_its_end_is_not_created(self) -> None:
+        self.events.record([
+            {"actor": AGENT, "verb": "ended"},
+            {"actor": {"kind": "agent", "id": "s-2"}, "verb": "state", "detail": {"state": AgentStates.ENDED}},
+        ])
+        self.assertFalse(self.resources.exists(ResourceRef("agent", "s-1")))
+        self.assertFalse(self.resources.exists(ResourceRef("agent", "s-2")))
+        self.assertEqual(len(self.events.after(0, 10)), 2)
+
     def test_a_bad_event_rolls_back_its_whole_batch(self) -> None:
         with self.assertRaises(ValidationError):
             self.events.record([started(), {"actor": AGENT, "verb": "state", "detail": {"state": "asleep"}}])

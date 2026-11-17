@@ -344,8 +344,16 @@ class EventLog:
         at: str,
         connection: sqlite3.Connection,
     ) -> None:
-        """Bring an agent's record up to date with what it reported, creating it if this is its first word."""
-        agent = self._stored(actor, connection) or Resource(
+        """Bring an agent's record up to date with what it reported, creating it if this is its first word,
+        unless that word is its end: an agent never heard of before it ended has nothing to show."""
+        stored = self._stored(actor, connection)
+        is_end = verb == EventVerbs.ENDED or (
+            verb == EventVerbs.STATE
+            and map_detail.get("state") == AgentStates.ENDED
+        )
+        if stored is None and is_end:
+            return
+        agent = stored or Resource(
             kind=actor.kind,
             id=actor.id,
             name=actor.id,

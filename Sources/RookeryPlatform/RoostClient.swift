@@ -252,6 +252,23 @@ public final class RoostClient: Sendable {
         return try decode(FleetDelivery.self, from: try await request("POST", path: "/v1/messages", body: body))
     }
 
+    /// The deliveries routed to a rook and not yet finished, oldest first, as Rookery reads those for its
+    /// own agents.
+    public func openDeliveries(forRook rookName: String) async throws -> [FleetDelivery] {
+        let data = try await request("GET", path: "/v1/messages", query: [URLQueryItem(name: "rook", value: rookName)])
+        return try decode(DeliveryPage.self, from: data).messages
+    }
+
+    /// Record what Rookery did with a delivery for one of its own agents.
+    ///
+    /// - Parameters:
+    ///   - status: `delivered`, `waiting` or `failed`
+    ///   - reason: how, or why not
+    public func report(_ deliveryId: String, status: String, reason: String) async throws {
+        let body = try JSONEncoder().encode(["status": status, "reason": reason])
+        _ = try await request("POST", path: "/v1/messages/\(deliveryId)/report", body: body)
+    }
+
     /// The latest deliveries to an agent, newest first.
     public func deliveries(to agentId: String) async throws -> [FleetDelivery] {
         let data = try await request("GET", path: "/v1/messages", query: [

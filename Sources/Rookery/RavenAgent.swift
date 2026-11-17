@@ -31,6 +31,10 @@ final class RavenAgent {
     private static let backfilledTitleLimit = 20
     /// How many times, five seconds apart, titling waits for roost to be set up after launch.
     private static let titleClientWaits = 24
+    /// How often the messages teammates sent Raven's conversations are read, while one is in a team.
+    private static let inboxInterval: Duration = .seconds(4)
+    /// What a conversation does in a team the user put it in.
+    static let teamDuty = "Directs the team for the user, as Raven in Rookery: asks how things stand and passes on the user's decisions"
     private static let resourceFolder = "Raven"
     /// The name Raven's MCP config gives `rookery-mail`, which its tools are named under.
     static let mailServerName = "mail"
@@ -48,6 +52,9 @@ final class RavenAgent {
         "Bash(rook-client host:*)",
         "Bash(rook-client team list:*)",
         "Bash(rook-client team roster:*)",
+        "Bash(rook-client team send:*)",
+        "Bash(rook-client message:*)",
+        "Bash(rook-client inbox:*)",
         "mcp__\(mailServerName)",
         "Skill",
         "WebFetch",
@@ -55,6 +62,11 @@ final class RavenAgent {
 
     private(set) var conversations = RavenConversations()
     @ObservationIgnored private var titleTask: Task<Void, Never>?
+    @ObservationIgnored private var inboxTask: Task<Void, Never>?
+    /// Messages from teammates read while their conversation was answering, framed, to answer next.
+    @ObservationIgnored private var mapWaitingMessages: [String: [String]] = [:]
+    /// Why the last team change in a conversation failed, shown in its header.
+    var mapTeamErrors: [String: String] = [:]
     /// What was said in each conversation opened since launch, as read from its history.
     private(set) var mapReaders: [String: TranscriptReader] = [:]
     /// How the latest request of each conversation went, since launch.
@@ -109,6 +121,9 @@ final class RavenAgent {
         }
         titleTask = Task { [weak self] in
             await self?.writeMissingTitles()
+        }
+        inboxTask = Task { [weak self] in
+            await self?.readInboxForever()
         }
     }
 
@@ -175,6 +190,18 @@ final class RavenAgent {
         saveIndex()
         openConversationId = sessionId
         record(Self.requestLine(request, at: now), in: sessionId)
+        startTurn(request, mentioning: listMentions, in: sessionId, isFirstTurn: isFirstTurn, client: client)
+        return sessionId
+    }
+
+    /// Run a turn of a conversation on what was just recorded in it.
+    private func startTurn(
+        _ request: String,
+        mentioning listMentions: [FleetRef],
+        in sessionId: String,
+        isFirstTurn: Bool,
+        client: RoostClient
+    ) {
         mapStatuses[sessionId] = .running
         let prompt = Self.prompt(
             request,
@@ -182,13 +209,113 @@ final class RavenAgent {
             listPeople: fleetModel.people.book.people(mentionedIn: request),
             graph: fleetModel.graph,
             agentId: sessionId,
-            listDecisions: decisionLines(in: sessionId)
+            listDecisions: decisionLines(in: sessionId),
+            listTeams: teams(of: sessionId)
         )
         mapTasks[sessionId] = Task { [weak self] in
             await self?.perform(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, client: client)
         }
-        return sessionId
     }
+
+    // MARK: - Teams
+
+    /// The teams a conversation is in, as roost holds them.
+    func teams(of conversationId: String) -> [FleetResource] {
+        fleetModel.graph.listResources(of: AgentFleet.teamKind).filter { team in
+            AgentTeams.memberIds(of: team).contains(conversationId)
+        }
+    }
+
+    /// Put a conversation in a team, to direct it for the user; its teammates are told by rook.
+    func join(_ conversationId: String, team teamId: String) async {
+        await changeTeam(of: conversationId, team: teamId) { client in
+            try await client.join(conversationId, team: teamId, duty: Self.teamDuty)
+        }
+    }
+
+    /// Take a conversation out of a team.
+    func leave(_ conversationId: String, team teamId: String) async {
+        await changeTeam(of: conversationId, team: teamId) { client in
+            try await client.leave(conversationId, team: teamId)
+        }
+    }
+
+    private func changeTeam(of conversationId: String, team teamId: String, _ change: (RoostClient) async throws -> Void) async {
+        do {
+            try await change(fleetModel.requireClient())
+            mapTeamErrors[conversationId] = nil
+            await fleetModel.refreshTeam(teamId)
+        } catch {
+            mapTeamErrors[conversationId] = FleetModel.describe(error)
+        }
+    }
+
+    /// Read, every few seconds while a conversation is in a team, the messages its teammates sent it.
+    private func readInboxForever() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.inboxInterval)
+            let isAnyInTeam = conversations.listConversations.contains { !teams(of: $0.id).isEmpty }
+            guard isAnyInTeam, let client = fleetModel.client() else {
+                continue
+            }
+            do {
+                try await readInbox(client: client)
+            } catch {
+                Self.logger.error("cannot read Raven's messages: \(FleetModel.describe(error), privacy: .public)")
+            }
+        }
+    }
+
+    /// Take in the messages teammates sent: each kept in its conversation as theirs, and the conversation
+    /// woken to answer them, or once it finishes the answer under way.
+    private func readInbox(client: RoostClient) async throws {
+        let listDeliveries = try await client.openDeliveries(forRook: AgentFleet.rookeryRookName)
+        var setWoken: Set<String> = []
+        for delivery in listDeliveries where delivery.kind == "prompt" {
+            let conversationId = delivery.agentId.split(separator: "~").first.map(String.init) ?? delivery.agentId
+            guard conversations.conversation(conversationId) != nil else {
+                continue
+            }
+            let framed = RookMessage.framed(
+                senderId: delivery.sender.id,
+                senderTitle: delivery.mapOptions["sender_title"]?.stringValue,
+                text: delivery.text,
+                team: delivery.mapOptions["team"]?.stringValue,
+                thread: delivery.mapOptions["thread"]?.stringValue,
+                isAnswerWanted: delivery.mapOptions["no_reply"]?.boolValue != true
+            )
+            try await client.report(delivery.id, status: "delivered", reason: "read by Raven")
+            record(Self.requestLine(framed, at: .now), in: conversationId)
+            mapWaitingMessages[conversationId, default: []].append(framed)
+            setWoken.insert(conversationId)
+        }
+        for conversationId in setWoken {
+            answerWaitingMessages(in: conversationId, client: client)
+        }
+    }
+
+    /// Wake a conversation on the messages waiting for it, unless it is answering already.
+    private func answerWaitingMessages(in conversationId: String, client: RoostClient) {
+        guard
+            !isRunning(conversationId),
+            let listFramed = mapWaitingMessages[conversationId],
+            !listFramed.isEmpty
+        else {
+            return
+        }
+        mapWaitingMessages[conversationId] = nil
+        conversations.noteTurn(in: conversationId, at: .now)
+        saveIndex()
+        let request = (listFramed + [Self.teammateNote]).joined(separator: "\n\n")
+        startTurn(request, mentioning: [], in: conversationId, isFirstTurn: false, client: client)
+    }
+
+    /// What Raven is told under its teammates' messages.
+    private static let teammateNote = """
+        These messages came from your teammates through rook, not from the user. Answer in a message's \
+        thread when the sender needs something from you, with rook-client message; then tell the user, in \
+        a line or two, what they said and what you did.
+        """
 
     /// Stop the request under way in a conversation.
     func cancel(_ conversationId: String) {
@@ -365,6 +492,7 @@ final class RavenAgent {
                 "XDG_CONFIG_HOME": workspace.appending(path: "config").path,
                 "XDG_STATE_HOME": workspace.appending(path: "state").path,
                 "ROOKERY_AGENT_ID": sessionId,
+                "ROOK_AGENT_ID": sessionId,
                 "TMUX": nil,
                 "TMUX_PANE": nil,
             ],
@@ -399,6 +527,7 @@ final class RavenAgent {
         if case .finished = mapStatuses[sessionId], conversations.conversation(sessionId)?.titleSource == nil {
             await writeTitle(of: sessionId, client: client)
         }
+        answerWaitingMessages(in: sessionId, client: client)
     }
 
     /// Title a conversation from its first request and Raven's answer, as a chat app does, in place of the
@@ -681,7 +810,8 @@ final class RavenAgent {
         listPeople: [Person] = [],
         graph: ResourceGraph,
         agentId: String,
-        listDecisions: [String]
+        listDecisions: [String],
+        listTeams: [FleetResource] = []
     ) -> String {
         var listLines = [request]
         if !listDecisions.isEmpty {
@@ -707,6 +837,18 @@ final class RavenAgent {
             for person in listPeople {
                 let addresses = person.listAddresses.isEmpty ? "no address known" : person.listAddresses.joined(separator: ", ")
                 listLines.append("- \(person.mentionToken) is \(person.name): \(addresses)")
+            }
+        }
+        if !listTeams.isEmpty {
+            listLines.append("")
+            listLines.append("The user put this conversation in these teams, to direct them for the user. Message their members yourself, without proposing: rook-client message <agent id> \"...\" to one, rook-client team send <team id> \"...\" to all; roost lets you reach only these teammates. Their answers come back to you here. Anyone outside them still takes a proposal.")
+            for team in listTeams {
+                let listMembers = AgentTeams.memberIds(of: team).filter { $0 != agentId }
+                let listNames = listMembers.map { memberId in
+                    "\(graph.name(of: FleetRef(kind: AgentFleet.agentKind, id: memberId))) (id \(memberId))"
+                }
+                let goal = team.mapAttributes["goal"]?.stringValue.map { ", goal: \($0)" } ?? ""
+                listLines.append("- team \"\(team.displayName)\" (id \(team.id))\(goal); members: \(listNames.isEmpty ? "none yet" : listNames.joined(separator: ", "))")
             }
         }
         listLines.append("")

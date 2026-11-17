@@ -157,7 +157,7 @@ struct AgentsSidebarView: View {
     @ViewBuilder
     private var teamedSections: some View {
         ForEach(fleetModel.teams.listTeams) { team in
-            let listAgents = team.listAgentIds.compactMap { fleet.mapAgents[$0] }
+            let listAgents = team.listAgentIds.compactMap { fleet.mapAgents[$0] }.filter { !$0.isRookeryOwn }
             teamHeader(team, count: listAgents.count)
             if !team.isCollapsed {
                 ForEach(listAgents) { agent in

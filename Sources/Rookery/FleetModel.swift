@@ -306,6 +306,15 @@ final class FleetModel {
         }
     }
 
+    /// Read a team from roost again at once, as after a change made outside the sidebar.
+    func refreshTeam(_ teamId: String) async {
+        guard let client = client() else {
+            return
+        }
+        await refetch(FleetRef(kind: AgentFleet.teamKind, id: teamId), from: client)
+        syncTeams()
+    }
+
     /// Give a member a duty in its team.
     func assignDuty(_ duty: String, to agentId: String, in teamId: String) {
         writeTeams("give \(agentId) a duty in team \(teamId)") { client in

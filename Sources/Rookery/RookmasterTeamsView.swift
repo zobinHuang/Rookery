@@ -251,7 +251,11 @@ private struct TeamDetail: View {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(listMemberIds, id: \.self) { agentId in
                     if let agent = fleetModel.fleet.mapAgents[agentId] {
-                        memberCard(agent)
+                        if agent.isRookeryOwn {
+                            ravenCard(agent)
+                        } else {
+                            memberCard(agent)
+                        }
                     }
                 }
                 let listOpen = fleetModel.fleet.listSessions.filter { agent in
@@ -271,6 +275,41 @@ private struct TeamDetail: View {
                 .fixedSize()
                 .disabled(listOpen.isEmpty)
             }
+        }
+    }
+
+    /// A conversation with Raven the user put in the team: what it is, and the ways to it and out.
+    private func ravenCard(_ agent: FleetAgent) -> some View {
+        let title = fleetModel.raven.conversations.conversation(agent.id)?.title ?? agent.displayName
+        return HStack(alignment: .top, spacing: 10) {
+            RavenView(isWorking: fleetModel.raven.isRunning(agent.id))
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    FittingText("Raven [\(title)]", size: 13, weight: .semibold)
+                    InfoTag("Raven")
+                }
+                fact("Duty", "Directs the team for you; its agents' answers go to this conversation")
+                HStack(spacing: 8) {
+                    Button("Open Conversation") {
+                        fleetModel.raven.openConversationId = agent.id
+                        fleetModel.pageMemory.panelTab = .raven
+                        fleetModel.pageMemory.isPanelExpanded = true
+                    }
+                    Button("Remove from Team") {
+                        Task {
+                            await fleetModel.raven.leave(agent.id, team: team.id)
+                        }
+                    }
+                }
+                .controlSize(.small)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(StageColors.separator)
         }
     }
 

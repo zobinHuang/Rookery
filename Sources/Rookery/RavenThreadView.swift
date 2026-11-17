@@ -23,15 +23,37 @@ struct RavenThreadView: View {
 
     /// The conversation's title, written from it once Raven first answers, and how much was asked and when.
     private func header(_ conversation: RavenConversation) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(conversation.title)
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .contentTransition(.opacity)
-            Text("\(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests"), last \(conversation.lastAt.formatted(.relative(presentation: .named)))")
-                .font(.system(size: 11))
-                .foregroundStyle(StageColors.tertiaryText)
+        let listJoined = raven.teams(of: conversation.id)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(conversation.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .contentTransition(.opacity)
+                    Text("\(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests"), last \(conversation.lastAt.formatted(.relative(presentation: .named)))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(StageColors.tertiaryText)
+                }
+                Spacer(minLength: 8)
+                if conversation.turnCount > 0 {
+                    joinMenu(conversation, listJoined: listJoined)
+                }
+            }
+            if !listJoined.isEmpty {
+                FlowRow(spacing: 6) {
+                    ForEach(listJoined, id: \.id) { team in
+                        teamChip(team, in: conversation)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if let problem = raven.mapTeamErrors[conversation.id] {
+                RookeryLabel(problem, icon: .warning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
@@ -43,6 +65,64 @@ struct RavenThreadView: View {
                 .frame(height: 1)
         }
         .animation(.easeOut(duration: 0.25), value: conversation.title)
+        .animation(.spring(response: 0.3, dampingFraction: 0.86), value: listJoined.map(\.id))
+    }
+
+    /// The teams the conversation may join, to direct them for the user.
+    private func joinMenu(_ conversation: RavenConversation, listJoined: [FleetResource]) -> some View {
+        let listOthers = fleetModel.listTeamResources.filter { team in
+            !listJoined.contains { $0.id == team.id }
+        }
+        return Menu {
+            if listOthers.isEmpty {
+                Text("No other team")
+            }
+            ForEach(listOthers, id: \.id) { team in
+                Button(team.displayName) {
+                    Task {
+                        await raven.join(conversation.id, team: team.id)
+                    }
+                }
+            }
+        } label: {
+            RookeryLabel("Join a Team", icon: .plus, spacing: 4)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(StageButtonStyle())
+        .controlSize(.small)
+        .fixedSize()
+        .help("Put this conversation in a team, to direct it and ask its agents for you")
+    }
+
+    /// A team the conversation directs: its name, and a way out of it.
+    private func teamChip(_ team: FleetResource, in conversation: RavenConversation) -> some View {
+        HStack(spacing: 5) {
+            RookeryIconView(RookeryIcon.kind(AgentFleet.teamKind))
+            Text(team.displayName)
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+            Button {
+                Task {
+                    await raven.leave(conversation.id, team: team.id)
+                }
+            } label: {
+                RookeryIconView(.close)
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+            .buttonStyle(.plain)
+            .help("Take this conversation out of \(team.displayName)")
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.vertical, 3)
+        .background(StageColors.segmentGroove, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(StageColors.segmentGrooveBorder)
+        }
+        .help("Raven directs \(team.displayName) here: it messages its agents, and their answers come back to this conversation")
     }
 
     var body: some View {

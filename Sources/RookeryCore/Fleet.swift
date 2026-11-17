@@ -207,6 +207,11 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
     /// Where the role came from: the user, the agent itself, its launch or Rookery; empty when unknown.
     public var roleSource: String
 
+    /// Whether it is one of Rookery's own agents, as a conversation with Raven a team was given.
+    public var isRookeryOwn: Bool {
+        rookName == AgentFleet.rookeryRookName
+    }
+
     public init(
         id: String,
         name: String,

@@ -211,6 +211,8 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
     public let isPartial: Bool
     /// Its `Message-ID` header, without the angle brackets, by which Mail finds it.
     public let messageIdHeader: String
+    /// Its HTML as sent, for showing it formatted; empty when it has none.
+    public let html: String
 
     public init(
         summary: MailMessageSummary,
@@ -219,7 +221,8 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
         text: String,
         listAttachments: [String],
         isPartial: Bool,
-        messageIdHeader: String = ""
+        messageIdHeader: String = "",
+        html: String = ""
     ) {
         self.summary = summary
         self.listTo = listTo
@@ -228,6 +231,7 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
         self.listAttachments = listAttachments
         self.isPartial = isPartial
         self.messageIdHeader = messageIdHeader
+        self.html = html
     }
 }
 

@@ -21,6 +21,10 @@ final class PersonalDataModel {
     private(set) var listDayEvents: [CalendarEventSummary] = []
     private(set) var listUnread: [MailMessageSummary] = []
     private(set) var unreadTotal = 0
+    /// Each allowed account's unread inbox count, by address.
+    private(set) var mapUnreadCounts: [String: Int] = [:]
+    /// The account whose unread mail the sidebar lists, or nil for every account's.
+    private(set) var shownMailAccount: String?
     private(set) var access: MailAccess?
     /// The time the calendar's now line and countdown are drawn at, ticking every minute.
     private(set) var now = Date.now
@@ -126,6 +130,12 @@ final class PersonalDataModel {
         }
     }
 
+    /// List one account's unread mail, or every account's with nil.
+    func showMailAccount(_ address: String?) {
+        shownMailAccount = address
+        Task { await readMail() }
+    }
+
     func refreshCalendar() {
         Task { await readCalendar() }
     }
@@ -149,8 +159,18 @@ final class PersonalDataModel {
     private func readMail() async {
         mailReadAt = .now
         do {
-            listUnread = try await service.unreadInbox(limit: Self.unreadLimit)
+            if let shownMailAccount {
+                var query = MailQuery()
+                query.listAccounts = [shownMailAccount]
+                query.folder = .inbox
+                query.isUnreadOnly = true
+                query.limit = Self.unreadLimit
+                listUnread = try await service.search(query)
+            } else {
+                listUnread = try await service.unreadInbox(limit: Self.unreadLimit)
+            }
             unreadTotal = try await service.unreadCount()
+            mapUnreadCounts = try await service.inboxCounts().mapValues(\.unread)
             mailProblem = nil
         } catch {
             mailProblem = String(describing: error)

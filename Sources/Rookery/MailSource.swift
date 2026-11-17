@@ -25,4 +25,6 @@ protocol MailSource: Actor {
         location: String
     ) async throws -> CalendarEventSummary
     func removeEvent(_ eventId: String) async throws
+    /// Move an event the user dragged to a new start and end.
+    func moveEvent(_ eventId: String, startsAt: Date, endsAt: Date) async throws
 }

@@ -336,6 +336,11 @@ actor MailService: MailSource {
         )
     }
 
+    /// Move an event the user dragged, this occurrence only for a recurring one.
+    func moveEvent(_ eventId: String, startsAt: Date, endsAt: Date) throws {
+        _ = try calendars.changeEvent(eventId, title: nil, startsAt: startsAt, endsAt: endsAt, location: nil, notes: nil)
+    }
+
     /// Remove an event the user chose, this occurrence only for a recurring one.
     func removeEvent(_ eventId: String) throws {
         try calendars.removeEvent(eventId)

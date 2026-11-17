@@ -11,8 +11,11 @@ struct UnreadMailView: View {
     let onOpenPage: () -> Void
     let onOpenSettings: () -> Void
 
-    @State private var shownAccount: String?
     @State private var hoveredId: Int?
+
+    private var shownAccount: String? {
+        personal.shownMailAccount
+    }
 
     private var listShown: [MailMessageSummary] {
         guard let shownAccount else {
@@ -22,12 +25,13 @@ struct UnreadMailView: View {
     }
 
     private var listAccounts: [String] {
-        Array(Set(personal.listUnread.map(\.account))).sorted()
+        Array(Set(personal.mapUnreadCounts.keys).union(personal.listUnread.map(\.account))).sorted()
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            accountTabs
             if let access = personal.access, !access.hasFullDiskAccess {
                 SidebarNotice(
                     icon: .mail,
@@ -58,31 +62,13 @@ struct UnreadMailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Unread")
                     .font(.system(size: 15, weight: .bold))
-                Text("\(personal.unreadTotal) in \(shownAccount ?? "every inbox")")
+                Text(shownAccount.map { "\(personal.mapUnreadCounts[$0] ?? listShown.count) in \($0)" } ?? "\(personal.unreadTotal) in every inbox")
                     .font(.system(size: 11))
                     .foregroundStyle(StageColors.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 4)
-            Menu {
-                Button("Every Account") {
-                    shownAccount = nil
-                }
-                Divider()
-                ForEach(listAccounts, id: \.self) { account in
-                    Button(account) {
-                        shownAccount = account
-                    }
-                }
-            } label: {
-                RookeryIconView(.filter)
-                    .foregroundStyle(shownAccount == nil ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(Color.accentColor))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Show one account's mail")
             Button(action: onOpenPage) {
                 RookeryIconView(.expand)
                     .foregroundStyle(StageColors.secondaryText)
@@ -95,6 +81,69 @@ struct UnreadMailView: View {
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 10)
+    }
+
+    /// A tab for every inbox together and one for each account, each with its unread count, which lists
+    /// that account's mail alone.
+    private var accountTabs: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 5) {
+                accountTab(nil, title: "All", count: personal.unreadTotal)
+                ForEach(listAccounts, id: \.self) { account in
+                    accountTab(account, title: Self.shortName(of: account), count: personal.mapUnreadCounts[account])
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .padding(.bottom, 8)
+    }
+
+    private func accountTab(_ account: String?, title: String, count: Int?) -> some View {
+        let isSelected = shownAccount == account
+        let tint = account.map(AccountColor.of) ?? Color.accentColor
+        return Button {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
+                personal.showMailAccount(account)
+            }
+        } label: {
+            HStack(spacing: 5) {
+                if account != nil {
+                    Circle()
+                        .fill(tint)
+                        .frame(width: 6, height: 6)
+                }
+                Text(title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                    .lineLimit(1)
+                if let count, count > 0 {
+                    Text(RightSidebarView.count(count))
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(StageColors.tertiaryText))
+                }
+            }
+            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .background(isSelected ? AnyShapeStyle(tint.opacity(0.16)) : AnyShapeStyle(StageColors.segmentGroove), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(isSelected ? AnyShapeStyle(tint.opacity(0.5)) : AnyShapeStyle(StageColor.clear))
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(account ?? "Every inbox")
+    }
+
+    /// An account as a tab names it: the part before the @, with the domain's first label where that is
+    /// what tells two apart.
+    static func shortName(of address: String) -> String {
+        let listParts = address.split(separator: "@")
+        guard listParts.count == 2 else {
+            return address
+        }
+        let domain = listParts[1].split(separator: ".").first.map(String.init) ?? ""
+        return ["gmail", "outlook", "hotmail", "icloud", "qq", "163"].contains(domain) ? String(listParts[0]) : domain
     }
 
     private func row(_ message: MailMessageSummary) -> some View {
@@ -130,6 +179,16 @@ struct UnreadMailView: View {
                             .font(.system(size: 11))
                             .foregroundStyle(StageColors.secondaryText)
                             .lineLimit(2)
+                    }
+                    if shownAccount == nil {
+                        Text(message.account)
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(AccountColor.of(message.account))
+                            .lineLimit(1)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(AccountColor.of(message.account).opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .padding(.top, 2)
                     }
                 }
             }

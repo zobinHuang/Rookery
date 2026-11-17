@@ -156,7 +156,7 @@ struct TodayCalendarView: View {
                         .frame(width: Self.hourLabelWidth, alignment: .trailing)
                         .offset(y: -6)
                     Rectangle()
-                        .fill(StageColors.separator)
+                        .fill(StageColors.gridLine)
                         .frame(height: 1)
                 }
                 .frame(height: Self.hourHeight, alignment: .top)
@@ -280,7 +280,7 @@ struct NextEventCard: View {
                     RookeryLabel("Join", icon: .video, spacing: 4)
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(StageButtonStyle(kind: .prominent))
                 .controlSize(.small)
                 .help(link.absoluteString)
             }
@@ -338,7 +338,7 @@ struct EventDetailView: View {
                     } label: {
                         RookeryLabel("Join the Meeting", icon: .video, spacing: 5)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
                     .controlSize(.small)
                 }
                 if !event.organizer.isEmpty {

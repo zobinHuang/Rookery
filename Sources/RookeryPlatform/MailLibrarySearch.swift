@@ -181,7 +181,8 @@ extension MailLibrary {
             text: mime?.text ?? "",
             listAttachments: mime?.listAttachmentNames ?? [],
             isPartial: file == nil || file?.lastPathComponent.hasSuffix(".partial.emlx") == true,
-            messageIdHeader: (mime?.header("message-id") ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> "))
+            messageIdHeader: (mime?.header("message-id") ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> ")),
+            html: mime?.html ?? ""
         )
     }
 

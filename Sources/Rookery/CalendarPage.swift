@@ -37,6 +37,9 @@ struct CalendarPage: View {
     @State private var isAdding = false
     @State private var eventToRemove: CalendarEventSummary?
     @State private var problem: String?
+    /// The event being dragged to a new time, and how far it has moved.
+    @State private var draggedEventId: String?
+    @State private var dragTranslation = CGSize.zero
 
     private var service: any MailSource {
         fleetModel.mailSource
@@ -135,14 +138,7 @@ struct CalendarPage: View {
                 stepButton(.chevronRight, by: 1)
             }
             .buttonStyle(.borderless)
-            Picker("Span", selection: $span) {
-                ForEach(CalendarSpan.allCases, id: \.self) { span in
-                    Text(span.title).tag(span)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
+            StageSegmentedControl(selection: $span, listOptions: CalendarSpan.allCases, title: \.title)
             Button {
                 isAdding = true
             } label: {
@@ -299,7 +295,7 @@ struct CalendarPage: View {
                 VStack(spacing: 0) {
                     ForEach(0..<24, id: \.self) { _ in
                         Rectangle()
-                            .fill(StageColors.separator)
+                            .fill(StageColors.gridLine)
                             .frame(height: 1)
                             .frame(maxHeight: Self.hourHeight, alignment: .top)
                     }
@@ -309,12 +305,28 @@ struct CalendarPage: View {
                     let laneWidth = (proxy.size.width - 4) / CGFloat(placement.laneCount)
                     let top = Self.offset(of: max(event.startsAt, day), in: day)
                     let bottom = Self.offset(of: min(event.endsAt, end), in: day)
+                    let isDragged = draggedEventId == event.id
                     EventBlock(event: event, isPast: event.endsAt < .now)
                         .frame(width: max(laneWidth - 2, 8), height: max(bottom - top - 1, 18))
+                        .overlay(alignment: .topLeading) {
+                            if isDragged {
+                                Text(movedStart(of: event, columnWidth: proxy.size.width).formatted(date: .omitted, time: .shortened))
+                                    .font(.system(size: 10, weight: .bold).monospacedDigit())
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.accentColor, in: Capsule())
+                                    .offset(y: -16)
+                            }
+                        }
+                        .shadow(color: isDragged ? .black.opacity(0.25) : .clear, radius: 6, y: 3)
+                        .zIndex(isDragged ? 1 : 0)
                         .offset(x: 2 + CGFloat(placement.lane) * laneWidth, y: top)
+                        .offset(isDragged ? dragTranslation : .zero)
                         .onTapGesture {
                             shownEvent = event
                         }
+                        .gesture(moveGesture(event, columnWidth: proxy.size.width))
                         .popover(item: Binding(get: { shownEvent?.id == event.id ? shownEvent : nil }, set: { shownEvent = $0 }), arrowEdge: .trailing) { shown in
                             eventPopover(shown)
                         }
@@ -331,8 +343,90 @@ struct CalendarPage: View {
         .frame(height: Self.hourHeight * 24)
         .overlay(alignment: .leading) {
             Rectangle()
-                .fill(StageColors.separator)
+                .fill(StageColors.gridLine)
                 .frame(width: 1)
+        }
+    }
+
+    /// Dragging an event on the hours, on a calendar that takes changes: up and down by quarter hours, and
+    /// in the week across days; it lands when let go.
+    private func moveGesture(_ event: CalendarEventSummary, columnWidth: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                guard isMovable(event) else {
+                    return
+                }
+                draggedEventId = event.id
+                dragTranslation = CGSize(
+                    width: span == .week ? CGFloat(dayShift(value.translation.width, columnWidth: columnWidth)) * columnWidth : 0,
+                    height: CGFloat(quarterHours(value.translation.height)) * Self.hourHeight / 4
+                )
+            }
+            .onEnded { value in
+                guard isMovable(event) else {
+                    return
+                }
+                let shift = TimeInterval(quarterHours(value.translation.height) * 15 * 60)
+                    + TimeInterval(span == .week ? dayShift(value.translation.width, columnWidth: columnWidth) : 0) * 24 * 3600
+                draggedEventId = nil
+                dragTranslation = .zero
+                guard shift != 0 else {
+                    return
+                }
+                move(event, by: shift)
+            }
+    }
+
+    private func isMovable(_ event: CalendarEventSummary) -> Bool {
+        listCalendars.first { $0.id == event.calendarId }?.isWritable == true
+    }
+
+    private func quarterHours(_ height: CGFloat) -> Int {
+        Int((height / (Self.hourHeight / 4)).rounded())
+    }
+
+    private func dayShift(_ width: CGFloat, columnWidth: CGFloat) -> Int {
+        columnWidth > 0 ? Int((width / columnWidth).rounded()) : 0
+    }
+
+    /// Where a dragged event would start if let go now.
+    private func movedStart(of event: CalendarEventSummary, columnWidth: CGFloat) -> Date {
+        let shift = TimeInterval(quarterHours(dragTranslation.height) * 15 * 60)
+            + TimeInterval(dayShift(dragTranslation.width, columnWidth: columnWidth)) * 24 * 3600
+        return event.startsAt.addingTimeInterval(shift)
+    }
+
+    private func move(_ event: CalendarEventSummary, by shift: TimeInterval) {
+        if let index = listEvents.firstIndex(where: { $0.id == event.id }) {
+            let moved = listEvents[index]
+            listEvents[index] = CalendarEventSummary(
+                id: moved.id,
+                globalId: moved.globalId,
+                calendarId: moved.calendarId,
+                calendar: moved.calendar,
+                account: moved.account,
+                title: moved.title,
+                startsAt: moved.startsAt.addingTimeInterval(shift),
+                endsAt: moved.endsAt.addingTimeInterval(shift),
+                isAllDay: moved.isAllDay,
+                location: moved.location,
+                notes: moved.notes,
+                url: moved.url,
+                organizer: moved.organizer,
+                listAttendees: moved.listAttendees,
+                isRecurring: moved.isRecurring,
+                listAlsoOn: moved.listAlsoOn,
+                colorHex: moved.colorHex
+            )
+        }
+        Task {
+            do {
+                try await service.moveEvent(event.id, startsAt: event.startsAt.addingTimeInterval(shift), endsAt: event.endsAt.addingTimeInterval(shift))
+                problem = nil
+            } catch {
+                problem = String(describing: error)
+            }
+            await load()
         }
     }
 
@@ -389,7 +483,7 @@ struct CalendarPage: View {
         .background(isInMonth ? StageColor.clear : StageColors.groove.opacity(0.4))
         .overlay {
             Rectangle()
-                .strokeBorder(StageColors.separator, lineWidth: 0.5)
+                .strokeBorder(StageColors.gridLine, lineWidth: 0.5)
         }
     }
 
@@ -561,7 +655,7 @@ struct NewEventForm: View {
                         let begin = isAllDay ? Calendar.current.startOfDay(for: start) : start
                         onAdd(calendarId, title.trimmingCharacters(in: .whitespaces), begin, finish, isAllDay, location.trimmingCharacters(in: .whitespaces))
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
                     .keyboardShortcut(.defaultAction)
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || calendarId.isEmpty)
                 }

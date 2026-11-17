@@ -68,6 +68,10 @@ struct MailPage: View {
     @State private var shownMessage: MailMessageDetail?
     @State private var isLoading = false
     @State private var problem: String?
+    /// Whether a message with HTML is shown formatted rather than as plain text.
+    @State private var isFormatted = true
+    /// The messages the user let load their images.
+    @State private var setRemoteAllowedIds: Set<Int> = []
 
     private var service: any MailSource {
         fleetModel.mailSource
@@ -289,45 +293,92 @@ struct MailPage: View {
                 Rectangle()
                     .fill(StageColors.separator)
                     .frame(height: 1)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(message.summary.subject.isEmpty ? "No subject" : message.summary.subject)
-                            .font(.system(size: 18, weight: .bold))
-                            .textSelection(.enabled)
-                        VStack(alignment: .leading, spacing: 3) {
-                            readerLine("From", Self.people([message.summary.from]))
-                            if !message.listTo.isEmpty {
-                                readerLine("To", Self.people(message.listTo))
+                if isFormatted && !message.html.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        readerHeader(message)
+                        formatRow(message)
+                        MailHTMLView(html: message.html, isRemoteAllowed: setRemoteAllowedIds.contains(message.summary.id))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(StageColors.separator)
                             }
-                            if !message.listCc.isEmpty {
-                                readerLine("Cc", Self.people(message.listCc))
-                            }
-                            readerLine("Date", message.summary.receivedAt.formatted(date: .complete, time: .shortened))
-                            readerLine("Account", message.summary.account)
-                        }
-                        if !message.listAttachments.isEmpty {
-                            FlowRow(spacing: 5) {
-                                ForEach(message.listAttachments, id: \.self) { name in
-                                    InfoTag(name)
-                                }
-                            }
-                        }
-                        Rectangle()
-                            .fill(StageColors.separator)
-                            .frame(height: 1)
-                        Text(message.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : message.text)
-                            .font(.system(size: 13))
-                            .lineSpacing(3)
-                            .foregroundStyle(message.text.isEmpty ? StageColors.secondaryText : StageColors.primaryText)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(20)
-                    .frame(maxWidth: 780, alignment: .leading)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 12) {
+                            readerHeader(message)
+                            if !message.html.isEmpty {
+                                formatRow(message)
+                            }
+                            Rectangle()
+                                .fill(StageColors.separator)
+                                .frame(height: 1)
+                            Text(message.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : message.text)
+                                .font(.system(size: 13))
+                                .lineSpacing(3)
+                                .foregroundStyle(message.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .padding(20)
+                        .frame(maxWidth: 780, alignment: .leading)
+                    }
                 }
             }
         } else {
             SidebarNotice(icon: .mail, title: "No message chosen", text: "Pick a message to read it here.")
+        }
+    }
+
+    /// The subject, who it is from and to, when, in which account, and its attachments.
+    private func readerHeader(_ message: MailMessageDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(message.summary.subject.isEmpty ? "No subject" : message.summary.subject)
+                .font(.system(size: 18, weight: .bold))
+                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 3) {
+                readerLine("From", Self.people([message.summary.from]))
+                if !message.listTo.isEmpty {
+                    readerLine("To", Self.people(message.listTo))
+                }
+                if !message.listCc.isEmpty {
+                    readerLine("Cc", Self.people(message.listCc))
+                }
+                readerLine("Date", message.summary.receivedAt.formatted(date: .complete, time: .shortened))
+                readerLine("Account", message.summary.account)
+            }
+            if !message.listAttachments.isEmpty {
+                FlowRow(spacing: 5) {
+                    ForEach(message.listAttachments, id: \.self) { name in
+                        InfoTag(name)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The switch between the message as formatted and as plain text, and, formatted, a way to load its
+    /// images.
+    private func formatRow(_ message: MailMessageDetail) -> some View {
+        HStack(spacing: 10) {
+            StageSegmentedControl(
+                selection: $isFormatted,
+                listOptions: [true, false],
+                title: { $0 ? "Formatted" : "Plain Text" },
+                isSmall: true
+            )
+            if isFormatted && !setRemoteAllowedIds.contains(message.summary.id) {
+                Text("Images and other remote content are blocked.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
+                Button("Load Images") {
+                    setRemoteAllowedIds.insert(message.summary.id)
+                }
+                .controlSize(.small)
+            }
+            Spacer(minLength: 0)
         }
     }
 

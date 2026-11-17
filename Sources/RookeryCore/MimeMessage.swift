@@ -6,9 +6,12 @@ import Foundation
 public struct MimeMessage: Equatable, Sendable {
     /// The most characters of text a message keeps, so one huge message cannot flood a reader.
     public static let textLimit = 200_000
+    public static let htmlLimit = 2_000_000
 
     public let mapHeaders: [String: String]
     public let text: String
+    /// The HTML part as sent, for showing the message formatted; nil when it has none.
+    public let html: String?
     public let listAttachmentNames: [String]
 
     /// Read a message from its raw bytes.
@@ -21,6 +24,7 @@ public struct MimeMessage: Equatable, Sendable {
         part.collect(plain: &plain, html: &html, attachments: &listAttachments)
         let body = plain ?? html.map(MimePart.text(ofHTML:)) ?? ""
         text = String(body.prefix(Self.textLimit))
+        self.html = html.map { String($0.prefix(Self.htmlLimit)) }
         listAttachmentNames = listAttachments
     }
 

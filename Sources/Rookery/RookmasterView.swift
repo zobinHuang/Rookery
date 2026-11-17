@@ -200,6 +200,13 @@ enum RookmasterStyle {
             : NSColor(srgbRed: 0.6, green: 0.43, blue: 0, alpha: 1)
     })
 
+    /// Whether a verb tells of something that went wrong, the one thing the log marks in color.
+    static func isFailure(_ verb: String) -> Bool {
+        listFailureVerbs.contains(verb)
+    }
+
+    private static let listFailureVerbs = ["undelivered", "deleted", "disconnected"]
+
     static func tint(ofVerb verb: String) -> Color {
         switch verb {
         case "uses", "mounts": .blue
@@ -207,7 +214,7 @@ enum RookmasterStyle {
         case "wrote", "updated", "created": .pink
         case "spawned": agentTint
         case "messaged", "delivered": .green
-        case "undelivered", "deleted", "disconnected": .red
+        case _ where isFailure(verb): .red
         case "depends_on": .indigo
         default: .secondary
         }
@@ -436,17 +443,19 @@ struct RookmasterPanel: View {
             Text(time(of: event))
                 .foregroundStyle(StageColors.tertiaryText)
             Text(graph.logLabel(of: event.actor))
-                .foregroundStyle(RookmasterStyle.tint(of: event.actor.kind))
+                .fontWeight(.medium)
+                .foregroundStyle(StageColors.primaryText)
                 .lineLimit(1)
             Text(event.verb)
-                .foregroundStyle(RookmasterStyle.tint(ofVerb: event.verb))
+                .foregroundStyle(RookmasterStyle.isFailure(event.verb) ? AnyShapeStyle(Color.red) : AnyShapeStyle(StageColors.secondaryText))
             if let object = event.object {
                 Text(graph.logLabel(of: object))
-                    .foregroundStyle(RookmasterStyle.tint(of: object.kind))
+                    .fontWeight(.medium)
+                    .foregroundStyle(StageColors.primaryText)
                     .lineLimit(1)
             }
             Text(detail(of: event))
-                .foregroundStyle(StageColors.secondaryText)
+                .foregroundStyle(StageColors.tertiaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)

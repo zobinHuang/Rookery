@@ -203,6 +203,6 @@ Rookery 只管理用户主动交给它的窗口，其余 app 一概不碰。
 ## 8. 已确认的决策
 
 1. **虚拟工作区 + 托管最大化**（§3），原生全屏只做兼容跳转与"退出全屏并纳入托管"。
-2. **Swift**，遵循 `humanize/swift-coding-conventions.md`（camelCase，即 Swift API Design Guidelines）。
+2. **Swift**，遵循 `humanize/skills/swift-coding-conventions/SKILL.md`（camelCase，即 Swift API Design Guidelines）。
 3. **最低系统版本 macOS 14.2**：接管应用音频所用的 Core Audio process tap 自 14.2 起才有。
 4. **对外发布**：Developer ID 签名 + 公证、崩溃后恢复屏幕外窗口、权限引导都是发布前的硬性要求。

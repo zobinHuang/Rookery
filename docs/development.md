@@ -82,4 +82,4 @@ Branded Chrome ignores `--load-extension`, and the user's Chrome must not be use
 
 ## Committing
 
-Follow `humanize/git-conventions.md`: one-line Conventional Commits, one concern each, every commit building and passing tests, no code agent attribution. Stage selectively (`git add -p` takes scripted answers such as `printf 'y\nn\n' | git add -p <file>`), and check doubtful intermediate commits with `git worktree add --detach <dir> <commit>` and `swift build` there.
+Follow `humanize/skills/git-conventions/SKILL.md`: one-line Conventional Commits, one concern each, every commit building and passing tests, no code agent attribution. Stage selectively (`git add -p` takes scripted answers such as `printf 'y\nn\n' | git add -p <file>`), and check doubtful intermediate commits with `git worktree add --detach <dir> <commit>` and `swift build` there.

@@ -35,7 +35,7 @@ A subagent's id is `<session id>~<agent id>`; `agent tail` reads its own transcr
 
 A relation is `source --verb--> target` with how often and when it last happened. Verbs: `uses` (an agent used a skill), `mounts` (it loaded a playbook's skill), `follows` (it follows a playbook), `wrote` (it wrote a memory), `spawned` (a subagent), `messaged`, `created`, `updated`, `depends_on`.
 
-Agents' attributes include `state`, `harness`, `cwd`, `git_branch`, `parent` (for a subagent), `role` (who it is to its teammates) and `focus` (what it works on now). Teams have `goal`, `members` (by agent id, each with its `duty`) and `limits`. Memories have `text`, `path` and `project`. Skills have `description`, `repo_url`, `skill_path`. Playbooks have `description`, `prompt` and `skills` (pins: a skill id, or `{"skill_id": ..., "pin": ...}`).
+Agents' attributes include `state`, `harness`, `cwd`, `git_branch`, `parent` (for a subagent), `role` (who it is to its teammates) and `focus` (what it works on now), each with where it came from in `role_source` and `focus_source` (`user`, `agent`, `launch` or `auto`, which Rookery wrote). Teams have `goal`, `members` (by agent id, each with its `duty`) and `limits`. Memories have `text`, `path` and `project`. Skills have `description`, `repo_url`, `skill_path`. Playbooks have `description`, `prompt` and `skills` (pins: a skill id, or `{"skill_id": ..., "pin": ...}`).
 
 ## Change
 

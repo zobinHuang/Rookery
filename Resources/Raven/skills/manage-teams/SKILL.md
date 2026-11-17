@@ -13,4 +13,4 @@ Agents in a team are told of one another, each member's role, duty and focus, an
 4. Taking one out: `rook-client propose leave <team id> <agent id>`.
 5. Propose a new team before its members; the user carries them out in order. Then say in a few lines what the team is for and who does what. To start a new agent straight into a team, use `start-agent` with `--team`.
 
-You cannot set an agent's role or focus; agents keep those themselves, and the user can set a role on the agent's page.
+You cannot set an agent's role or focus. Rookery writes both from each agent's work and keeps them up to date; an agent may set its own with `rook me role` and `rook me focus`, and the user can set a role on the agent's page; those are kept as written.

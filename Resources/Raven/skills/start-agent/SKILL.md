@@ -9,8 +9,8 @@ description: Propose starting a new code agent on one of the user's hosts, in a 
 2. Find the directory: the workdir's path, or an absolute path the user gave, or the `cwd` of an earlier agent on the same project (`rook-client resource get agent <id>`). Never guess a path that no workdir or agent has used.
 3. Decide what it begins with:
    - `--playbook <id>` and `--skill <id>` (repeatable) for what to install first; check them with `rook-client resource ls --kind playbook` and `--kind skill`.
-   - `--role "..."` for who it is to its teammates, in a line.
+   - `--role "..."`, always: who it is to its teammates, a noun phrase under 12 words, as "owner of the G-Watch ISA decoder", in the language the user wrote to you in. Take the workdir's role when it fits the request; otherwise write it from what the user asked for. Rookery keeps it up to date from the agent's work afterwards.
    - `--team <team id>:<duty>` (repeatable) for each team it joins, with its duty there; `rook-client team list` shows the teams.
 4. Write the first prompt as the user would type it to start the work: the task, the constraints they gave, and where to report. Empty is fine when the user wants the agent open and will prompt it later.
-5. Propose it: `rook-client propose spawn <rook> --cwd <dir> [--harness codex] [--playbook ...] [--skill ...] [--role ...] [--team ...] "<first prompt>"`. One proposal per session.
+5. Propose it: `rook-client propose spawn <rook> --cwd <dir> --role "..." [--harness codex] [--playbook ...] [--skill ...] [--team ...] "<first prompt>"`. One proposal per session.
 6. Tell the user in a line what you proposed and where; the Start button shows under your answer. Once started, the session reports itself, joins its teams, is told of its teammates, and shows up in `rook-client agent status` within a few seconds.

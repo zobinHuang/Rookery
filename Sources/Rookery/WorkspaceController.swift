@@ -17,6 +17,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     private static let fullscreenSettleDelay = Duration.milliseconds(400)
     /// A hidden window may keep at most this share of itself on screen.
     private static let hiddenVisibleShareLimit: CGFloat = 0.02
+    /// How long hiding an application whole waits for it to leave the front, as the window brought forward
+    /// takes it, before minimizing its windows instead.
+    private static let deactivationTimeout: Duration = .milliseconds(300)
     /// How long after a switch a hidden window that takes focus is taken as the switch's leftover, the
     /// application switched away from or the one switched to activating late, and focus is taken back to the
     /// window the switch brought forward rather than followed.
@@ -112,6 +115,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// Counts the switches asked for, so one still waiting its turn when a later one is asked for is
     /// skipped: stepping through windows quickly lands on the last without bringing each one forward.
     private var latestSwitchNumber = 0
+    /// Hidden windows that were hidden by hiding their application, as ⌘H does, rather than minimized:
+    /// they left the screen at once and stay in place, so showing one is only unhiding it.
+    private var setApplicationHiddenIds: Set<WindowId> = []
     /// Whether the workspace changed during the running layout change, which tells the views once when it
     /// ends rather than once for every window it moves.
     private var isChangePending = false
@@ -1386,7 +1392,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
             stageCoordinator?.keepStage(stageId, beneath: selected.windowId)
         }
-        await run(showing: [], hiding: listToHide)
+        await run(showing: [], hiding: listToHide, hidesApplicationsWhole: true)
         activateShownGroups()
         didChange()
         Self.logger.info("""
@@ -1403,19 +1409,112 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
     }
 
-    /// Show and hide windows concurrently, each application on its own tracker thread.
-    private func run(showing listToShow: [ManagedWindow], hiding listToHide: [ManagedWindow]) async {
+    /// Show and hide windows concurrently, each application on its own tracker thread. An application
+    /// whose every window on screen is to be hidden is hidden whole, which takes its windows away at once,
+    /// where minimizing each animates for half a second; the others' windows are minimized.
+    private func run(
+        showing listToShow: [ManagedWindow],
+        hiding listToHide: [ManagedWindow],
+        hidesApplicationsWhole: Bool = false
+    ) async {
+        let mapHiddenWhole = hidesApplicationsWhole
+            ? await applicationsToHideWhole(showing: listToShow, hiding: listToHide)
+            : [:]
+        let setHiddenWholeIds = Set(mapHiddenWhole.values.flatMap { $0.map(\.windowId) })
         await withTaskGroup(of: Void.self) { taskGroup in
             for window in listToShow {
                 taskGroup.addTask {
                     try? await self.show(window.windowId)
                 }
             }
-            for window in listToHide {
+            for (processId, listWindows) in mapHiddenWhole {
+                taskGroup.addTask {
+                    await self.hideApplication(processId, windows: listWindows)
+                }
+            }
+            for window in listToHide where !setHiddenWholeIds.contains(window.windowId) {
                 taskGroup.addTask {
                     try? await self.hide(window.windowId)
                 }
             }
+        }
+    }
+
+    /// The applications that can be hidden whole in place of minimizing their windows, with the windows
+    /// that go with them: every window of theirs that shows is among those to hide, none is to be shown,
+    /// none is in full screen, and they play no video in the sidebar, which a hidden browser freezes.
+    private func applicationsToHideWhole(
+        showing listToShow: [ManagedWindow],
+        hiding listToHide: [ManagedWindow]
+    ) async -> [Int32: [ManagedWindow]] {
+        let setHideIds = Set(listToHide.map(\.windowId))
+        let setShowProcessIds = Set(listToShow.map(\.application.processId))
+        let setPictureProcessIds = pictureProcessIds()
+        let mapByProcess = Dictionary(grouping: listToHide, by: \.application.processId)
+        let listShownWindows = WindowServer.listShownWindows(ofProcesses: Set(mapByProcess.keys))
+            .filter { ScreenGeometry.visibleShare(of: $0.frame) > Self.hiddenVisibleShareLimit }
+        var mapHiddenWhole: [Int32: [ManagedWindow]] = [:]
+        for (processId, listWindows) in mapByProcess {
+            guard
+                !setShowProcessIds.contains(processId),
+                !setPictureProcessIds.contains(processId),
+                !listShownWindows.contains(where: { $0.processId == processId && !setHideIds.contains($0.windowId) })
+            else {
+                continue
+            }
+            var isAnyFullscreen = false
+            for window in listWindows where await tracker.isFullscreen(window.windowId) {
+                isAnyFullscreen = true
+            }
+            if !isAnyFullscreen {
+                mapHiddenWhole[processId] = listWindows
+            }
+        }
+        return mapHiddenWhole
+    }
+
+    /// Hide an application whole to hide its windows, as ⌘H does; if it cannot be, minimize them instead.
+    private func hideApplication(_ processId: Int32, windows listWindows: [ManagedWindow]) async {
+        var mapFrames: [WindowId: CGRect] = [:]
+        for window in listWindows where !workspace.listHiddenWindows.contains(where: { $0.windowId == window.windowId }) {
+            mapFrames[window.windowId] = await tracker.frame(of: window.windowId)
+        }
+        let running = NSRunningApplication(processIdentifier: processId)
+        if let running {
+            let deadline = ContinuousClock.now + Self.deactivationTimeout
+            while running.isActive && ContinuousClock.now < deadline {
+                try? await Task.sleep(for: Self.unhidePollInterval)
+            }
+        }
+        guard
+            mapFrames.count == listWindows.count,
+            let running,
+            !running.isActive,
+            running.hide()
+        else {
+            for window in listWindows {
+                try? await hide(window.windowId)
+            }
+            return
+        }
+        for (windowId, frame) in mapFrames {
+            workspace.markHidden(windowId, restoreFrame: frame)
+            setApplicationHiddenIds.insert(windowId)
+        }
+        setHiddenProcessIds.insert(processId)
+        Self.logger.info("hid \(running.localizedName ?? "", privacy: .public) whole for \(mapFrames.count) window(s)")
+        didChange()
+    }
+
+    /// Minimize the windows an application kept in place while hidden whole, once it shows again, but the
+    /// one being shown, so the others do not come back with it.
+    private func minimizeWindowsHiddenWhole(of processId: Int32, except shownWindowId: WindowId?) async {
+        let listWindowIds = workspace.listHiddenWindows
+            .filter { $0.application.processId == processId && setApplicationHiddenIds.contains($0.windowId) && $0.windowId != shownWindowId }
+            .map(\.windowId)
+        for windowId in listWindowIds {
+            setApplicationHiddenIds.remove(windowId)
+            _ = await tracker.applyMinimized(true, to: windowId)
         }
     }
 
@@ -1598,6 +1697,14 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     }
 
     private func minimizeAgain(_ windowId: WindowId) async {
+        if
+            setApplicationHiddenIds.contains(windowId),
+            let window = workspace.listHiddenWindows.first(where: { $0.windowId == windowId }),
+            NSRunningApplication(processIdentifier: window.application.processId)?.isHidden == true
+        {
+            return
+        }
+        setApplicationHiddenIds.remove(windowId)
         guard !(await tracker.isMinimized(windowId)) else {
             return
         }
@@ -1618,6 +1725,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 continue
             }
             running.unhide()
+            Task {
+                if await self.waitUntilShown(running) {
+                    await self.minimizeWindowsHiddenWhole(of: processId, except: nil)
+                }
+            }
         }
         scheduleApplicationHiding()
     }
@@ -1735,6 +1847,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
         throttle.release(window.application.processId)
         setHiddenProcessIds.remove(window.application.processId)
+        setApplicationHiddenIds.remove(windowId)
         guard
             let running = NSRunningApplication(processIdentifier: window.application.processId),
             running.isHidden
@@ -1743,6 +1856,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
         running.unhide()
         if await waitUntilShown(running) {
+            await minimizeWindowsHiddenWhole(of: window.application.processId, except: windowId)
             return true
         }
         Self.logger.notice("\(running.localizedName ?? "", privacy: .public) is still hidden after asking it to unhide; activating it")

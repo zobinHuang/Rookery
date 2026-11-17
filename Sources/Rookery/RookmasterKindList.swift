@@ -29,7 +29,8 @@ struct RookmasterKindList: View {
     private var listResources: [FleetResource] {
         let trimmed = query.wrappedValue.trimmingCharacters(in: .whitespaces).lowercased()
         return fleetModel.graph.listResources(of: kind).filter { resource in
-            trimmed.isEmpty || "\(resource.displayName) \(resource.name) \(resource.id)".lowercased().contains(trimmed)
+            !resource.isRookeryOwn
+                && (trimmed.isEmpty || "\(resource.displayName) \(resource.name) \(resource.id)".lowercased().contains(trimmed))
         }
     }
 

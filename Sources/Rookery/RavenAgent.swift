@@ -23,7 +23,7 @@ enum RavenTurnStatus: Equatable {
 final class RavenAgent {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "raven")
     static let agentName = "rookery/raven"
-    static let rookName = "rookery"
+    static let rookName = AgentFleet.rookeryRookName
     private static let workspaceName = "raven"
     private static let historyName = "raven-history"
     private static let indexName = "conversations.json"

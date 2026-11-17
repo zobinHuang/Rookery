@@ -116,6 +116,12 @@ public struct FleetResource: Decodable, Equatable, Sendable {
         self.lastUsedAt = lastUsedAt
     }
 
+    /// Whether the resource is one of Rookery's own agents, as Raven's conversations, which the fleet's
+    /// lists leave out.
+    public var isRookeryOwn: Bool {
+        kind == AgentFleet.agentKind && mapAttributes["rook_name"]?.stringValue == AgentFleet.rookeryRookName
+    }
+
     /// What the resource goes by: the title it was given, such as an agent's session title, else its name.
     public var displayName: String {
         guard let title = mapAttributes["title"]?.stringValue, !title.isEmpty else {
@@ -360,6 +366,9 @@ public enum FleetEventEffect: Equatable, Sendable {
 public struct AgentFleet: Equatable, Sendable {
     public static let agentKind = "agent"
     public static let rookKind = "rook"
+    /// The rook Rookery's own agents report under, as Raven's conversations: the app's tooling, not agents
+    /// of the fleet, so the fleet's lists leave them out.
+    public static let rookeryRookName = "rookery"
 
     public private(set) var mapAgents: [String: FleetAgent] = [:]
     /// Whether each rook holds its link open, by name.
@@ -449,6 +458,7 @@ public struct AgentFleet: Equatable, Sendable {
     /// The sessions, without their subagents, those last active first.
     public var listSessions: [FleetAgent] {
         mapAgents.values
+            .filter { $0.rookName != Self.rookeryRookName }
             .filter { $0.parentId == nil }
             .sorted { ($0.lastUsedAt, $0.id) > ($1.lastUsedAt, $1.id) }
     }

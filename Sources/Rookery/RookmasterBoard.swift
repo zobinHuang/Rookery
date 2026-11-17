@@ -611,6 +611,9 @@ struct RookmasterBoard: View {
         var mapColumns: [String: [FleetResource]] = [:]
         for kind in listShownKinds {
             var listResources = graph.listResources(of: kind.name).filter { resource in
+                if resource.isRookeryOwn {
+                    return false
+                }
                 if kind.name == AgentFleet.agentKind {
                     let agent = fleetModel.fleet.mapAgents[resource.id]
                     if agent?.parentId != nil {

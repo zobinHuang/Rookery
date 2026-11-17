@@ -1086,6 +1086,8 @@ class AgentCommands:
     AGENT_LIST_LIMIT = 500
     AGENT_SUBAGENT_SEPARATOR = "~"
     AGENT_SUBAGENT_SESSION_PREFIX = "agent-"
+    """The rook Rookery's own agents report under, as Raven's conversations, which are no agents of the fleet."""
+    AGENT_ROOKERY_ROOK = "rookery"
 
     @staticmethod
     def build_parser(parser: argparse.ArgumentParser) -> None:
@@ -1146,6 +1148,8 @@ class AgentCommands:
             map_attributes = agent["attributes"]
             state = str(map_attributes.get("state") or "")
             if map_attributes.get("parent") or (state == "ended" and not is_all):
+                continue
+            if map_attributes.get("rook_name") == cls.AGENT_ROOKERY_ROOK:
                 continue
             rook_name = str(map_attributes.get("rook_name") or "")
             cwd = str(map_attributes.get("cwd") or "")

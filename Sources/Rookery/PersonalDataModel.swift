@@ -21,15 +21,18 @@ final class PersonalDataModel {
     private(set) var listDayEvents: [CalendarEventSummary] = []
     private(set) var listUnread: [MailMessageSummary] = []
     private(set) var unreadTotal = 0
-    /// Each allowed account's unread inbox count, by address.
-    private(set) var mapUnreadCounts: [String: Int] = [:]
-    /// The account whose unread mail the sidebar lists, or nil for every account's.
-    private(set) var shownMailAccount: String?
+    /// Each allowed account's inbox counts, by address.
+    private(set) var mapInboxCounts: [String: MailboxCount] = [:]
+    /// Counts up each time the mail is read again, so a view listing pages of it reads them again too.
+    private(set) var mailGeneration = 0
     private(set) var access: MailAccess?
     /// The time the calendar's now line and countdown are drawn at, ticking every minute.
     private(set) var now = Date.now
     private(set) var calendarProblem: String?
     private(set) var mailProblem: String?
+
+    /// How many messages a page of the sidebar's mail holds.
+    static let pageSize = 12
 
     @ObservationIgnored private let service: any MailSource
     @ObservationIgnored private var listTasks: [Task<Void, Never>] = []
@@ -130,10 +133,19 @@ final class PersonalDataModel {
         }
     }
 
-    /// List one account's unread mail, or every account's with nil.
-    func showMailAccount(_ address: String?) {
-        shownMailAccount = address
-        Task { await readMail() }
+    /// One page of an inbox's messages, newest first: unread or read, of one account or, with nil, of every
+    /// allowed account.
+    ///
+    /// - Throws: whatever reading Mail's library throws
+    func inboxPage(account: String?, isRead: Bool, page: Int) async throws -> [MailMessageSummary] {
+        var query = MailQuery()
+        query.listAccounts = account.map { [$0] } ?? []
+        query.folder = .inbox
+        query.isUnreadOnly = !isRead
+        query.isReadOnly = isRead
+        query.limit = Self.pageSize
+        query.offset = page * Self.pageSize
+        return try await service.search(query)
     }
 
     func refreshCalendar() {
@@ -159,18 +171,10 @@ final class PersonalDataModel {
     private func readMail() async {
         mailReadAt = .now
         do {
-            if let shownMailAccount {
-                var query = MailQuery()
-                query.listAccounts = [shownMailAccount]
-                query.folder = .inbox
-                query.isUnreadOnly = true
-                query.limit = Self.unreadLimit
-                listUnread = try await service.search(query)
-            } else {
-                listUnread = try await service.unreadInbox(limit: Self.unreadLimit)
-            }
+            listUnread = try await service.unreadInbox(limit: Self.unreadLimit)
             unreadTotal = try await service.unreadCount()
-            mapUnreadCounts = try await service.inboxCounts().mapValues(\.unread)
+            mapInboxCounts = try await service.inboxCounts()
+            mailGeneration += 1
             mailProblem = nil
         } catch {
             mailProblem = String(describing: error)

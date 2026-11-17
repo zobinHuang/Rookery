@@ -249,10 +249,14 @@ public struct MailQuery: Equatable, Sendable {
     /// A folder to keep to; nil for all but junk and trash.
     public var folder: MailFolder?
     public var isUnreadOnly = false
+    /// Only messages already read.
+    public var isReadOnly = false
     public var isFlaggedOnly = false
     public var after: Date?
     public var before: Date?
     public var limit = defaultLimit
+    /// How many of the newest matches to pass over, for a later page.
+    public var offset = 0
 
     public init() {}
 }

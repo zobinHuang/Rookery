@@ -2,30 +2,42 @@ import AppKit
 import RookeryCore
 import SwiftUI
 
-/// The right sidebar's mail: every account's unread inbox mail, newest first, each with its sender,
-/// subject, opening and account; one account's alone when picked. A row opens the mail page on it, and
-/// marks it read or opens it in Mail from where it is.
+/// The right sidebar's mail. A tab for every inbox's unread mail together, then one per account, each with
+/// its unread count; an account's tab lists its unread mail above and its read mail below, each a page at
+/// a time, newest first. A row opens the mail page on its message, and an unread one can be marked read
+/// from where it is.
 struct UnreadMailView: View {
     let personal: PersonalDataModel
     let onOpenMessage: (MailMessageSummary) -> Void
     let onOpenPage: () -> Void
     let onOpenSettings: () -> Void
 
+    @State private var shownAccount: String?
+    @State private var unreadPage = 0
+    @State private var readPage = 0
+    @State private var listUnreadShown: [MailMessageSummary] = []
+    @State private var listReadShown: [MailMessageSummary] = []
     @State private var hoveredId: Int?
-
-    private var shownAccount: String? {
-        personal.shownMailAccount
-    }
-
-    private var listShown: [MailMessageSummary] {
-        guard let shownAccount else {
-            return personal.listUnread
-        }
-        return personal.listUnread.filter { $0.account == shownAccount }
-    }
+    @State private var problem: String?
 
     private var listAccounts: [String] {
-        Array(Set(personal.mapUnreadCounts.keys).union(personal.listUnread.map(\.account))).sorted()
+        personal.mapInboxCounts.keys.sorted()
+    }
+
+    private var unreadCount: Int {
+        shownAccount.map { personal.mapInboxCounts[$0]?.unread ?? 0 } ?? personal.unreadTotal
+    }
+
+    private var readCount: Int {
+        guard let shownAccount, let counts = personal.mapInboxCounts[shownAccount] else {
+            return 0
+        }
+        return max(0, counts.total - counts.unread)
+    }
+
+    /// What the shown pages depend on, so they are read again when any of it changes.
+    private var pageKey: String {
+        "\(shownAccount ?? "")|\(unreadPage)|\(readPage)|\(personal.mailGeneration)"
     }
 
     var body: some View {
@@ -40,29 +52,52 @@ struct UnreadMailView: View {
                     actionTitle: "Open Settings",
                     action: onOpenSettings
                 )
-            } else if listShown.isEmpty {
-                SidebarNotice(icon: .envelopeOpen, title: "All read", text: shownAccount.map { "Nothing unread in \($0)." } ?? "Nothing unread in any inbox.")
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 1) {
-                        ForEach(listShown, id: \.id) { message in
-                            row(message)
+                    VStack(spacing: 0) {
+                        section(
+                            title: "Unread",
+                            count: unreadCount,
+                            page: $unreadPage,
+                            listMessages: listUnreadShown,
+                            emptyText: shownAccount.map { "Nothing unread in \($0)." } ?? "Nothing unread in any inbox."
+                        )
+                        if shownAccount != nil {
+                            section(
+                                title: "Read",
+                                count: readCount,
+                                page: $readPage,
+                                listMessages: listReadShown,
+                                emptyText: "Nothing read in this inbox yet."
+                            )
+                            .padding(.top, 10)
+                        }
+                        if let problem {
+                            Text(problem)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.red)
+                                .padding(12)
                         }
                     }
                     .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 10)
                 }
+                .id(shownAccount ?? "")
+                .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.18), value: listShown.map(\.id))
+        .animation(.easeOut(duration: 0.18), value: shownAccount)
+        .task(id: pageKey) {
+            await loadPages()
+        }
     }
 
     private var header: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Unread")
+                Text("Mails")
                     .font(.system(size: 15, weight: .bold))
-                Text(shownAccount.map { "\(personal.mapUnreadCounts[$0] ?? listShown.count) in \($0)" } ?? "\(personal.unreadTotal) in every inbox")
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(StageColors.secondaryText)
                     .lineLimit(1)
@@ -83,14 +118,20 @@ struct UnreadMailView: View {
         .padding(.bottom, 10)
     }
 
-    /// A tab for every inbox together and one for each account, each with its unread count, which lists
-    /// that account's mail alone.
+    private var subtitle: String {
+        guard let shownAccount else {
+            return "\(unreadCount.formatted()) unread in every inbox"
+        }
+        return "\(unreadCount.formatted()) unread of \((unreadCount + readCount).formatted()) in \(shownAccount)"
+    }
+
+    /// The tab of every inbox's unread mail, then one per account, each with its unread count.
     private var accountTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 5) {
-                accountTab(nil, title: "All", count: personal.unreadTotal)
+                accountTab(nil, title: "All Unread", count: personal.unreadTotal)
                 ForEach(listAccounts, id: \.self) { account in
-                    accountTab(account, title: Self.shortName(of: account), count: personal.mapUnreadCounts[account])
+                    accountTab(account, title: Self.shortName(of: account), count: personal.mapInboxCounts[account]?.unread)
                 }
             }
             .padding(.horizontal, 12)
@@ -103,7 +144,9 @@ struct UnreadMailView: View {
         let tint = account.map(AccountColor.of) ?? Color.accentColor
         return Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
-                personal.showMailAccount(account)
+                shownAccount = account
+                unreadPage = 0
+                readPage = 0
             }
         } label: {
             HStack(spacing: 5) {
@@ -132,11 +175,11 @@ struct UnreadMailView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(account ?? "Every inbox")
+        .help(account ?? "Every inbox's unread mail")
     }
 
-    /// An account as a tab names it: the part before the @, with the domain's first label where that is
-    /// what tells two apart.
+    /// An account as a tab names it: the part before the @ for a mail provider's address, else the
+    /// organization the domain names.
     static func shortName(of address: String) -> String {
         let listParts = address.split(separator: "@")
         guard listParts.count == 2 else {
@@ -146,6 +189,66 @@ struct UnreadMailView: View {
         return ["gmail", "outlook", "hotmail", "icloud", "qq", "163"].contains(domain) ? String(listParts[0]) : domain
     }
 
+    /// A titled list of one page of messages, with the page's place among them all and a way to the pages
+    /// before and after.
+    private func section(
+        title: String,
+        count: Int,
+        page: Binding<Int>,
+        listMessages: [MailMessageSummary],
+        emptyText: String
+    ) -> some View {
+        let pageCount = max(1, Int((Double(count) / Double(PersonalDataModel.pageSize)).rounded(.up)))
+        let first = page.wrappedValue * PersonalDataModel.pageSize
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(StageColors.secondaryText)
+                Text(count.formatted())
+                    .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(StageColors.tertiaryText)
+                Spacer(minLength: 4)
+                if pageCount > 1 {
+                    Text("\(first + 1)–\(min(first + PersonalDataModel.pageSize, count)) of \(count.formatted())")
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(StageColors.tertiaryText)
+                    pagerButton(.chevronLeft, isEnabled: page.wrappedValue > 0, help: "Newer") {
+                        page.wrappedValue -= 1
+                    }
+                    pagerButton(.chevronRight, isEnabled: page.wrappedValue < pageCount - 1, help: "Older") {
+                        page.wrappedValue += 1
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            if listMessages.isEmpty {
+                Text(emptyText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+            } else {
+                ForEach(listMessages, id: \.id) { message in
+                    row(message)
+                }
+            }
+        }
+    }
+
+    private func pagerButton(_ icon: RookeryIcon, isEnabled: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            RookeryIconView(icon)
+                .foregroundStyle(isEnabled ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.tertiaryText.opacity(0.5)))
+                .frame(width: 18, height: 18)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(help)
+    }
+
     private func row(_ message: MailMessageSummary) -> some View {
         let isHovered = hoveredId == message.id
         return Button {
@@ -153,18 +256,29 @@ struct UnreadMailView: View {
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Circle()
-                    .fill(AccountColor.of(message.account))
+                    .fill(message.isRead ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(AccountColor.of(message.account)))
+                    .overlay {
+                        Circle()
+                            .strokeBorder(message.isRead ? AnyShapeStyle(AccountColor.of(message.account).opacity(0.6)) : AnyShapeStyle(StageColor.clear))
+                    }
                     .frame(width: 7, height: 7)
                     .padding(.top, 5)
                     .help(message.account)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(message.from.name.isEmpty ? message.from.address : message.from.name)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12, weight: message.isRead ? .medium : .semibold))
                             .lineLimit(1)
                         Spacer(minLength: 4)
-                        if isHovered {
-                            actions(message)
+                        if isHovered && !message.isRead {
+                            Button {
+                                personal.markRead(message)
+                            } label: {
+                                RookeryIconView(.envelopeOpen)
+                                    .foregroundStyle(StageColors.secondaryText)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Mark as read")
                         } else {
                             Text(MailTime.short(message.receivedAt))
                                 .font(.system(size: 10.5).monospacedDigit())
@@ -172,13 +286,14 @@ struct UnreadMailView: View {
                         }
                     }
                     Text(message.subject.isEmpty ? "No subject" : message.subject)
-                        .font(.system(size: 11.5, weight: .medium))
+                        .font(.system(size: 11.5, weight: message.isRead ? .regular : .medium))
+                        .foregroundStyle(message.isRead ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
                         .lineLimit(1)
                     if !message.snippet.isEmpty {
                         Text(message.snippet)
                             .font(.system(size: 11))
                             .foregroundStyle(StageColors.secondaryText)
-                            .lineLimit(2)
+                            .lineLimit(message.isRead ? 1 : 2)
                     }
                     if shownAccount == nil {
                         Text(message.account)
@@ -203,19 +318,22 @@ struct UnreadMailView: View {
                 hoveredId = isInside ? message.id : (hoveredId == message.id ? nil : hoveredId)
             }
         }
-        .transition(.opacity.combined(with: .move(edge: .trailing)))
     }
 
-    private func actions(_ message: MailMessageSummary) -> some View {
-        HStack(spacing: 6) {
-            Button {
-                personal.markRead(message)
-            } label: {
-                RookeryIconView(.envelopeOpen)
-                    .foregroundStyle(StageColors.secondaryText)
+    private func loadPages() async {
+        guard personal.access?.hasFullDiskAccess != false else {
+            return
+        }
+        do {
+            let listUnread = try await personal.inboxPage(account: shownAccount, isRead: false, page: unreadPage)
+            let listRead = shownAccount == nil ? [] : try await personal.inboxPage(account: shownAccount, isRead: true, page: readPage)
+            withAnimation(.easeOut(duration: 0.18)) {
+                listUnreadShown = listUnread
+                listReadShown = listRead
             }
-            .buttonStyle(.borderless)
-            .help("Mark as read")
+            problem = nil
+        } catch {
+            problem = String(describing: error)
         }
     }
 }

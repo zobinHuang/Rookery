@@ -48,7 +48,7 @@ extension MailLibrary {
         }
         let limit = max(1, min(query.limit, MailQuery.maximumLimit))
         let sql = "SELECT \(Self.summaryColumns) \(Self.summaryJoins) WHERE \(whereClause) "
-            + "ORDER BY m.date_received DESC LIMIT \(limit)"
+            + "ORDER BY m.date_received DESC LIMIT \(limit) OFFSET \(max(0, query.offset))"
         return try rows(sql, listBindings).compactMap { summary(of: $0, accounts: mapAccountAddresses) }
     }
 
@@ -134,6 +134,9 @@ extension MailLibrary {
         }
         if query.isUnreadOnly {
             listConditions.append("m.read = 0")
+        }
+        if query.isReadOnly {
+            listConditions.append("m.read = 1")
         }
         if query.isFlaggedOnly {
             listConditions.append("m.flagged = 1")

@@ -102,8 +102,8 @@ enum RightSidebarTab: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .calendar: "Today"
-        case .mail: "Unread"
+        case .calendar: "Schedule"
+        case .mail: "Mails"
         case .mixer: "Mixer"
         }
     }

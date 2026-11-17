@@ -47,6 +47,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private static let fadeOutDelay = Duration.milliseconds(240)
     private static let mouseReleasePollInterval = Duration.milliseconds(100)
     private static let snapDuration: TimeInterval = 0.28
+    /// The longest a page waits for the windows it covers to be set aside before it builds anyway.
+    private static let pageReadyTimeout: Duration = .milliseconds(600)
+    /// Long enough for the placeholder to be drawn before a page that covers no window builds.
+    private static let pagePlaceholderFrame: Duration = .milliseconds(30)
     /// How long a switch runs before the stage shows it under way.
     private static let switchIndicatorDelay: Duration = .milliseconds(160)
 
@@ -75,6 +79,7 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
     private var moveStartOrigin: CGPoint?
     private var tabDragTask: Task<Void, Never>?
     private var switchIndicatorTask: Task<Void, Never>?
+    private var pageReadyTask: Task<Void, Never>?
     /// The frame to go back to when a maximized stage is double-clicked again.
     private var unmaximizedFrame: CGRect?
     /// Whether the stage is moving along with its dragged front window, which then moves itself.
@@ -528,10 +533,14 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         workspaceController.cancelPendingFocus()
         workspaceController.notePageShown(page)
         guard model.shownPage == nil else {
-            if model.shownPage != page {
+            let isChanging = model.shownPage != page
+            if isChanging {
                 model.pageBefore = model.shownPage
             }
             model.shownPage = page
+            if isChanging {
+                holdPage(until: nil)
+            }
             refreshScreenSaverKeyMonitor()
             return
         }
@@ -544,7 +553,17 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
             .map(\.windowId)
             .filter { $0 != model.selectedWindowId && !setHiddenIds.contains($0) }
         let selectedWindowId = model.selectedWindowId
-        Task { [weak self, workspaceController] in
+        let hiding = Task { [weak self, workspaceController] in
+            if let selectedWindowId {
+                do {
+                    try await workspaceController.perform(.hide, on: selectedWindowId)
+                    if self?.model.shownPage != nil {
+                        self?.asideWindowId = selectedWindowId
+                    }
+                } catch {
+                    Self.logger.error("cannot set \(selectedWindowId.rawValue) aside for a page: \(error, privacy: .public)")
+                }
+            }
             for windowId in listOtherShownIds {
                 do {
                     try await workspaceController.perform(.hide, on: windowId)
@@ -552,18 +571,38 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
                     Self.logger.error("cannot set \(windowId.rawValue) aside for a page: \(error, privacy: .public)")
                 }
             }
-            guard let selectedWindowId else {
+        }
+        holdPage(until: selectedWindowId == nil && listOtherShownIds.isEmpty ? nil : hiding)
+    }
+
+    /// Show the page's placeholder until the windows it covers are set aside, or a moment when it covers
+    /// none, then build the page, so the work of building it never holds up the windows leaving.
+    private func holdPage(until hiding: Task<Void, Never>?) {
+        pageReadyTask?.cancel()
+        guard model.shownPage != .screenSaver else {
+            model.isPageReady = true
+            return
+        }
+        model.isPageReady = false
+        pageReadyTask = Task { [weak self] in
+            if let hiding {
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        await hiding.value
+                    }
+                    group.addTask {
+                        try? await Task.sleep(for: Self.pageReadyTimeout)
+                    }
+                    await group.next()
+                    group.cancelAll()
+                }
+            } else {
+                try? await Task.sleep(for: Self.pagePlaceholderFrame)
+            }
+            guard !Task.isCancelled else {
                 return
             }
-            do {
-                try await workspaceController.perform(.hide, on: selectedWindowId)
-            } catch {
-                Self.logger.error("cannot set \(selectedWindowId.rawValue) aside for a page: \(error, privacy: .public)")
-                return
-            }
-            if self?.model.shownPage != nil {
-                self?.asideWindowId = selectedWindowId
-            }
+            self?.model.isPageReady = true
         }
     }
 
@@ -587,6 +626,8 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         }
         model.shownPage = nil
         model.pageBefore = nil
+        pageReadyTask?.cancel()
+        model.isPageReady = true
         refreshScreenSaverKeyMonitor()
         asideWindowId = nil
         shortcutRecorder.cancel()

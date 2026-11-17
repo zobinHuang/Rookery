@@ -53,8 +53,6 @@ enum MailPlace: Hashable {
 /// and the message read on the right, with what the user can do to it: reply in Mail, mark it read or
 /// unread, flag it, open it in Mail, or have Raven draft a reply.
 struct MailPage: View {
-    private static let folderListWidth: CGFloat = 210
-    private static let messageListWidth: CGFloat = 340
 
     let fleetModel: FleetModel
     let onClose: () -> Void
@@ -66,15 +64,19 @@ struct MailPage: View {
     @State private var listMessages: [MailMessageSummary] = []
     @State private var mapInboxCounts: [String: MailboxCount] = [:]
     @State private var shownMessage: MailMessageDetail?
+    /// The message last read for the reader, whether or not Mail still held it.
+    @State private var loadedMessageId: Int?
     @State private var isLoading = false
     @State private var problem: String?
     /// Whether a message with HTML is shown formatted rather than as plain text.
     @State private var isFormatted = true
-    /// The messages the user let load their images.
-    @State private var setRemoteAllowedIds: Set<Int> = []
 
     private var service: any MailSource {
         fleetModel.mailSource
+    }
+
+    private var columns: PageColumns {
+        fleetModel.pageColumns
     }
 
     private var selectedId: Int? {
@@ -88,12 +90,15 @@ struct MailPage: View {
                 .fill(StageColors.separator)
                 .frame(height: 1)
             HStack(spacing: 0) {
-                folderList
-                    .frame(width: Self.folderListWidth)
-                divider
+                if !columns.isHidden(.mailFolders) {
+                    folderList
+                        .frame(width: columns.width(of: .mailFolders))
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    ColumnDivider(columns: columns, column: .mailFolders)
+                }
                 messageList
-                    .frame(width: Self.messageListWidth)
-                divider
+                    .frame(width: columns.width(of: .mailMessages))
+                ColumnDivider(columns: columns, column: .mailMessages)
                 reader
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -122,6 +127,7 @@ struct MailPage: View {
 
     private var header: some View {
         HStack(spacing: 12) {
+            ColumnToggle(columns: columns, column: .mailFolders, title: "Mailboxes")
             RookeryIconView(.mail, scale: 1.6)
             Text("Mail")
                 .font(.system(size: 18, weight: .bold))
@@ -219,7 +225,9 @@ struct MailPage: View {
             .padding(.vertical, 6)
             .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .padding(10)
-            if listMessages.isEmpty && !isLoading {
+            if listMessages.isEmpty && isLoading {
+                PageLoading(title: "Reading \(place.title)")
+            } else if listMessages.isEmpty {
                 SidebarNotice(icon: .envelopeOpen, title: searchText.isEmpty ? "Nothing here" : "No match", text: searchText.isEmpty ? "\(place.title) holds no mail." : "No message in \(place.title) matches.")
                 Spacer(minLength: 0)
             } else {
@@ -287,7 +295,10 @@ struct MailPage: View {
 
     @ViewBuilder
     private var reader: some View {
-        if let message = shownMessage {
+        if let selectedId, loadedMessageId != selectedId {
+            PageLoading(title: "Opening the message")
+                .transition(.opacity)
+        } else if let message = shownMessage {
             VStack(spacing: 0) {
                 readerToolbar(message)
                 Rectangle()
@@ -297,7 +308,7 @@ struct MailPage: View {
                     VStack(alignment: .leading, spacing: 10) {
                         readerHeader(message)
                         formatRow(message)
-                        MailHTMLView(html: message.html, isRemoteAllowed: setRemoteAllowedIds.contains(message.summary.id))
+                        MailHTMLView(html: message.html, isRemoteAllowed: true)
                             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -359,8 +370,7 @@ struct MailPage: View {
         }
     }
 
-    /// The switch between the message as formatted and as plain text, and, formatted, a way to load its
-    /// images.
+    /// The switch between the message as formatted and as plain text.
     private func formatRow(_ message: MailMessageDetail) -> some View {
         HStack(spacing: 10) {
             StageSegmentedControl(
@@ -369,15 +379,6 @@ struct MailPage: View {
                 title: { $0 ? "Formatted" : "Plain Text" },
                 isSmall: true
             )
-            if isFormatted && !setRemoteAllowedIds.contains(message.summary.id) {
-                Text("Images and other remote content are blocked.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(StageColors.tertiaryText)
-                Button("Load Images") {
-                    setRemoteAllowedIds.insert(message.summary.id)
-                }
-                .controlSize(.small)
-            }
             Spacer(minLength: 0)
         }
     }
@@ -469,6 +470,7 @@ struct MailPage: View {
         } catch {
             problem = String(describing: error)
         }
+        loadedMessageId = selectedId
     }
 
     /// Do something to the message in Mail, then read the list and the message again.

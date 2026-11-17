@@ -20,7 +20,6 @@ enum CalendarSpan: String, CaseIterable {
 /// an event's details a click away, and events the user adds or removes themselves, on the calendars Raven
 /// and the stage may use.
 struct CalendarPage: View {
-    private static let calendarListWidth: CGFloat = 210
     private static let hourHeight: CGFloat = 50
     private static let hourLabelWidth: CGFloat = 46
     private static let monthEventLimit = 3
@@ -37,6 +36,8 @@ struct CalendarPage: View {
     @State private var isAdding = false
     @State private var eventToRemove: CalendarEventSummary?
     @State private var problem: String?
+    /// Whether the events of the span shown have been read once.
+    @State private var hasLoaded = false
     /// The event being dragged to a new time, and how far it has moved.
     @State private var draggedEventId: String?
     @State private var dragTranslation = CGSize.zero
@@ -72,11 +73,12 @@ struct CalendarPage: View {
                 .fill(StageColors.separator)
                 .frame(height: 1)
             HStack(spacing: 0) {
-                calendarList
-                    .frame(width: Self.calendarListWidth)
-                Rectangle()
-                    .fill(StageColors.separator)
-                    .frame(width: 1)
+                if !fleetModel.pageColumns.isHidden(.calendarList) {
+                    calendarList
+                        .frame(width: fleetModel.pageColumns.width(of: .calendarList))
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+                    ColumnDivider(columns: fleetModel.pageColumns, column: .calendarList)
+                }
                 Group {
                     switch span {
                     case .day, .week:
@@ -86,6 +88,14 @@ struct CalendarPage: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(hasLoaded ? 1 : 0)
+                .overlay {
+                    if !hasLoaded {
+                        PageLoading(title: "Reading your calendars")
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.18), value: hasLoaded)
             }
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
@@ -120,6 +130,7 @@ struct CalendarPage: View {
 
     private var header: some View {
         HStack(spacing: 12) {
+            ColumnToggle(columns: fleetModel.pageColumns, column: .calendarList, title: "Calendars")
             RookeryIconView(.calendar, scale: 1.6)
             Text(title)
                 .font(.system(size: 18, weight: .bold))
@@ -540,6 +551,7 @@ struct CalendarPage: View {
         } catch {
             problem = String(describing: error)
         }
+        hasLoaded = true
     }
 
     private func add(calendarId: String, title: String, start: Date, end: Date, isAllDay: Bool, location: String) {

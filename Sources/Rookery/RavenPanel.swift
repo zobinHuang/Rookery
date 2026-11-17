@@ -5,7 +5,6 @@ import SwiftUI
 /// the one open, read as an agent's conversation is, and a box to ask in plain words, naming agents and
 /// resources with @ and choosing them from suggestions.
 struct RavenPanel: View {
-    private static let listWidth: CGFloat = 220
     private static let deliveryPollInterval: Duration = .seconds(3)
     /// The most decided proposals shown above the box, the latest.
     private static let shownDecidedLimit = 3
@@ -42,14 +41,23 @@ struct RavenPanel: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            conversationList
-                .frame(width: Self.listWidth)
-            Rectangle()
-                .fill(StageColors.separator)
-                .frame(width: 1)
+            if !fleetModel.pageColumns.isHidden(.ravenConversations) {
+                conversationList
+                    .frame(width: fleetModel.pageColumns.width(of: .ravenConversations))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                ColumnDivider(columns: fleetModel.pageColumns, column: .ravenConversations)
+            }
             VStack(spacing: 0) {
                 conversation
                 composer
+            }
+            .overlay(alignment: .topLeading) {
+                if fleetModel.pageColumns.isHidden(.ravenConversations) {
+                    ColumnToggle(columns: fleetModel.pageColumns, column: .ravenConversations, title: "Conversations")
+                        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .padding(8)
+                        .transition(.opacity)
+                }
             }
         }
         .onAppear {
@@ -66,6 +74,7 @@ struct RavenPanel: View {
                 Text("Raven")
                     .font(.system(size: 14, weight: .bold))
                 Spacer(minLength: 0)
+                ColumnToggle(columns: fleetModel.pageColumns, column: .ravenConversations, title: "Conversations")
             }
             .padding(.horizontal, 4)
             Button {

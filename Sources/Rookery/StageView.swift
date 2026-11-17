@@ -192,6 +192,17 @@ struct StageView: View {
 
     /// What an agent's page's back button names: the console or the settings it was opened from; none for
     /// another agent's page, or a window.
+    private static func loadingTitle(of page: StagePage) -> String {
+        switch page {
+        case .settings: "Opening Settings"
+        case .calendar: "Opening Calendar"
+        case .mail: "Opening Mail"
+        case .rookmaster: "Opening Rookmaster"
+        case .agent: "Opening the agent"
+        default: "Opening"
+        }
+    }
+
     private static func backTitle(of pageBefore: StagePage?) -> String? {
         switch pageBefore {
         case .rookmaster: "Rookmaster"
@@ -916,7 +927,10 @@ struct StageView: View {
         ZStack {
             RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous)
                 .fill(StageColors.content)
-            if model.shownPage == .settings {
+            if let page = model.shownPage, !model.isPageReady {
+                PageLoading(title: Self.loadingTitle(of: page))
+                    .transition(.opacity)
+            } else if model.shownPage == .settings {
                 SettingsView(
                     preferences: preferences,
                     recorder: shortcutRecorder,
@@ -984,6 +998,7 @@ struct StageView: View {
                 .allowsHitTesting(false)
         }
         .animation(Self.zoneAnimation, value: model.shownPage)
+        .animation(.easeOut(duration: 0.15), value: model.isPageReady)
         .modifier(ZoneFrameReporter(zone: .content, model: model))
     }
 
@@ -1358,3 +1373,19 @@ struct SwitchingTabs: View {
     }
 }
 
+/// What stands in for a page of Rookery's own while the windows it covers are set aside and it is built,
+/// or while it reads what it shows: a spinner and what is on the way.
+struct PageLoading: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(StageColors.secondaryText)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}

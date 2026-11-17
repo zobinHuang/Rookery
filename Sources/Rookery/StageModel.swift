@@ -152,6 +152,9 @@ final class StageModel {
     var pageBefore: StagePage?
     var sidebarMode = SidebarMode.groups
     var rightSidebarTab = RightSidebarTab.calendar
+    /// Whether the shown page's content is built: not while the windows it covers are still being set
+    /// aside, when a light placeholder stands in so setting them aside is not held up.
+    var isPageReady = true
     /// The group a switch is bringing forward, while it takes long enough to show; nil otherwise.
     var switchingGroupId: GroupId?
     var isRightSidebarCollapsed = false

@@ -55,6 +55,7 @@ final class FleetModel {
     @ObservationIgnored let transcripts = TranscriptCache()
     /// Where the user left the agents' pages and the Rookmaster console.
     @ObservationIgnored let pageMemory = PageMemory()
+    @ObservationIgnored let pageColumns = PageColumns()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
     private var cachedToken: String??

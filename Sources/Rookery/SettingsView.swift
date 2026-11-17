@@ -44,6 +44,9 @@ struct SettingsView: View {
     @State private var roostError: String?
     @State private var mailAccess: MailAccess?
     @State private var mailError: String?
+    /// The calendars Rookery may use that take events, offered as the default calendar.
+    @State private var listWritableCalendars: [CalendarSummary] = []
+    @State private var isPickingCalendar = false
 
     /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
@@ -67,7 +70,8 @@ struct SettingsView: View {
                 header
                 general
                 roost
-                mailAndCalendars
+                mailSettings
+                calendarSettings
                 codeAgents
                 worldClock
                 screenSaver
@@ -218,26 +222,14 @@ struct SettingsView: View {
     private static let fullDiskAccessURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
     private static let calendarsAccessURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
 
-    /// The Mac's mail and calendars as Raven reads them: what Rookery may read, and which accounts Raven
-    /// may see, each personal or work.
-    private var mailAndCalendars: some View {
-        SettingsSection(title: "Mail and Calendars", symbol: .person) {
+    /// What Rookery may read of the Mac's mail: whether it can read Mail's library, whether Mail runs to
+    /// fetch new mail, and each account, personal or work, which Raven may read or not.
+    private var mailSettings: some View {
+        SettingsSection(title: "Mail", symbol: .mail) {
             if let access = mailAccess {
                 SettingsRow(title: "Mail Library", detail: access.hasFullDiskAccess ? "readable" : "needs Full Disk Access") {
                     accessControl(isGranted: access.hasFullDiskAccess) {
                         openSystemSettings(Self.fullDiskAccessURL)
-                    }
-                }
-                SettingsRow(title: "Calendars", detail: access.calendarAuthorization == "full" ? "readable" : "needs access") {
-                    accessControl(isGranted: access.calendarAuthorization == "full") {
-                        if access.calendarAuthorization == "not_determined" {
-                            Task {
-                                _ = await fleetModel.mailService.requestCalendarAccess()
-                                await reloadMail()
-                            }
-                        } else {
-                            openSystemSettings(Self.calendarsAccessURL)
-                        }
                     }
                 }
                 SettingsRow(title: "Mail", detail: access.isMailRunning ? "running, so new mail arrives" : "not running; new mail waits until it is") {
@@ -251,6 +243,44 @@ struct SettingsView: View {
                 }
                 ForEach(access.listMailAccounts, id: \.id) { account in
                     mailAccountRow(account, settings: access.settings)
+                }
+                if let problem = access.mailProblem {
+                    SettingsMessage(text: problem)
+                }
+            } else {
+                SettingsRow(title: "Reading", detail: "what Rookery may read…") {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            }
+            if let mailError {
+                SettingsMessage(text: mailError)
+            }
+        }
+        .task {
+            await reloadMail()
+        }
+    }
+
+    /// What Rookery may read of the Mac's calendars: whether it may, each account's calendars, which Raven
+    /// may read and propose changes to or not, and the calendar new events go on when none is named.
+    private var calendarSettings: some View {
+        SettingsSection(title: "Calendars", symbol: .calendar) {
+            if let access = mailAccess {
+                SettingsRow(title: "Calendars", detail: access.calendarAuthorization == "full" ? "readable" : "needs access") {
+                    accessControl(isGranted: access.calendarAuthorization == "full") {
+                        if access.calendarAuthorization == "not_determined" {
+                            Task {
+                                _ = await fleetModel.mailService.requestCalendarAccess()
+                                await reloadMail()
+                            }
+                        } else {
+                            openSystemSettings(Self.calendarsAccessURL)
+                        }
+                    }
+                }
+                SettingsRow(title: "Default Calendar") {
+                    defaultCalendarMenu(settings: access.settings)
                 }
                 ForEach(access.listCalendarAccounts, id: \.self) { name in
                     SettingsRow(title: name, detail: "calendars") {
@@ -269,22 +299,98 @@ struct SettingsView: View {
                         .help("Whether Raven may read these calendars and propose changes to them")
                     }
                 }
-                if let problem = access.mailProblem {
-                    SettingsMessage(text: problem)
-                }
             } else {
                 SettingsRow(title: "Reading", detail: "what Rookery may read…") {
                     ProgressView()
                         .controlSize(.mini)
                 }
             }
-            if let mailError {
-                SettingsMessage(text: mailError)
+        }
+    }
+
+    /// The default calendar, which opens a list of the calendars that take events, by account, each with
+    /// its color, to choose another.
+    private func defaultCalendarMenu(settings: MailAccountSettings) -> some View {
+        let chosen = listWritableCalendars.first { $0.id == settings.defaultCalendarId }
+        return Button {
+            isPickingCalendar.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                if let chosen {
+                    Circle()
+                        .fill(AccountColor.calendar(chosen.colorHex))
+                        .frame(width: 8, height: 8)
+                    Text(chosen.title)
+                    Text(chosen.accountTitle)
+                        .foregroundStyle(StageColors.tertiaryText)
+                } else {
+                    Text("None")
+                        .foregroundStyle(StageColors.secondaryText)
+                }
+                RookeryIconView(.chevronDown)
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+            .lineLimit(1)
+        }
+        .fixedSize()
+        .help("The calendar Raven adds an event to when you name none")
+        .popover(isPresented: $isPickingCalendar, arrowEdge: .bottom) {
+            calendarChoices(chosenId: settings.defaultCalendarId)
+        }
+    }
+
+    private func calendarChoices(chosenId: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            calendarChoice(title: "None", account: nil, colorHex: nil, isChosen: chosenId == nil) {
+                updateMailSettings { $0.defaultCalendarId = nil }
+            }
+            ForEach(Array(Set(listWritableCalendars.map(\.accountTitle))).sorted(), id: \.self) { account in
+                Text(account)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+                    .padding(.bottom, 2)
+                ForEach(listWritableCalendars.filter { $0.accountTitle == account }, id: \.id) { calendar in
+                    calendarChoice(title: calendar.title, account: account, colorHex: calendar.colorHex, isChosen: calendar.id == chosenId) {
+                        updateMailSettings { $0.defaultCalendarId = calendar.id }
+                    }
+                }
             }
         }
-        .task {
-            await reloadMail()
+        .padding(8)
+        .frame(minWidth: 240)
+        .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .environment(\.chosenTheme, preferences.theme)
+    }
+
+    private func calendarChoice(title: String, account: String?, colorHex: String?, isChosen: Bool, choose: @escaping () -> Void) -> some View {
+        Button {
+            choose()
+            isPickingCalendar = false
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(colorHex.map { AnyShapeStyle(AccountColor.calendar($0)) } ?? AnyShapeStyle(StageColor.clear))
+                    .overlay {
+                        Circle()
+                            .strokeBorder(colorHex == nil ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColor.clear))
+                    }
+                    .frame(width: 9, height: 9)
+                Text(title)
+                    .font(.system(size: 12.5))
+                Spacer(minLength: 12)
+                if isChosen {
+                    RookeryIconView(.check)
+                        .foregroundStyle(StageColors.secondaryText)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(CalendarChoiceStyle())
+        .help(account.map { "\(title), \($0)" } ?? "No default calendar")
     }
 
     private func mailAccountRow(_ account: MailScriptAccount, settings: MailAccountSettings) -> some View {
@@ -337,6 +443,7 @@ struct SettingsView: View {
     }
 
     private func reloadMail() async {
+        listWritableCalendars = ((try? await fleetModel.mailSource.allowedCalendars()) ?? []).filter(\.isWritable)
         if let shownMailAccess {
             mailAccess = shownMailAccess
             return
@@ -597,8 +704,8 @@ private struct SettingsSection<Content: View>: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(StageColors.groove.opacity(0.5))
+            .padding(.top, 13)
+            .padding(.bottom, 11)
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(height: 1)
@@ -863,3 +970,25 @@ private struct AgentAccountRow: View {
         }
     }
 }
+
+/// A row of the default calendar's list: lit under the pointer, as a menu's items are.
+private struct CalendarChoiceStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        CalendarChoiceBody(configuration: configuration)
+    }
+}
+
+private struct CalendarChoiceBody: View {
+    let configuration: ButtonStyleConfiguration
+    @State private var isHovered = false
+
+    var body: some View {
+        configuration.label
+            .background(
+                isHovered || configuration.isPressed ? AnyShapeStyle(StageColors.hoveredRow) : AnyShapeStyle(StageColor.clear),
+                in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+

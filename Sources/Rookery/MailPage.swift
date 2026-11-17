@@ -65,9 +65,6 @@ struct MailPage: View {
     private static let threadDotSize: CGFloat = 11
     /// How far down its card a message's dot sits, level with the sender's name.
     private static let threadDotTop: CGFloat = 22
-    /// A formatted message's height until its own is read, and the least it takes.
-    private static let bodyStartHeight: CGFloat = 160
-    private static let bodyMinimumHeight: CGFloat = 40
 
     @State private var place = MailPlace.allInboxes
     @State private var searchText = ""
@@ -78,16 +75,11 @@ struct MailPage: View {
     @State private var loadedMessageId: Int?
     @State private var isLoading = false
     @State private var problem: String?
-    /// The conversation of the message chosen, oldest first, and of its messages those read in full, those
-    /// open, and how tall each one's formatted text is.
+    /// The conversation of the message chosen, newest first, its messages read in full, and those the
+    /// user folded; every other one is open.
     @State private var listThread: [MailMessageSummary] = []
     @State private var mapDetails: [Int: MailMessageDetail] = [:]
-    @State private var setOpenIds: Set<Int> = []
-    @State private var mapBodyHeights: [Int: CGFloat] = [:]
-    /// The messages whose quoted earlier mail was found and taken away.
-    @State private var setQuoteTrimmedIds: Set<Int> = []
-    /// The messages whose quoted earlier mail the user asked to see.
-    @State private var setQuoteShownIds: Set<Int> = []
+    @State private var setFoldedIds: Set<Int> = []
 
     @Environment(\.people) private var people
 
@@ -324,7 +316,7 @@ struct MailPage: View {
                     .fill(StageColors.separator)
                     .frame(height: 1)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         threadHeader(message)
                             .padding(.bottom, 18)
                         ForEach(Array(listThread.enumerated()), id: \.element.id) { index, summary in
@@ -381,151 +373,38 @@ struct MailPage: View {
                     .frame(maxHeight: .infinity)
             }
             .frame(width: Self.threadDotSize)
-            messageCard(summary)
-                .padding(.bottom, isLast ? 0 : 12)
-        }
-    }
-
-    /// A message in its card: its sender, to whom and when, then its text, formatted as sent when it has
-    /// HTML, with its attachments; folded to its opening while closed. Its head opens and closes it.
-    private func messageCard(_ summary: MailMessageSummary) -> some View {
-        let isOpen = setOpenIds.contains(summary.id)
-        let detail = mapDetails[summary.id]
-        let isChosen = summary.id == selectedId
-        return VStack(alignment: .leading, spacing: 10) {
-            Button {
-                toggle(summary)
-            } label: {
-                HStack(alignment: .top, spacing: 10) {
-                    PersonMark(
-                        person: people?.person(withAddress: summary.from.address),
-                        fallbackName: summary.from.name,
-                        fallbackAddress: summary.from.address,
-                        size: 30
-                    )
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            AddressLabel(address: summary.from)
-                                .font(.system(size: 13, weight: .semibold))
-                            Spacer(minLength: 6)
-                            Text(summary.receivedAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 11).monospacedDigit())
-                                .foregroundStyle(StageColors.tertiaryText)
-                        }
-                        if isOpen, let detail, !detail.listTo.isEmpty {
-                            Text("to \(AddressLabel.names(detail.listTo + detail.listCc, people: people))")
-                                .font(.system(size: 11))
-                                .foregroundStyle(StageColors.secondaryText)
-                                .lineLimit(2)
-                        } else if !isOpen {
-                            Text(summary.snippet)
-                                .font(.system(size: 11.5))
-                                .foregroundStyle(StageColors.secondaryText)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(isOpen ? "Fold this message" : "Open this message")
-            if isOpen {
-                if let detail {
-                    messageBody(detail)
-                        .transition(.opacity)
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                }
-            }
-        }
-        .padding(14)
-        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(isChosen ? AnyShapeStyle(StageColors.secondaryText.opacity(0.35)) : AnyShapeStyle(StageColors.separator))
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: isOpen)
-    }
-
-    /// A message's text: as sent, on a page of its own, when it has HTML; else its plain text; then its
-    /// attachments.
-    @ViewBuilder
-    private func messageBody(_ detail: MailMessageDetail) -> some View {
-        let messageId = detail.summary.id
-        let isQuoteShown = setQuoteShownIds.contains(messageId)
-        if !detail.html.isEmpty {
-            MailHTMLView(
-                html: detail.html,
-                isRemoteAllowed: true,
-                isQuoteTrimmed: !isQuoteShown,
-                onQuoteTrimmed: { isTrimmed in
-                    if isTrimmed {
-                        setQuoteTrimmedIds.insert(messageId)
-                    }
-                },
-                onHeight: { height in
-                    mapBodyHeights[messageId] = height
-                }
+            MailMessageCard(
+                summary: summary,
+                detail: mapDetails[summary.id],
+                isOpen: !setFoldedIds.contains(summary.id),
+                isChosen: summary.id == selectedId,
+                onToggle: { toggle(summary) }
             )
-            .frame(height: max(mapBodyHeights[detail.summary.id] ?? Self.bodyStartHeight, Self.bodyMinimumHeight))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(StageColors.separator)
+            .task(id: summary.id) {
+                await loadDetail(of: summary.id)
             }
-        } else {
-            Text(detail.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : (isQuoteShown ? detail.text : MailQuote.trimmed(detail.text) ?? detail.text))
-                .font(.system(size: 13))
-                .lineSpacing(3)
-                .foregroundStyle(detail.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        if setQuoteTrimmedIds.contains(messageId) || (detail.html.isEmpty && MailQuote.trimmed(detail.text) != nil) {
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    if isQuoteShown {
-                        setQuoteShownIds.remove(messageId)
-                    } else {
-                        setQuoteShownIds.insert(messageId)
-                    }
-                }
-            } label: {
-                RookeryLabel(isQuoteShown ? "Hide Quoted Mail" : "Show Quoted Mail", icon: .ellipsis)
-                    .font(.system(size: 11.5))
-            }
-            .help(isQuoteShown ? "Show only what this message says" : "Show the earlier mail this message quotes")
-        }
-        if !detail.listAttachments.isEmpty {
-            FlowRow(spacing: 5) {
-                ForEach(detail.listAttachments, id: \.self) { name in
-                    InfoTag(name)
-                }
-            }
+            .padding(.bottom, isLast ? 0 : 12)
         }
     }
 
-    /// Open a message of the conversation, reading it first, or fold it.
+    /// Read a message of the conversation in full, once.
+    private func loadDetail(of messageId: Int) async {
+        guard mapDetails[messageId] == nil else {
+            return
+        }
+        do {
+            mapDetails[messageId] = try await service.message(messageId)
+        } catch {
+            problem = String(describing: error)
+        }
+    }
+
+    /// Fold a message of the conversation to its opening, or open it again.
     private func toggle(_ summary: MailMessageSummary) {
-        if setOpenIds.contains(summary.id) {
-            setOpenIds.remove(summary.id)
-            return
-        }
-        setOpenIds.insert(summary.id)
-        guard mapDetails[summary.id] == nil else {
-            return
-        }
-        Task {
-            do {
-                mapDetails[summary.id] = try await service.message(summary.id)
-            } catch {
-                problem = String(describing: error)
-            }
+        if setFoldedIds.contains(summary.id) {
+            setFoldedIds.remove(summary.id)
+        } else {
+            setFoldedIds.insert(summary.id)
         }
     }
 
@@ -606,11 +485,7 @@ struct MailPage: View {
                 mapDetails[selectedId] = detail
                 let listFound = try await service.thread(of: detail.summary)
                 listThread = listFound.contains(where: { $0.id == selectedId }) ? listFound.reversed() : [detail.summary]
-                setOpenIds = [selectedId]
-                if let latestId = listThread.first?.id, latestId != selectedId {
-                    setOpenIds.insert(latestId)
-                    mapDetails[latestId] = try await service.message(latestId)
-                }
+                setFoldedIds = []
             } else {
                 listThread = []
             }
@@ -641,5 +516,143 @@ struct MailPage: View {
         fleetModel.pageMemory.isPanelExpanded = true
         fleetModel.raven.ask(request, mentioning: [], in: nil)
         onShowRookmaster()
+    }
+}
+
+/// A message of a conversation in its card: its sender, to whom and when, then its own words, formatted as
+/// sent when it has HTML, the earlier mail it quotes shown only when asked, and its attachments; folded to
+/// its opening when the user folds it. Its head folds and opens it. It keeps its own height and quote, so
+/// the formatted text growing redraws only this card.
+private struct MailMessageCard: View {
+    /// A formatted message's height until its own is read, and the least it takes.
+    private static let bodyStartHeight: CGFloat = 120
+    private static let bodyMinimumHeight: CGFloat = 40
+
+    let summary: MailMessageSummary
+    let detail: MailMessageDetail?
+    let isOpen: Bool
+    let isChosen: Bool
+    let onToggle: () -> Void
+
+    @State private var bodyHeight: CGFloat?
+    @State private var isQuoteTrimmed = false
+    @State private var isQuoteShown = false
+    @Environment(\.people) private var people
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: onToggle) {
+                head
+            }
+            .buttonStyle(.plain)
+            .help(isOpen ? "Fold this message" : "Open this message")
+            if isOpen {
+                if let detail {
+                    messageBody(detail)
+                        .transition(.opacity)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+        .padding(14)
+        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(isChosen ? AnyShapeStyle(StageColors.secondaryText.opacity(0.35)) : AnyShapeStyle(StageColors.separator))
+        }
+    }
+
+    private var head: some View {
+        HStack(alignment: .top, spacing: 10) {
+            PersonMark(
+                person: people?.person(withAddress: summary.from.address),
+                fallbackName: summary.from.name,
+                fallbackAddress: summary.from.address,
+                size: 30
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    AddressLabel(address: summary.from)
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer(minLength: 6)
+                    Text(summary.receivedAt.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(StageColors.tertiaryText)
+                }
+                if isOpen, let detail, !detail.listTo.isEmpty {
+                    Text("to \(AddressLabel.names(detail.listTo + detail.listCc, people: people))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(StageColors.secondaryText)
+                        .lineLimit(2)
+                } else if !isOpen {
+                    Text(summary.snippet)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(StageColors.secondaryText)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// A message's text: as sent, on a page of its own, when it has HTML; else its plain text; then its
+    /// attachments.
+    @ViewBuilder
+    private func messageBody(_ detail: MailMessageDetail) -> some View {
+        let trimmedText = detail.html.isEmpty ? MailQuote.trimmed(detail.text) : nil
+        if !detail.html.isEmpty {
+            MailHTMLView(
+                html: detail.html,
+                isRemoteAllowed: true,
+                isQuoteTrimmed: !isQuoteShown,
+                onQuoteTrimmed: { isTrimmed in
+                    if isTrimmed {
+                        isQuoteTrimmed = true
+                    }
+                },
+                onHeight: { height in
+                    if bodyHeight != height {
+                        bodyHeight = height
+                    }
+                }
+            )
+            .frame(height: max(bodyHeight ?? Self.bodyStartHeight, Self.bodyMinimumHeight))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(StageColors.separator)
+            }
+        } else {
+            Text(detail.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : (isQuoteShown ? detail.text : trimmedText ?? detail.text))
+                .font(.system(size: 13))
+                .lineSpacing(3)
+                .foregroundStyle(detail.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if isQuoteTrimmed || trimmedText != nil {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    isQuoteShown.toggle()
+                }
+            } label: {
+                RookeryLabel(isQuoteShown ? "Hide Quoted Mail" : "Show Quoted Mail", icon: .ellipsis)
+                    .font(.system(size: 11.5))
+            }
+            .help(isQuoteShown ? "Show only what this message says" : "Show the earlier mail this message quotes")
+        }
+        if !detail.listAttachments.isEmpty {
+            FlowRow(spacing: 5) {
+                ForEach(detail.listAttachments, id: \.self) { name in
+                    InfoTag(name)
+                }
+            }
+        }
     }
 }

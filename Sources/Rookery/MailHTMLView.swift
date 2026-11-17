@@ -12,6 +12,11 @@ struct MailHTMLView: NSViewRepresentable {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "mail")
     private static let remoteRuleIdentifier = "rookery-block-remote"
     private static let remoteRule = #"[{"trigger": {"url-filter": "^https?://"}, "action": {"type": "block"}}]"#
+    /// One store for every message shown, kept in memory only: each store of its own would start a
+    /// network process of its own for every message opened.
+    @MainActor private static let dataStore = WKWebsiteDataStore.nonPersistent()
+    /// The rule that blocks remote content, compiled once.
+    @MainActor private static var remoteRuleList: WKContentRuleList?
 
     let html: String
     /// Whether the message may fetch its images and other remote content.
@@ -30,7 +35,7 @@ struct MailHTMLView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = Self.dataStore
         let view = MailWebView(frame: .zero, configuration: configuration)
         view.isScrollingOuter = onHeight != nil
         view.navigationDelegate = context.coordinator
@@ -38,30 +43,42 @@ struct MailHTMLView: NSViewRepresentable {
     }
 
     func updateNSView(_ view: WKWebView, context: Context) {
-        let key = "\(isRemoteAllowed)\(isQuoteTrimmed)\(html.hashValue)"
-        guard context.coordinator.loadedKey != key else {
+        let coordinator = context.coordinator
+        guard
+            coordinator.loadedHTML != html
+            || coordinator.isRemoteAllowed != isRemoteAllowed
+            || coordinator.isQuoteTrimmed != isQuoteTrimmed
+        else {
             return
         }
-        context.coordinator.loadedKey = key
+        coordinator.loadedHTML = html
+        coordinator.isRemoteAllowed = isRemoteAllowed
         context.coordinator.onHeight = onHeight
         context.coordinator.isQuoteTrimmed = isQuoteTrimmed
         context.coordinator.onQuoteTrimmed = onQuoteTrimmed
+        view.configuration.userContentController.removeAllContentRuleLists()
+        guard !isRemoteAllowed else {
+            view.loadHTMLString(Self.framed(html), baseURL: nil)
+            return
+        }
+        if let list = Self.remoteRuleList {
+            view.configuration.userContentController.add(list)
+            view.loadHTMLString(Self.framed(html), baseURL: nil)
+            return
+        }
         let html = html
-        let isRemoteAllowed = isRemoteAllowed
         WKContentRuleListStore.default()?.compileContentRuleList(
             forIdentifier: Self.remoteRuleIdentifier,
             encodedContentRuleList: Self.remoteRule
         ) { list, error in
             MainActor.assumeIsolated {
-                view.configuration.userContentController.removeAllContentRuleLists()
-                if !isRemoteAllowed {
-                    guard let list else {
-                        Self.logger.error("cannot block remote content: \(String(describing: error), privacy: .public)")
-                        view.loadHTMLString("<p>Rookery could not show this message safely.</p>", baseURL: nil)
-                        return
-                    }
-                    view.configuration.userContentController.add(list)
+                guard let list else {
+                    Self.logger.error("cannot block remote content: \(String(describing: error), privacy: .public)")
+                    view.loadHTMLString("<p>Rookery could not show this message safely.</p>", baseURL: nil)
+                    return
                 }
+                Self.remoteRuleList = list
+                view.configuration.userContentController.add(list)
                 view.loadHTMLString(Self.framed(html), baseURL: nil)
             }
         }
@@ -80,7 +97,9 @@ struct MailHTMLView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate {
         private static let heightScript = "return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
 
-        var loadedKey = ""
+        /// What the page was last loaded with, to load it again only when one changes.
+        var loadedHTML: String?
+        var isRemoteAllowed = false
         var onHeight: ((CGFloat) -> Void)?
         var isQuoteTrimmed = false
         var onQuoteTrimmed: ((Bool) -> Void)?

@@ -127,6 +127,7 @@ class EventLog:
         "transcript_path",
         "model",
         "title",
+        "launch",
     )
     EVENT_OBJECT_ATTRIBUTE_FIELDS = ("path", "project", "text", "scope", "description")
 
@@ -141,6 +142,11 @@ class EventLog:
         self._title_of = title_of
         self._condition = threading.Condition()
         self._last_seq = self._read_last_seq()
+        self._list_listeners: list[Callable[[list[Event]], None]] = []
+
+    def add_listener(self, listener: Callable[[list[Event]], None]) -> None:
+        """Have a function told every batch of events once it is logged, as what follows from them."""
+        self._list_listeners.append(listener)
 
     def record(self, list_reports: list[object]) -> list[Event]:
         """Apply and log a batch of reported events, all or none of them.
@@ -166,6 +172,8 @@ class EventLog:
             with self._condition:
                 self._last_seq = list_events[-1].seq
                 self._condition.notify_all()
+            for listener in self._list_listeners:
+                listener(list_events)
         return list_events
 
     def after(self, seq: int, limit: int = EVENT_PAGE_MAX) -> list[Event]:

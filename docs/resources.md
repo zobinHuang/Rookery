@@ -6,11 +6,12 @@ Everything Rookery manages about code agents is a resource, of one of a few kind
 
 | Kind | What it is | Its attributes | Where it comes from |
 |---|---|---|---|
-| `agent` | One code agent session, or a subagent it spawned | `state`, `title`, `harness`, `rook_name`, `tab`, `machine`, `cwd`, `git_branch`, `account`, `transcript_path`, `parent`, `opened_at`, `closed_at` | rook's hooks |
+| `agent` | One code agent session, or a subagent it spawned | `state`, `title`, `harness`, `rook_name`, `tab`, `machine`, `cwd`, `git_branch`, `account`, `transcript_path`, `parent`, `opened_at`, `closed_at`, `launch`; `role` and `focus`, `focus_at` | rook's hooks; the agent itself, the user and Raven for its role and focus |
 | `skill` | Instructions for using a tool | `source`, `repo_url`, `skill_path`, `default_ref`, `versions`, `description`; `discovered` when first seen in use rather than registered | the skill index; agents using or writing skills |
 | `playbook` | A standard way to solve one kind of problem | `prompt`, `skills` (pins), `description` | the playbook index; Raven |
 | `memory` | Details of a particular problem an agent wrote down to keep | `text`, `path`, `project` | agents writing into their own memory directory |
 | `rook` | A machine running agents under rook | `online`, `machine`, `accepts_prompts`, `connected_at`, `disconnected_at` | the live link |
+| `team` | Agents working together toward one goal, each with a duty | `goal`, `members` (by agent id, each with `duty`, `joined_at`), `limits` | the user and Raven, in Rookery; launches |
 
 `GET /v1/kinds` lists them; a new kind is one more entry in `ResourceKinds` (`server/roost/resources.py`), and the generic API, the board and the lists take it from there.
 

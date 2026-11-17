@@ -115,7 +115,7 @@ class ResourceApiTest(unittest.TestCase):
     def test_the_kinds_are_listed(self) -> None:
         status, map_body = self.request("GET", "/v1/kinds")
         self.assertEqual(status, 200)
-        self.assertEqual([kind["name"] for kind in map_body["kinds"]], ["agent", "skill", "playbook", "memory", "rook"])
+        self.assertEqual([kind["name"] for kind in map_body["kinds"]], ["agent", "skill", "playbook", "memory", "rook", "team"])
 
     def test_an_agent_reported_by_events_is_listed_with_its_relations(self) -> None:
         self.report(

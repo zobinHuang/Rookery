@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from roost.errors import NotFoundError, ValidationError
 from roost.events import EventLog, EventVerbs
 from roost.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
+from roost.teams import TeamLimits, TeamRoster
 
 
 @dataclass
@@ -30,6 +31,9 @@ class Delivery:
     STATUS_DELIVERED = "delivered"
     STATUS_FAILED = "failed"
     STATUS_EXPIRED = "expired"
+    """Held by roost for the user to release or cancel, as one agent went past its team's limits."""
+    STATUS_HELD = "held"
+    STATUS_CANCELLED = "cancelled"
     SET_OPEN_STATUSES = frozenset({STATUS_PENDING, STATUS_SENT, STATUS_WAITING})
     SET_REPORTED_STATUSES = frozenset({STATUS_WAITING, STATUS_DELIVERED, STATUS_FAILED})
 
@@ -78,17 +82,27 @@ class Delivery:
 
 class DeliveryStore:
     """The deliveries the server holds until the rook running their agent takes them, and what became of
-    each. A delivery is routed by the rook its agent runs under, which for a subagent is its parent's."""
+    each. A delivery is routed by the rook its agent runs under, which for a subagent is its parent's.
+
+    An agent messages only agents it shares a team with, one at a time or the whole team at once. Every
+    prompt belongs to a thread, which an answer carries on; an agent that goes past its team's limits, too
+    many turns in one thread or too many messages in a while, has its message held for the user.
+    """
 
     DELIVERY_TEXT_MAX_BYTES = 64 * 1024
     DELIVERY_TTL = timedelta(days=1)
     DELIVERY_ID_BYTES = 9
     DELIVERY_PREVIEW_CHARS = 200
     DELIVERY_LIST_MAX = 500
+    DELIVERY_THREAD_PREFIX = "t-"
+    DELIVERY_LAUNCH_PREFIX = "l-"
+    DELIVERY_SKILLS_MAX = 50
+    DELIVERY_ROLE_MAX_CHARS = 300
 
-    def __init__(self, resources: ResourceStore, events: EventLog) -> None:
+    def __init__(self, resources: ResourceStore, events: EventLog, roster: TeamRoster) -> None:
         self._resources = resources
         self._events = events
+        self._roster = roster
 
     def create(
         self,
@@ -105,14 +119,15 @@ class DeliveryStore:
             agent_id: the agent it is for
             text: what to tell the agent, for a prompt
             kind: `prompt`, `interrupt` or `approve`
-            map_options: for `approve`, the `choice`: `once` or `deny`
+            map_options: for `approve`, the `choice`: `once` or `deny`; for `prompt`, the `thread` it
+                answers, and `no_reply` when the sender wants no answer
 
         Returns:
-            the delivery, pending
+            the delivery, pending, or held when the sender went past its team's limits
 
         Raises:
-            ValidationError: if the kind, the text or the options are unusable, or the agent has ended or
-                runs under no rook
+            ValidationError: if the kind, the text or the options are unusable, the agent has ended or runs
+                under no rook, or an agent sends to one it shares no team with
             NotFoundError: if there is no such agent
         """
         map_options = dict(map_options or {})
@@ -129,6 +144,11 @@ class DeliveryStore:
         rook_name = self._rook_of(agent)
         if not rook_name:
             raise ValidationError(f"agent {agent.name} runs under no rook, so nothing can reach it")
+        held_reason = ""
+        if kind == Delivery.KIND_PROMPT:
+            list_teams = self._teams_between(sender, agent_ref.id)
+            map_options = self._prompt_options(map_options, None)
+            held_reason = self._held_reason(sender, str(map_options["thread"]), int(map_options["hop"]), list_teams)
         return self._hold(
             sender=sender,
             agent_id=agent_ref.id,
@@ -136,7 +156,185 @@ class DeliveryStore:
             text=text if kind == Delivery.KIND_PROMPT else "",
             kind=kind,
             map_options=map_options,
+            held_reason=held_reason,
         )
+
+    def create_broadcast(
+        self,
+        sender: ResourceRef,
+        team_id: str,
+        text: str,
+        map_options: dict[str, object] | None = None,
+    ) -> list[Delivery]:
+        """Hold one message for every member of a team but its sender, all in one thread.
+
+        Args:
+            sender: the person, or the member agent, sending it
+            team_id: the team
+            text: what to tell them
+            map_options: the `thread` it answers, and `no_reply` when the sender wants no answer
+
+        Returns:
+            one delivery per member reachable now, each pending, or held when the sender went past the
+            team's limits
+
+        Raises:
+            ValidationError: if the text is unusable, an agent sends to a team it is not in, or no member
+                can be reached
+            NotFoundError: if there is no such team
+        """
+        self._check_text(text)
+        team = self._resources.get(ResourceRef.of(ResourceKinds.TEAM.name, team_id))
+        map_members = TeamRoster.members_of(team)
+        if self._is_bound_agent(sender) and sender.id.split("~")[0] not in map_members:
+            raise ValidationError(f"agent {sender.id} is not in team {team.name}")
+        map_options = self._prompt_options(dict(map_options or {}), team.id)
+        map_options["batch"] = "b-" + secrets.token_urlsafe(self.DELIVERY_ID_BYTES)
+        held_reason = self._held_reason(sender, str(map_options["thread"]), int(map_options["hop"]), [team])
+        list_deliveries: list[Delivery] = []
+        for agent_id in map_members:
+            if agent_id == sender.id.split("~")[0]:
+                continue
+            agent_ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=agent_id)
+            if not self._resources.exists(agent_ref):
+                continue
+            agent = self._resources.get(agent_ref)
+            rook_name = self._rook_of(agent)
+            if agent.map_attributes.get("closed_at") or not rook_name:
+                continue
+            list_deliveries.append(self._hold(
+                sender=sender,
+                agent_id=agent_id,
+                rook_name=rook_name,
+                text=text,
+                kind=Delivery.KIND_PROMPT,
+                map_options=dict(map_options),
+                held_reason=held_reason,
+            ))
+        if not list_deliveries:
+            raise ValidationError(f"no other member of team {team.name} can be reached now")
+        return list_deliveries
+
+    def release(self, delivery_id: str) -> Delivery:
+        """Let a held delivery go on its way, as the user decided; its thread may then go as far again.
+
+        Raises:
+            ValidationError: if the delivery is not held
+            NotFoundError: if there is no such delivery
+        """
+        delivery = self._decide_held(delivery_id, Delivery.STATUS_PENDING)
+        self._events.record([{
+            "actor": EventLog.EVENT_PERSON.as_payload(),
+            "verb": EventVerbs.MESSAGED,
+            "object": delivery.target().as_payload(),
+            "detail": {"delivery": delivery.id, "kind": delivery.kind, "released": True},
+        }])
+        return delivery
+
+    def cancel(self, delivery_id: str) -> Delivery:
+        """Drop a held delivery, as the user decided.
+
+        Raises:
+            ValidationError: if the delivery is not held
+            NotFoundError: if there is no such delivery
+        """
+        delivery = self._decide_held(delivery_id, Delivery.STATUS_CANCELLED)
+        self._events.record([{
+            "actor": EventLog.EVENT_PERSON.as_payload(),
+            "verb": EventVerbs.UNDELIVERED,
+            "object": delivery.target().as_payload(),
+            "detail": {"delivery": delivery.id, "reason": "cancelled by the user"},
+        }])
+        return delivery
+
+    def _decide_held(self, delivery_id: str, status: str) -> Delivery:
+        delivery = self.get(delivery_id)
+        if delivery.status != Delivery.STATUS_HELD:
+            raise ValidationError(f"delivery {delivery_id} is not held")
+        delivery.status = status
+        delivery.updated_at = ResourceStore.now_timestamp()
+        if status == Delivery.STATUS_PENDING:
+            delivery.map_options["released"] = True
+        with self._resources.database.transaction() as connection:
+            connection.execute(
+                "UPDATE deliveries SET status = ?, options = ?, updated_at = ? WHERE id = ?",
+                (status, json.dumps(delivery.map_options), delivery.updated_at, delivery_id),
+            )
+        return delivery
+
+    def _is_bound_agent(self, sender: ResourceRef) -> bool:
+        """Whether the sender is an agent held to its teams, rather than a person or one of Rookery's own."""
+        if sender.kind != ResourceKinds.AGENT.name:
+            return False
+        sender_ref = ResourceRef(kind=ResourceKinds.AGENT.name, id=sender.id.split("~")[0])
+        if not self._resources.exists(sender_ref):
+            return True
+        return not self._roster.is_rookery_own(self._resources.get(sender_ref))
+
+    def _teams_between(self, sender: ResourceRef, agent_id: str) -> list[Resource]:
+        if not self._is_bound_agent(sender):
+            return []
+        list_teams = self._roster.shared_teams(sender.id.split("~")[0], agent_id)
+        if not list_teams:
+            raise ValidationError(
+                f"agent {sender.id} shares no team with {agent_id}; an agent messages only its teammates",
+            )
+        return list_teams
+
+    def _prompt_options(self, map_options: dict[str, object], team_id: str | None) -> dict[str, object]:
+        thread = str(map_options.get("thread") or "")
+        if thread and not ResourceRef.REF_ID_PATTERN.match(thread):
+            raise ValidationError(f"unusable thread: {thread!r}")
+        if not thread:
+            thread = self.DELIVERY_THREAD_PREFIX + secrets.token_urlsafe(self.DELIVERY_ID_BYTES)
+        map_prompt: dict[str, object] = {"thread": thread, "hop": self._thread_hops(thread) + 1}
+        if map_options.get("no_reply"):
+            map_prompt["no_reply"] = True
+        if team_id:
+            map_prompt["team"] = team_id
+        return map_prompt
+
+    def _thread_hops(self, thread: str) -> int:
+        with self._resources.database.reading() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(DISTINCT COALESCE(json_extract(options, '$.batch'), id)) AS hops
+                FROM deliveries WHERE json_extract(options, '$.thread') = ?
+                """,
+                (thread,),
+            ).fetchone()
+        return int(row["hops"] or 0)
+
+    def _held_reason(self, sender: ResourceRef, thread: str, hop: int, list_teams: list[Resource]) -> str:
+        """Why a prompt from an agent is held for the user, or empty when it may go."""
+        if not self._is_bound_agent(sender):
+            return ""
+        limits = TeamLimits.loosest(list_teams)
+        with self._resources.database.reading() as connection:
+            row = connection.execute(
+                """
+                SELECT MAX(json_extract(options, '$.hop')) AS hop FROM deliveries
+                WHERE json_extract(options, '$.thread') = ? AND json_extract(options, '$.released') = 1
+                """,
+                (thread,),
+            ).fetchone()
+            released_hop = int(row["hop"] or 0)
+            since = (
+                datetime.fromisoformat(ResourceStore.now_timestamp()) - timedelta(minutes=limits.window_minutes)
+            ).isoformat(timespec="milliseconds")
+            row = connection.execute(
+                """
+                SELECT COUNT(DISTINCT COALESCE(json_extract(options, '$.batch'), id)) AS sends FROM deliveries
+                WHERE sender_kind = ? AND sender_id = ? AND kind = ? AND created_at >= ? AND status != ?
+                """,
+                (sender.kind, sender.id, Delivery.KIND_PROMPT, since, Delivery.STATUS_CANCELLED),
+            ).fetchone()
+            sends = int(row["sends"] or 0)
+        if hop - released_hop > limits.thread_hops:
+            return f"the thread went past {limits.thread_hops} messages"
+        if sends >= limits.sends_per_window:
+            return f"the sender sent {sends} messages in {limits.window_minutes} minutes"
+        return ""
 
     def create_spawn(self, sender: ResourceRef, rook_name: str, prompt: str, map_options: dict[str, object]) -> Delivery:
         """Hold a new session for a rook to start, and log that it was asked for.
@@ -145,14 +343,17 @@ class DeliveryStore:
             sender: the person or agent asking
             rook_name: the rook to start it on
             prompt: the session's first prompt, or empty for none
-            map_options: the `cwd` to start in, an absolute path on the rook, and the `harness`
+            map_options: the `cwd` to start in, an absolute path on the rook, and the `harness`; optionally
+                the `launch` id the session names as it starts, else one is made; the `playbook` to install
+                and further `skills`; the `role` it takes; and the `teams` it joins, each a `team` and a
+                `duty`
 
         Returns:
-            the delivery, pending
+            the delivery, pending, its options carrying the launch id
 
         Raises:
-            ValidationError: if the directory or the harness is unusable, or the prompt too long
-            NotFoundError: if there is no such rook
+            ValidationError: if the directory, the harness, the launch or the prompt is unusable
+            NotFoundError: if there is no such rook, playbook, skill or team
         """
         cwd = str(map_options.get("cwd") or "")
         harness = str(map_options.get("harness") or "claude")
@@ -169,8 +370,44 @@ class DeliveryStore:
             rook_name=rook_name,
             text=prompt,
             kind=Delivery.KIND_SPAWN,
-            map_options={"cwd": cwd, "harness": harness},
+            map_options={"cwd": cwd, "harness": harness, **self._launch_options(map_options)},
         )
+
+    def _launch_options(self, map_options: dict[str, object]) -> dict[str, object]:
+        launch_id = str(map_options.get("launch") or "")
+        if launch_id and not ResourceRef.REF_ID_PATTERN.match(launch_id):
+            raise ValidationError(f"unusable launch id: {launch_id!r}")
+        map_launch: dict[str, object] = {
+            "launch": launch_id or self.DELIVERY_LAUNCH_PREFIX + secrets.token_urlsafe(self.DELIVERY_ID_BYTES),
+        }
+        playbook_id = str(map_options.get("playbook") or "")
+        if playbook_id:
+            map_launch["playbook"] = self._resources.get(ResourceRef.of(ResourceKinds.PLAYBOOK.name, playbook_id)).id
+        list_skills = map_options.get("skills") or []
+        if not isinstance(list_skills, list) or len(list_skills) > self.DELIVERY_SKILLS_MAX:
+            raise ValidationError(f"skills is a list of at most {self.DELIVERY_SKILLS_MAX} skill ids")
+        if list_skills:
+            map_launch["skills"] = [
+                self._resources.get(ResourceRef.of(ResourceKinds.SKILL.name, str(skill_id))).id
+                for skill_id in list_skills
+            ]
+        role = str(map_options.get("role") or "").strip()
+        if len(role) > self.DELIVERY_ROLE_MAX_CHARS:
+            raise ValidationError(f"a role is at most {self.DELIVERY_ROLE_MAX_CHARS} characters")
+        if role:
+            map_launch["role"] = role
+        list_teams = map_options.get("teams") or []
+        if not isinstance(list_teams, list):
+            raise ValidationError("teams is a list of {team, duty}")
+        list_joins: list[dict[str, object]] = []
+        for map_team in list_teams:
+            if not isinstance(map_team, dict):
+                raise ValidationError("teams is a list of {team, duty}")
+            team = self._resources.get(ResourceRef.of(ResourceKinds.TEAM.name, str(map_team.get("team") or "")))
+            list_joins.append({"team": team.id, "duty": str(map_team.get("duty") or "").strip()})
+        if list_joins:
+            map_launch["teams"] = list_joins
+        return map_launch
 
     def _check_text(self, text: str) -> None:
         if not text.strip():
@@ -186,6 +423,7 @@ class DeliveryStore:
         text: str,
         kind: str,
         map_options: dict[str, object],
+        held_reason: str = "",
     ) -> Delivery:
         at = ResourceStore.now_timestamp()
         delivery = Delivery(
@@ -194,7 +432,8 @@ class DeliveryStore:
             rook_name=rook_name,
             text=text,
             sender=sender,
-            status=Delivery.STATUS_PENDING,
+            status=Delivery.STATUS_HELD if held_reason else Delivery.STATUS_PENDING,
+            map_detail={"reason": held_reason} if held_reason else {},
             created_at=at,
             updated_at=at,
             kind=kind,
@@ -216,7 +455,7 @@ class DeliveryStore:
                     sender.kind,
                     sender.id,
                     delivery.status,
-                    "{}",
+                    json.dumps(delivery.map_detail),
                     at,
                     at,
                     kind,
@@ -228,9 +467,22 @@ class DeliveryStore:
             "verb": EventVerbs.MESSAGED,
             "at": at,
             "object": delivery.target().as_payload(),
-            "detail": {"delivery": delivery.id, "kind": kind, "preview": text[: self.DELIVERY_PREVIEW_CHARS]},
+            "detail": self._event_detail(delivery, held_reason),
         }])
         return delivery
+
+    def _event_detail(self, delivery: Delivery, held_reason: str) -> dict[str, object]:
+        map_detail: dict[str, object] = {
+            "delivery": delivery.id,
+            "kind": delivery.kind,
+            "preview": delivery.text[: self.DELIVERY_PREVIEW_CHARS],
+        }
+        for key in ("thread", "hop", "team", "no_reply", "launch"):
+            if key in delivery.map_options:
+                map_detail[key] = delivery.map_options[key]
+        if held_reason:
+            map_detail["held"] = held_reason
+        return map_detail
 
     def get(self, delivery_id: str) -> Delivery:
         """Look up one delivery.
@@ -354,8 +606,8 @@ class DeliveryStore:
         )
         with self._resources.database.transaction() as connection:
             connection.execute(
-                "UPDATE deliveries SET status = ? WHERE created_at < ? AND status IN (?, ?, ?)",
-                (Delivery.STATUS_EXPIRED, cutoff, *sorted(Delivery.SET_OPEN_STATUSES)),
+                "UPDATE deliveries SET status = ? WHERE created_at < ? AND status IN (?, ?, ?, ?)",
+                (Delivery.STATUS_EXPIRED, cutoff, *sorted(Delivery.SET_OPEN_STATUSES), Delivery.STATUS_HELD),
             )
 
     @staticmethod

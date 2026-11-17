@@ -162,7 +162,33 @@ class LinkHub:
         """
         return self._route(self._deliveries.create_spawn(sender, rook_name, prompt, map_options))
 
+    def send_to_team(
+        self,
+        sender: ResourceRef,
+        team_id: str,
+        text: str,
+        map_options: dict[str, object] | None = None,
+    ) -> list[Delivery]:
+        """Hold a message for every other member of a team and hand each to its rook if that rook is online.
+
+        Raises:
+            ValidationError: if the message is unusable or the sender may not send to the team
+            NotFoundError: if there is no such team
+        """
+        return [self._route(delivery) for delivery in self._deliveries.create_broadcast(sender, team_id, text, map_options)]
+
+    def release(self, delivery_id: str) -> Delivery:
+        """Let a held delivery go to its rook, as the user decided.
+
+        Raises:
+            ValidationError: if the delivery is not held
+            NotFoundError: if there is no such delivery
+        """
+        return self._route(self._deliveries.release(delivery_id))
+
     def _route(self, delivery: Delivery) -> Delivery:
+        if delivery.status != Delivery.STATUS_PENDING:
+            return delivery
         with self._lock:
             peer = self._map_rooks.get(delivery.rook_name)
         if peer is not None:

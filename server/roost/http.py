@@ -25,6 +25,7 @@ from roost.playbooks import PlaybookIndex
 from roost.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
 from roost.skills import SkillIndex
 from roost.store import SessionMeta, SessionQuery, SessionStore, TranscriptTitles
+from roost.teams import TeamRoster
 
 
 class RoostRequestHandler(BaseHTTPRequestHandler):
@@ -119,6 +120,8 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             self._route_events(method, list_segments, map_query)
         elif collection == "messages":
             self._route_messages(method, list_segments, map_query)
+        elif collection == "teams":
+            self._route_teams(method, list_segments, map_query)
         else:
             raise NotFoundError(self._no_such_route(method, list_segments))
 
@@ -400,6 +403,18 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             sender = ResourceRef.from_payload(map_actor) if map_actor else EventLog.EVENT_PERSON
             map_options = map_body.get("options") if isinstance(map_body.get("options"), dict) else {}
             kind = str(map_body.get("kind") or Delivery.KIND_PROMPT)
+            if map_body.get("team"):
+                list_deliveries = self.server.link.send_to_team(
+                    sender,
+                    str(map_body.get("team") or ""),
+                    str(map_body.get("text") or ""),
+                    map_options,
+                )
+                self._respond_json(
+                    HTTPStatus.CREATED,
+                    {"messages": [delivery.as_payload() for delivery in list_deliveries]},
+                )
+                return
             if kind == Delivery.KIND_SPAWN:
                 delivery = self.server.link.spawn_on_rook(
                     sender,
@@ -430,7 +445,50 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
         if len(list_segments) == 2 and method == "GET":
             self._respond_json(HTTPStatus.OK, self.server.deliveries.get(list_segments[1]).as_payload())
             return
+        if len(list_segments) == 3 and method == "POST" and list_segments[2] == "release":
+            self._respond_json(HTTPStatus.OK, self.server.link.release(list_segments[1]).as_payload())
+            return
+        if len(list_segments) == 3 and method == "POST" and list_segments[2] == "cancel":
+            self._respond_json(HTTPStatus.OK, self.server.deliveries.cancel(list_segments[1]).as_payload())
+            return
         raise NotFoundError(self._no_such_route(method, list_segments))
+
+    def _route_teams(
+        self,
+        method: str,
+        list_segments: list[str],
+        map_query: dict[str, list[str]],
+    ) -> None:
+        roster = self.server.roster
+        if list_segments == ["teams"] and method == "GET":
+            agent_id = self._query_text(map_query, "agent")
+            list_teams = roster.teams_of(agent_id) if agent_id else roster.teams()
+            self._respond_json(HTTPStatus.OK, {"teams": [roster.roster(team) for team in list_teams]})
+            return
+        if len(list_segments) == 2 and method == "GET":
+            team = self.server.resources.get(ResourceRef.of(ResourceKinds.TEAM.name, list_segments[1]))
+            self._respond_json(HTTPStatus.OK, roster.roster(team))
+            return
+        if len(list_segments) == 3 and list_segments[2] == "members" and method == "POST":
+            map_body = self._read_json_body()
+            team = roster.join(
+                list_segments[1],
+                str(map_body.get("agent") or ""),
+                str(map_body.get("duty") or ""),
+                self._actor_of(map_body),
+            )
+            self._respond_json(HTTPStatus.OK, roster.roster(team))
+            return
+        if len(list_segments) == 4 and list_segments[2] == "members" and method == "DELETE":
+            team = roster.leave(list_segments[1], list_segments[3], self._actor_of(self._read_json_body()))
+            self._respond_json(HTTPStatus.OK, roster.roster(team))
+            return
+        raise NotFoundError(self._no_such_route(method, list_segments))
+
+    @staticmethod
+    def _actor_of(map_body: dict[str, object]) -> ResourceRef | None:
+        map_actor = map_body.get("actor")
+        return ResourceRef.from_payload(map_actor) if map_actor is not None else None
 
     def _stream_events(self, after: int) -> None:
         """Send every event after a sequence number as server-sent events, then each new one as it is
@@ -690,7 +748,9 @@ class RoostServer(ThreadingHTTPServer):
         self.playbooks = playbooks or PlaybookIndex(self.resources, self.skills)
         self.events = EventLog(self.resources, store.title_of)
         self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)
-        self.deliveries = DeliveryStore(self.resources, self.events)
+        self.roster = TeamRoster(self.resources, self.events)
+        self.events.add_listener(self.roster.bind_launches)
+        self.deliveries = DeliveryStore(self.resources, self.events, self.roster)
         self.link = LinkHub(config, self.resources, self.events, self.deliveries)
         self._name_untitled_agents()
         self.stream_slots = threading.BoundedSemaphore(self.SERVER_STREAMS_MAX)

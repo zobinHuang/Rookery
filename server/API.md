@@ -310,15 +310,32 @@ Something on its way to an agent through its rook: a prompt from a person or a m
 
 | | |
 |---|---|
-| `POST /v1/messages` | `{"to": "<agent id>", "text": "..."}`, with `actor` as for resources; answers `201` with the delivery. `kind` (default `prompt`) also takes `interrupt` (no text) and `approve` with `options` `{"choice": "once" \| "deny"}`; `{"kind": "spawn", "rook": "<rook>", "text": "<first prompt>", "options": {"cwd": "/abs/path", "harness": "claude" \| "codex"}}` asks a rook to start a new session |
+| `POST /v1/messages` | `{"to": "<agent id>", "text": "..."}`, with `actor` as for resources; answers `201` with the delivery. A prompt's `options` take the `thread` it answers and `no_reply: true` when no answer is wanted; `{"team": "<team id>", "text": "..."}` instead sends to every other member of a team and answers with `{"messages": [...]}`. `kind` (default `prompt`) also takes `interrupt` (no text) and `approve` with `options` `{"choice": "once" \| "deny"}`; `{"kind": "spawn", "rook": "<rook>", "text": "<first prompt>", "options": {"cwd": "/abs/path", "harness": "claude" \| "codex"}}` asks a rook to start a new session |
 | `GET /v1/messages` | the latest deliveries, or one agent's with `agent=<id>`; `limit` up to 500 |
 | `GET /v1/messages/<id>` | one delivery |
+| `POST /v1/messages/<id>/release` | let a `held` delivery go; its thread may then go as far again |
+| `POST /v1/messages/<id>/cancel` | drop a `held` delivery; it becomes `cancelled` |
 
 ```json
 {"id": "d-Qm9x3kTq", "agent_id": "a07f54b5-…", "rook_name": "studio", "text": "run the tests",
  "sender": {"kind": "person", "id": "user"}, "status": "delivered", "detail": {"reason": "typed into the pane"},
  "created_at": "...", "updated_at": "..."}
 ```
+
+A prompt belongs to a `thread`, made for it unless it names the one it answers; its options carry the thread, its `hop` (how many messages the thread holds with it) and, for a team message, the `team`. An agent messages only agents it shares a team with; a person, and Rookery's own agents (rook `rookery`), message anyone. A message from an agent that goes past its teams' limits is `held` for the user to release or cancel, and its `messaged` event carries `held` with the reason: by default a thread past 20 messages, or a sender past 30 messages in 10 minutes. A team sets its own in `attributes.limits` as `thread_hops`, `sends_per_window` and `window_minutes`; between agents sharing several teams, the loosest apply. A held delivery not decided in a day is `expired`.
+
+A spawn's `options` may also name the `launch` id the new session names as it starts (one is made otherwise, and returned), the `playbook` and further `skills` to install first, the `role` it takes, and the `teams` it joins as `[{"team": "<id>", "duty": "..."}]`. When an agent starts with `launch` in its `started` event's detail, it takes that role, unless it has one, and joins those teams.
+
+## Teams
+
+A team is a resource of kind `team`, made and changed through the resource routes: a `name`, and in `attributes` its `goal`, its `limits`, and its `members`, by agent id, each with its `duty` and when it `joined_at`. Members join and leave through their own routes, so a change to one never overwrites another. An agent may be in several teams. Each member is shown by its card: its id, name and `title`, its `role` (who it is, set on the agent resource) and `focus` (what it does now, with `focus_at`), its `state`, `rook_name`, `hostname`, `cwd`, `git_branch` and `harness`, with its `duty` in the team.
+
+| | |
+|---|---|
+| `GET /v1/teams` | every team with its members' cards, or the teams one agent is in with `agent=<id>` |
+| `GET /v1/teams/<id>` | one team with its members' cards |
+| `POST /v1/teams/<id>/members` | `{"agent": "<id>", "duty": "..."}` puts an agent in the team, or gives a member a new duty; answers with the team |
+| `DELETE /v1/teams/<id>/members/<agent id>` | takes an agent out; answers with the team |
 
 ## The live link
 

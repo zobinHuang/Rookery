@@ -149,7 +149,9 @@ class LinkTest(unittest.TestCase):
         rook = self.open_link({"role": "rook", "rook": "studio"})
         delivered = self.receive(rook, "deliver")["delivery"]
         self.assertEqual(delivered["id"], spawn.id)
-        self.assertEqual(delivered["options"], {"cwd": "/src/api", "harness": "claude"})
+        self.assertEqual(delivered["options"]["cwd"], "/src/api")
+        self.assertEqual(delivered["options"]["harness"], "claude")
+        self.assertTrue(delivered["options"]["launch"].startswith("l-"))
         rook.send(json.dumps({"type": "delivery", "id": spawn.id, "status": "delivered", "reason": "started"}))
         desktop = self.open_link({"role": "desktop", "after": 0})
         event = self.receive_event(desktop, "delivered")
@@ -161,6 +163,9 @@ class LinkTest(unittest.TestCase):
             "verb": "started",
             "detail": {"name": "studio/web", "rook_name": "studio"},
         }])
+        self.server.catalog.create("team", {"id": "web", "name": "Web"})
+        self.server.roster.join("web", self.TEST_AGENT, "the api", None)
+        self.server.roster.join("web", "s-2", "the pages", None)
         rook = self.open_link({"role": "rook", "rook": "studio"})
         rook.send(json.dumps({
             "type": "send",

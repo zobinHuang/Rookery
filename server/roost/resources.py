@@ -63,7 +63,13 @@ class ResourceKinds:
         plural_title="Rooks",
         description="A machine running agents under rook, online while its link to the server is open",
     )
-    LIST_KINDS = (AGENT, SKILL, PLAYBOOK, MEMORY, ROOK)
+    TEAM = ResourceKind(
+        name="team",
+        title="Team",
+        plural_title="Teams",
+        description="Agents working together toward one goal, each with a duty, who may message one another",
+    )
+    LIST_KINDS = (AGENT, SKILL, PLAYBOOK, MEMORY, ROOK, TEAM)
 
     @classmethod
     def get(cls, name: str) -> ResourceKind:

@@ -8,6 +8,7 @@ from roost.errors import NotFoundError, ValidationError
 from roost.events import AgentStates, EventLog
 from roost.messages import DeliveryStore
 from roost.resources import Resource, ResourceQuery, ResourceRef, ResourceStore
+from roost.teams import TeamRoster
 
 AGENT = {"kind": "agent", "id": "s-1"}
 
@@ -156,7 +157,7 @@ class DatabaseUpgradeTest(unittest.TestCase):
             database = Database(root)
             self.addCleanup(database.close)
             resources = ResourceStore(database)
-            delivery = DeliveryStore(resources, EventLog(resources)).get("d-1")
+            delivery = DeliveryStore(resources, EventLog(resources), TeamRoster(resources, EventLog(resources))).get("d-1")
             self.assertEqual(delivery.kind, "prompt")
             self.assertEqual(delivery.map_options, {})
             self.assertEqual(delivery.text, "hello")

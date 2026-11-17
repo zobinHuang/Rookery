@@ -195,19 +195,25 @@ struct RookmasterBoard: View {
         }
     }
 
-    /// One segment of a well: raised and in full ink when on, flat and quiet when off.
-    private func segment<Label: View>(isOn: Bool, @ViewBuilder label: () -> Label) -> some View {
+    /// One segment of a well. A choice of one, as the time window, is in the theme's colors turned over
+    /// when chosen, as every switch is; a filter that is on or off, of which several may be on, is raised
+    /// in no color of its own and in full ink when on, flat and faint when off.
+    private func segment<Label: View>(isOn: Bool, isToggle: Bool = false, @ViewBuilder label: () -> Label) -> some View {
         label()
             .font(.system(size: 11, weight: isOn ? .semibold : .medium))
-            .foregroundStyle(isOn ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
+            .foregroundStyle(
+                isOn
+                    ? (isToggle ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.selectedSegmentText))
+                    : AnyShapeStyle(StageColors.tertiaryText)
+            )
             .padding(.horizontal, 9)
             .frame(height: Self.controlHeight - 4)
             .background {
                 if isOn {
                     Capsule()
-                        .fill(StageColors.selectedSegment)
-                        .strokeBorder(StageColors.contrastActiveBorder)
-                        .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
+                        .fill(isToggle ? StageColors.selectedRow : StageColors.selectedSegment)
+                        .strokeBorder(isToggle ? StageColors.segmentGrooveBorder : StageColors.contrastActiveBorder)
+                        .shadow(color: .black.opacity(isToggle ? 0.08 : 0.14), radius: 1.5, y: 0.5)
                         .transition(.opacity.combined(with: .scale(scale: 0.92)))
                 }
             }
@@ -269,7 +275,7 @@ struct RookmasterBoard: View {
         return Button {
             memory.isBoardLiveOnly.toggle()
         } label: {
-            segment(isOn: isOn) {
+            segment(isOn: isOn, isToggle: true) {
                 HStack(spacing: 5) {
                     Circle()
                         .fill(isOn ? Color.green : Color.clear)
@@ -291,7 +297,7 @@ struct RookmasterBoard: View {
         return Button {
             toggleLock(mapColumns)
         } label: {
-            segment(isOn: isLocked) {
+            segment(isOn: isLocked, isToggle: true) {
                 RookeryLabel(isLocked ? "Locked" : "Lock", icon: isLocked ? .lock : .unlock, spacing: 4)
             }
         }
@@ -311,7 +317,7 @@ struct RookmasterBoard: View {
                 }
             }
         } label: {
-            segment(isOn: isShown) {
+            segment(isOn: isShown, isToggle: true) {
                 HStack(spacing: 5) {
                     Circle()
                         .fill(isShown ? AnyShapeStyle(tint) : AnyShapeStyle(StageColor.clear))

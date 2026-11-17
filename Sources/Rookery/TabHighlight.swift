@@ -129,7 +129,7 @@ final class TabHighlightView: NSView {
         guard oldFrame != frame else {
             return
         }
-        let oldPath = highlight.path
+        let oldPath = highlight.presentation()?.path ?? highlight.path
         let newPath = FolderTabShape.outline(in: frame)
         CATransaction.begin()
         CATransaction.setDisableActions(true)

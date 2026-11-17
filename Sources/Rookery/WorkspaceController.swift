@@ -109,6 +109,9 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// The window the latest switch asked for brings to the front, until it is done, so stepping through
     /// a group's windows faster than they come forward steps on from the one asked for.
     private var pendingFrontWindowId: WindowId?
+    /// Counts the switches asked for, so one still waiting its turn when a later one is asked for is
+    /// skipped: stepping through windows quickly lands on the last without bringing each one forward.
+    private var latestSwitchNumber = 0
     /// Whether the workspace changed during the running layout change, which tells the views once when it
     /// ends rather than once for every window it moves.
     private var isChangePending = false
@@ -562,11 +565,17 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     func switchTo(_ groupId: GroupId?, bringingToFront frontWindowId: WindowId? = nil, onStage stageId: StageId? = nil) async {
         switchRequestCount += 1
         let requestCount = switchRequestCount
+        latestSwitchNumber += 1
+        let switchNumber = latestSwitchNumber
         pendingFrontWindowId = frontWindowId
         if let groupId {
             onSwitchTarget?(groupId, frontWindowId)
         }
         await enqueue {
+            guard self.latestSwitchNumber == switchNumber else {
+                Self.logger.info("skipped a switch overtaken by a later one")
+                return
+            }
             await self.performSwitch(to: groupId, bringingToFront: frontWindowId, onStage: stageId)
         }
         if switchRequestCount == requestCount {

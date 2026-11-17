@@ -20,6 +20,8 @@ final class WorkspaceController: WindowDragMonitorDelegate {
     /// How long hiding an application whole waits for it to leave the front, as the window brought forward
     /// takes it, before minimizing its windows instead.
     private static let deactivationTimeout: Duration = .milliseconds(300)
+    /// How long hiding an application whole waits for it to be hidden before minimizing its windows.
+    private static let hideTimeout: Duration = .milliseconds(500)
     /// How long after a switch a hidden window that takes focus is taken as the switch's leftover, the
     /// application switched away from or the one switched to activating late, and focus is taken back to the
     /// window the switch brought forward rather than followed.
@@ -1455,11 +1457,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             .filter { ScreenGeometry.visibleShare(of: $0.frame) > Self.hiddenVisibleShareLimit }
         var mapHiddenWhole: [Int32: [ManagedWindow]] = [:]
         for (processId, listWindows) in mapByProcess {
+            let listOthers = listShownWindows.filter { $0.processId == processId && !setHideIds.contains($0.windowId) }
             guard
                 !setShowProcessIds.contains(processId),
                 !setPictureProcessIds.contains(processId),
-                !listShownWindows.contains(where: { $0.processId == processId && !setHideIds.contains($0.windowId) })
+                listOthers.isEmpty
             else {
+                Self.logger.info("""
+                    minimizing rather than hiding process \(processId) whole: shown \(setShowProcessIds.contains(processId)), \
+                    playing \(setPictureProcessIds.contains(processId)), \(listOthers.count) other window(s) on screen
+                    """)
                 continue
             }
             var isAnyFullscreen = false
@@ -1486,12 +1493,16 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 try? await Task.sleep(for: Self.unhidePollInterval)
             }
         }
-        guard
-            mapFrames.count == listWindows.count,
-            let running,
-            !running.isActive,
-            running.hide()
-        else {
+        var isHiddenWhole = false
+        if let running, mapFrames.count == listWindows.count, !running.isActive {
+            _ = running.hide()
+            isHiddenWhole = await waitUntilHidden(running)
+        }
+        guard let running, isHiddenWhole else {
+            Self.logger.info("""
+                cannot hide process \(processId) whole: \(mapFrames.count) of \(listWindows.count) frames read, \
+                active \(running?.isActive ?? false); minimizing its windows
+                """)
             for window in listWindows {
                 try? await hide(window.windowId)
             }
@@ -1786,9 +1797,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 continue
             }
             if !running.isHidden {
-                guard running.hide() else {
-                    continue
-                }
+                _ = running.hide()
                 if setHiddenProcessIds.contains(processId) {
                     Self.logger.notice("""
                         \(running.localizedName ?? "", privacy: .public) showed itself while its windows are all \
@@ -1866,6 +1875,20 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         }
         Self.logger.error("\(running.localizedName ?? "", privacy: .public) stays hidden; its window is left where it is")
         return false
+    }
+
+    /// Wait, up to `hideTimeout`, for an application to be hidden. Whether `hide()` worked is told by the
+    /// application becoming hidden: the call answers false even when it does.
+    private func waitUntilHidden(_ running: NSRunningApplication) async -> Bool {
+        let deadline = ContinuousClock.now + Self.hideTimeout
+        while !running.isHidden && ContinuousClock.now < deadline {
+            do {
+                try await Task.sleep(for: Self.unhidePollInterval)
+            } catch {
+                return false
+            }
+        }
+        return running.isHidden
     }
 
     /// Wait, up to `unhideTimeout`, for an application to stop being hidden.

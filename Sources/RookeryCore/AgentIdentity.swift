@@ -182,7 +182,7 @@ public struct TranscriptDigest: Equatable, Sendable {
                 latestSummary = String(entry.text.suffix(Self.summaryMaxLength))
             case .assistant:
                 latestReply = String(entry.text.prefix(Self.replyMaxLength))
-            case .tool, .command:
+            case .tool, .command, .message:
                 break
             }
         }

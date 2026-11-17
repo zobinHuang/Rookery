@@ -148,6 +148,26 @@ struct TranscriptView: View {
             compaction(entry)
         case .tool:
             toolRun([entry], blockId: entry.id)
+        case .message(let sender):
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    RookeryIconView(.bubble)
+                    Text(sender)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                    if let timestamp = entry.timestamp {
+                        Text(Self.time(of: timestamp))
+                            .font(.system(size: 10))
+                            .foregroundStyle(StageColors.tertiaryText)
+                    }
+                }
+                .foregroundStyle(StageColors.secondaryText)
+                .padding(.leading, 12)
+                MessageBubble(isTrailing: false, hasTail: hasTail) {
+                    MarkdownText(text: entry.text)
+                }
+            }
+            .help("Sent through rook")
         }
     }
 

@@ -13,6 +13,8 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
         /// The summary the harness wrote when it compacted the conversation, which the agent read in place
         /// of everything before.
         case compaction
+        /// A message another agent sent through rook, by the name of who sent it.
+        case message(String)
     }
 
     /// The step's place in the transcript.
@@ -226,10 +228,19 @@ public struct TranscriptReader: Sendable {
     private mutating func add(_ role: TranscriptEntry.Role, _ text: String, timestamp: Date?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch role {
-        case .tool, .command, .compaction:
+        case .tool, .command, .compaction, .message:
             break
         case .user:
             guard !trimmed.isEmpty, !trimmed.hasPrefix("<") else {
+                return
+            }
+            if let message = RookMessage.parse(trimmed) {
+                listEntries.append(TranscriptEntry(
+                    id: startOffset + listEntries.count,
+                    role: .message(message.senderName),
+                    text: message.text,
+                    timestamp: timestamp
+                ))
                 return
             }
         case .assistant:

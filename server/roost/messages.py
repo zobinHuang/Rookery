@@ -284,6 +284,7 @@ class DeliveryStore:
                 is_new_role = not agent.map_attributes.get("role")
                 if is_new_role:
                     agent.map_attributes["role"] = role
+                    agent.map_attributes["role_source"] = "launch"
                     self._resources.put(agent, connection)
             if is_new_role:
                 self._events.record_change(None, EventVerbs.UPDATED, agent_ref)

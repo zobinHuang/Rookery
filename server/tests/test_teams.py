@@ -170,6 +170,7 @@ class TeamTest(unittest.TestCase):
         self.start("d", "laptop", {"launch": spawn.map_options["launch"]})
         agent = self.server.resources.get(ResourceRef("agent", "d"))
         self.assertEqual(agent.map_attributes["role"], "load tester")
+        self.assertEqual(agent.map_attributes["role_source"], "launch")
         self.assertEqual(agent.map_attributes["launch"], spawn.map_options["launch"])
         list_teams = self.server.roster.teams_of("d")
         self.assertEqual([team.id for team in list_teams], ["api"])

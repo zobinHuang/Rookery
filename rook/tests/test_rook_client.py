@@ -505,6 +505,7 @@ class TeamCommandsTest(QueueAndSendTest):
         self.run_client(["me", "focus", "auth", "tokens"])
         map_attributes = self.server.resources.get(ResourceRef("agent", "a")).map_attributes
         self.assertEqual((map_attributes["role"], map_attributes["focus"]), ("API owner", "auth tokens"))
+        self.assertEqual((map_attributes["role_source"], map_attributes["focus_source"]), ("agent", "agent"))
         self.assertIn("role: API owner", self.run_client(["me"]))
         self.assertIn("now: auth tokens", self.run_client(["team", "roster", "api"]))
 

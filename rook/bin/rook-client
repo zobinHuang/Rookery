@@ -1582,7 +1582,7 @@ class MeCommands:
         path = f"/v1/resources/agent/{urllib.parse.quote(session_id, safe='')}"
         if args.action in ("role", "focus"):
             text = " ".join(args.text).strip()[: cls.ME_TEXT_MAX_CHARS]
-            map_attributes: dict[str, object] = {args.action: text}
+            map_attributes: dict[str, object] = {args.action: text, f"{args.action}_source": "agent"}
             if args.action == "focus":
                 map_attributes["focus_at"] = HookEventMapper.now()
             connection.request(

@@ -486,13 +486,10 @@ final class WorkspaceController: WindowDragMonitorDelegate {
         setFollowingStageIds.insert(stageId)
         Task {
             while let frame = self.mapPendingStageFrames.removeValue(forKey: stageId) {
-                guard let group = self.group(onStage: stageId), let windowId = group.listMembersFrontToBack.first?.windowId else {
+                guard let windowId = self.group(onStage: stageId)?.listMembersFrontToBack.first?.windowId else {
                     break
                 }
                 await self.tracker.applyFrame(frame, to: windowId)
-                for window in group.listMembers where window.windowId != windowId && self.isStackedBeneath(window.windowId) {
-                    await self.tracker.applyFrame(frame, to: window.windowId)
-                }
             }
             self.setFollowingStageIds.remove(stageId)
         }
@@ -1078,7 +1075,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             }
         }
         guard
-            workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }) || isStackedBeneath(windowId),
+            workspace.listHiddenWindows.contains(where: { $0.windowId == windowId }),
             let group = workspace.group(containing: windowId)
         else {
             return
@@ -1106,7 +1103,7 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 await bringForward(broughtForwardWindowId)
                 return
             }
-            Self.logger.info("hidden or stacked window \(windowId.rawValue) took focus; switching to it")
+            Self.logger.info("hidden window \(windowId.rawValue) took focus; switching to it")
             await switchTo(group.groupId, bringingToFront: windowId)
         }
     }
@@ -1165,22 +1162,6 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             return false
         }
         return group.listMembersFrontToBack.first?.windowId == windowId
-    }
-
-    /// Whether a window waits in its stage's content area beneath the group's front window: a member of a
-    /// group a stage shows, not hidden and not in front. Switching to it only raises it, with none of the
-    /// Dock's animation; it stays covered whole by the front window, so its application stops drawing it.
-    private func isStackedBeneath(_ windowId: WindowId) -> Bool {
-        guard
-            let group = workspace.group(containing: windowId),
-            let stageId = mapGroupStageIds[group.groupId],
-            mapStageGroupIds[stageId] == group.groupId,
-            let window = group.listMembers.first(where: { $0.windowId == windowId }),
-            !window.isHidden
-        else {
-            return false
-        }
-        return group.listMembersFrontToBack.first?.windowId != windowId
     }
 
     /// Keep a window brought forward drawn where it was placed, as the window server shows it rather than as
@@ -1370,26 +1351,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
             mapShownFrames[front.windowId] = contentFrame
         }
         let setStagedGroupIds = Set(mapGroupStageIds.keys)
-        var setStackedIds: Set<WindowId> = []
-        for (shownStageId, shownGroupId) in mapStageGroupIds {
-            guard
-                let contentFrame = mapStageContentFrames[shownStageId],
-                let group = workspace.listGroups.first(where: { $0.groupId == shownGroupId })
-            else {
-                continue
-            }
-            for window in group.listMembers where !window.isHidden {
-                if let record = mapRecords[window.windowId], !record.isMinimized, Self.isFrame(record.seenFrame, closeTo: contentFrame) {
-                    setStackedIds.insert(window.windowId)
-                }
-            }
-        }
         let listToHide = workspace.listGroups
             .filter { setStagedGroupIds.contains($0.groupId) }
             .flatMap(\.listMembers)
             .filter { window in
                 mapShownFrames[window.windowId] == nil
-                    && !setStackedIds.contains(window.windowId)
                     && !window.isHidden
                     && mapRecords[window.windowId]?.isMinimized != true
             }
@@ -1696,13 +1662,11 @@ final class WorkspaceController: WindowDragMonitorDelegate {
                 .map { ($0.windowId, $0.processId) }
         )
         let setPictureProcessIds = pictureProcessIds()
-        let setStackedProcessIds = Set(workspace.listManagedWindows.filter { isStackedBeneath($0.windowId) }.map(\.application.processId))
         let frontmostProcessId = NSWorkspace.shared.frontmostApplication?.processIdentifier
         for processId in workspace.processIdsShowingOnlyHiddenWindows(among: mapShownProcessIds) {
             guard
                 setShowingProcessIds.contains(processId),
                 !setPictureProcessIds.contains(processId),
-                !setStackedProcessIds.contains(processId),
                 processId != frontmostProcessId,
                 let running = NSRunningApplication(processIdentifier: processId),
                 !running.isActive

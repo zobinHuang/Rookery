@@ -63,6 +63,8 @@ struct MailPage: View {
     private static let readerMaxWidth: CGFloat = 860
     /// How many rows and messages stand in for a list or a conversation still on its way.
     private static let skeletonRowCount = 8
+    /// The least reader width that names the toolbar's buttons rather than showing their icons alone.
+    private static let titledToolbarWidth: CGFloat = 620
     private static let skeletonMessageCount = 2
 
     @State private var place = MailPlace.allInboxes
@@ -75,6 +77,7 @@ struct MailPage: View {
     @State private var isLoading = false
     /// Whether the list was read at least once, so an empty one means no mail rather than not yet.
     @State private var hasLoadedList = false
+    @State private var isToolbarTitled = true
     @State private var problem: String?
     /// The conversation of the message chosen, newest first, its messages read in full, and those the
     /// user folded; every other one is open.
@@ -314,10 +317,8 @@ struct MailPage: View {
 
     @ViewBuilder
     private var reader: some View {
-        if let selectedId, loadedMessageId != selectedId {
-            readerSkeleton
-                .transition(.opacity)
-        } else if let message = shownMessage {
+        if let message = shownMessage {
+            let isSwitching = selectedId != nil && loadedMessageId != selectedId
             VStack(spacing: 0) {
                 readerToolbar(message)
                 Rectangle()
@@ -337,7 +338,13 @@ struct MailPage: View {
                     .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .id(message.summary.id)
+                .opacity(isSwitching ? 0.55 : 1)
+                .animation(.easeOut(duration: 0.15), value: isSwitching)
             }
+        } else if selectedId != nil {
+            readerSkeleton
+                .transition(.opacity)
         } else {
             SidebarNotice(icon: .mail, title: "No message chosen", text: "Pick a message to read it here.")
         }
@@ -401,7 +408,7 @@ struct MailPage: View {
                 SkeletonBlock(width: 170, height: 9)
             }
             ForEach(0..<Self.skeletonMessageCount, id: \.self) { _ in
-                HStack(alignment: .bottom, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
                     SkeletonBlock(width: MailMessageCard.markSize, height: MailMessageCard.markSize, cornerRadius: MailMessageCard.markSize / 2)
                     VStack(alignment: .leading, spacing: 7) {
                         SkeletonBlock(width: 140, height: 9)
@@ -438,15 +445,19 @@ struct MailPage: View {
         }
     }
 
-    /// What the user can do to the message: with titles where they fit, as icons alone where they do not.
+    /// What the user can do to the message: with titles where the reader is wide enough for them, as icons
+    /// alone where it is not.
     private func readerToolbar(_ message: MailMessageDetail) -> some View {
-        ViewThatFits(in: .horizontal) {
-            toolbarButtons(message, isTitled: true)
-            toolbarButtons(message, isTitled: false)
-        }
-        .controlSize(.small)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        let titledWidth = Self.titledToolbarWidth
+        return toolbarButtons(message, isTitled: isToolbarTitled)
+            .onGeometryChange(for: Bool.self) { proxy in
+                proxy.size.width >= titledWidth
+            } action: { isWide in
+                isToolbarTitled = isWide
+            }
+            .controlSize(.small)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
     }
 
     private func toolbarButtons(_ message: MailMessageDetail, isTitled: Bool) -> some View {
@@ -513,15 +524,21 @@ struct MailPage: View {
         }
         do {
             let detail = try await service.message(selectedId)
-            shownMessage = detail
+            var listFound: [MailMessageSummary] = []
+            if let detail {
+                listFound = try await service.thread(of: detail.summary)
+            }
+            guard !Task.isCancelled else {
+                return
+            }
             if let detail {
                 mapDetails[selectedId] = detail
-                let listFound = try await service.thread(of: detail.summary)
                 listThread = listFound.contains(where: { $0.id == selectedId }) ? listFound.reversed() : [detail.summary]
-                setFoldedIds = []
             } else {
                 listThread = []
             }
+            setFoldedIds = []
+            shownMessage = detail
         } catch {
             problem = String(describing: error)
         }
@@ -553,7 +570,8 @@ struct MailPage: View {
 }
 
 /// A message of a conversation as a bubble on the side of whoever wrote it, as a chat shows it: the
-/// user's own on the right, everyone else's on the left with their mark at its foot; over it the sender, when
+/// user's own on the right, everyone else's on the left with their mark at its top left and the bubble's tail
+/// reaching up to it; over it the sender, when
 /// and to whom, which fold it to its opening and open it again. Inside, its own words, as sent when it has
 /// HTML, the earlier mail it quotes only when asked; under it, its attachments. It keeps its own height and
 /// quote, so the formatted text growing redraws only this message.
@@ -581,7 +599,7 @@ struct MailMessageCard: View {
     var body: some View {
         let edgeAnchor: UnitPoint = isMine ? .trailing : .leading
         VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
-            HStack(alignment: .bottom, spacing: Self.markSpacing) {
+            HStack(alignment: .top, spacing: Self.markSpacing) {
                 if !isMine {
                     PersonMark(
                         person: people?.person(withAddress: summary.from.address),
@@ -589,7 +607,6 @@ struct MailMessageCard: View {
                         fallbackAddress: summary.from.address,
                         size: Self.markSize
                     )
-                    .padding(.bottom, 1)
                 }
                 VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
                     Button(action: onToggle) {
@@ -680,10 +697,10 @@ struct MailMessageCard: View {
             .padding(.vertical, 16)
             .frame(height: skeletonHeight, alignment: .top)
             .background {
-                MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
                     .fill(StageColors.agentBubble)
                     .overlay {
-                        MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                        MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
                             .stroke(StageColors.agentBubbleBorder, lineWidth: 1)
                     }
             }
@@ -702,10 +719,10 @@ struct MailMessageCard: View {
             .padding(.horizontal, 13)
             .padding(.vertical, 8)
             .background {
-                MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
                     .fill(isMine ? AnyShapeStyle(StageColors.userBubble) : AnyShapeStyle(StageColors.agentBubble))
                     .overlay {
-                        MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                        MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
                             .stroke(isMine ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.agentBubbleBorder), lineWidth: 1)
                     }
             }
@@ -735,10 +752,10 @@ struct MailMessageCard: View {
             .frame(height: max(bodyHeight ?? Self.skeletonHeight, Self.bodyMinimumHeight))
             .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
             .background {
-                MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
                     .fill(Self.paperColor)
                     .overlay {
-                        MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                        MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
                             .stroke(StageColors.agentBubbleBorder, lineWidth: 1)
                     }
                     .shadow(color: .black.opacity(0.07), radius: 8, y: 3)

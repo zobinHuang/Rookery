@@ -107,6 +107,9 @@ private struct RememberedScrollPosition: ViewModifier {
     @State private var isRestored = false
     @State private var isAtEnd = true
     @State private var latestGeometry: ScrollGeometry?
+    /// Whether the area is being moved by Rookery rather than the user, which says nothing of where the
+    /// user wants to be.
+    @State private var isAnimatingScroll = false
 
     func body(content: Content) -> some View {
         content
@@ -120,10 +123,15 @@ private struct RememberedScrollPosition: ViewModifier {
                     return
                 }
                 let fromBottom = geometry.contentSize.height - geometry.containerSize.height - geometry.contentOffset.y
-                isAtEnd = fromBottom < Self.bottomSlack
+                if !isAnimatingScroll {
+                    isAtEnd = fromBottom < Self.bottomSlack
+                }
                 memory.mapScrollOffsets[key] = followsEnd
                     ? CGPoint(x: 0, y: max(0, fromBottom))
                     : geometry.contentOffset
+            }
+            .onScrollPhaseChange { _, phase in
+                isAnimatingScroll = phase == .animating
             }
             .onChange(of: isReady) {
                 restoreIfReady()

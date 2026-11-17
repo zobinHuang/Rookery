@@ -27,13 +27,15 @@ struct AgentComposer: View {
     var isFocused: FocusState<Bool>.Binding
 
     @Namespace private var namespace
+    /// Whether the box closed after sending while keeping the focus, until the user writes again.
+    @State private var isResting = false
 
     private var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var isOpen: Bool {
-        isEnabled && (isFocused.wrappedValue || !text.isEmpty)
+        isEnabled && (!text.isEmpty || (isFocused.wrappedValue && !isResting))
     }
 
     var body: some View {
@@ -67,9 +69,20 @@ struct AgentComposer: View {
         .shadow(color: .black.opacity(isOpen ? 0.12 : 0), radius: isOpen ? 10 : 0, y: isOpen ? 3 : 0)
         .contentShape(Rectangle())
         .onTapGesture {
+            isResting = false
             isFocused.wrappedValue = true
         }
         .animation(Self.openAnimation, value: isOpen)
+        .onChange(of: text) { _, newText in
+            if !newText.isEmpty {
+                isResting = false
+            }
+        }
+        .onChange(of: isFocused.wrappedValue) { _, isNowFocused in
+            if !isNowFocused {
+                isResting = false
+            }
+        }
     }
 
     private var field: some View {
@@ -92,6 +105,7 @@ struct AgentComposer: View {
                 }
                 if !isEmpty, !isBusy {
                     onSend()
+                    isResting = true
                 }
                 return .handled
             }
@@ -116,7 +130,10 @@ struct AgentComposer: View {
             .buttonStyle(.plain)
             .help("Stop")
         } else {
-            Button(action: onSend) {
+            Button {
+                onSend()
+                isResting = true
+            } label: {
                 Group {
                     if isBusy {
                         ProgressView()

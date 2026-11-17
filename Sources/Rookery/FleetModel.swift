@@ -58,6 +58,8 @@ final class FleetModel {
     @ObservationIgnored let pageColumns = PageColumns()
     /// The people the user set down, whom Raven is told of and the mail and the calendars show.
     @ObservationIgnored let people = PeopleStore()
+    /// What Raven reaches on the board, drawn as lines from its tab.
+    @ObservationIgnored let ravenLinks = RavenLinks()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
     private var cachedToken: String??
@@ -466,6 +468,7 @@ final class FleetModel {
         connection = .online
         for try await event in client.events(after: lastSeq) {
             var setRefetch = Set(graph.apply(event))
+            ravenLinks.take(event, graph: graph)
             if case .refetch(let ref) = fleet.apply(event) {
                 setRefetch.insert(ref)
             }

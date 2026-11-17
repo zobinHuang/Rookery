@@ -33,6 +33,16 @@ struct RookmasterView: View {
         fleetModel.pageMemory
     }
 
+    /// The teams one of Raven's conversations directs, which its links reach while it is in them.
+    private var listDirectedTeams: [FleetRef] {
+        let graph = fleetModel.graph
+        return graph.listResources(of: AgentFleet.teamKind).filter { team in
+            AgentTeams.memberIds(of: team).contains { memberId in
+                graph.resource(FleetRef(kind: AgentFleet.agentKind, id: memberId))?.isRookeryOwn == true
+            }
+        }.map { FleetRef(kind: AgentFleet.teamKind, id: $0.id) }
+    }
+
     private var listKinds: [FleetKind] {
         fleetModel.graph.listKinds.filter { !Self.setHiddenKinds.contains($0.name) }
     }
@@ -67,6 +77,11 @@ struct RookmasterView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Self.tabAnimation, value: memory.rookmasterTab)
             RookmasterPanel(fleetModel: fleetModel, clock: logClock)
+        }
+        .overlayPreferenceValue(CardAnchorsKey.self) { mapAnchors in
+            if memory.rookmasterTab == .board {
+                RavenLinksOverlay(links: fleetModel.ravenLinks, listHeldRefs: listDirectedTeams, mapAnchors: mapAnchors)
+            }
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .overlay {
@@ -436,6 +451,9 @@ struct RookmasterPanel: View {
                 }
             }
             .contentShape(Rectangle())
+            .anchorPreference(key: CardAnchorsKey.self, value: .bounds) { anchor in
+                target == .raven ? [RavenLinks.ravenRef: anchor] : [:]
+            }
         }
         .buttonStyle(.plain)
     }

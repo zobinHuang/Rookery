@@ -1,8 +1,9 @@
 import RookeryCore
 import SwiftUI
 
-/// The frames of the board's cards, by resource, for its edges to be drawn between.
-private struct CardAnchorsKey: PreferenceKey {
+/// The frames of the board's cards, by resource, for its edges to be drawn between, and of the team
+/// headings and Raven's tab, for Raven's links to what it works on.
+struct CardAnchorsKey: PreferenceKey {
     static let defaultValue: [FleetRef: Anchor<CGRect>] = [:]
 
     static func reduce(value: inout [FleetRef: Anchor<CGRect>], nextValue: () -> [FleetRef: Anchor<CGRect>]) {
@@ -69,6 +70,8 @@ struct BoardEdge: Identifiable, Equatable {
 /// session's card. Locking freezes the order; the filters narrow it down; hovering or selecting a card
 /// brings forward it, its neighbours and the edges between them.
 struct RookmasterBoard: View {
+    /// The heading over the agents in no team, which no team's id can be.
+    private static let unassignedHeadingId = "~unassigned"
     private static let cardWidth: CGFloat = 210
     private static let columnSpacing: CGFloat = 60
     private static let columnLimit = 150
@@ -362,8 +365,8 @@ struct RookmasterBoard: View {
                     .padding(.leading, 4)
             }
             ForEach(Array(listResources.enumerated()), id: \.element.id) { index, resource in
-                if kind.name == AgentFleet.agentKind, let heading = teamHeading(at: index, in: listResources) {
-                    teamHeader(heading)
+                if kind.name == AgentFleet.agentKind, let headingId = teamHeadingId(at: index, in: listResources) {
+                    teamHeader(headingId)
                 }
                 card(resource, setFocus: setFocus, now: now)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
@@ -679,9 +682,9 @@ struct RookmasterBoard: View {
         }.map(\.element)
     }
 
-    /// The team heading above the agent at an index, when it starts a team's run, or the unassigned ones
-    /// after the teams; nil within a run, or when there are no teams.
-    private func teamHeading(at index: Int, in listAgents: [FleetResource]) -> String? {
+    /// The team heading above the agent at an index, by the team's id, when it starts a team's run, or
+    /// the unassigned ones after the teams; nil within a run, or when there are no teams.
+    private func teamHeadingId(at index: Int, in listAgents: [FleetResource]) -> String? {
         let teams = fleetModel.teams
         guard !teams.listTeams.isEmpty, listAgents.indices.contains(index) else {
             return nil
@@ -690,14 +693,15 @@ struct RookmasterBoard: View {
         if index > 0, teams.teamId(of: listAgents[index - 1].id) == teamId {
             return nil
         }
-        guard let teamId else {
-            return "Unassigned"
-        }
-        return teams.listTeams.first { $0.id == teamId }?.title
+        return teamId ?? Self.unassignedHeadingId
     }
 
-    private func teamHeader(_ title: String) -> some View {
-        HStack(spacing: 6) {
+    /// A team's heading over its agents, which Raven's links reach for the team.
+    private func teamHeader(_ headingId: String) -> some View {
+        let title = headingId == Self.unassignedHeadingId
+            ? "Unassigned"
+            : fleetModel.teams.listTeams.first { $0.id == headingId }?.title ?? ""
+        return HStack(spacing: 6) {
             FittingText(title, size: 11, weight: .semibold)
                 .foregroundStyle(StageColors.secondaryText)
                 .layoutPriority(1)
@@ -707,6 +711,9 @@ struct RookmasterBoard: View {
         }
         .padding(.leading, 4)
         .padding(.top, 6)
+        .anchorPreference(key: CardAnchorsKey.self, value: .bounds) { anchor in
+            headingId == Self.unassignedHeadingId ? [:] : [FleetRef(kind: AgentFleet.teamKind, id: headingId): anchor]
+        }
     }
 
     /// The edges between shown cards, a subagent's drawn from its session.

@@ -30,6 +30,9 @@ struct SettingsView: View {
     let fleetModel: FleetModel
     /// Closes the settings, for the close button; nil in the settings window, which has its own.
     var onClose: (() -> Void)?
+    /// What the Mail and Calendars section shows in place of asking the Mac, for rendering the page offscreen
+    /// without scripting Mail.
+    var shownMailAccess: MailAccess?
     @State private var isLaunchingAtLogin = LoginItem.isEnabled
     @State private var citySearch = WorldClockCitySearch()
     @State private var clockSearchError: String?
@@ -39,6 +42,8 @@ struct SettingsView: View {
     @State private var roostTestResult: String?
     @State private var isTestingRoost = false
     @State private var roostError: String?
+    @State private var mailAccess: MailAccess?
+    @State private var mailError: String?
 
     /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
@@ -62,6 +67,7 @@ struct SettingsView: View {
                 header
                 general
                 roost
+                mailAndCalendars
                 codeAgents
                 worldClock
                 screenSaver
@@ -211,6 +217,152 @@ struct SettingsView: View {
         .onAppear {
             roostAddressDraft = preferences.roostAddress
             roostTokenDraft = fleetModel.token
+        }
+    }
+
+    private static let fullDiskAccessURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+    private static let calendarsAccessURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
+
+    /// The Mac's mail and calendars as Raven reads them: what Rookery may read, and which accounts Raven
+    /// may see, each personal or work.
+    private var mailAndCalendars: some View {
+        SettingsSection(title: "Mail and Calendars", symbol: .person) {
+            if let access = mailAccess {
+                SettingsRow(title: "Mail Library", detail: access.hasFullDiskAccess ? "readable" : "needs Full Disk Access") {
+                    accessControl(isGranted: access.hasFullDiskAccess) {
+                        openSystemSettings(Self.fullDiskAccessURL)
+                    }
+                }
+                SettingsRow(title: "Calendars", detail: access.calendarAuthorization == "full" ? "readable" : "needs access") {
+                    accessControl(isGranted: access.calendarAuthorization == "full") {
+                        if access.calendarAuthorization == "not_determined" {
+                            Task {
+                                _ = await fleetModel.mailService.requestCalendarAccess()
+                                await reloadMail()
+                            }
+                        } else {
+                            openSystemSettings(Self.calendarsAccessURL)
+                        }
+                    }
+                }
+                SettingsRow(title: "Mail", detail: access.isMailRunning ? "running, so new mail arrives" : "not running; new mail waits until it is") {
+                    if !access.isMailRunning {
+                        Button("Open Mail") {
+                            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: MailService.mailBundleId) {
+                                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+                            }
+                        }
+                    }
+                }
+                ForEach(access.listMailAccounts, id: \.id) { account in
+                    mailAccountRow(account, settings: access.settings)
+                }
+                ForEach(access.listCalendarAccounts, id: \.self) { name in
+                    SettingsRow(title: name, detail: "calendars") {
+                        Toggle("Raven may read", isOn: Binding(
+                            get: { access.settings.isCalendarAccountAllowed(name) },
+                            set: { isAllowed in
+                                updateMailSettings { settings in
+                                    if isAllowed {
+                                        settings.setHiddenCalendarAccounts.remove(name)
+                                    } else {
+                                        settings.setHiddenCalendarAccounts.insert(name)
+                                    }
+                                }
+                            }
+                        ))
+                        .help("Whether Raven may read these calendars and propose changes to them")
+                    }
+                }
+                if let problem = access.mailProblem {
+                    SettingsMessage(text: problem)
+                }
+            } else {
+                SettingsRow(title: "Reading", detail: "what Rookery may read…") {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+            }
+            if let mailError {
+                SettingsMessage(text: mailError)
+            }
+        }
+        .task {
+            await reloadMail()
+        }
+    }
+
+    private func mailAccountRow(_ account: MailScriptAccount, settings: MailAccountSettings) -> some View {
+        let address = account.listAddresses.first ?? account.name
+        return SettingsRow(title: address, detail: account.isEnabled ? account.name : "\(account.name), off in Mail") {
+            HStack(spacing: 10) {
+                Picker("Kind", selection: Binding(
+                    get: { settings.kind(of: address).isEmpty ? MailAccountSettings.kindPersonal : settings.kind(of: address) },
+                    set: { kind in
+                        updateMailSettings { $0.mapKinds[address.lowercased()] = kind }
+                    }
+                )) {
+                    Text("Personal").tag(MailAccountSettings.kindPersonal)
+                    Text("Work").tag(MailAccountSettings.kindWork)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                Toggle("Raven may read", isOn: Binding(
+                    get: { settings.isMailAllowed(address) },
+                    set: { isAllowed in
+                        updateMailSettings { settings in
+                            if isAllowed {
+                                settings.setHiddenMail.remove(address.lowercased())
+                            } else {
+                                settings.setHiddenMail.insert(address.lowercased())
+                            }
+                        }
+                    }
+                ))
+                .help("Whether Raven may read this account's mail and draft from it")
+            }
+        }
+    }
+
+    private func accessControl(isGranted: Bool, onGrant: @escaping () -> Void) -> some View {
+        Group {
+            if isGranted {
+                RookeryIconView(.check)
+                    .foregroundStyle(.green)
+            } else {
+                Button("Allow…", action: onGrant)
+            }
+        }
+    }
+
+    private func openSystemSettings(_ address: String) {
+        if let url = URL(string: address) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func reloadMail() async {
+        if let shownMailAccess {
+            mailAccess = shownMailAccess
+            return
+        }
+        mailAccess = await fleetModel.mailService.access()
+    }
+
+    private func updateMailSettings(_ change: (inout MailAccountSettings) -> Void) {
+        guard var access = mailAccess else {
+            return
+        }
+        change(&access.settings)
+        mailAccess = access
+        let settings = access.settings
+        Task {
+            do {
+                try await fleetModel.mailService.save(settings)
+                mailError = nil
+            } catch {
+                mailError = "Could not keep the account settings: \(error.localizedDescription)"
+            }
         }
     }
 

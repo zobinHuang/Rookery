@@ -366,3 +366,20 @@ public struct MailboxCount: Codable, Equatable, Sendable {
         self.unread = unread
     }
 }
+
+/// How Rookery stands with the Mac's mail and calendars, for the settings: what it may read, the accounts
+/// it found, and what the user decided about them.
+public struct MailAccess: Equatable, Sendable {
+    public var hasFullDiskAccess = false
+    /// `full`, `write_only`, `denied`, `restricted` or `not_determined`.
+    public var calendarAuthorization = ""
+    public var isMailRunning = false
+    /// Why Mail could not be asked for its accounts, if it could not.
+    public var mailProblem: String?
+    public var listMailAccounts: [MailScriptAccount] = []
+    /// The calendar accounts, by name, as Calendar shows them.
+    public var listCalendarAccounts: [String] = []
+    public var settings = MailAccountSettings()
+
+    public init() {}
+}

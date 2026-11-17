@@ -25,6 +25,7 @@ actor MailService {
     private static let accountsLifetime: TimeInterval = 300
     private static let maximumEventSpan: TimeInterval = 4 * 366 * 24 * 3600
     private static let proposalIdBytes = 6
+    static let mailBundleId = "com.apple.mail"
     private static let proposalNote = "Proposed. The user decides in Raven; nothing was done. Do not do it another way."
 
     private var library: MailLibrary?
@@ -262,6 +263,47 @@ actor MailService {
     }
 
     // MARK: - Accounts
+
+    /// How Rookery stands with the mail and calendars, asking Mail for its accounts afresh.
+    func access() async -> MailAccess {
+        var access = MailAccess()
+        access.settings = loadSettings()
+        do {
+            _ = try openLibrary()
+            access.hasFullDiskAccess = true
+        } catch MailLibraryError.noAccess {
+            access.hasFullDiskAccess = false
+        } catch {
+            access.hasFullDiskAccess = true
+        }
+        access.calendarAuthorization = CalendarLibrary.authorization
+        access.listCalendarAccounts = Array(Set(((try? calendars.calendars()) ?? []).map(\.accountTitle))).sorted()
+        access.isMailRunning = await MainActor.run {
+            !NSRunningApplication.runningApplications(withBundleIdentifier: Self.mailBundleId).isEmpty
+        }
+        accountsReadAt = nil
+        do {
+            access.listMailAccounts = try await accounts()
+        } catch {
+            access.mailProblem = String(describing: error)
+        }
+        return access
+    }
+
+    /// Ask for calendar access, the first time.
+    func requestCalendarAccess() async -> Bool {
+        await calendars.requestAccess()
+    }
+
+    /// Keep what the user decided about the accounts.
+    ///
+    /// - Throws: when the file cannot be written
+    func save(_ settings: MailAccountSettings) throws {
+        try FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(settings).write(to: settingsURL, options: .atomic)
+    }
 
     /// The accounts with their calendars, as `list_accounts` gives them.
     private func listedAccounts() async throws -> JSONValue {

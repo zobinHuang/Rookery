@@ -82,6 +82,7 @@ final class SwitcherController {
     private func open(_ request: SwitcherRequest, step: Int, holding holdModifiers: NSEvent.ModifierFlags) {
         model.listEntries = request.listEntries
         model.chosenTheme = chosenTheme()
+        panel.appearance = model.chosenTheme.map { NSAppearance(named: $0.appearanceName) } ?? nil
         model.holdSymbols = Hotkey.symbols(for: holdModifiers)
         let count = request.listEntries.count
         model.selectedIndex = ((request.currentIndex + step) % count + count) % count

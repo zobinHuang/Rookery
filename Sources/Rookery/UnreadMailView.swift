@@ -128,7 +128,6 @@ struct UnreadMailView: View {
 
     private func accountTab(_ account: String?, title: String, count: Int?) -> some View {
         let isSelected = shownAccount == account
-        let tint = account.map(AccountColor.of) ?? Color.accentColor
         return Button {
             withAnimation(.spring(response: 0.28, dampingFraction: 0.88)) {
                 shownAccount = account
@@ -137,27 +136,23 @@ struct UnreadMailView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                if account != nil {
-                    Circle()
-                        .fill(tint)
-                        .frame(width: 6, height: 6)
-                }
                 Text(title)
                     .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
                     .lineLimit(1)
                 if let count, count > 0 {
                     Text(RightSidebarView.count(count))
                         .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(StageColors.tertiaryText))
+                        .opacity(isSelected ? 0.7 : 1)
+                        .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.tertiaryText))
                 }
             }
-            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
             .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(isSelected ? AnyShapeStyle(tint.opacity(0.16)) : AnyShapeStyle(StageColors.segmentGroove), in: Capsule())
+            .background(isSelected ? AnyShapeStyle(StageColors.selectedSegment) : AnyShapeStyle(StageColors.segmentGroove), in: Capsule())
             .overlay {
                 Capsule()
-                    .strokeBorder(isSelected ? AnyShapeStyle(tint.opacity(0.5)) : AnyShapeStyle(StageColor.clear))
+                    .strokeBorder(isSelected ? AnyShapeStyle(StageColors.contrastActiveBorder) : AnyShapeStyle(StageColors.segmentGrooveBorder))
             }
             .contentShape(Capsule())
         }
@@ -232,12 +227,12 @@ struct UnreadMailView: View {
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Circle()
-                    .fill(message.isRead ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(AccountColor.of(message.account)))
+                    .fill(message.isRead ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.primaryText))
                     .overlay {
                         Circle()
-                            .strokeBorder(message.isRead ? AnyShapeStyle(AccountColor.of(message.account).opacity(0.6)) : AnyShapeStyle(StageColor.clear))
+                            .strokeBorder(message.isRead ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColor.clear))
                     }
-                    .frame(width: 7, height: 7)
+                    .frame(width: 6, height: 6)
                     .padding(.top, 5)
                     .help(message.account)
                 VStack(alignment: .leading, spacing: 2) {
@@ -273,11 +268,11 @@ struct UnreadMailView: View {
                     if shownAccount == nil {
                         Text(message.account)
                             .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(AccountColor.of(message.account))
+                            .foregroundStyle(StageColors.secondaryText)
                             .lineLimit(1)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(AccountColor.of(message.account).opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .background(StageColors.segmentGroove, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                             .padding(.top, 2)
                     }
                 }

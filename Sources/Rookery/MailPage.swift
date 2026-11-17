@@ -171,9 +171,6 @@ struct MailPage: View {
                 placeRow(.flagged, count: nil)
                 ForEach(mapInboxCounts.keys.sorted(), id: \.self) { address in
                     HStack(spacing: 6) {
-                        Circle()
-                            .fill(AccountColor.of(address))
-                            .frame(width: 7, height: 7)
                         Text(address)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(StageColors.secondaryText)
@@ -200,7 +197,7 @@ struct MailPage: View {
         } label: {
             HStack(spacing: 7) {
                 RookeryIconView(shown.icon)
-                    .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                    .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 Text(shown.title)
                     .font(.system(size: 12.5, weight: isSelected ? .semibold : .regular))
                 Spacer(minLength: 0)
@@ -212,7 +209,14 @@ struct MailPage: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(StageColor.clear), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(StageColors.selectedRow)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -263,8 +267,8 @@ struct MailPage: View {
         } label: {
             HStack(alignment: .top, spacing: 8) {
                 Circle()
-                    .fill(message.isRead ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(Color.accentColor))
-                    .frame(width: 7, height: 7)
+                    .fill(message.isRead ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.primaryText))
+                    .frame(width: 6, height: 6)
                     .padding(.top, 5)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -289,14 +293,21 @@ struct MailPage: View {
                     if case .allInboxes = place {
                         Text(message.account)
                             .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(AccountColor.of(message.account))
+                            .foregroundStyle(StageColors.tertiaryText)
                             .lineLimit(1)
                     }
                 }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-            .background(isSelected ? AnyShapeStyle(Color.accentColor.opacity(0.16)) : AnyShapeStyle(StageColor.clear), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(StageColors.selectedRow)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -342,9 +353,6 @@ struct MailPage: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
-                Circle()
-                    .fill(AccountColor.of(message.summary.account))
-                    .frame(width: 7, height: 7)
                 Text(listThread.count == 1 ? "1 message in \(message.summary.account)" : "\(listThread.count) messages in \(message.summary.account)")
                     .font(.system(size: 11.5))
                     .foregroundStyle(StageColors.secondaryText)
@@ -361,10 +369,10 @@ struct MailPage: View {
                     .fill(isFirst ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.separator))
                     .frame(width: Self.threadLineWidth, height: Self.threadDotTop)
                 Circle()
-                    .fill(summary.isRead ? AnyShapeStyle(StageColors.window) : AnyShapeStyle(Color.accentColor))
+                    .fill(summary.isRead ? AnyShapeStyle(StageColors.window) : AnyShapeStyle(StageColors.primaryText))
                     .overlay {
                         Circle()
-                            .strokeBorder(summary.isRead ? AnyShapeStyle(StageColors.secondaryText.opacity(0.6)) : AnyShapeStyle(Color.accentColor), lineWidth: 1.5)
+                            .strokeBorder(summary.isRead ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColors.primaryText), lineWidth: 1.5)
                     }
                     .frame(width: Self.threadDotSize, height: Self.threadDotSize)
                 Rectangle()

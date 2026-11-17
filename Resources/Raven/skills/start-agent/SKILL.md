@@ -1,12 +1,16 @@
 ---
 name: start-agent
-description: Propose starting a new code agent session on one of the user's machines (rooks), in a project directory, with a first prompt. Use when the user asks to start, spin up, launch or open an agent somewhere.
+description: Propose starting a new code agent on one of the user's hosts, in a workdir or project directory, with the playbook and skills it should have, who it is, the teams it joins, and a first prompt. Use when the user asks to start, spin up, launch or open an agent somewhere, or to add an agent to a team's work.
 ---
 
 # Start an agent
 
-1. Find the rook: `rook-client resource ls --kind rook --json`; it must be `online`. If the user did not say which, pick the one their other agents on that project run on (`rook-client agent status --all --json`: `rook` and `project`), and say so.
-2. Find the directory: an absolute path on that rook. Take it from the user, or from the `cwd` of an earlier agent on the same project (`rook-client resource get agent <id>`). Never guess a path that no agent has used.
-3. Write the first prompt as the user would type it to start the work: the task, the constraints they gave, and where to report. Empty is fine when the user only wants a session open.
-4. Propose it: `rook-client propose spawn <rook> --cwd <dir> "<first prompt>"` (`--harness codex` if the user asked for codex). One proposal per session.
-5. Tell the user in a line what you proposed and where; the Start button shows under your answer. Once started, the session reports itself and shows up in `rook-client agent status` within a few seconds.
+1. Find the place: `rook-client host list`. Each host shows its rook, whether it is online, and the workdirs the user set up there with what an agent started in each begins with. Prefer a workdir that fits the request, and start from its playbook, skills, role and teams. If the user named no host, pick the one their agents on that project run on (`rook-client agent status --all --json`: `rook` and `project`), and say so. The rook must be online.
+2. Find the directory: the workdir's path, or an absolute path the user gave, or the `cwd` of an earlier agent on the same project (`rook-client resource get agent <id>`). Never guess a path that no workdir or agent has used.
+3. Decide what it begins with:
+   - `--playbook <id>` and `--skill <id>` (repeatable) for what to install first; check them with `rook-client resource ls --kind playbook` and `--kind skill`.
+   - `--role "..."` for who it is to its teammates, in a line.
+   - `--team <team id>:<duty>` (repeatable) for each team it joins, with its duty there; `rook-client team list` shows the teams.
+4. Write the first prompt as the user would type it to start the work: the task, the constraints they gave, and where to report. Empty is fine when the user wants the agent open and will prompt it later.
+5. Propose it: `rook-client propose spawn <rook> --cwd <dir> [--harness codex] [--playbook ...] [--skill ...] [--role ...] [--team ...] "<first prompt>"`. One proposal per session.
+6. Tell the user in a line what you proposed and where; the Start button shows under your answer. Once started, the session reports itself, joins its teams, is told of its teammates, and shows up in `rook-client agent status` within a few seconds.

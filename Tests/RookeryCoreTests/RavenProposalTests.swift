@@ -67,4 +67,19 @@ struct RavenProposalTests {
         let conversations = try JSONDecoder().decode(RavenConversations.self, from: data)
         #expect(conversations.conversation("c")?.mapDecisions.isEmpty == true)
     }
+
+    @Test func readsALaunchAndTeamChanges() throws {
+        let spawn = try JSONDecoder().decode(
+            RavenProposal.self,
+            from: Data(#"{"id": "p-4", "action": "spawn", "rook": "b300", "cwd": "/src", "harness": "claude", "playbook": "review", "skills": ["cuda"], "role": "tester", "teams": [{"team": "gw", "duty": "tests"}]}"#.utf8)
+        )
+        #expect(spawn.listTeams == [LaunchTeam(teamId: "gw", duty: "tests")])
+        #expect((spawn.playbookId, spawn.listSkillIds, spawn.role) == ("review", ["cuda"], "tester"))
+        let made = try JSONDecoder().decode(
+            RavenProposal.self,
+            from: Data(#"{"id": "p-5", "action": "create_team", "team": "gw", "team_title": "G-Watch", "goal": "ship"}"#.utf8)
+        )
+        #expect(made.action == .createTeam)
+        #expect(try JSONDecoder().decode(RavenProposal.self, from: JSONEncoder().encode(made)) == made)
+    }
 }

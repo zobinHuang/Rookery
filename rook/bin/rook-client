@@ -1240,7 +1240,27 @@ class ProposeCommands:
         spawn_parser.add_argument("rook", help="the rook's name")
         spawn_parser.add_argument("--cwd", required=True, help="the directory on the rook, an absolute path")
         spawn_parser.add_argument("--harness", choices=ProposeCommands.PROPOSE_HARNESSES, default="claude")
+        spawn_parser.add_argument("--playbook", help="a playbook to install into the directory first")
+        spawn_parser.add_argument("--skill", action="append", default=[], help="a further skill to install; repeatable")
+        spawn_parser.add_argument("--role", default="", help="who the new agent is to its teammates")
+        spawn_parser.add_argument(
+            "--team",
+            action="append",
+            default=[],
+            help="a team it joins, as <team id> or <team id>:<duty>; repeatable",
+        )
         spawn_parser.add_argument("prompt", nargs="*", help="its first prompt")
+        join_parser = commands.add_parser("join", help="propose putting an agent in a team, or giving it a new duty")
+        join_parser.add_argument("team", help="the team's id")
+        join_parser.add_argument("agent", help="the agent's id")
+        join_parser.add_argument("--duty", default="", help="what it does in the team")
+        leave_parser = commands.add_parser("leave", help="propose taking an agent out of a team")
+        leave_parser.add_argument("team", help="the team's id")
+        leave_parser.add_argument("agent", help="the agent's id")
+        team_parser = commands.add_parser("create-team", help="propose making a team")
+        team_parser.add_argument("team", help="its id: lowercase letters, digits and dashes")
+        team_parser.add_argument("--name", required=True, help="its name")
+        team_parser.add_argument("--goal", default="", help="what it works toward")
 
     @classmethod
     def run(cls, args: argparse.Namespace, connection: Connection) -> int:
@@ -1252,8 +1272,35 @@ class ProposeCommands:
         Raises:
             RookClientError: if the agent or the rook cannot take it
         """
-        proposal: dict[str, object] = {"id": "p-" + secrets.token_hex(cls.PROPOSE_ID_BYTES), "action": args.action}
-        if args.action == "spawn":
+        action = "create_team" if args.action == "create-team" else args.action
+        proposal: dict[str, object] = {"id": "p-" + secrets.token_hex(cls.PROPOSE_ID_BYTES), "action": action}
+        if args.action == "create-team":
+            if not re.match(r"^[a-z0-9][a-z0-9-]{0,62}$", args.team):
+                raise RookClientError("a team's id is lowercase letters, digits and dashes")
+            if cls._exists(connection, "team", args.team):
+                raise RookClientError(f"team {args.team} exists already")
+            proposal.update({
+                "team": args.team,
+                "team_title": args.name,
+                "goal": args.goal,
+                "agent_title": args.name,
+                "text": "",
+            })
+        elif args.action in ("join", "leave"):
+            team = connection.request("GET", f"/v1/resources/team/{urllib.parse.quote(args.team, safe='')}")
+            agent = connection.request("GET", f"/v1/resources/agent/{urllib.parse.quote(args.agent, safe='')}")
+            map_members = (team.get("attributes") or {}).get("members") or {}
+            if args.action == "leave" and args.agent not in map_members:
+                raise RookClientError(f"agent {args.agent} is not in team {args.team}")
+            proposal.update({
+                "team": args.team,
+                "team_title": str(team.get("name") or args.team),
+                "agent": args.agent,
+                "agent_title": str((agent.get("attributes") or {}).get("title") or agent.get("name") or args.agent),
+                "duty": getattr(args, "duty", ""),
+                "text": "",
+            })
+        elif args.action == "spawn":
             rook = connection.request("GET", f"/v1/resources/rook/{urllib.parse.quote(args.rook, safe='')}")
             if not (rook.get("attributes") or {}).get("online"):
                 raise RookClientError(f"rook {args.rook} is offline; it cannot start a session now")
@@ -1265,7 +1312,17 @@ class ProposeCommands:
                 "harness": args.harness,
                 "text": " ".join(args.prompt),
                 "agent_title": f"{args.harness} on {args.rook}",
+                "role": args.role,
+                "skills": args.skill,
+                "teams": [cls._team_join(connection, spec) for spec in args.team],
             })
+            if args.playbook:
+                if not cls._exists(connection, "playbook", args.playbook):
+                    raise RookClientError(f"no such playbook: {args.playbook}")
+                proposal["playbook"] = args.playbook
+            for skill_id in args.skill:
+                if not cls._exists(connection, "skill", skill_id):
+                    raise RookClientError(f"no such skill: {skill_id}")
         else:
             agent = connection.request("GET", f"/v1/resources/agent/{urllib.parse.quote(args.agent, safe='')}")
             map_attributes = agent.get("attributes") or {}
@@ -1283,6 +1340,75 @@ class ProposeCommands:
                 proposal["choice"] = args.choice
         json.dump({"proposal": proposal}, sys.stdout, ensure_ascii=False)
         sys.stdout.write("\nProposed. The user decides in Rookery; nothing was done. Do not do it another way.\n")
+        return 0
+
+    @staticmethod
+    def _exists(connection: Connection, kind: str, resource_id: str) -> bool:
+        try:
+            connection.request("GET", f"/v1/resources/{kind}/{urllib.parse.quote(resource_id, safe='')}")
+        except RookClientError as err:
+            if "404" in err.message:
+                return False
+            raise
+        return True
+
+    @classmethod
+    def _team_join(cls, connection: Connection, spec: str) -> dict[str, str]:
+        """A team a new session joins, from `<team id>` or `<team id>:<duty>`, checked against roost."""
+        team_id, _, duty = spec.partition(":")
+        if not cls._exists(connection, "team", team_id.strip()):
+            raise RookClientError(f"no such team: {team_id}")
+        return {"team": team_id.strip(), "duty": duty.strip()}
+
+
+class HostCommands:
+    """`rook-client host`: the hosts the user reaches over ssh from Rookery's Mac, with the rook each runs and
+    the workdirs the user keeps there, as Rookery wrote them for Raven."""
+
+    HOSTS_FILE_NAME = "hosts.json"
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the host subcommands to a parser."""
+        commands = parser.add_subparsers(dest="action", required=True)
+        list_parser = commands.add_parser("list", help="every host, its rook and its workdirs")
+        list_parser.add_argument("--json", action="store_true")
+
+    @classmethod
+    def run(cls, args: argparse.Namespace) -> int:
+        """Print the hosts.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if Rookery wrote no hosts here
+        """
+        path = RookPaths.config_dir() / cls.HOSTS_FILE_NAME
+        try:
+            map_hosts = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as err:
+            raise RookClientError(f"no hosts here; Rookery writes them for Raven ({err})") from err
+        if args.json:
+            print(json.dumps(map_hosts, indent=2, ensure_ascii=False))
+            return 0
+        for map_host in map_hosts.get("hosts") or []:
+            rook = map_host.get("rook")
+            state = "no rook" if not rook else f"rook {rook}, {'online' if map_host.get('online') else 'offline'}"
+            print(f"{map_host.get('alias')} ({map_host.get('address')}): {state}")
+            for map_workdir in map_host.get("workdirs") or []:
+                list_parts = [f"  workdir {map_workdir.get('name')}: {map_workdir.get('path')}, {map_workdir.get('harness')}"]
+                if map_workdir.get("playbook"):
+                    list_parts.append(f"playbook {map_workdir['playbook']}")
+                if map_workdir.get("skills"):
+                    list_parts.append("skills " + " ".join(map_workdir["skills"]))
+                if map_workdir.get("role"):
+                    list_parts.append(f"role {map_workdir['role']!r}")
+                for map_team in map_workdir.get("teams") or []:
+                    list_parts.append(f"team {map_team.get('team')}" + (f":{map_team['duty']}" if map_team.get("duty") else ""))
+                print(", ".join(list_parts))
+        for map_rook in map_hosts.get("rooks_without_host") or []:
+            print(f"rook {map_rook.get('rook')} (no ssh host here): {'online' if map_rook.get('online') else 'offline'}")
         return 0
 
 
@@ -1860,6 +1986,7 @@ def main(list_argv: list[str] | None = None) -> int:
     TeamCommands.build_parser(commands.add_parser("team"))
     MeCommands.build_parser(commands.add_parser("me"))
     InboxCommands.build_parser(commands.add_parser("inbox"))
+    HostCommands.build_parser(commands.add_parser("host"))
     args = parser.parse_args(list_argv)
     if args.command == "event":
         if args.event_command == "hook":
@@ -1869,6 +1996,12 @@ def main(list_argv: list[str] | None = None) -> int:
         if args.event_command == "reports":
             return 0 if RookClient.reports_session(args.harness, args.transcript) else 1
         return RookClient.flush()
+    if args.command == "host":
+        try:
+            return HostCommands.run(args)
+        except RookClientError as err:
+            sys.stderr.write(f"rook: {err.message}\n")
+            return 1
     connection = Connection.load()
     if connection is None:
         sys.stderr.write("rook: not connected; run: rook connect <host> <port> --token <token>\n")

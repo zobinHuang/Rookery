@@ -432,3 +432,42 @@ class TeamCommandsTest(QueueAndSendTest):
         self.assertIn("role: API owner", self.run_client(["me"]))
         self.assertIn("now: auth tokens", self.run_client(["team", "roster", "api"]))
 
+    def test_a_new_session_is_proposed_with_its_teams_and_role(self) -> None:
+        self.report([{"actor": {"kind": "rook", "id": "studio"}, "verb": "connected"}])
+        output = self.run_client([
+            "propose", "spawn", "studio", "--cwd", "/src/api", "--role", "load tester", "--team", "api:benchmarks",
+        ])
+        proposal = json.loads(output.splitlines()[0])["proposal"]
+        self.assertEqual(proposal["teams"], [{"team": "api", "duty": "benchmarks"}])
+        self.assertEqual(proposal["role"], "load tester")
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "spawn", "studio", "--cwd", "/src", "--team", "nope"]), 1)
+        self.assertIn("no such team", stderr.getvalue())
+
+    def test_team_changes_are_proposed_and_checked(self) -> None:
+        join = json.loads(self.run_client(["propose", "join", "api", "c", "--duty", "docs"]).splitlines()[0])["proposal"]
+        self.assertEqual((join["action"], join["team_title"], join["duty"]), ("join", "API", "docs"))
+        made = json.loads(self.run_client(["propose", "create-team", "web", "--name", "Web"]).splitlines()[0])["proposal"]
+        self.assertEqual((made["action"], made["team"]), ("create_team", "web"))
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "leave", "api", "c"]), 1)
+            self.assertEqual(rook_client.main(["propose", "create-team", "api", "--name", "API"]), 1)
+        self.assertEqual(self.server.roster.members_of(self.server.roster.teams()[0]).keys(), {"a", "b"})
+
+    def test_hosts_are_read_as_rookery_wrote_them(self) -> None:
+        (self.home / "config" / "rook" / "hosts.json").write_text(json.dumps({
+            "hosts": [{
+                "alias": "b300",
+                "address": "zobin@b300",
+                "rook": "alibaba-b300-0",
+                "online": True,
+                "workdirs": [{"name": "G-Watch", "path": "/home/zobin/G-Watch", "harness": "claude", "teams": [{"team": "api", "duty": "kernels"}]}],
+            }],
+            "rooks_without_host": [{"rook": "laptop", "online": False}],
+        }))
+        output = self.run_client(["host", "list"])
+        self.assertIn("b300 (zobin@b300): rook alibaba-b300-0, online", output)
+        self.assertIn("workdir G-Watch: /home/zobin/G-Watch, claude, team api:kernels", output)
+        self.assertIn("rook laptop (no ssh host here): offline", output)

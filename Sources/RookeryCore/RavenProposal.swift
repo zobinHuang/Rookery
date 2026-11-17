@@ -11,8 +11,15 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         case interrupt
         /// Answer the agent's approval prompt with `choice`.
         case approve
-        /// Start a new session on `rook`, in `cwd`, with `text` as its first prompt.
+        /// Start a new session on `rook`, in `cwd`, with `text` as its first prompt, the playbook and skills
+        /// installed first, its role, and the teams it joins.
         case spawn
+        /// Put the agent in `team`, with `duty` there.
+        case join
+        /// Take the agent out of `team`.
+        case leave
+        /// Make `team`, named `teamTitle`, toward `goal`.
+        case createTeam = "create_team"
     }
 
     /// The answers to an approval prompt Raven may propose.
@@ -33,8 +40,26 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
     public let rook: String?
     public let cwd: String?
     public let harness: String?
+    public let playbookId: String?
+    public let listSkillIds: [String]
+    public let role: String
+    /// For a new session, the teams it joins; for a team proposal, nothing.
+    public let listTeams: [LaunchTeam]
+    /// For a team proposal: the team, its name and goal, and the agent's duty in it.
+    public let team: String?
+    public let teamTitle: String?
+    public let duty: String
+    public let goal: String
 
     enum CodingKeys: String, CodingKey {
+        case playbookId = "playbook"
+        case listSkillIds = "skills"
+        case role
+        case listTeams = "teams"
+        case team
+        case teamTitle = "team_title"
+        case duty
+        case goal
         case id
         case action
         case agentId = "agent"
@@ -57,6 +82,38 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         rook = try container.decodeIfPresent(String.self, forKey: .rook)
         cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
         harness = try container.decodeIfPresent(String.self, forKey: .harness)
+        playbookId = try container.decodeIfPresent(String.self, forKey: .playbookId)
+        listSkillIds = try container.decodeIfPresent([String].self, forKey: .listSkillIds) ?? []
+        role = try container.decodeIfPresent(String.self, forKey: .role) ?? ""
+        let listJoins = try container.decodeIfPresent([[String: String]].self, forKey: .listTeams) ?? []
+        listTeams = listJoins.compactMap { mapJoin in
+            mapJoin["team"].map { LaunchTeam(teamId: $0, duty: mapJoin["duty"] ?? "") }
+        }
+        team = try container.decodeIfPresent(String.self, forKey: .team)
+        teamTitle = try container.decodeIfPresent(String.self, forKey: .teamTitle)
+        duty = try container.decodeIfPresent(String.self, forKey: .duty) ?? ""
+        goal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(action, forKey: .action)
+        try container.encodeIfPresent(agentId, forKey: .agentId)
+        try container.encode(agentTitle, forKey: .agentTitle)
+        try container.encode(text, forKey: .text)
+        try container.encodeIfPresent(choice, forKey: .choice)
+        try container.encodeIfPresent(rook, forKey: .rook)
+        try container.encodeIfPresent(cwd, forKey: .cwd)
+        try container.encodeIfPresent(harness, forKey: .harness)
+        try container.encodeIfPresent(playbookId, forKey: .playbookId)
+        try container.encode(listSkillIds, forKey: .listSkillIds)
+        try container.encode(role, forKey: .role)
+        try container.encode(listTeams.map { ["team": $0.teamId, "duty": $0.duty] }, forKey: .listTeams)
+        try container.encodeIfPresent(team, forKey: .team)
+        try container.encodeIfPresent(teamTitle, forKey: .teamTitle)
+        try container.encode(duty, forKey: .duty)
+        try container.encode(goal, forKey: .goal)
     }
 
     /// The marker the proposal's line starts with in the command's output.
@@ -101,6 +158,8 @@ public struct RavenDecision: Codable, Equatable, Sendable {
         /// Carried out: it went to its agent or rook as a delivery roost tracks.
         case sent(deliveryId: String)
         case rejected
+        /// Carried out on roost at once, as a change to a team.
+        case done
     }
 
     public let outcome: Outcome

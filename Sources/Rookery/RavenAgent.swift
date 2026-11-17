@@ -30,12 +30,16 @@ final class RavenAgent {
     private static let resourceFolder = "Raven"
     private static let fileMode: Int = 0o600
     private static let executableMode: Int = 0o755
-    /// It reads and changes roost's resources and reads the agents through rook-client, and only proposes
-    /// what it would do to an agent, which the user carries out; it reads skills' own pages to describe them.
+    /// It reads and changes roost's resources and reads the agents, the teams and the user's hosts through
+    /// rook-client, and only proposes what it would do to an agent or a team, which the user carries out; it
+    /// reads skills' own pages to describe them.
     private static let listAllowedTools = [
         "Bash(rook-client resource:*)",
         "Bash(rook-client agent:*)",
         "Bash(rook-client propose:*)",
+        "Bash(rook-client host:*)",
+        "Bash(rook-client team list:*)",
+        "Bash(rook-client team roster:*)",
         "Skill",
         "WebFetch",
     ]
@@ -184,18 +188,46 @@ final class RavenAgent {
             case .approve:
                 delivery = try await client.approve(proposal.agentId ?? "", choice: proposal.choice ?? RavenProposal.approveDeny)
             case .spawn:
-                delivery = try await client.spawn(
-                    on: proposal.rook ?? "",
+                delivery = try await client.launch(LaunchRequest(
+                    rookName: proposal.rook ?? "",
                     cwd: proposal.cwd ?? "",
-                    harness: proposal.harness ?? "claude",
-                    prompt: proposal.text
-                )
+                    harness: proposal.harness ?? Workdir.harnessClaude,
+                    prompt: proposal.text,
+                    playbookId: proposal.playbookId,
+                    listSkillIds: proposal.listSkillIds,
+                    role: proposal.role,
+                    listTeams: proposal.listTeams
+                ))
+            case .join, .leave, .createTeam:
+                try await changeTeam(proposal, with: client)
+                conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
+                saveIndex()
+                return
             }
             mapDeliveries[delivery.id] = delivery
             conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .sent(deliveryId: delivery.id), decidedAt: .now))
             saveIndex()
         } catch {
             mapProposalErrors[proposal.id] = FleetModel.describe(error)
+        }
+    }
+
+    /// Carry out a proposal that changes a team on roost.
+    private func changeTeam(_ proposal: RavenProposal, with client: RoostClient) async throws {
+        let teamId = proposal.team ?? ""
+        switch proposal.action {
+        case .join:
+            try await client.join(proposal.agentId ?? "", team: teamId, duty: proposal.duty)
+        case .leave:
+            try await client.leave(proposal.agentId ?? "", team: teamId)
+        case .createTeam:
+            var mapBody: [String: JSONValue] = ["id": .string(teamId), "name": .string(proposal.teamTitle ?? teamId)]
+            if !proposal.goal.isEmpty {
+                mapBody["attributes"] = .object(["goal": .string(proposal.goal)])
+            }
+            _ = try await fleetModel.create(AgentFleet.teamKind, body: mapBody)
+        case .message, .interrupt, .approve, .spawn:
+            return
         }
     }
 
@@ -234,6 +266,8 @@ final class RavenAgent {
             switch mapUnreported[proposalId]?.outcome {
             case .sent(let deliveryId):
                 return "- \(about): the user sent it; delivery \(deliveryId)"
+            case .done:
+                return "- \(about): the user did it; it is done on roost"
             default:
                 return "- \(about): the user decided not to send it"
             }
@@ -432,7 +466,42 @@ final class RavenAgent {
         try connection.write(to: connectFile, options: .atomic)
         try fileManager.setAttributes([.posixPermissions: Self.fileMode], ofItemAtPath: connectFile.path)
         try Data(#"{"name": "rookery"}"#.utf8).write(to: rookConfig.appending(path: "config.json"), options: .atomic)
+        try hostsSnapshot().write(to: rookConfig.appending(path: "hosts.json"), options: .atomic)
         return workspace
+    }
+
+    /// The user's hosts as `rook-client host list` reads them: each ssh host with its rook, whether that is
+    /// online, and its workdirs; then the rooks no host here runs. They live on this Mac, where Raven runs.
+    private func hostsSnapshot() throws -> Data {
+        let hosts = fleetModel.hosts
+        hosts.reloadHosts()
+        let listHosts: [JSONValue] = hosts.listHosts.map { host in
+            let rookName = hosts.rookName(of: host)
+            let listWorkdirs: [JSONValue] = hosts.book.settings(of: host.alias).listWorkdirs.map { workdir in
+                .object([
+                    "name": .string(workdir.name),
+                    "path": .string(workdir.path),
+                    "harness": .string(workdir.harness),
+                    "playbook": workdir.playbookId.map(JSONValue.string) ?? .null,
+                    "skills": .array(workdir.listSkillIds.map(JSONValue.string)),
+                    "role": .string(workdir.role),
+                    "teams": .array(workdir.listTeams.map { .object(["team": .string($0.teamId), "duty": .string($0.duty)]) }),
+                ])
+            }
+            return .object([
+                "alias": .string(host.alias),
+                "address": .string(host.address),
+                "rook": rookName.map(JSONValue.string) ?? .null,
+                "online": .bool(rookName.map(hosts.isOnline) ?? false),
+                "workdirs": .array(listWorkdirs),
+            ])
+        }
+        let listRooks: [JSONValue] = hosts.listUnmatchedRooks.map { rookName in
+            .object(["rook": .string(rookName), "online": .bool(hosts.isOnline(rookName))])
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(JSONValue.object(["hosts": .array(listHosts), "rooks_without_host": .array(listRooks)]))
     }
 
     private static func replace(_ destination: URL, with source: URL) throws {

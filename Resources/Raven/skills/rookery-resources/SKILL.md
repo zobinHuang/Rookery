@@ -29,10 +29,13 @@ A subagent's id is `<session id>~<agent id>`; `agent tail` reads its own transcr
     rook-client resource relations agent <id>                 # those touching one resource
     rook-client resource events --limit 100                   # the latest events
     rook-client resource transcript <agent id> --last 300     # a whole session's conversation, as text; prefer agent tail
+    rook-client team list                                     # every team, its goal and each member's card and duty
+    rook-client team roster <team id>                         # one team
+    rook-client host list                                     # the user's hosts, their rooks and workdirs
 
 A relation is `source --verb--> target` with how often and when it last happened. Verbs: `uses` (an agent used a skill), `mounts` (it loaded a playbook's skill), `follows` (it follows a playbook), `wrote` (it wrote a memory), `spawned` (a subagent), `messaged`, `created`, `updated`, `depends_on`.
 
-Agents' attributes include `state`, `harness`, `cwd`, `git_branch` and `parent` (for a subagent). Memories have `text`, `path` and `project`. Skills have `description`, `repo_url`, `skill_path`. Playbooks have `description`, `prompt` and `skills` (pins: a skill id, or `{"skill_id": ..., "pin": ...}`).
+Agents' attributes include `state`, `harness`, `cwd`, `git_branch`, `parent` (for a subagent), `role` (who it is to its teammates) and `focus` (what it works on now). Teams have `goal`, `members` (by agent id, each with its `duty`) and `limits`. Memories have `text`, `path` and `project`. Skills have `description`, `repo_url`, `skill_path`. Playbooks have `description`, `prompt` and `skills` (pins: a skill id, or `{"skill_id": ..., "pin": ...}`).
 
 ## Change
 

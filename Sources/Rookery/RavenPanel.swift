@@ -236,6 +236,13 @@ struct RavenPanel: View {
                     .foregroundStyle(StageColors.secondaryText)
                     .textSelection(.enabled)
             }
+            if !Self.facts(of: proposal).isEmpty {
+                FlowRow(spacing: 5) {
+                    ForEach(Self.facts(of: proposal), id: \.self) { fact in
+                        InfoTag(fact)
+                    }
+                }
+            }
             if !proposal.text.isEmpty {
                 Text(proposal.text)
                     .font(.system(size: 12))
@@ -298,7 +305,11 @@ struct RavenPanel: View {
                             .lineLimit(1)
                     }
                 }
-            default:
+            case .done:
+                RookeryIconView(.check)
+                    .foregroundStyle(Color.green)
+                Text(Self.done(of: proposal))
+            case .rejected, nil:
                 RookeryIconView(.close)
                     .foregroundStyle(StageColors.tertiaryText)
                 Text("Left alone: \(Self.lead(of: proposal).lowercased()) \(proposal.agentTitle)")
@@ -310,12 +321,36 @@ struct RavenPanel: View {
         .padding(.horizontal, 4)
     }
 
+    /// What else the proposal carries, one short fact each: a new session's playbook, skills, role and
+    /// teams; a member's duty; a team's goal.
+    private static func facts(of proposal: RavenProposal) -> [String] {
+        var listFacts: [String] = []
+        if let playbookId = proposal.playbookId {
+            listFacts.append("playbook \(playbookId)")
+        }
+        listFacts += proposal.listSkillIds.map { "skill \($0)" }
+        if !proposal.role.isEmpty {
+            listFacts.append("role: \(proposal.role)")
+        }
+        listFacts += proposal.listTeams.map { $0.duty.isEmpty ? "team \($0.teamId)" : "team \($0.teamId): \($0.duty)" }
+        if !proposal.duty.isEmpty {
+            listFacts.append("duty: \(proposal.duty)")
+        }
+        if !proposal.goal.isEmpty {
+            listFacts.append("goal: \(proposal.goal)")
+        }
+        return listFacts
+    }
+
     private static func icon(of proposal: RavenProposal) -> RookeryIcon {
         switch proposal.action {
         case .message: .send
         case .interrupt: .stop
         case .approve: proposal.choice == RavenProposal.approveOnce ? .check : .close
         case .spawn: .terminal
+        case .join: .plus
+        case .leave: .minus
+        case .createTeam: .board
         }
     }
 
@@ -329,6 +364,9 @@ struct RavenPanel: View {
                 ? "Raven would allow, once, the call waiting in"
                 : "Raven would decline the call waiting in"
         case .spawn: "Raven would start"
+        case .join: "Raven would put in team \(proposal.teamTitle ?? proposal.team ?? "")"
+        case .leave: "Raven would take out of team \(proposal.teamTitle ?? proposal.team ?? "")"
+        case .createTeam: "Raven would make the team"
         }
     }
 
@@ -339,6 +377,9 @@ struct RavenPanel: View {
         case .interrupt: "Interrupt"
         case .approve: proposal.choice == RavenProposal.approveOnce ? "Allow Once" : "Decline"
         case .spawn: "Start"
+        case .join: "Add"
+        case .leave: "Take Out"
+        case .createTeam: "Make Team"
         }
     }
 
@@ -352,6 +393,9 @@ struct RavenPanel: View {
                 ? "Allowed \(proposal.agentTitle)'s call once"
                 : "Declined \(proposal.agentTitle)'s call"
         case .spawn: "Started \(proposal.agentTitle)"
+        case .join: "Put \(proposal.agentTitle) in \(proposal.teamTitle ?? proposal.team ?? "")"
+        case .leave: "Took \(proposal.agentTitle) out of \(proposal.teamTitle ?? proposal.team ?? "")"
+        case .createTeam: "Made the team \(proposal.agentTitle)"
         }
     }
 

@@ -83,6 +83,19 @@ class SkillSourceTest(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     SkillSource.parse(spec)
 
+    def test_a_path_to_skill_md_names_its_directory(self) -> None:
+        self.assertEqual(SkillSource.parse("owner/repo@skills/pdf/SKILL.md").skill_path, "skills/pdf")
+        self.assertEqual(SkillSource.validate_skill_path("skills/pdf/skill.md"), "skills/pdf")
+
+    def test_a_path_to_another_markdown_file_is_refused(self) -> None:
+        for spec in (
+            "owner/repo@git-conventions.md",
+            "https://github.com/owner/repo/blob/main/docs/swift-coding-conventions.md",
+        ):
+            with self.subTest(spec=spec):
+                with self.assertRaisesRegex(ValidationError, "SKILL.md"):
+                    SkillSource.parse(spec)
+
     def test_identifier_ignores_the_ref_so_versions_share_one_record(self) -> None:
         first = SkillSource.parse("owner/repo@one#v1").identifier()
         second = SkillSource.parse("owner/repo@one#v2").identifier()

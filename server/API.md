@@ -200,7 +200,10 @@ not read `SKILL.md`, because it does not fetch skill files at all. Without them,
 Only repositories roost is willing to contact are accepted: `https`, `http`,
 `ssh` and scp-style URLs, plus the `owner/repo` shorthand. Local paths and the
 `ext::` and `file::` transports are refused, and a `..` segment in a skill path
-is refused — the client turns that path into a checkout directory.
+is refused — the client turns that path into a checkout directory. An agent loads a
+skill only from a directory holding a `SKILL.md`, so a path ending in `SKILL.md`
+names its directory, and a path to any other Markdown file is refused rather than
+registered as a skill no agent would load.
 
 ## Playbooks
 

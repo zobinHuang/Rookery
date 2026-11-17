@@ -27,30 +27,44 @@ class SkillSource:
     SOURCE_BROWSE_MARKERS = ("tree", "blob")
     SOURCE_GITLAB_SEPARATOR = "-"
     SOURCE_SKILL_FILE = "skill.md"
+    SOURCE_MARKDOWN_SUFFIX = ".md"
 
     @classmethod
     def validate_skill_path(cls, skill_path: str) -> str:
-        """Check that a path inside a repository is safe for a client to check out.
+        """Check that a path inside a repository is safe for a client to check out, and names a directory
+        an agent loads as a skill.
 
         The client turns this into a sparse-checkout pattern and a local
         directory, so a `..` segment here would let it write outside the tree it
-        meant to.
+        meant to. An agent loads a skill only from a directory holding a
+        SKILL.md, so a path to that file names its directory, and a path to any
+        other Markdown file, which would be installed but never loaded, is
+        refused.
 
         Args:
             skill_path: the path inside the repository
 
         Returns:
-            the path unchanged
+            the path, with a trailing SKILL.md taken off
 
         Raises:
             ValidationError: if the path could escape the repository or the
-                client's own skill directory
+                client's own skill directory, or names a Markdown file other
+                than SKILL.md
         """
         if not cls.SOURCE_PATH_PATTERN.match(skill_path):
             raise ValidationError(f"unusable skill path: {skill_path!r}")
-        for segment in skill_path.split("/"):
+        list_segments = skill_path.split("/")
+        for segment in list_segments:
             if segment in ("", ".", ".."):
                 raise ValidationError(f"unusable skill path: {skill_path!r}")
+        if list_segments[-1].lower() == cls.SOURCE_SKILL_FILE:
+            return "/".join(list_segments[:-1])
+        if list_segments[-1].lower().endswith(cls.SOURCE_MARKDOWN_SUFFIX):
+            raise ValidationError(
+                f"{skill_path!r} is a single Markdown file; an agent loads a skill only from a "
+                "directory holding a SKILL.md with a name and a description"
+            )
         return skill_path
 
     @classmethod
@@ -91,7 +105,7 @@ class SkillSource:
             if head and ":" not in tail and "//" not in tail:
                 text, skill_path = head, tail.strip("/")
                 if skill_path:
-                    cls.validate_skill_path(skill_path)
+                    skill_path = cls.validate_skill_path(skill_path)
 
         return cls(
             repo_url=cls._normalize_repo_url(text.strip()),
@@ -122,7 +136,7 @@ class SkillSource:
                 raise ValidationError(f"unusable ref: {ref!r}")
             skill_path = "/".join(list_path)
             if skill_path:
-                cls.validate_skill_path(skill_path)
+                skill_path = cls.validate_skill_path(skill_path)
             return cls(
                 repo_url=f"{parts.scheme}://{parts.netloc}/{'/'.join(list_repo)}",
                 skill_path=skill_path,

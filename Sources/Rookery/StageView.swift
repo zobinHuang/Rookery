@@ -206,14 +206,6 @@ struct StageView: View {
         }
     }
 
-    private static func backTitle(of pageBefore: StagePage?) -> String? {
-        switch pageBefore {
-        case .rookmaster: "Rookmaster"
-        case .settings: "Settings"
-        default: nil
-        }
-    }
-
     // MARK: - Sidebar
 
     private var showsDropZones: Bool {
@@ -329,6 +321,15 @@ struct StageView: View {
                         .frame(height: 1)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            if !model.isSidebarCollapsed && !agentUsage.listShownAccounts.isEmpty {
+                AgentUsagePanel(monitor: agentUsage)
+                    .overlay(alignment: .top) {
+                        Rectangle()
+                            .fill(StageColors.separator)
+                            .frame(height: 1)
+                    }
+                    .transition(.opacity)
             }
             if !model.isSidebarCollapsed && !model.listClockCities.isEmpty {
                 WorldClockView(listCities: model.listClockCities)
@@ -959,7 +960,6 @@ struct StageView: View {
                 RookmasterView(
                     fleetModel: fleetModel,
                     logClock: preferences.logClock,
-                    agentUsage: agentUsage,
                     onOpenAgent: { agentId in
                         actions.showPage(.agent(agentId))
                     },
@@ -970,11 +970,9 @@ struct StageView: View {
                 AgentDetailView(
                     fleetModel: fleetModel,
                     agentId: agentId,
-                    backTitle: Self.backTitle(of: model.pageBefore),
+                    backTitle: "Rookmaster",
                     onBack: {
-                        if let pageBefore = model.pageBefore {
-                            actions.showPage(pageBefore)
-                        }
+                        actions.open(.rookmaster)
                     },
                     onClose: actions.closePage
                 )

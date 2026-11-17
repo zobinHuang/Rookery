@@ -24,8 +24,6 @@ struct RookmasterView: View {
 
     let fleetModel: FleetModel
     let logClock: LogClock
-    /// The code agents' plan limits, shown beside the log.
-    let agentUsage: AgentUsageMonitor
     let onOpenAgent: (String) -> Void
     let onClose: () -> Void
 
@@ -68,7 +66,7 @@ struct RookmasterView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Self.tabAnimation, value: memory.rookmasterTab)
-            RookmasterPanel(fleetModel: fleetModel, clock: logClock, agentUsage: agentUsage)
+            RookmasterPanel(fleetModel: fleetModel, clock: logClock)
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .overlay {
@@ -227,20 +225,18 @@ enum RookmasterStyle {
 }
 
 /// The panel at the bottom of the Rookmaster console, after an editor's: the log of the latest events,
-/// newest at the bottom, live, with a filter; and Raven beside it in a tab of its own; with
-/// the code agents' plan limits to their right. Folds down to its title bar.
+/// newest at the bottom, live, with a filter; and Raven beside it in a tab of its own. Folds down to its
+/// title bar.
 struct RookmasterPanel: View {
     /// The panel's height before the user sets one, and the bounds the user may drag it between.
     static let defaultHeight: CGFloat = 340
     private static let minimumHeight: CGFloat = 140
     private static let maximumHeight: CGFloat = 900
     private static let handleHeight: CGFloat = 7
-    private static let usageWidth: CGFloat = 300
     private static let foldAnimation = Animation.spring(response: 0.3, dampingFraction: 0.9)
 
     let fleetModel: FleetModel
     let clock: LogClock
-    let agentUsage: AgentUsageMonitor
 
     @Namespace private var tabNamespace
     /// The height when the drag under way began.
@@ -284,17 +280,6 @@ struct RookmasterPanel: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    if !agentUsage.listShownAccounts.isEmpty {
-                        Rectangle()
-                            .fill(StageColors.separator)
-                            .frame(width: 1)
-                        ScrollView {
-                            AgentUsagePanel(monitor: agentUsage)
-                        }
-                        .scrollIndicators(.never)
-                        .frame(width: Self.usageWidth)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
                 }
                 .frame(height: memory.panelHeight)
                 .transition(.move(edge: .bottom).combined(with: .opacity))

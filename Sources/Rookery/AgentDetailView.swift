@@ -79,26 +79,21 @@ struct AgentDetailView: View {
 
     private func header(_ agent: FleetAgent) -> some View {
         HStack(alignment: .center, spacing: 16) {
-            if let backTitle {
-                Button(action: onBack) {
-                    HStack(spacing: 3) {
-                        RookeryIconView(.chevronLeft)
-                        Text(backTitle)
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.accentColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.accentColor.opacity(0.12), in: Capsule())
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut("[", modifiers: .command)
-                .help("Back to \(backTitle) (⌘[)")
-                .transition(.opacity.combined(with: .move(edge: .leading)))
-            }
             CrowView(state: agent.state, size: .large)
             VStack(alignment: .leading, spacing: 6) {
+                if let backTitle {
+                    Button(action: onBack) {
+                        HStack(spacing: 4) {
+                            RookeryIconView(.chevronLeft)
+                            Text("Back to \(backTitle)")
+                        }
+                    }
+                    .buttonStyle(StageButtonStyle())
+                    .controlSize(.small)
+                    .keyboardShortcut("[", modifiers: .command)
+                    .help("Back to \(backTitle) (⌘[)")
+                    .padding(.bottom, 2)
+                }
                 HStack(spacing: 10) {
                     Text(reader.title ?? agent.displayName)
                         .font(.system(size: 20, weight: .bold))

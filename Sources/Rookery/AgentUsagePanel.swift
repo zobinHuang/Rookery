@@ -39,7 +39,7 @@ struct AgentUsagePanel: View {
 
     private func header(at date: Date) -> some View {
         HStack(spacing: 6) {
-            Text("Propellant")
+            Text("Token HP")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(StageColors.secondaryText)
             Rectangle()

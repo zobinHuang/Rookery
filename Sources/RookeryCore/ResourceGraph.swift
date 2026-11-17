@@ -122,6 +122,26 @@ public struct ResourceGraph: Equatable, Sendable {
         return resource.displayName
     }
 
+    /// How the log names a resource: its kind and, in brackets, its own name, as `Agent [studio/api]` or
+    /// `Skill [humanize]`, rather than a session's title; `You` for the user.
+    ///
+    /// - Parameter ref: the resource
+    /// - Returns: the label
+    public func logLabel(of ref: FleetRef) -> String {
+        if ref.kind == Self.personKind {
+            return "You"
+        }
+        let kindTitle = listKinds.first { $0.name == ref.kind }?.title ?? ref.kind.capitalized
+        guard let resource = resource(ref) else {
+            if ref.kind == AgentFleet.agentKind, let separator = ref.id.firstIndex(of: "~") {
+                let parent = FleetRef(kind: ref.kind, id: String(ref.id[..<separator]))
+                return "\(kindTitle) [\(resource(parent)?.name ?? parent.id) › subagent]"
+            }
+            return "\(kindTitle) [\(ref.id)]"
+        }
+        return "\(kindTitle) [\(resource.name)]"
+    }
+
     /// A kind's resources, those last used first.
     public func listResources(of kind: String) -> [FleetResource] {
         (mapResources[kind] ?? [:]).values.sorted { ($0.lastUsedAt, $0.id) > ($1.lastUsedAt, $1.id) }

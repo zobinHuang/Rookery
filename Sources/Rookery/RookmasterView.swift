@@ -435,13 +435,13 @@ struct RookmasterPanel: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(time(of: event))
                 .foregroundStyle(StageColors.tertiaryText)
-            Text(graph.name(of: event.actor))
+            Text(graph.logLabel(of: event.actor))
                 .foregroundStyle(RookmasterStyle.tint(of: event.actor.kind))
                 .lineLimit(1)
             Text(event.verb)
                 .foregroundStyle(RookmasterStyle.tint(ofVerb: event.verb))
             if let object = event.object {
-                Text(graph.name(of: object))
+                Text(graph.logLabel(of: object))
                     .foregroundStyle(RookmasterStyle.tint(of: object.kind))
                     .lineLimit(1)
             }
@@ -476,6 +476,6 @@ struct RookmasterPanel: View {
     }
 
     private func line(of event: FleetEvent) -> String {
-        [graph.name(of: event.actor), event.verb, event.object.map(graph.name(of:)) ?? "", detail(of: event)].joined(separator: " ")
+        [graph.logLabel(of: event.actor), event.verb, event.object.map(graph.logLabel(of:)) ?? "", detail(of: event)].joined(separator: " ")
     }
 }

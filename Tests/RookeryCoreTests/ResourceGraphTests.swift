@@ -21,6 +21,23 @@ struct ResourceGraphTests {
         return graph
     }
 
+    @Test func theLogNamesEachResourceByItsKindAndItsOwnName() {
+        var graph = ResourceGraph()
+        graph.load(
+            kinds: [FleetKind(name: "agent", title: "Agent", pluralTitle: "Agents")],
+            resources: [
+                FleetResource(kind: "agent", id: "s-1", name: "studio/api", mapAttributes: ["title": .string("hi raven, what can you do?")], lastUsedAt: "1"),
+            ],
+            relations: [],
+            recentEvents: [],
+            lastSeq: 5
+        )
+        #expect(graph.logLabel(of: Self.agent) == "Agent [studio/api]")
+        #expect(graph.logLabel(of: FleetRef(kind: "agent", id: "s-1~sub")) == "Agent [studio/api › subagent]")
+        #expect(graph.logLabel(of: FleetRef(kind: "skill", id: "humanize")) == "Skill [humanize]")
+        #expect(graph.logLabel(of: FleetRef(kind: "person", id: "me")) == "You")
+    }
+
     @Test func drawsAndCountsRelationsAndMarksUse() {
         var graph = graph()
 

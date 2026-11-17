@@ -13,6 +13,8 @@ public struct MimeMessage: Equatable, Sendable {
     /// The HTML part as sent, for showing the message formatted; nil when it has none.
     public let html: String?
     public let listAttachmentNames: [String]
+    /// The images the HTML shows by their content id, with their bytes where the file holds them.
+    public let listInlineImages: [MailInlineImage]
 
     /// Read a message from its raw bytes.
     public init(data: Data) {
@@ -21,12 +23,41 @@ public struct MimeMessage: Equatable, Sendable {
         var plain: String?
         var html: String?
         var listAttachments: [String] = []
-        part.collect(plain: &plain, html: &html, attachments: &listAttachments)
+        var listImages: [MailInlineImage] = []
+        part.collect(plain: &plain, html: &html, attachments: &listAttachments, images: &listImages)
         let body = plain ?? html.map(MimePart.text(ofHTML:)) ?? ""
         text = String(body.prefix(Self.textLimit))
         self.html = html.map { String($0.prefix(Self.htmlLimit)) }
         listAttachmentNames = listAttachments
+        listInlineImages = listImages
     }
+
+    /// The HTML with each `cid:` reference to an inline image whose bytes are known replaced by the image
+    /// itself, so it shows without fetching anything.
+    ///
+    /// - Parameters:
+    ///   - html: the message's HTML
+    ///   - listImages: its inline images
+    /// - Returns: the HTML with the images in it
+    public static func embedding(_ listImages: [MailInlineImage], in html: String) -> String {
+        var embedded = html
+        var budget = inlineImageBudget
+        for image in listImages {
+            guard let data = image.data, !image.contentId.isEmpty, data.count <= budget else {
+                continue
+            }
+            budget -= data.count
+            embedded = embedded.replacingOccurrences(
+                of: "cid:" + image.contentId,
+                with: "data:\(image.mediaType);base64,\(data.base64EncodedString())",
+                options: .caseInsensitive
+            )
+        }
+        return embedded
+    }
+
+    /// The most bytes of inline images one message embeds.
+    public static let inlineImageBudget = 25_000_000
 
     /// Read a message from an `.emlx` file's bytes: a byte count on the first line, the message, then Mail's
     /// own property list, which is left out.
@@ -49,6 +80,22 @@ public struct MimeMessage: Equatable, Sendable {
     }
 }
 
+/// An image a message's HTML shows inline, by the content id it refers to it with: its type, its file
+/// name, and its bytes, or nil where Mail keeps them outside the message file.
+public struct MailInlineImage: Equatable, Sendable {
+    public let contentId: String
+    public let mediaType: String
+    public let fileName: String?
+    public let data: Data?
+
+    public init(contentId: String, mediaType: String, fileName: String?, data: Data?) {
+        self.contentId = contentId
+        self.mediaType = mediaType
+        self.fileName = fileName
+        self.data = data
+    }
+}
+
 /// One part of a message: its headers and its raw body.
 struct MimePart {
     private static let headerEnd = Data("\r\n\r\n".utf8)
@@ -66,7 +113,13 @@ struct MimePart {
     }
 
     /// Gather the first plain text, the first HTML, and the attachments' names, walking nested multiparts.
-    func collect(plain: inout String?, html: inout String?, attachments listAttachments: inout [String], depth: Int = 0) {
+    func collect(
+        plain: inout String?,
+        html: inout String?,
+        attachments listAttachments: inout [String],
+        images listImages: inout [MailInlineImage],
+        depth: Int = 0
+    ) {
         guard depth < Self.maxDepth else {
             return
         }
@@ -77,9 +130,25 @@ struct MimePart {
         let fileName = Self.parameters(of: mapHeaders["content-disposition"] ?? "")["filename"] ?? mapParameters["name"]
         if mediaType.hasPrefix("multipart/"), let boundary = mapParameters["boundary"] {
             for partData in Self.split(body, boundary: boundary) {
-                MimePart(data: partData).collect(plain: &plain, html: &html, attachments: &listAttachments, depth: depth + 1)
+                MimePart(data: partData).collect(plain: &plain, html: &html, attachments: &listAttachments, images: &listImages, depth: depth + 1)
             }
             return
+        }
+        if
+            mediaType.hasPrefix("image/"),
+            let contentId = mapHeaders["content-id"]?.trimmingCharacters(in: CharacterSet(charactersIn: "<> ")),
+            !contentId.isEmpty
+        {
+            let data = decodedData()
+            listImages.append(MailInlineImage(
+                contentId: contentId,
+                mediaType: mediaType,
+                fileName: fileName.map(Self.decodeWords),
+                data: data.isEmpty ? nil : data
+            ))
+            if !disposition.hasPrefix("attachment") {
+                return
+            }
         }
         if disposition.hasPrefix("attachment") || (fileName != nil && !mediaType.hasPrefix("text/")) {
             listAttachments.append(fileName.map(Self.decodeWords) ?? mediaType)
@@ -90,21 +159,24 @@ struct MimePart {
         } else if mediaType == "text/html", html == nil {
             html = decodedText(charset: mapParameters["charset"])
         } else if mediaType == "message/rfc822" {
-            MimePart(data: body).collect(plain: &plain, html: &html, attachments: &listAttachments, depth: depth + 1)
+            MimePart(data: body).collect(plain: &plain, html: &html, attachments: &listAttachments, images: &listImages, depth: depth + 1)
         }
     }
 
     private func decodedText(charset: String?) -> String {
-        let raw: Data
+        Self.string(decodedData(), charset: charset)
+    }
+
+    /// The body with its transfer encoding undone.
+    private func decodedData() -> Data {
         switch (mapHeaders["content-transfer-encoding"] ?? "").lowercased().trimmingCharacters(in: .whitespaces) {
         case "base64":
-            raw = Data(base64Encoded: String(decoding: body, as: UTF8.self).filter { !$0.isWhitespace }) ?? body
+            Data(base64Encoded: String(decoding: body, as: UTF8.self).filter { !$0.isWhitespace }) ?? body
         case "quoted-printable":
-            raw = Self.decodeQuotedPrintable(body)
+            Self.decodeQuotedPrintable(body)
         default:
-            raw = body
+            body
         }
-        return Self.string(raw, charset: charset)
     }
 
     // MARK: - Headers

@@ -34,5 +34,10 @@
 	<string>Rookery reads your calendars, every account's, so Raven can tell you what is on, and changes an event only when you approve it.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

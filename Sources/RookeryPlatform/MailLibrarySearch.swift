@@ -185,8 +185,36 @@ extension MailLibrary {
             listAttachments: mime?.listAttachmentNames ?? [],
             isPartial: file == nil || file?.lastPathComponent.hasSuffix(".partial.emlx") == true,
             messageIdHeader: (mime?.header("message-id") ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> ")),
-            html: mime?.html ?? ""
+            html: mime.map { message in
+                MimeMessage.embedding(inlineImages(of: message, messageId: messageId, file: file), in: message.html ?? "")
+            } ?? ""
         )
+    }
+
+    /// A message's inline images, those whose bytes the message file leaves out read from where Mail keeps
+    /// a message's parts: `Attachments/<id>/<part>/<name>`, beside its `Messages`.
+    private func inlineImages(of message: MimeMessage, messageId: Int, file: URL?) -> [MailInlineImage] {
+        guard
+            let file,
+            message.listInlineImages.contains(where: { $0.data == nil })
+        else {
+            return message.listInlineImages
+        }
+        let attachments = file.deletingLastPathComponent().deletingLastPathComponent()
+            .appending(path: "Attachments", directoryHint: .isDirectory)
+            .appending(path: String(messageId), directoryHint: .isDirectory)
+        let listFiles = (FileManager.default.enumerator(at: attachments, includingPropertiesForKeys: nil)?.allObjects as? [URL]) ?? []
+        return message.listInlineImages.map { image in
+            guard
+                image.data == nil,
+                let fileName = image.fileName,
+                let found = listFiles.first(where: { $0.lastPathComponent == fileName }),
+                let data = try? Data(contentsOf: found)
+            else {
+                return image
+            }
+            return MailInlineImage(contentId: image.contentId, mediaType: image.mediaType, fileName: fileName, data: data)
+        }
     }
 
     /// The messages of one conversation, oldest first.

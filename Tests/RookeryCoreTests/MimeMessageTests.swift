@@ -3,6 +3,39 @@ import RookeryCore
 import Testing
 
 struct MimeMessageTests {
+    @Test func inlineImagesAreEmbeddedWhereTheHTMLRefersToThem() {
+        let raw = [
+            "Content-Type: multipart/related; boundary=\"b\"",
+            "",
+            "--b",
+            "Content-Type: text/html; charset=utf-8",
+            "",
+            "<p>Hi</p><img src=\"cid:logo@x\"><img src=\"cid:missing@x\">",
+            "--b",
+            "Content-Type: image/png; name=\"logo.png\"",
+            "Content-Transfer-Encoding: base64",
+            "Content-ID: <logo@x>",
+            "Content-Disposition: inline; filename=\"logo.png\"",
+            "",
+            "iVBORw0K",
+            "--b",
+            "Content-Type: image/png; name=\"kept.png\"",
+            "Content-ID: <missing@x>",
+            "X-Apple-Content-Length: 1234",
+            "",
+            "",
+            "--b--",
+        ].joined(separator: "\r\n")
+        let message = MimeMessage(data: Data(raw.utf8))
+        #expect(message.listInlineImages.count == 2)
+        #expect(message.listInlineImages[0].fileName == "logo.png")
+        #expect(message.listInlineImages[1].data == nil)
+        #expect(message.listAttachmentNames.isEmpty)
+        let html = MimeMessage.embedding(message.listInlineImages, in: message.html ?? "")
+        #expect(html.contains("src=\"data:image/png;base64,iVBORw0K\""))
+        #expect(html.contains("cid:missing@x"))
+    }
+
     @Test func readsAPlainMessageWithEncodedHeaders() {
         let raw = """
             From: =?UTF-8?B?5byg5LiJ?= <zhang@example.com>

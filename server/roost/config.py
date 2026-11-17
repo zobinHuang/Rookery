@@ -1,4 +1,3 @@
-import base64
 import json
 import secrets
 from dataclasses import dataclass
@@ -18,18 +17,11 @@ class ServerConfig:
     tls_cert: Path | None
     tls_key: Path | None
     link_port: int | None = None
-    """The token of the server's owner, which alone reaches their accounts, mail and calendars; the fleet's
-    `token` never does. Empty on a configuration written before owners had one."""
-    owner_token: str = ""
-    """The key the owner's account credentials are sealed with, base64; kept here, out of the data root, so
-    a copy of the database alone opens nothing."""
-    secrets_key: str = ""
 
     CONFIG_DEFAULT_HOST = "0.0.0.0"
     CONFIG_DEFAULT_PORT = 8787
     CONFIG_DEFAULT_MAX_BODY_BYTES = 64 * 1024 * 1024
     CONFIG_TOKEN_BYTES = 32
-    CONFIG_SECRETS_KEY_BYTES = 32
     CONFIG_FILE_MODE = 0o600
 
     @staticmethod
@@ -40,29 +32,6 @@ class ServerConfig:
             a URL-safe random token
         """
         return secrets.token_urlsafe(ServerConfig.CONFIG_TOKEN_BYTES)
-
-    @staticmethod
-    def generate_secrets_key() -> str:
-        """Mint a fresh key to seal the owner's credentials with.
-
-        Returns:
-            the key, base64
-        """
-        return base64.b64encode(secrets.token_bytes(ServerConfig.CONFIG_SECRETS_KEY_BYTES)).decode("ascii")
-
-    def secrets_key_bytes(self) -> bytes:
-        """The key the owner's credentials are sealed with.
-
-        Raises:
-            ConfigError: if the configuration carries no usable key
-        """
-        try:
-            key = base64.b64decode(self.secrets_key, validate=True)
-        except ValueError as err:
-            raise ConfigError("the server configuration carries a malformed secrets key") from err
-        if len(key) != self.CONFIG_SECRETS_KEY_BYTES:
-            raise ConfigError("the server configuration carries no secrets key; run roost init again")
-        return key
 
     @classmethod
     def from_file(cls, path: Path) -> "ServerConfig":
@@ -105,8 +74,6 @@ class ServerConfig:
             tls_cert=Path(tls_cert).expanduser() if tls_cert else None,
             tls_key=Path(tls_key).expanduser() if tls_key else None,
             link_port=int(map_raw["link_port"]) if map_raw.get("link_port") is not None else None,
-            owner_token=str(map_raw.get("owner_token") or ""),
-            secrets_key=str(map_raw.get("secrets_key") or ""),
         )
 
     def write_to(self, path: Path) -> None:
@@ -124,8 +91,6 @@ class ServerConfig:
             "tls_cert": str(self.tls_cert) if self.tls_cert else None,
             "tls_key": str(self.tls_key) if self.tls_key else None,
             "link_port": self.link_port,
-            "owner_token": self.owner_token,
-            "secrets_key": self.secrets_key,
         }
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:

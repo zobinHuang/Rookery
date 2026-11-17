@@ -16,9 +16,8 @@ bash ~/Rookery/server/setup.sh --port 8787 --tls-cert /etc/ssl/roost.crt --tls-k
 
 # open the port and the next one (the live link); without a certificate it serves plain HTTP
 
-# show the token rooks need, and the owner's, which Rookery alone holds
+# show the token clients need
 roost token
-roost token --owner
 
 # list what has been stored
 roost ls

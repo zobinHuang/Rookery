@@ -31,12 +31,6 @@ class AuthError(RoostError):
     ERROR_HTTP_STATUS = 401
 
 
-class ForbiddenError(RoostError):
-    """The token is accepted, but does not reach this: the fleet's token asking for the owner's data."""
-
-    ERROR_HTTP_STATUS = 403
-
-
 class ValidationError(RoostError):
     """A request field is missing or would not be safe to store."""
 

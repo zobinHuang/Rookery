@@ -241,53 +241,6 @@ public final class RoostClient: Sendable {
         return try decode(FleetDelivery.self, from: try await request("POST", path: "/v1/messages/\(deliveryId)/\(action)"))
     }
 
-    // MARK: - The owner's accounts, which only the owner's token reaches
-
-    /// The apps the owner registered with Google and Microsoft.
-    public func providerApps() async throws -> [MailProviderApp] {
-        try decode(ProviderPage.self, from: try await request("GET", path: "/v1/providers")).providers
-    }
-
-    /// Keep the app registered with a provider; an empty secret keeps none.
-    public func putProviderApp(_ provider: String, clientId: String, clientSecret: String) async throws {
-        let body = try JSONEncoder().encode(["client_id": clientId, "client_secret": clientSecret])
-        _ = try await request("PUT", path: "/v1/providers/\(provider)", body: body)
-    }
-
-    /// The sign-in page for a provider, for the browser to open.
-    public func authorizeURL(_ provider: String, redirectURI: String, challenge: LoginChallenge) async throws -> URL {
-        let data = try await request("GET", path: "/v1/providers/\(provider)/authorize", query: [
-            URLQueryItem(name: "redirect_uri", value: redirectURI),
-            URLQueryItem(name: "code_challenge", value: challenge.challenge),
-            URLQueryItem(name: "state", value: challenge.state),
-        ])
-        guard let url = URL(string: try decode(AuthorizeAnswer.self, from: data).url) else {
-            throw RoostError.unreachable("roost gave no sign-in page")
-        }
-        return url
-    }
-
-    /// Hand roost the code a sign-in returned, for roost to exchange and keep the account.
-    public func connectMailAccount(_ provider: String, code: String, challenge: LoginChallenge, redirectURI: String) async throws -> MailAccount {
-        let body = try JSONEncoder().encode([
-            "provider": provider,
-            "code": code,
-            "code_verifier": challenge.verifier,
-            "redirect_uri": redirectURI,
-        ])
-        return try decode(MailAccount.self, from: try await request("POST", path: "/v1/mail-accounts", body: body))
-    }
-
-    /// The owner's mail and calendar accounts.
-    public func mailAccounts() async throws -> [MailAccount] {
-        try decode(MailAccountPage.self, from: try await request("GET", path: "/v1/mail-accounts")).accounts
-    }
-
-    /// Revoke roost's access to an account and forget it.
-    public func disconnectMailAccount(_ accountId: String) async throws {
-        _ = try await request("DELETE", path: "/v1/mail-accounts/\(accountId)")
-    }
-
     /// The latest deliveries of every agent, newest first.
     public func recentDeliveries(limit: Int) async throws -> [FleetDelivery] {
         let data = try await request("GET", path: "/v1/messages", query: [URLQueryItem(name: "limit", value: String(limit))])
@@ -444,18 +397,6 @@ public final class RoostClient: Sendable {
         } catch let error as DecodingError {
             throw RoostError.malformed(String(describing: error))
         }
-    }
-
-    private struct ProviderPage: Decodable {
-        let providers: [MailProviderApp]
-    }
-
-    private struct MailAccountPage: Decodable {
-        let accounts: [MailAccount]
-    }
-
-    private struct AuthorizeAnswer: Decodable {
-        let url: String
     }
 
     private struct ResourcePage: Decodable {

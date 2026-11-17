@@ -39,10 +39,6 @@ struct SettingsView: View {
     @State private var roostTestResult: String?
     @State private var isTestingRoost = false
     @State private var roostError: String?
-    @State private var ownerTokenDraft = ""
-    @State private var mapClientIdDrafts: [String: String] = [:]
-    @State private var mapClientSecretDrafts: [String: String] = [:]
-    @State private var accountToDisconnect: MailAccount?
 
     /// An AppKit view hosting the settings, for the settings window.
     static func makeHostingView(
@@ -66,7 +62,6 @@ struct SettingsView: View {
                 header
                 general
                 roost
-                accounts
                 codeAgents
                 worldClock
                 screenSaver
@@ -217,133 +212,6 @@ struct SettingsView: View {
             roostAddressDraft = preferences.roostAddress
             roostTokenDraft = fleetModel.token
         }
-    }
-
-    private var mailAccounts: MailAccountsModel {
-        fleetModel.mailAccounts
-    }
-
-    /// The owner's mail and calendar accounts on roost: the owner token that alone reaches them, the apps
-    /// registered with Google and Microsoft, and the accounts signed in to.
-    private var accounts: some View {
-        SettingsSection(title: "Mail and Calendar Accounts", symbol: .person) {
-            SettingsRow(title: "Owner Token", detail: "roost token --owner") {
-                HStack(spacing: 8) {
-                    SecureField(mailAccounts.hasOwnerToken ? "saved" : "owner token", text: $ownerTokenDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: Self.fieldWidth)
-                    Button("Save") {
-                        let token = ownerTokenDraft
-                        ownerTokenDraft = ""
-                        Task { await mailAccounts.saveOwnerToken(token) }
-                    }
-                    .fixedSize()
-                    .disabled(ownerTokenDraft.isEmpty)
-                }
-            }
-            providerAppRow(MailProviderApp.google, title: "Google App", hasSecret: true)
-            providerAppRow(MailProviderApp.microsoft, title: "Microsoft App", hasSecret: false)
-            ForEach(mailAccounts.listAccounts) { account in
-                accountRow(account)
-            }
-            SettingsRow(title: "Connect", detail: mailAccounts.signingInProvider.map { "finish signing in to \(Self.providerTitle($0)) in the browser" }) {
-                HStack(spacing: 8) {
-                    if mailAccounts.signingInProvider != nil {
-                        ProgressView()
-                            .controlSize(.mini)
-                        Button("Cancel") {
-                            mailAccounts.cancelSignIn()
-                        }
-                    } else {
-                        Button("Google Account…") {
-                            mailAccounts.signIn(to: MailProviderApp.google)
-                        }
-                        .disabled(mailAccounts.providerApp(MailProviderApp.google) == nil)
-                        Button("Microsoft Account…") {
-                            mailAccounts.signIn(to: MailProviderApp.microsoft)
-                        }
-                        .disabled(mailAccounts.providerApp(MailProviderApp.microsoft) == nil)
-                    }
-                }
-            }
-            if let error = mailAccounts.error {
-                SettingsMessage(text: error)
-            }
-        }
-        .task {
-            await mailAccounts.load()
-        }
-        .confirmationDialog(
-            "Disconnect \(accountToDisconnect?.email ?? "")?",
-            isPresented: Binding(get: { accountToDisconnect != nil }, set: { if !$0 { accountToDisconnect = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Disconnect", role: .destructive) {
-                if let accountId = accountToDisconnect?.id {
-                    Task { await mailAccounts.disconnect(accountId) }
-                }
-            }
-        } message: {
-            Text("roost revokes its access where the provider allows it, and forgets the account and what it synced.")
-        }
-    }
-
-    private func providerAppRow(_ provider: String, title: String, hasSecret: Bool) -> some View {
-        let app = mailAccounts.providerApp(provider)
-        return SettingsRow(title: title, detail: app.map { _ in "set up" } ?? "not set up") {
-            HStack(spacing: 6) {
-                TextField(app?.clientId ?? "client id", text: Binding(
-                    get: { mapClientIdDrafts[provider] ?? "" },
-                    set: { mapClientIdDrafts[provider] = $0 }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 140)
-                if hasSecret {
-                    SecureField(app?.hasClientSecret == true ? "secret saved" : "client secret", text: Binding(
-                        get: { mapClientSecretDrafts[provider] ?? "" },
-                        set: { mapClientSecretDrafts[provider] = $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 100)
-                }
-                Button("Save") {
-                    let draftId = mapClientIdDrafts[provider] ?? ""
-                    let clientId = draftId.isEmpty ? (app?.clientId ?? "") : draftId
-                    let clientSecret = mapClientSecretDrafts[provider] ?? ""
-                    mapClientIdDrafts[provider] = nil
-                    mapClientSecretDrafts[provider] = nil
-                    Task { await mailAccounts.saveProviderApp(provider, clientId: clientId, clientSecret: clientSecret) }
-                }
-                .fixedSize()
-                .disabled((mapClientIdDrafts[provider] ?? "").isEmpty && (mapClientSecretDrafts[provider] ?? "").isEmpty)
-            }
-            .disabled(!mailAccounts.hasOwnerToken)
-        }
-    }
-
-    private func accountRow(_ account: MailAccount) -> some View {
-        let isConnected = account.status == MailAccount.statusConnected
-        return SettingsRow(title: account.email, detail: "\(Self.providerTitle(account.provider)), \(account.kind)") {
-            HStack(spacing: 8) {
-                InfoTag(
-                    isConnected ? "connected" : (account.status == MailAccount.statusNeedsLogin ? "sign in again" : "failing"),
-                    tint: isConnected ? .green : .orange
-                )
-                .help(account.error)
-                if !isConnected {
-                    Button("Sign In…") {
-                        mailAccounts.signIn(to: account.provider)
-                    }
-                }
-                Button("Disconnect…") {
-                    accountToDisconnect = account
-                }
-            }
-        }
-    }
-
-    private static func providerTitle(_ provider: String) -> String {
-        provider == MailProviderApp.google ? "Google" : "Microsoft"
     }
 
     private var roostStatus: String {

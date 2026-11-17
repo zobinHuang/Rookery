@@ -337,21 +337,6 @@ A team is a resource of kind `team`, made and changed through the resource route
 | `POST /v1/teams/<id>/members` | `{"agent": "<id>", "duty": "..."}` puts an agent in the team, or gives a member a new duty; answers with the team |
 | `DELETE /v1/teams/<id>/members/<agent id>` | takes an agent out; answers with the team |
 
-## The owner's accounts
-
-roost holds two tokens. The fleet's, `roost token`, goes to every rook and reaches everything above. The owner's, `roost token --owner`, goes to Rookery alone: it reaches everything the fleet's does, and the owner's mail and calendar accounts besides, which the fleet's token never reaches (`403`). Nothing of the owner's goes into the event log, which every rook reads; changes to it are told over the live link only to desktops that connected with the owner's token. Account credentials are sealed in the database with AES-GCM under the server's secrets key, which lives in its configuration rather than its data root.
-
-| | |
-|---|---|
-| `GET /v1/providers` | the apps the owner registered with Google and Microsoft: `provider`, `client_id`, `has_client_secret` |
-| `PUT /v1/providers/<google\|microsoft>` | `{"client_id": "...", "client_secret": "..."}` keeps an app; the secret is never shown again |
-| `GET /v1/mail-accounts` | the owner's accounts: `id`, `provider`, `kind` (`personal` or `work`), `email`, `display_name`, `scopes`, `status` (`connected`, `needs_login`, `failing`), `error`, `synced_at`; never their tokens |
-| `GET /v1/providers/<provider>/authorize` | with `redirect_uri` (a loopback address on the Mac), `code_challenge` (PKCE, S256) and `state`: `{"url": ...}`, the sign-in page for Rookery to open |
-| `POST /v1/mail-accounts` | `{"provider", "code", "code_verifier", "redirect_uri", "kind"}`: roost exchanges the code the sign-in returned and keeps the account; `kind` may be left out, and is then told from the account (a Google Workspace domain, a Microsoft work tenant) |
-| `DELETE /v1/mail-accounts/<id>` | revokes roost's access where the provider allows it, and forgets the account and its credentials |
-
-Rookery signs the owner in on the Mac, in the browser, and hands roost only the code: the refresh token is exchanged and kept on roost alone, and renewed there; an account whose grant the provider withdrew turns `needs_login`. roost asks Google to read and draft mail and to read and change calendar events, and Microsoft for `Mail.ReadWrite` and `Calendars.ReadWrite`; it never asks to send mail.
-
 ## The live link
 
 A WebSocket at `/v1/link` on the link port, which `GET /v1/healthz` reports as `link_port` (by default the HTTP port plus one; `wss` when the server has TLS). The handshake carries the same bearer token. Every message is one JSON object with a `type`; a request may carry a `ref`, which its answer repeats.

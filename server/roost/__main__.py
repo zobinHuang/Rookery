@@ -27,8 +27,7 @@ class ServerCli:
         tls_cert: Path | None,
         tls_key: Path | None,
     ) -> int:
-        """Create or refresh the server configuration, keeping any existing tokens and secrets key, and
-        making those it lacks.
+        """Create or refresh the server configuration, keeping any existing token.
 
         Args:
             data_root: where session transcripts are stored
@@ -41,13 +40,8 @@ class ServerCli:
             the process exit status
         """
         token = ServerConfig.generate_token()
-        owner_token = ServerConfig.generate_token()
-        secrets_key = ServerConfig.generate_secrets_key()
         if self._path_config.exists():
-            existing = ServerConfig.from_file(self._path_config)
-            token = existing.token
-            owner_token = existing.owner_token or owner_token
-            secrets_key = existing.secrets_key or secrets_key
+            token = ServerConfig.from_file(self._path_config).token
         config = ServerConfig(
             data_root=data_root,
             host=host,
@@ -56,8 +50,6 @@ class ServerCli:
             max_body_bytes=ServerConfig.CONFIG_DEFAULT_MAX_BODY_BYTES,
             tls_cert=tls_cert,
             tls_key=tls_key,
-            owner_token=owner_token,
-            secrets_key=secrets_key,
         )
         config.data_root.mkdir(parents=True, exist_ok=True)
         config.write_to(self._path_config)
@@ -94,22 +86,13 @@ class ServerCli:
             server.server_close()
         return 0
 
-    def run_token(self, is_owner: bool) -> int:
-        """Print the token rooks present, or the owner's, which Rookery alone holds.
-
-        Args:
-            is_owner: print the owner's token
+    def run_token(self) -> int:
+        """Print the access token clients must present.
 
         Returns:
             the process exit status
-
-        Raises:
-            ConfigError: if the owner's token is asked for and the configuration has none yet
         """
-        config = ServerConfig.from_file(self._path_config)
-        if is_owner and not config.owner_token:
-            raise ConfigError("this server has no owner token yet; run roost init again")
-        sys.stdout.write(f"{config.owner_token if is_owner else config.token}\n")
+        sys.stdout.write(f"{ServerConfig.from_file(self._path_config).token}\n")
         return 0
 
     def run_list(self, limit: int) -> int:
@@ -145,8 +128,7 @@ def main(list_argv: list[str] | None = None) -> int:
     parser_init.add_argument("--tls-key", default=None)
 
     subparsers.add_parser("serve")
-    parser_token = subparsers.add_parser("token")
-    parser_token.add_argument("--owner", action="store_true", help="the owner's token, for Rookery alone")
+    subparsers.add_parser("token")
 
     parser_list = subparsers.add_parser("ls")
     parser_list.add_argument(
@@ -169,7 +151,7 @@ def main(list_argv: list[str] | None = None) -> int:
         if args.command == "serve":
             return cli.run_serve()
         if args.command == "token":
-            return cli.run_token(args.owner)
+            return cli.run_token()
         return cli.run_list(args.limit)
     except ConfigError as err:
         sys.stderr.write(f"roost: {err.message}\n")

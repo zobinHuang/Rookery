@@ -55,9 +55,41 @@ public enum Mentions {
 
     /// The text with the mention being typed replaced by a resource's, and a space after it.
     public static func complete(_ text: String, with resource: FleetResource) -> String {
+        complete(text, withToken: token(for: resource))
+    }
+
+    /// The text with the mention being typed replaced by a person's, and a space after it.
+    public static func complete(_ text: String, with person: Person) -> String {
+        complete(text, withToken: person.mentionToken)
+    }
+
+    private static func complete(_ text: String, withToken token: String) -> String {
         guard let markerIndex = text.lastIndex(of: marker) else {
             return text
         }
-        return String(text[..<markerIndex]) + token(for: resource) + " "
+        return String(text[..<markerIndex]) + token + " "
     }
 }
+
+/// What a mention in a request to Raven can name: a person the user set down, or a resource roost manages.
+public enum MentionTarget: Identifiable, Sendable {
+    case person(Person)
+    case resource(FleetResource)
+
+    public var id: String {
+        switch self {
+        case .person(let person): "person:\(person.id)"
+        case .resource(let resource): "\(resource.kind):\(resource.id)"
+        }
+    }
+
+    /// The people and the resources a mention being typed could mean: the people first, unless it names a
+    /// kind, then the resources, up to the limit together.
+    public static func suggestions(for query: String, people book: PeopleBook, resources listResources: [FleetResource]) -> [MentionTarget] {
+        let listPeople = query.contains("/") ? [] : book.suggestions(for: query, limit: Mentions.suggestionLimit)
+        let listMatchedResources = Mentions.suggestions(for: query, among: listResources)
+        let listTargets = listPeople.map(MentionTarget.person) + listMatchedResources.map(MentionTarget.resource)
+        return Array(listTargets.prefix(Mentions.suggestionLimit))
+    }
+}
+

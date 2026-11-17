@@ -319,7 +319,10 @@ final class StageController: NSObject, DropSurface, StageActions, NSWindowDelega
         for window in (activeGroup?.listMembers ?? []) + listStageGroups.compactMap(\.listMembersFrontToBack.first) {
             mapWindowNames[window.windowId] = window.displayName
         }
-        let selectedWindowId = activeGroup?.listMembersFrontToBack.first?.windowId
+        let pendingWindowId = workspaceController.pendingFrontWindowId.flatMap { windowId in
+            listTabs.contains { $0.windowId == windowId } ? windowId : nil
+        }
+        let selectedWindowId = pendingWindowId ?? activeGroup?.listMembersFrontToBack.first?.windowId
         if model.shownTheme != shownTheme {
             model.shownTheme = shownTheme
         }

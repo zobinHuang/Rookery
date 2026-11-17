@@ -935,7 +935,7 @@ struct StageView: View {
     private var content: some View {
         ZStack {
             RoundedRectangle(cornerRadius: contentCornerRadius, style: .continuous)
-                .fill(isWindowShown ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.content))
+                .fill(isWindowShown ? AnyShapeStyle(StageColors.window) : AnyShapeStyle(StageColors.content))
             if let page = model.shownPage, !model.isPageReady {
                 PageLoading(title: Self.loadingTitle(of: page))
                     .transition(.opacity)

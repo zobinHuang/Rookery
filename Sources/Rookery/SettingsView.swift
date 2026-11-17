@@ -18,11 +18,20 @@ struct SettingsView: View {
     ]
     /// How narrow a column of cards may get before the page drops to fewer columns.
     /// The widest the page's one column of cards gets, so rows stay easy to scan on a wide stage.
-    private static let pageMaxWidth: CGFloat = 720
-    private static let pagePadding: CGFloat = 36
+    /// The widest the settings run, so a line stays readable on a wide stage.
+    private static let contentMaxWidth: CGFloat = 1100
+    private static let pagePadding: CGFloat = 44
+    private static let narrowPadding: CGFloat = 24
+    private static let sectionSpacing: CGFloat = 44
+    private static let railWidth: CGFloat = 210
+    /// The least width that shows the sections down the left.
+    private static let railThreshold: CGFloat = 760
+    /// How far down the scrolled view a section's top must be to count as the one in view.
+    private static let shownPaneLine: CGFloat = 140
+    /// The width of a row's name, the column its control starts after.
+    static let labelWidth: CGFloat = 240
     private static let fieldWidth: CGFloat = 200
     /// The corner radius of a card of settings.
-    static let cardCornerRadius: CGFloat = 12
 
     @Bindable var preferences: Preferences
     let recorder: ShortcutRecorder
@@ -43,6 +52,10 @@ struct SettingsView: View {
     @State private var isTestingRoost = false
     @State private var roostError: String?
     @State private var mailAccess: MailAccess?
+    @State private var showsRail = false
+    @State private var shownPane = SettingsPane.general
+    @State private var requestedPane: SettingsPane?
+    @Namespace private var railNamespace
     @State private var mailError: String?
     /// The calendars Rookery may use that take events, offered as the default calendar.
     @State private var listWritableCalendars: [CalendarSummary] = []
@@ -65,29 +78,20 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                header
-                general
-                roost
-                mailSettings
-                calendarSettings
-                PeopleSettingsSection(people: fleetModel.people)
-                codeAgents
-                worldClock
-                screenSaver
-                dragging
-                shortcuts
+        HStack(spacing: 0) {
+            if showsRail {
+                rail
+                Rectangle()
+                    .fill(StageColors.separator)
+                    .frame(width: 1)
             }
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .frame(maxWidth: Self.pageMaxWidth)
-            .padding(.horizontal, Self.pagePadding)
-            .padding(.vertical, 28)
-            .frame(maxWidth: .infinity)
+            pages
         }
-        .scrollIndicators(.automatic)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            showsRail = width >= Self.railThreshold
+        }
         .background(onClose == nil ? StageColors.window : .clear)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, preferences.theme)
@@ -95,8 +99,104 @@ struct SettingsView: View {
         .buttonStyle(StageButtonStyle())
     }
 
+    /// The sections down the left, the one in view lit; a click scrolls to one.
+    private var rail: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Settings")
+                .font(.system(size: 20, weight: .bold))
+                .padding(.horizontal, 10)
+                .padding(.top, 26)
+                .padding(.bottom, 14)
+            ForEach(SettingsPane.allCases, id: \.self) { pane in
+                let isShown = shownPane == pane
+                Button {
+                    requestedPane = pane
+                } label: {
+                    HStack(spacing: 9) {
+                        RookeryIconView(pane.symbol)
+                            .foregroundStyle(isShown ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
+                            .frame(width: 18)
+                        Text(pane.title)
+                            .font(.system(size: 13, weight: isShown ? .semibold : .regular))
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(height: 30)
+                    .background {
+                        if isShown {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(StageColors.selectedRow)
+                                .strokeBorder(StageColors.contrastActiveBorder)
+                                .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+                                .matchedGeometryEffect(id: "pane", in: railNamespace)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .frame(width: Self.railWidth)
+        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: shownPane)
+    }
+
+    /// Every section, one after another, scrolled to the one chosen in the rail.
+    private var pages: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Self.sectionSpacing) {
+                    if !showsRail {
+                        header
+                    }
+                    general
+                roost
+                mailSettings
+                calendarSettings
+                PeopleSettingsSection(people: fleetModel.people)
+                codeAgents
+                worldClock
+                screenSaver
+                    dragging
+                    shortcuts
+                }
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .frame(maxWidth: Self.contentMaxWidth, alignment: .leading)
+                .padding(.horizontal, showsRail ? Self.pagePadding : Self.narrowPadding)
+                .padding(.top, showsRail ? 26 : 20)
+                .padding(.bottom, 60)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollIndicators(.automatic)
+            .overlay(alignment: .topTrailing) {
+                if showsRail, let onClose {
+                    SettingsCloseButton(action: onClose)
+                        .padding(.top, 22)
+                        .padding(.trailing, 24)
+                }
+            }
+            .coordinateSpace(.named(SettingsPane.scrollSpace))
+            .onPreferenceChange(SettingsPanePositions.self) { mapPositions in
+                let listPassed = SettingsPane.allCases.filter { (mapPositions[$0] ?? .infinity) <= Self.shownPaneLine }
+                shownPane = listPassed.last ?? .general
+            }
+            .onChange(of: requestedPane) { _, pane in
+                guard let pane else {
+                    return
+                }
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    proxy.scrollTo(pane, anchor: .top)
+                }
+                requestedPane = nil
+            }
+        }
+    }
+
     private var general: some View {
-        SettingsSection(title: "General", symbol: .gear) {
+        SettingsSection(pane: .general) {
             SettingsRow(title: "Open at Login") {
                 Toggle("", isOn: $isLaunchingAtLogin)
                     .onChange(of: isLaunchingAtLogin) { _, isEnabled in
@@ -106,15 +206,9 @@ struct SettingsView: View {
             if let loginItemError {
                 SettingsMessage(text: loginItemError)
             }
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Appearance")
-                    .font(.system(size: 13))
+            SettingsRow(title: "Appearance", detail: "Auto follows the Mac's light or dark look") {
                 ThemePicker(theme: $preferences.theme)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 11)
-            .padding(.bottom, 8)
-            .modifier(SettingsSeparator())
             SettingsRow(title: "Mixer", detail: "Sound by application and by browser tab") {
                 Toggle("", isOn: $preferences.isMixerEnabled)
             }
@@ -122,11 +216,10 @@ struct SettingsView: View {
     }
 
     private var screenSaver: some View {
-        SettingsSection(title: "Screen Saver", symbol: .screenSaver) {
+        SettingsSection(pane: .screenSaver) {
             SettingsRow(title: "Text") {
                 TextField(Preferences.defaultScreenSaverText, text: $preferences.screenSaverText)
                     .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
                     .frame(width: Self.fieldWidth)
             }
             SettingsRow(title: "Text Size", detail: "\(Int(preferences.screenSaverTextSize)) pt") {
@@ -137,7 +230,7 @@ struct SettingsView: View {
     }
 
     private var dragging: some View {
-        SettingsSection(title: "Dragging", symbol: .hand) {
+        SettingsSection(pane: .dragging) {
             SettingsRow(title: "Show Groups While Dragging") {
                 Toggle("", isOn: $preferences.isDropTrayEnabled)
             }
@@ -149,13 +242,13 @@ struct SettingsView: View {
     }
 
     private var worldClock: some View {
-        SettingsSection(title: "World Clock", symbol: .globe) {
+        SettingsSection(pane: .worldClock) {
             clockCities
         }
     }
 
     private var codeAgents: some View {
-        SettingsSection(title: "Code Agents", symbol: .gauge) {
+        SettingsSection(pane: .codeAgents) {
             ForEach($preferences.listAgentAccounts) { $account in
                 AgentAccountRow(account: $account, monitor: agentUsageMonitor) {
                     preferences.listAgentAccounts.removeAll { $0.id == account.id }
@@ -166,17 +259,15 @@ struct SettingsView: View {
     }
 
     private var roost: some View {
-        SettingsSection(title: "Roost", symbol: .agent) {
+        SettingsSection(pane: .roost) {
             SettingsRow(title: "Address") {
                 TextField("roost.example.com:8787", text: $roostAddressDraft)
                     .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
                     .frame(width: Self.fieldWidth)
             }
             SettingsRow(title: "Token", detail: "kept on this Mac, for you alone") {
                 SecureField("roost token", text: $roostTokenDraft)
                     .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
                     .frame(width: Self.fieldWidth)
             }
             SettingsRow(title: "Status", detail: roostStatus) {
@@ -204,7 +295,6 @@ struct SettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .modifier(SettingsSeparator())
             }
@@ -227,7 +317,7 @@ struct SettingsView: View {
     /// What Rookery may read of the Mac's mail: whether it can read Mail's library, whether Mail runs to
     /// fetch new mail, and each account, personal or work, which Raven may read or not.
     private var mailSettings: some View {
-        SettingsSection(title: "Mail", symbol: .mail) {
+        SettingsSection(pane: .mail) {
             if let access = mailAccess {
                 SettingsRow(title: "Mail Library", detail: access.hasFullDiskAccess ? "readable" : "needs Full Disk Access") {
                     accessControl(isGranted: access.hasFullDiskAccess) {
@@ -267,7 +357,7 @@ struct SettingsView: View {
     /// What Rookery may read of the Mac's calendars: whether it may, each account's calendars, which Raven
     /// may read and propose changes to or not, and the calendar new events go on when none is named.
     private var calendarSettings: some View {
-        SettingsSection(title: "Calendars", symbol: .calendar) {
+        SettingsSection(pane: .calendars) {
             if let access = mailAccess {
                 SettingsRow(title: "Calendars", detail: access.calendarAuthorization == "full" ? "readable" : "needs access") {
                     accessControl(isGranted: access.calendarAuthorization == "full") {
@@ -498,7 +588,7 @@ struct SettingsView: View {
     }
 
     private var shortcuts: some View {
-        SettingsSection(title: "Shortcuts", symbol: .command) {
+        SettingsSection(pane: .shortcuts) {
             SettingsRow(title: "Switch to Group") {
                 Picker("", selection: groupModifiersBinding) {
                     ForEach(Self.listGroupModifierChoices, id: \.rawValue) { modifiers in
@@ -525,7 +615,7 @@ struct SettingsView: View {
     private var header: some View {
         HStack(alignment: .center) {
             Text("Settings")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
             Spacer()
             if let onClose {
                 SettingsCloseButton(action: onClose)
@@ -550,7 +640,6 @@ struct SettingsView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
         }
-        .padding(.horizontal, 14)
         .frame(minHeight: 40)
         .modifier(SettingsSeparator())
         ForEach(WorldClock.searchTimeZoneCities(matching: citySearch.query).filter {
@@ -692,65 +781,156 @@ struct SettingsView: View {
     }
 }
 
-/// A titled card of settings rows, with a hairline between rows.
+/// One of the settings' sections: its name large over its rows, with nothing boxing them in; it tells the
+/// page where it is, so the rail can light the one in view, and is the place the rail scrolls to.
 private struct SettingsSection<Content: View>: View {
-    let title: String
-    let symbol: RookeryIcon
+    let pane: SettingsPane
     @ViewBuilder let content: Content
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                RookeryIconView(symbol)
-                Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                RookeryIconView(pane.symbol, scale: 1.25)
+                    .foregroundStyle(StageColors.secondaryText)
+                Text(pane.title)
+                    .font(.system(size: 19, weight: .bold))
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 13)
-            .padding(.bottom, 11)
-            Rectangle()
-                .fill(StageColors.separator)
-                .frame(height: 1)
+            Text(pane.summary)
+                .font(.system(size: 12))
+                .foregroundStyle(StageColors.secondaryText)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
             VStack(spacing: 0) {
                 content
             }
-            .padding(.top, -SettingsSeparator.height)
-            .clipped()
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(StageColors.separator)
+                    .frame(height: SettingsSeparator.height)
+            }
         }
-        .background(StageColors.tile)
-        .clipShape(RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: SettingsView.cardCornerRadius, style: .continuous)
-                .strokeBorder(StageColors.separator)
+        .id(pane)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: SettingsPanePositions.self,
+                    value: [pane: proxy.frame(in: .named(SettingsPane.scrollSpace)).minY]
+                )
+            }
         }
     }
 }
 
-/// A setting's name, with an optional value beside it, and its control at the trailing edge. A hairline
-/// above it parts it from the row before; the card clips the first row's.
+/// The sections of the settings, in the order they run and the rail lists them.
+enum SettingsPane: String, CaseIterable {
+    case general
+    case roost
+    case mail
+    case calendars
+    case people
+    case codeAgents
+    case worldClock
+    case screenSaver
+    case dragging
+    case shortcuts
+
+    static let scrollSpace = "settings"
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .roost: "Roost"
+        case .mail: "Mail"
+        case .calendars: "Calendars"
+        case .people: "People"
+        case .codeAgents: "Code Agents"
+        case .worldClock: "World Clock"
+        case .screenSaver: "Screen Saver"
+        case .dragging: "Dragging"
+        case .shortcuts: "Shortcuts"
+        }
+    }
+
+    var symbol: RookeryIcon {
+        switch self {
+        case .general: .gear
+        case .roost: .agent
+        case .mail: .mail
+        case .calendars: .calendar
+        case .people: .person
+        case .codeAgents: .gauge
+        case .worldClock: .globe
+        case .screenSaver: .screenSaver
+        case .dragging: .hand
+        case .shortcuts: .command
+        }
+    }
+
+    /// What the section is for, in a line under its name.
+    var summary: String {
+        switch self {
+        case .general: "How Rookery starts and looks, and whether it takes over sound."
+        case .roost: "The server your agents report to, which Rookmaster and Raven read."
+        case .mail: "What Rookery and Raven may read of the Mac's mail."
+        case .calendars: "What Rookery and Raven may read of the Mac's calendars, and where new events go."
+        case .people: "The people you write to and meet, to name them with @ and to know them in mail and calendars."
+        case .codeAgents: "The accounts whose plan limits Token HP shows."
+        case .worldClock: "The cities the footbar keeps the time of."
+        case .screenSaver: "What the screen saver says."
+        case .dragging: "How windows join the stage when dragged."
+        case .shortcuts: "The keys that work Rookery from anywhere."
+        }
+    }
+}
+
+/// Where each section's top is in the scrolled settings, gathered so the rail can light the one in view.
+private struct SettingsPanePositions: PreferenceKey {
+    static let defaultValue: [SettingsPane: CGFloat] = [:]
+
+    static func reduce(value: inout [SettingsPane: CGFloat], nextValue: () -> [SettingsPane: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// A setting: its name, with what it is or shows under it, in a column of their own, and its control
+/// after that column, starting where every row's does. A hairline above parts it from the row before.
 private struct SettingsRow<Control: View>: View {
     let title: String
     var detail: String?
     @ViewBuilder let control: Control
 
-    var body: some View {
-        HStack(spacing: 10) {
+    private var label: some View {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(.system(size: 13))
-                .lineLimit(1)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(2)
             if let detail {
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(.system(size: 11.5))
                     .foregroundStyle(StageColors.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 12)
-            control
         }
-        .padding(.horizontal, 14)
-        .frame(minHeight: 42)
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 20) {
+                label
+                    .frame(width: SettingsView.labelWidth, alignment: .leading)
+                control
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                label
+                control
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 11)
+        .frame(minHeight: 46)
         .modifier(SettingsSeparator())
     }
 }
@@ -764,7 +944,6 @@ private struct SettingsSeparator: ViewModifier {
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(height: Self.height)
-                .padding(.leading, 14)
         }
     }
 }
@@ -786,9 +965,8 @@ private struct SettingsActionRow: View {
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Color.accentColor)
-            .padding(.horizontal, 14)
+            .opacity(isHovered ? 0.75 : 1)
             .frame(minHeight: 40)
-            .background(isHovered ? StageColors.hoveredRow : .clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -821,7 +999,7 @@ private struct SettingsResultRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 6)
             .frame(minHeight: 36)
             .background(isHovered ? StageColors.hoveredRow : .clear)
             .contentShape(Rectangle())
@@ -862,7 +1040,6 @@ private struct SettingsMessage: View {
             .font(.system(size: 12))
             .foregroundStyle(.orange)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .modifier(SettingsSeparator())
     }
@@ -921,7 +1098,6 @@ private struct AgentAccountRow: View {
             }
             signInCommand
         }
-        .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .modifier(SettingsSeparator())
     }
@@ -1005,7 +1181,7 @@ private struct PeopleSettingsSection: View {
     @State private var newPersonId: String?
 
     var body: some View {
-        SettingsSection(title: "People", symbol: .person) {
+        SettingsSection(pane: .people) {
             ForEach(people.listPeople) { person in
                 if editingId == person.id {
                     PersonEditor(people: people, person: person, isNew: newPersonId == person.id) {
@@ -1034,23 +1210,23 @@ private struct PeopleSettingsSection: View {
     }
 
     private func personRow(_ person: Person) -> some View {
-        HStack(spacing: 10) {
-            PersonMark(person: person, size: 28)
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 20) {
+            HStack(spacing: 10) {
+                PersonMark(person: person, size: 28)
                 Text(person.name)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                Text(person.listAddresses.isEmpty ? "No addresses" : person.listAddresses.joined(separator: ", "))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(StageColors.secondaryText)
-                    .lineLimit(2)
             }
+            .frame(width: SettingsView.labelWidth, alignment: .leading)
+            Text(person.listAddresses.isEmpty ? "No addresses" : person.listAddresses.joined(separator: ", "))
+                .font(.system(size: 12))
+                .foregroundStyle(StageColors.secondaryText)
+                .lineLimit(2)
             Spacer(minLength: 12)
             Button("Edit") {
                 editingId = person.id
             }
         }
-        .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .modifier(SettingsSeparator())
     }
@@ -1136,7 +1312,8 @@ private struct PersonEditor: View {
             }
         }
         .padding(14)
-        .background(StageColors.hoveredRow.opacity(0.5))
+        .background(StageColors.hoveredRow.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.vertical, 10)
         .onAppear {
             name = isNew ? "" : person.name
             listAddresses = person.listAddresses

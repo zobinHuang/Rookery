@@ -17,6 +17,16 @@ struct MailQuoteTests {
         #expect(MailQuote.trimmed(text) == "收到，谢谢。")
     }
 
+    @Test func anAttributionWrappedOverTwoLinesIsFound() {
+        let text = "Thanks!\n\nOn Sun, Nov 8, 2026 at 4:26 PM Chenlin Meng Someone-Long <\nchenlin@pika.art> wrote:\n\n> earlier\n> history"
+        #expect(MailQuote.trimmed(text) == "Thanks!")
+    }
+
+    @Test func aChineseGmailAttributionIsFound() {
+        let text = "好的\n\nChenlin Meng <chenlin@pika.art> 于2026年11月8日周日 16:26写道：\n\n> 以前的内容"
+        #expect(MailQuote.trimmed(text) == "好的")
+    }
+
     @Test func aMessageWithoutAQuoteOrWithNothingButOneIsLeftAsItIs() {
         #expect(MailQuote.trimmed("Just a note.\nFrom the team") == nil)
         #expect(MailQuote.trimmed("---------- Forwarded message ---------\nFrom: a\nDate: b") == nil)

@@ -480,7 +480,7 @@ struct AgentsSidebarView: View {
 
     /// The agent's state, repository and branch, each in a tag of its own under a small caption.
     private func tags(of agent: FleetAgent, isReachable: Bool) -> some View {
-        let hasRook = !agent.rookName.isEmpty
+        let hasRook = !agent.hostname.isEmpty || !agent.rookName.isEmpty
         let hasRepo = !agent.projectName.isEmpty && agent.projectName != "/"
         let hasBranch = !agent.gitBranch.isEmpty
         return ViewThatFits(in: .horizontal) {
@@ -492,7 +492,7 @@ struct AgentsSidebarView: View {
         .animation(.easeOut(duration: 0.2), value: agent.state)
     }
 
-    /// The tags on one line, each whole; the row drops the branch, then the repository, then the rook, where
+    /// The tags on one line, each whole; the row drops the branch, then the repository, then the host, where
     /// it runs out of width.
     private func tagRow(
         of agent: FleetAgent,
@@ -510,8 +510,8 @@ struct AgentsSidebarView: View {
                 }
             }
             if showsRook {
-                captioned("rook") {
-                    InfoTag(agent.rookName)
+                captioned("host") {
+                    InfoTag(agent.hostname.isEmpty ? agent.rookName : agent.hostname)
                 }
             }
             if showsRepo {

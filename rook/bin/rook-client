@@ -669,6 +669,8 @@ class AgentStateMemo:
 class AgentPane:
     """Where an agent session runs: the tmux server and the pane it was started in."""
 
+    PANE_AGENT_ENV = "ROOK_AGENT_ID"
+
     session_id: str
     harness: str
     tmux_socket: str
@@ -715,10 +717,13 @@ class AgentPane:
 
     @classmethod
     def session_here(cls) -> str | None:
-        """The session that started last in the calling process's pane, or None outside tmux."""
+        """The session that started last in the calling process's pane; outside tmux, the agent the caller
+        names in `ROOK_AGENT_ID`, as Raven's conversations in Rookery do; else None."""
         tmux = os.environ.get("TMUX", "")
         pane = os.environ.get("TMUX_PANE", "")
-        return cls.session_in(tmux.split(",")[0], pane) if tmux and pane else None
+        if tmux and pane:
+            return cls.session_in(tmux.split(",")[0], pane)
+        return os.environ.get(cls.PANE_AGENT_ENV) or None
 
     @classmethod
     def latest_tmux_socket(cls) -> str | None:
@@ -1663,6 +1668,7 @@ class TeamBriefing:
     BRIEFING_TIMEOUT_SECONDS = 3
     BRIEFING_CHECK_SECONDS = 60
     BRIEFING_DIR_NAME = "teams"
+    BRIEFING_RAVEN_ROOK = "rookery"
 
     @classmethod
     def at_start(cls, connection: Connection, session_id: str) -> str:
@@ -1732,6 +1738,12 @@ class TeamBriefing:
             list_parts = [f"- {'you, ' if is_self else ''}agent {map_member.get('id')}"]
             if map_member.get("title"):
                 list_parts.append(f'"{map_member["title"]}"')
+            if map_member.get("rook_name") == TeamBriefing.BRIEFING_RAVEN_ROOK:
+                list_parts.append("is Raven, the user's assistant in Rookery, speaking for the user: take its asks as the user's")
+                list_lines.append(" ".join(list_parts))
+                if map_member.get("duty"):
+                    list_lines.append(f"    duty here: {map_member['duty']}")
+                continue
             list_parts.append(f"on {map_member.get('hostname') or map_member.get('rook_name') or '?'}")
             list_parts.append(f"in {map_member.get('cwd') or '?'}")
             list_parts.append(f"[{map_member.get('state') or 'unknown'}]")

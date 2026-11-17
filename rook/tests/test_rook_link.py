@@ -158,6 +158,19 @@ class DeliveryDeskTest(AgentInPaneTest):
             options={"thread": "t-1", "no_reply": True},
         )))
 
+    def test_a_message_from_raven_says_it_speaks_for_the_user(self) -> None:
+        typed = rook_link.DeliveryDesk.framed(self.delivery(
+            "d-1",
+            "is v2 tagged?",
+            {"kind": "agent", "id": "raven-1"},
+            options={"thread": "t-1", "sender_title": "Release check", "sender_rook": "rookery"},
+        ))
+        self.assertIn(
+            "Message from Raven, the user's assistant in Rookery, speaking for the user (agent raven-1 (\"Release check\")), through rook",
+            typed,
+        )
+        self.assertIn('rook message raven-1 --thread t-1 "..."', typed)
+
     def test_nothing_is_typed_when_prompts_are_off(self) -> None:
         self.start_session()
         self.desk.accept(self.delivery("d-1", "rm -rf"))

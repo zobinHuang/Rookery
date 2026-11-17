@@ -19,6 +19,10 @@ Claude Code is told through its hooks. As a session starts, and again after a co
 
 `setup.sh` installs the `rook-team` skill into Claude Code's skills, which says when to message a teammate and how: everything in one message, every question at once, `--no-reply` when no answer is needed, no answers that only acknowledge, and answers inside the thread they belong to. codex can message and be messaged, but is not told of its teams yet.
 
+## Raven
+
+The user can put one of Raven's conversations in a team from Rookery, to direct the team or ask it questions. Its card names it as Raven, the user's assistant, speaking for the user, and the messages it sends say so; the skill tells agents to take its asks as the user's. Raven runs outside tmux, so it names itself to `rook-client` with `ROOK_AGENT_ID`. Like any member it messages only its teammates, within the team's limits; their answers wait on roost under the rook `rookery` until Rookery reads them and wakes the conversation.
+
 ## Threads and limits
 
 Every message belongs to a thread; an answer names the thread it answers with `--thread`, and the message the receiving agent reads says which thread to answer in. roost holds a message for the user, who releases or cancels it in Rookery, when an agent goes past its team's limits: by default a thread past 20 messages, or 30 messages from one agent in 10 minutes. The skill keeps agents well inside them; they are a backstop. See [the API](../../server/API.md#messages).

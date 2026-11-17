@@ -52,6 +52,15 @@ class RookHomeTest(unittest.TestCase):
         return rook_client.HookEventMapper(harness, self.payload(hook, **map_fields)).events()
 
 
+class AgentPaneTest(RookHomeTest):
+    def test_outside_tmux_the_agent_is_the_one_the_caller_names(self) -> None:
+        with mock.patch.dict(os.environ, {"ROOK_AGENT_ID": "raven"}):
+            os.environ.pop("TMUX", None)
+            self.assertEqual(rook_client.AgentPane.session_here(), "raven")
+        os.environ.pop("ROOK_AGENT_ID", None)
+        self.assertIsNone(rook_client.AgentPane.session_here())
+
+
 class HookEventMapperTest(RookHomeTest):
     def test_a_session_start_names_the_agent_after_the_rook(self) -> None:
         [event] = self.events("SessionStart", cwd=str(self.home))
@@ -499,6 +508,23 @@ class TeamCommandsTest(QueueAndSendTest):
         inbox = self.run_client(["inbox"])
         self.assertIn("to b", inbox)
         self.assertIn("v2 is tagged", inbox)
+
+    def test_raven_in_a_team_is_named_for_what_it_is(self) -> None:
+        self.start_agent("raven", "idle", "2026-11-17T10:00:00.000+00:00", {"title": "Release check", "rook_name": "rookery"})
+        self.server.roster.join("api", "raven", "directs the release", None)
+        output = self.hook_output({"session_id": "a", "hook_event_name": "SessionStart"})
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn('agent raven "Release check" is Raven, the user\'s assistant in Rookery', context)
+        self.assertIn("duty here: directs the release", context)
+
+    def test_raven_messages_its_teammates_as_itself(self) -> None:
+        self.start_agent("raven", "idle", "2026-11-17T10:00:00.000+00:00", {"title": "Release check", "rook_name": "rookery"})
+        self.server.roster.join("api", "raven", "directs the release", None)
+        with mock.patch.object(rook_client.AgentPane, "session_here", return_value="raven"):
+            self.run_client(["message", "a", "is", "v2", "tagged?"])
+        [delivery] = self.server.deliveries.list_recent(agent_id="a", limit=1)
+        self.assertEqual(delivery.sender, ResourceRef("agent", "raven"))
+        self.assertEqual(delivery.map_options["sender_rook"], "rookery")
 
     def test_role_and_focus_go_on_the_agents_card(self) -> None:
         self.run_client(["me", "role", "API", "owner"])

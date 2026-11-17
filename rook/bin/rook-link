@@ -233,6 +233,8 @@ class DeliveryDesk:
         thread = str(map_options.get("thread") or "")
         team = str(map_options.get("team") or "")
         sender = f'agent {sender_id}' + (f' ("{map_options["sender_title"]}")' if map_options.get("sender_title") else "")
+        if map_options.get("sender_rook") == "rookery":
+            sender = f"Raven, the user's assistant in Rookery, speaking for the user ({sender})"
         heading = f"Message from {sender}" + (f" to team {team}" if team else "") + ", through rook"
         if thread:
             heading += f" (thread {thread})"

@@ -249,6 +249,9 @@ checkout_skill() {
   rm -rf "$_co_work"
   rm -rf "$_co_dest"
   mv "$_co_dest.partial" "$_co_dest" || return 1
+  # An agent loads a skill only from a directory holding a SKILL.md.
+  [ -f "$_co_dest/SKILL.md" ] ||
+    log "installed $_co_dest, which has no SKILL.md; agents will not load it as a skill"
   return 0
 }
 

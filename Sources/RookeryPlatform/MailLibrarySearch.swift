@@ -23,6 +23,7 @@ extension MailLibrary {
     private static let recipientTo = "0"
     private static let recipientCc = "1"
     private static let threadLimit = 100
+    private static let snippetLimit = 160
 
     /// The mailboxes, by their row, with their URLs.
     public func mailboxURLs() throws -> [String: String] {
@@ -41,6 +42,51 @@ extension MailLibrary {
     ///   - mapAccountAddresses: the accounts that may be searched, their addresses by id
     /// - Throws: `MailLibraryError.sqlite`
     public func search(_ query: MailQuery, accounts mapAccountAddresses: [String: String]) throws -> [MailMessageSummary] {
+        var listBindings: [String] = []
+        guard let whereClause = try matching(query, accounts: mapAccountAddresses, bindings: &listBindings) else {
+            return []
+        }
+        let limit = max(1, min(query.limit, MailQuery.maximumLimit))
+        let sql = "SELECT \(Self.summaryColumns) \(Self.summaryJoins) WHERE \(whereClause) "
+            + "ORDER BY m.date_received DESC LIMIT \(limit)"
+        return try rows(sql, listBindings).compactMap { summary(of: $0, accounts: mapAccountAddresses) }
+    }
+
+    /// How many messages a query matches, however many.
+    ///
+    /// - Throws: `MailLibraryError.sqlite`
+    public func count(_ query: MailQuery, accounts mapAccountAddresses: [String: String]) throws -> Int {
+        var listBindings: [String] = []
+        guard let whereClause = try matching(query, accounts: mapAccountAddresses, bindings: &listBindings) else {
+            return 0
+        }
+        let sql = "SELECT COUNT(*) \(Self.summaryJoins) WHERE \(whereClause)"
+        return try rows(sql, listBindings).first?.first.flatMap { $0 }.flatMap(Int.init) ?? 0
+    }
+
+    /// Each account's inbox as Mail counts it: its messages and the unread among them, by account id.
+    public func inboxCounts() throws -> [String: MailboxCount] {
+        var mapCounts: [String: MailboxCount] = [:]
+        for row in try rows("SELECT url, total_count, unread_count FROM mailboxes") {
+            guard let url = row[0], MailFolder.of(mailboxURL: url) == .inbox else {
+                continue
+            }
+            let accountId = MailFolder.accountId(ofMailboxURL: url)
+            let previous = mapCounts[accountId] ?? MailboxCount(total: 0, unread: 0)
+            mapCounts[accountId] = MailboxCount(
+                total: previous.total + (row[1].flatMap(Int.init) ?? 0),
+                unread: previous.unread + (row[2].flatMap(Int.init) ?? 0)
+            )
+        }
+        return mapCounts
+    }
+
+    /// The SQL condition a query comes to, its values added to the bindings; nil when no mailbox can match.
+    private func matching(
+        _ query: MailQuery,
+        accounts mapAccountAddresses: [String: String],
+        bindings listBindings: inout [String]
+    ) throws -> String? {
         let mapMailboxes = try mailboxURLs()
         let setAccountIds = Set(mapAccountAddresses.keys).intersection(
             query.listAccounts.isEmpty
@@ -55,14 +101,14 @@ extension MailLibrary {
                 && (query.folder.map { $0 == folder } ?? !folder.isHiddenByDefault)
         }.map(\.key)
         guard !listMailboxIds.isEmpty else {
-            return []
+            return nil
         }
         let placeholders = Array(repeating: "?", count: listMailboxIds.count).joined(separator: ",")
         var listConditions = [
             "m.deleted = 0",
             "(m.mailbox IN (\(placeholders)) OR m.ROWID IN (SELECT message_id FROM labels WHERE mailbox_id IN (\(placeholders))))",
         ]
-        var listBindings = listMailboxIds + listMailboxIds
+        listBindings += listMailboxIds + listMailboxIds
         if query.folder == nil {
             let listHidden = mapMailboxes.filter { MailFolder.of(mailboxURL: $0.value).isHiddenByDefault }.map(\.key)
             if !listHidden.isEmpty {
@@ -100,10 +146,7 @@ extension MailLibrary {
             listConditions.append("m.date_received < ?")
             listBindings.append(String(Int(before.timeIntervalSince1970)))
         }
-        let limit = max(1, min(query.limit, MailQuery.maximumLimit))
-        let sql = "SELECT \(Self.summaryColumns) \(Self.summaryJoins) WHERE \(listConditions.joined(separator: " AND ")) "
-            + "ORDER BY m.date_received DESC LIMIT \(limit)"
-        return try rows(sql, listBindings).compactMap { summary(of: $0, accounts: mapAccountAddresses) }
+        return listConditions.joined(separator: " AND ")
     }
 
     /// One message, read whole from its file.
@@ -198,7 +241,7 @@ extension MailLibrary {
             receivedAt: Date(timeIntervalSince1970: Double(row[7] ?? "") ?? 0),
             isRead: row[8] == "1",
             isFlagged: row[9] == "1",
-            snippet: row[10] ?? "",
+            snippet: String((row[10] ?? "").prefix(Self.snippetLimit)),
             conversationId: row[11].flatMap(Int.init) ?? 0,
             attachmentCount: row[12].flatMap(Int.init) ?? 0
         )

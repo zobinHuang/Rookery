@@ -28,6 +28,10 @@ final class RavenAgent {
     private static let historyName = "raven-history"
     private static let indexName = "conversations.json"
     private static let resourceFolder = "Raven"
+    /// The name Raven's MCP config gives `rookery-mail`, which its tools are named under.
+    static let mailServerName = "mail"
+    private static let mailServerExecutable = "rookery-mail"
+    private static let mcpConfigName = "mcp.json"
     private static let fileMode: Int = 0o600
     private static let executableMode: Int = 0o755
     /// It reads and changes roost's resources and reads the agents, the teams and the user's hosts through
@@ -40,6 +44,7 @@ final class RavenAgent {
         "Bash(rook-client host:*)",
         "Bash(rook-client team list:*)",
         "Bash(rook-client team roster:*)",
+        "mcp__\(mailServerName)",
         "Skill",
         "WebFetch",
     ]
@@ -282,7 +287,7 @@ final class RavenAgent {
             case .sent(let deliveryId):
                 return "- \(about): the user sent it; delivery \(deliveryId)"
             case .done:
-                return "- \(about): the user did it; it is done on roost"
+                return "- \(about): the user approved it, and it is done"
             default:
                 return "- \(about): the user decided not to send it"
             }
@@ -321,6 +326,8 @@ final class RavenAgent {
                 "--output-format", "stream-json",
                 "--verbose",
                 "--setting-sources", "project",
+                "--mcp-config", workspace.appending(path: Self.mcpConfigName).path,
+                "--strict-mcp-config",
                 "--allowedTools",
             ] + Self.listAllowedTools,
             workingDirectory: workspace,
@@ -482,6 +489,7 @@ final class RavenAgent {
         try fileManager.setAttributes([.posixPermissions: Self.fileMode], ofItemAtPath: connectFile.path)
         try Data(#"{"name": "rookery"}"#.utf8).write(to: rookConfig.appending(path: "config.json"), options: .atomic)
         try hostsSnapshot().write(to: rookConfig.appending(path: "hosts.json"), options: .atomic)
+        try Self.mcpConfig().write(to: workspace.appending(path: Self.mcpConfigName), options: .atomic)
         return workspace
     }
 
@@ -517,6 +525,19 @@ final class RavenAgent {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(JSONValue.object(["hosts": .array(listHosts), "rooks_without_host": .array(listRooks)]))
+    }
+
+    /// Raven's MCP servers: `rookery-mail`, beside the app's executable, which reaches the Mac's mail and
+    /// calendars through the running app; none when it is missing, as in a build run outside the bundle.
+    private static func mcpConfig() throws -> Data {
+        var mapServers: [String: JSONValue] = [:]
+        if
+            let executable = Bundle.main.executableURL?.deletingLastPathComponent().appending(path: mailServerExecutable),
+            FileManager.default.isExecutableFile(atPath: executable.path)
+        {
+            mapServers[mailServerName] = .object(["command": .string(executable.path), "args": .array([])])
+        }
+        return try JSONEncoder().encode(JSONValue.object(["mcpServers": .object(mapServers)]))
     }
 
     private static func replace(_ destination: URL, with source: URL) throws {

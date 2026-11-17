@@ -23,9 +23,9 @@ public enum MailTool: String, CaseIterable, Sendable {
     public var description: String {
         switch self {
         case .listAccounts:
-            "The user's mail and calendar accounts Rookery may read: each address, its name and whether it is personal or work, and the calendars of each with their ids and whether they take events."
+            "The user's mail and calendar accounts Rookery may read: each address, its name, whether it is personal or work, and how many messages its inbox holds and how many are unread; and the calendars with their ids and whether they take events."
         case .searchMail:
-            "Search the user's mail, newest first, across every account or the ones named. Matches words in the subject, the sender or the opening of the text; junk and trash are left out unless that folder is asked for. Each result names its account."
+            "Search the user's mail, newest first, across every account or the ones named. Matches words in the subject, the sender or the opening of the text; junk and trash are left out unless that folder is asked for. Each result names its account. To know how many match, pass count_only rather than paging."
         case .readMail:
             "Read one message whole: who it went to, its text and its attachments' names. Takes the id a search returned."
         case .readThread:
@@ -66,6 +66,7 @@ public enum MailTool: String, CaseIterable, Sendable {
                 "after": Self.text("Received at or after this moment, ISO 8601"),
                 "before": Self.text("Received before this moment, ISO 8601"),
                 "limit": .object(["type": .string("integer"), "description": .string("At most this many, up to \(MailQuery.maximumLimit); \(MailQuery.defaultLimit) by default")]),
+                "count_only": Self.flag("Only count the matches, however many, rather than list them"),
             ], required: [])
         case .readMail, .readThread:
             Self.schema(["id": .object(["type": .string("integer"), "description": .string("A message's id, from a search")])], required: ["id"])

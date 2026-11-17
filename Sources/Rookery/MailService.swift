@@ -43,7 +43,11 @@ actor MailService {
         case .listAccounts:
             return try await Self.json(listedAccounts())
         case .searchMail:
-            return try await Self.json(search(mapArguments))
+            if mapArguments["count_only"]?.boolValue == true {
+                let count = try await openLibrary().count(try query(mapArguments), accounts: allowedAccountAddresses())
+                return try Self.json(["count": count])
+            }
+            return try await Self.json(openLibrary().search(try query(mapArguments), accounts: allowedAccountAddresses()), isCompact: true)
         case .readMail:
             let messageId = try Self.integer(mapArguments, "id")
             guard let message = try await openLibrary().message(messageId, accounts: allowedAccountAddresses()) else {
@@ -65,7 +69,7 @@ actor MailService {
         }
     }
 
-    private func search(_ mapArguments: [String: JSONValue]) async throws -> [MailMessageSummary] {
+    private func query(_ mapArguments: [String: JSONValue]) throws -> MailQuery {
         var query = MailQuery()
         query.listAccounts = Self.strings(mapArguments, "accounts")
         query.text = mapArguments["query"]?.stringValue ?? ""
@@ -84,7 +88,7 @@ actor MailService {
         if let limit = mapArguments["limit"]?.numberValue {
             query.limit = Int(limit)
         }
-        return try await openLibrary().search(query, accounts: allowedAccountAddresses())
+        return query
     }
 
     private func events(_ mapArguments: [String: JSONValue]) async throws -> [CalendarEventSummary] {
@@ -263,14 +267,18 @@ actor MailService {
     private func listedAccounts() async throws -> JSONValue {
         let settings = loadSettings()
         let listCalendars = (try? calendars.calendars()) ?? []
+        let mapInboxCounts = (try? openLibrary().inboxCounts()) ?? [:]
         let listMail: [JSONValue] = try await accounts().filter { account in
             account.listAddresses.contains { settings.isMailAllowed($0) }
         }.map { account in
             let address = account.listAddresses.first ?? ""
+            let inbox = mapInboxCounts[account.id]
             return .object([
                 "address": .string(address),
                 "name": .string(account.name),
                 "kind": .string(settings.kind(of: address)),
+                "inbox_total": inbox.map { .number(Double($0.total)) } ?? .null,
+                "inbox_unread": inbox.map { .number(Double($0.unread)) } ?? .null,
             ])
         }
         let listCalendarRows: [JSONValue] = listCalendars.filter { settings.isCalendarAccountAllowed($0.accountTitle) }.map { calendar in
@@ -364,9 +372,10 @@ actor MailService {
         throw MailToolError.badArgument("\(text) is not an ISO 8601 moment")
     }
 
-    private static func json(_ value: some Encodable) throws -> String {
+    /// A result as JSON: indented, or compact for a long list.
+    private static func json(_ value: some Encodable, isCompact: Bool = false) throws -> String {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        encoder.outputFormatting = isCompact ? [.sortedKeys, .withoutEscapingSlashes] : [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
             try container.encode(formatter().string(from: date))

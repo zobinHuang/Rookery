@@ -355,3 +355,14 @@ public struct MailAccountSettings: Codable, Equatable, Sendable {
         mapKinds[address.lowercased()] ?? ""
     }
 }
+
+/// How many messages a mailbox holds, and how many of them are unread.
+public struct MailboxCount: Codable, Equatable, Sendable {
+    public let total: Int
+    public let unread: Int
+
+    public init(total: Int, unread: Int) {
+        self.total = total
+        self.unread = unread
+    }
+}

@@ -39,6 +39,12 @@ The console over everything roost manages, opened from the top of the Agents sid
   - agents are read-only, and any other kind is edited as a name and an attributes object.
 - **Log** (`RookmasterLog`): the latest hundred events, newest at the bottom, following as they are logged, with a filter; it folds to its title bar.
 
+## Hosts and new agents
+
+The Hosts tab of Rookmaster lists the concrete hosts of `~/.ssh/config` (patterns and `Match` blocks name none; `Include` is followed), each with the rook it runs: the one the user chose, else a rook named as the host or its short host name. A host's page checks over ssh what it has for agents (tmux, claude, codex, rook, and whether rook reports to a roost), installs rook where it has none (after asking: it runs rook's `setup.sh --name` and `rook connect` there, the token going over ssh's input, never a command line), and keeps the host's workdirs: a directory, browsable over ssh, with the harness, playbook, skills, role and teams an agent started there begins with. Hosts' settings and workdirs live in `hosts.json` in the app's data directory, since only this Mac's ssh configuration reaches the hosts. ssh runs with `BatchMode`, so a host that asks for a password fails rather than waiting.
+
+New Agent, in the Agents list, on a host's page and on each workdir, starts an agent through roost rather than ssh: a spawn with a launch id ([the API](../server/API.md#messages)), which the host's rook-link starts in tmux after installing the playbook and skills; the session names its launch as it starts, and roost gives it its role and teams. Until it reports in, the launch shows as starting under the button; a rook that could not start it, or a session that never reports in within 90 seconds, shows why.
+
 ## Raven
 
 The Rookmaster console's right-hand column asks Raven, Rookery's agent over the fleet, for something in plain words; `@` names a resource, completed from the graph (`Mentions` in `RookeryCore`), and the request carries each named resource's kind, name and id. `RavenAgent` runs Claude Code headless (`HeadlessAgent` in `RookeryPlatform`) in a workspace of its own under the data directory, laid out afresh for each request from the app's `Raven` resources (`Resources/Raven` in the repository):

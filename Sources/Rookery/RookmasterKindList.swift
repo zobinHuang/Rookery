@@ -131,6 +131,15 @@ struct RookmasterKindList: View {
             addButton("New Memory") {
                 create(["name": .string(uniqueName("Untitled memory")), "attributes": .object(["text": .string(""), "project": .string("")])])
             }
+        case AgentFleet.agentKind:
+            VStack(spacing: 8) {
+                addButton("New Agent") {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                        fleetModel.hosts.openLaunchForm()
+                    }
+                }
+                LaunchStatusList(hosts: fleetModel.hosts)
+            }
         default:
             EmptyView()
         }

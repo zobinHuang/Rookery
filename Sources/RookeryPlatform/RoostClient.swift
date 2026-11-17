@@ -207,6 +207,46 @@ public final class RoostClient: Sendable {
         try await deliver(["kind": "spawn", "rook": rookName, "text": prompt, "options": ["cwd": cwd, "harness": harness]])
     }
 
+    /// Ask a rook to start a new agent for a launch: its directory, harness, what it installs first, its
+    /// role and teams, and its first prompt.
+    ///
+    /// - Returns: the delivery, to follow
+    public func launch(_ request: LaunchRequest) async throws -> FleetDelivery {
+        let body = try JSONEncoder().encode(request.body)
+        return try decode(FleetDelivery.self, from: try await self.request("POST", path: "/v1/messages", body: body))
+    }
+
+    /// Put an agent in a team with a duty, or give a member a new duty.
+    public func join(_ agentId: String, team teamId: String, duty: String) async throws {
+        let body = try JSONEncoder().encode(["agent": agentId, "duty": duty])
+        _ = try await request("POST", path: "/v1/teams/\(teamId)/members", body: body)
+    }
+
+    /// Take an agent out of a team.
+    public func leave(_ agentId: String, team teamId: String) async throws {
+        _ = try await request("DELETE", path: "/v1/teams/\(teamId)/members/\(agentId)")
+    }
+
+    /// Send every other member of a team a message from the user.
+    public func send(_ text: String, toTeam teamId: String) async throws {
+        let body = try JSONEncoder().encode(["team": teamId, "text": text])
+        _ = try await request("POST", path: "/v1/messages", body: body)
+    }
+
+    /// Let a message roost held go on, or drop it.
+    ///
+    /// - Parameter isReleased: true to let it go, false to cancel it
+    public func decideHeld(_ deliveryId: String, isReleased: Bool) async throws -> FleetDelivery {
+        let action = isReleased ? "release" : "cancel"
+        return try decode(FleetDelivery.self, from: try await request("POST", path: "/v1/messages/\(deliveryId)/\(action)"))
+    }
+
+    /// The latest deliveries of every agent, newest first.
+    public func recentDeliveries(limit: Int) async throws -> [FleetDelivery] {
+        let data = try await request("GET", path: "/v1/messages", query: [URLQueryItem(name: "limit", value: String(limit))])
+        return try decode(DeliveryPage.self, from: data).messages
+    }
+
     private func deliver(_ mapBody: [String: Any]) async throws -> FleetDelivery {
         let body = try JSONSerialization.data(withJSONObject: mapBody)
         return try decode(FleetDelivery.self, from: try await request("POST", path: "/v1/messages", body: body))

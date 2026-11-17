@@ -6,6 +6,7 @@ import SwiftUI
 enum RookmasterTab: Hashable {
     case board
     case kind(String)
+    case hosts
 }
 
 /// What the panel at the bottom of the Rookmaster console shows.
@@ -57,6 +58,9 @@ struct RookmasterView: View {
                     }
                     .id(kind)
                     .transition(.opacity)
+                case .hosts:
+                    RookmasterHostsView(fleetModel: fleetModel)
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -64,6 +68,13 @@ struct RookmasterView: View {
             RookmasterPanel(fleetModel: fleetModel, clock: logClock, agentUsage: agentUsage)
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .overlay {
+            if fleetModel.hosts.isLaunchFormShown {
+                LaunchForm(fleetModel: fleetModel)
+                    .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+            }
+        }
+        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: fleetModel.hosts.isLaunchFormShown)
     }
 
     private var header: some View {
@@ -98,6 +109,7 @@ struct RookmasterView: View {
             ForEach(listKinds) { kind in
                 tabButton(.kind(kind.name), title: kind.pluralTitle, symbol: RookeryIcon.kind(kind.name))
             }
+            tabButton(.hosts, title: "Hosts", symbol: .machine)
         }
         .padding(3)
         .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 9, style: .continuous))

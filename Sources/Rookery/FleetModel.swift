@@ -36,6 +36,8 @@ final class FleetModel {
     @ObservationIgnored private let preferences: Preferences
     /// Raven, which works on what this model follows; it lives as long as the app.
     @ObservationIgnored private(set) lazy var raven = RavenAgent(fleetModel: self)
+    /// The hosts this Mac reaches over ssh, their workdirs, and the agents launched on them.
+    @ObservationIgnored private(set) lazy var hosts = HostsModel(fleetModel: self)
     /// The transcripts read so far, so an agent's page reopens at once.
     @ObservationIgnored let transcripts = TranscriptCache()
     /// Where the user left the agents' pages and the Rookmaster console.
@@ -61,6 +63,11 @@ final class FleetModel {
     func stop() {
         runTask?.cancel()
         runTask = nil
+    }
+
+    /// The address of the roost set, as the user typed it.
+    var roostAddress: String {
+        preferences.roostAddress
     }
 
     /// The token kept for roost, or empty until it is read. It is read off the main thread when the model

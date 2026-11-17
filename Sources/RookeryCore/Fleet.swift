@@ -366,6 +366,7 @@ public enum FleetEventEffect: Equatable, Sendable {
 public struct AgentFleet: Equatable, Sendable {
     public static let agentKind = "agent"
     public static let rookKind = "rook"
+    public static let teamKind = "team"
     /// The rook Rookery's own agents report under, as Raven's conversations: the app's tooling, not agents
     /// of the fleet, so the fleet's lists leave them out.
     public static let rookeryRookName = "rookery"

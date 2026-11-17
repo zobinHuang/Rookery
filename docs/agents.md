@@ -12,7 +12,8 @@ The sidebar's Agents mode shows every code agent roost knows of, one crow each p
 
 - Sessions only; a session's subagents fold under it behind a count.
 - The user's teams first, then the rest by last activity, then those that ended, folded away.
-- Teams are this Mac's own (`agent-teams.json` in the data directory; `agent-groups.json`, from when they were called groups, is read once): drag an agent onto a team, onto an agent in a team to put it before, onto New Team to start one, or onto Unassigned to take it out; drag a team's header to reorder teams. Agents roost forgot are pruned on every full read.
+- Teams live on roost ([teams](../rook/docs/teams.md)), so their agents know them too; an agent may be in several, and shows under each, tagged with the others. This Mac keeps only the layout in `agent-teams.json`: the order of the teams and of the agents in each, and which are folded. Teams made here before roost held them are carried over to it once. Drag an agent onto a team to add it, holding Option to move it out of the team it was dragged from; onto an agent in a team to put it before; onto New Team to start one; or onto Unassigned to take it out of the team it came from. Drag a team's header to reorder teams. A change shows at once and is written to roost; if roost refuses it, the sidebar says why and takes roost's teams back.
+- Each agent's row shows what it works on now, or its role, as it set them with `rook me`.
 - A machine whose rook is offline dims its agents.
 
 ## The crows
@@ -44,6 +45,10 @@ The console over everything roost manages, opened from the top of the Agents sid
 The Hosts tab of Rookmaster lists the concrete hosts of `~/.ssh/config` (patterns and `Match` blocks name none; `Include` is followed), each with the rook it runs: the one the user chose, else a rook named as the host or its short host name. A host's page checks over ssh what it has for agents (tmux, claude, codex, rook, and whether rook reports to a roost), installs rook where it has none (after asking: it runs rook's `setup.sh --name` and `rook connect` there, the token going over ssh's input, never a command line), and keeps the host's workdirs: a directory, browsable over ssh, with the harness, playbook, skills, role and teams an agent started there begins with. Hosts' settings and workdirs live in `hosts.json` in the app's data directory, since only this Mac's ssh configuration reaches the hosts. ssh runs with `BatchMode`, so a host that asks for a password fails rather than waiting.
 
 New Agent, in the Agents list, on a host's page and on each workdir, starts an agent through roost rather than ssh: a spawn with a launch id ([the API](../server/API.md#messages)), which the host's rook-link starts in tmux after installing the playbook and skills; the session names its launch as it starts, and roost gives it its role and teams. Until it reports in, the launch shows as starting under the button; a rook that could not start it, or a session that never reports in within 90 seconds, shows why.
+
+## Teams
+
+The Teams tab of Rookmaster shows each team: its goal, which its agents are told; its members' cards with their role, focus, state and host, and their duty in the team, which the user edits in place; the messages its agents sent one another and to the whole team, oldest first; a box to speak to the whole team as the user; and the limits past which roost holds a message. A held message shows its reason with Cancel and Let It Go; the tab and the team's row count those still held. An agent's page shows its role, which the user may change, its focus and its teams.
 
 ## Raven
 

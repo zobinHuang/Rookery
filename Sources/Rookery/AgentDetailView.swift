@@ -42,7 +42,9 @@ struct AgentDetailView: View {
     @State private var draft = ""
     @State private var isSending = false
     @State private var sendError: String?
+    @State private var roleDraft: String?
     @FocusState private var isComposerFocused: Bool
+    @FocusState private var isRoleFocused: Bool
 
     /// The session the transcript is read from.
     private var transcriptSessionId: String {
@@ -109,6 +111,9 @@ struct AgentDetailView: View {
                         .foregroundStyle(StageColors.secondaryText)
                 }
                 metadata(agent)
+                if agent.parentId == nil {
+                    identity(agent)
+                }
             }
             Spacer(minLength: 12)
             controls(agent)
@@ -123,6 +128,65 @@ struct AgentDetailView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
+    }
+
+    /// Who the agent is to its teammates, which the user may change, what it works on now, and its teams.
+    private func identity(_ agent: FleetAgent) -> some View {
+        let listTeams = fleetModel.teams.listTeams.filter { $0.listAgentIds.contains(agent.id) }
+        return HStack(spacing: 8) {
+            if let roleDraft {
+                TextField("Who it is to its teammates", text: Binding(get: { roleDraft }, set: { self.roleDraft = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .frame(width: 260)
+                    .focused($isRoleFocused)
+                    .onSubmit { saveRole(agent) }
+                    .onExitCommand { self.roleDraft = nil }
+            } else {
+                Button {
+                    roleDraft = agent.role
+                    isRoleFocused = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(agent.role.isEmpty ? "Give it a role" : agent.role)
+                            .foregroundStyle(agent.role.isEmpty ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColors.secondaryText))
+                            .lineLimit(1)
+                        RookeryIconView(.chevronDown)
+                            .foregroundStyle(StageColors.tertiaryText)
+                            .opacity(0.6)
+                    }
+                    .font(.system(size: 12))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Who it is to its teammates; click to change it")
+            }
+            if !agent.focus.isEmpty {
+                Text("now: \(agent.focus)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            ForEach(listTeams) { team in
+                InfoTag(team.title, tint: .teal)
+            }
+        }
+    }
+
+    private func saveRole(_ agent: FleetAgent) {
+        let role = (roleDraft ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        roleDraft = nil
+        guard role != agent.role else {
+            return
+        }
+        Task {
+            do {
+                try await fleetModel.update(FleetRef(kind: AgentFleet.agentKind, id: agent.id), body: ["attributes": .object(["role": .string(role)])])
+            } catch {
+                sendError = FleetModel.describe(error)
+            }
+        }
     }
 
     /// What the user can do to the agent from here: stop it while it works, or answer the approval it waits

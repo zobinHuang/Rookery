@@ -52,6 +52,9 @@ struct RookmasterView: View {
                         open(ref)
                     }
                     .transition(.opacity)
+                case .kind(AgentFleet.teamKind):
+                    RookmasterTeamsView(fleetModel: fleetModel, selectedRef: Bindable(memory).rookmasterSelectedRef)
+                        .transition(.opacity)
                 case .kind(let kind):
                     RookmasterKindList(fleetModel: fleetModel, kind: kind, selectedRef: Bindable(memory).rookmasterSelectedRef) { ref in
                         open(ref)
@@ -117,12 +120,24 @@ struct RookmasterView: View {
 
     private func tabButton(_ target: RookmasterTab, title: String, symbol: RookeryIcon) -> some View {
         let isSelected = memory.rookmasterTab == target
+        let heldCount = target == .kind(AgentFleet.teamKind) ? fleetModel.listHeldEvents.count : 0
         return Button {
             withAnimation(Self.tabAnimation) {
                 memory.rookmasterTab = target
             }
         } label: {
-            RookeryLabel(title, icon: symbol)
+            HStack(spacing: 5) {
+                RookeryLabel(title, icon: symbol)
+                if heldCount > 0 {
+                    Text("\(heldCount)")
+                        .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.orange, in: Capsule())
+                        .help("\(heldCount) messages held for you")
+                }
+            }
                 .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                 .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(StageColors.secondaryText))
                 .padding(.horizontal, 10)

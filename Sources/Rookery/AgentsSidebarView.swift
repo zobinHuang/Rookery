@@ -4,15 +4,21 @@ import SwiftUI
 
 /// What an agent drag carries, as text: an agent, or one of the user's teams of agents.
 enum AgentPayload {
-    case agent(String)
+    /// An agent, and the team it was dragged out of, if any.
+    case agent(String, fromTeam: String?)
     case team(String)
 
     private static let agentPrefix = "rookery-agent:"
     private static let teamPrefix = "rookery-agent-team:"
+    private static let teamSeparator: Character = "|"
 
     init?(_ text: String) {
         if text.hasPrefix(Self.agentPrefix) {
-            self = .agent(String(text.dropFirst(Self.agentPrefix.count)))
+            let listParts = text.dropFirst(Self.agentPrefix.count).split(separator: Self.teamSeparator, maxSplits: 1).map(String.init)
+            guard let agentId = listParts.first else {
+                return nil
+            }
+            self = .agent(agentId, fromTeam: listParts.count > 1 ? listParts[1] : nil)
         } else if text.hasPrefix(Self.teamPrefix) {
             self = .team(String(text.dropFirst(Self.teamPrefix.count)))
         } else {
@@ -22,7 +28,7 @@ enum AgentPayload {
 
     var text: String {
         switch self {
-        case .agent(let agentId): Self.agentPrefix + agentId
+        case .agent(let agentId, let teamId): Self.agentPrefix + agentId + (teamId.map { "\(Self.teamSeparator)\($0)" } ?? "")
         case .team(let teamId): Self.teamPrefix + teamId
         }
     }
@@ -60,6 +66,28 @@ struct AgentsSidebarView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
             rookmasterButton
+            if let teamError = fleetModel.teamError, !isCollapsed {
+                HStack(alignment: .top, spacing: 6) {
+                    RookeryIconView(.warning)
+                        .foregroundStyle(.orange)
+                    Text(teamError)
+                        .lineLimit(3)
+                    Spacer(minLength: 0)
+                    Button {
+                        fleetModel.teamError = nil
+                    } label: {
+                        RookeryIconView(.close)
+                            .foregroundStyle(StageColors.tertiaryText)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(StageColors.secondaryText)
+                .padding(8)
+                .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
             if isCollapsed {
                 collapsedList
             } else {
@@ -78,6 +106,7 @@ struct AgentsSidebarView: View {
             }
         }
         .animation(Self.rowAnimation, value: fleetModel.connection)
+        .animation(Self.rowAnimation, value: fleetModel.teamError)
     }
 
     // MARK: - Sections
@@ -140,8 +169,8 @@ struct AgentsSidebarView: View {
     private var unassignedSection: some View {
         let listLive = listUnassigned.filter { $0.state != .ended }
         if !fleetModel.teams.listTeams.isEmpty && !listLive.isEmpty {
-            sectionHeader("Unassigned", count: listLive.count, dropId: "unassigned") {
-                dropAgent($0, into: nil, before: nil)
+            sectionHeader("Unassigned", count: listLive.count, dropId: "unassigned") { agentId, sourceTeamId in
+                dropAgent(agentId, from: sourceTeamId, into: nil, before: nil)
             }
         }
         ForEach(listLive) { agent in
@@ -214,7 +243,7 @@ struct AgentsSidebarView: View {
         .padding(.top, 8)
         .help("Make a team, or drop an agent here to start one with it")
         .dropDestination(for: String.self) { listTexts, _ in
-            guard case .agent(let agentId) = listTexts.first.flatMap(AgentPayload.init) else {
+            guard case .agent(let agentId, _) = listTexts.first.flatMap(AgentPayload.init) else {
                 return false
             }
             fleetModel.addTeam(title: "New Team", with: agentId)
@@ -301,8 +330,8 @@ struct AgentsSidebarView: View {
         }
         .dropDestination(for: String.self) { listTexts, _ in
             switch listTexts.first.flatMap(AgentPayload.init) {
-            case .agent(let agentId):
-                return dropAgent(agentId, into: team.id, before: nil)
+            case .agent(let agentId, let sourceTeamId):
+                return dropAgent(agentId, from: sourceTeamId, into: team.id, before: nil)
             case .team(let teamId):
                 fleetModel.moveTeam(teamId, before: team.id)
                 return true
@@ -314,7 +343,7 @@ struct AgentsSidebarView: View {
         }
     }
 
-    private func sectionHeader(_ title: String, count: Int, dropId: String, onDrop: @escaping (String) -> Bool) -> some View {
+    private func sectionHeader(_ title: String, count: Int, dropId: String, onDrop: @escaping (String, String?) -> Bool) -> some View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.system(size: 11, weight: .semibold))
@@ -332,10 +361,10 @@ struct AgentsSidebarView: View {
                 .fill(dropTargetId == dropId ? Color.accentColor.opacity(0.16) : .clear)
         }
         .dropDestination(for: String.self) { listTexts, _ in
-            guard case .agent(let agentId) = listTexts.first.flatMap(AgentPayload.init) else {
+            guard case .agent(let agentId, let sourceTeamId) = listTexts.first.flatMap(AgentPayload.init) else {
                 return false
             }
-            return onDrop(agentId)
+            return onDrop(agentId, sourceTeamId)
         } isTargeted: { isTargeted in
             updateDropTarget(dropId, isTargeted: isTargeted)
         }
@@ -369,6 +398,9 @@ struct AgentsSidebarView: View {
                     FittingText(agent.displayName, size: isSubagent ? 12 : 13, weight: .semibold)
                         .foregroundStyle(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.primaryText))
                     tags(of: agent, isReachable: isReachable)
+                    if !isSubagent {
+                        identity(of: agent, shownIn: teamId)
+                    }
                     if subagentCount > 0 {
                         subagentToggle(agent.id, count: subagentCount)
                             .padding(.top, 3)
@@ -403,10 +435,11 @@ struct AgentsSidebarView: View {
         .animation(.easeOut(duration: 0.2), value: agent.state)
         .contextMenu {
             if !isSubagent {
-                Menu("Move to Team") {
-                    ForEach(fleetModel.teams.listTeams) { team in
+                let setMemberOf = Set(fleetModel.teams.teamIds(of: agent.id))
+                Menu("Add to Team") {
+                    ForEach(fleetModel.teams.listTeams.filter { !setMemberOf.contains($0.id) }) { team in
                         Button(team.title) {
-                            fleetModel.move(agent.id, to: team.id)
+                            fleetModel.join(agent.id, to: team.id)
                         }
                     }
                     Divider()
@@ -415,9 +448,9 @@ struct AgentsSidebarView: View {
                         startRenamingNewestTeam()
                     }
                 }
-                if teamId != nil {
-                    Button("Remove from Team") {
-                        fleetModel.move(agent.id, to: nil)
+                if let teamId, let team = fleetModel.teams.listTeams.first(where: { $0.id == teamId }) {
+                    Button("Remove from \(team.title)") {
+                        fleetModel.leave(agent.id, from: teamId)
                     }
                 }
             }
@@ -427,7 +460,7 @@ struct AgentsSidebarView: View {
             }
         }
         .onDrag {
-            NSItemProvider(object: AgentPayload.agent(isSubagent ? (agent.parentId ?? agent.id) : agent.id).text as NSString)
+            NSItemProvider(object: AgentPayload.agent(isSubagent ? (agent.parentId ?? agent.id) : agent.id, fromTeam: isSubagent ? nil : teamId).text as NSString)
         } preview: {
             HStack(spacing: 8) {
                 CrowView(state: agent.state)
@@ -439,10 +472,10 @@ struct AgentsSidebarView: View {
             .background(.regularMaterial, in: .rect(cornerRadius: 10))
         }
         .dropDestination(for: String.self) { listTexts, _ in
-            guard !isSubagent, case .agent(let draggedId) = listTexts.first.flatMap(AgentPayload.init) else {
+            guard !isSubagent, case .agent(let draggedId, let sourceTeamId) = listTexts.first.flatMap(AgentPayload.init) else {
                 return false
             }
-            return dropAgent(draggedId, into: teamId, before: teamId == nil ? nil : agent.id)
+            return dropAgent(draggedId, from: sourceTeamId, into: teamId, before: teamId == nil ? nil : agent.id)
         } isTargeted: { isTargeted in
             updateDropTarget(agent.id, isTargeted: isTargeted && !isSubagent)
         }
@@ -451,6 +484,33 @@ struct AgentsSidebarView: View {
                 InsertionMark(isVertical: false)
                     .offset(y: -2)
             }
+        }
+    }
+
+    /// What the agent does now, or who it is, and the other teams it is in.
+    @ViewBuilder
+    private func identity(of agent: FleetAgent, shownIn teamId: String?) -> some View {
+        let line = agent.focus.isEmpty ? agent.role : agent.focus
+        let listOtherTeams = fleetModel.teams.listTeams.filter { team in
+            team.id != teamId && team.listAgentIds.contains(agent.id)
+        }
+        if !line.isEmpty || (teamId != nil && !listOtherTeams.isEmpty) {
+            HStack(spacing: 5) {
+                if !line.isEmpty {
+                    Text(line)
+                        .font(.system(size: 11))
+                        .foregroundStyle(StageColors.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(agent.focus.isEmpty ? "Role: \(agent.role)" : "Now: \(agent.focus)\(agent.role.isEmpty ? "" : "\nRole: \(agent.role)")")
+                }
+                if teamId != nil, !listOtherTeams.isEmpty {
+                    InfoTag(listOtherTeams.count == 1 ? "also \(listOtherTeams[0].title)" : "+\(listOtherTeams.count) teams", tint: .teal)
+                        .help("Also in " + listOtherTeams.map(\.title).joined(separator: ", "))
+                        .layoutPriority(1)
+                }
+            }
+            .padding(.top, 2)
         }
     }
 
@@ -644,9 +704,20 @@ struct AgentsSidebarView: View {
 
     // MARK: - Editing and dropping
 
-    private func dropAgent(_ agentId: String, into teamId: String?, before beforeAgentId: String?) -> Bool {
+    /// Drop an agent: into a team, which it joins, or with Option held moves into from the team it was
+    /// dragged out of; or out of the team it was dragged from, into the unassigned.
+    private func dropAgent(_ agentId: String, from sourceTeamId: String?, into teamId: String?, before beforeAgentId: String?) -> Bool {
+        let isMoving = NSEvent.modifierFlags.contains(.option)
         withAnimation(Self.rowAnimation) {
-            fleetModel.move(agentId, to: teamId, before: beforeAgentId)
+            if let teamId {
+                if let sourceTeamId, isMoving {
+                    fleetModel.move(agentId, from: sourceTeamId, to: teamId, before: beforeAgentId)
+                } else {
+                    fleetModel.join(agentId, to: teamId, before: beforeAgentId)
+                }
+            } else if let sourceTeamId {
+                fleetModel.leave(agentId, from: sourceTeamId)
+            }
         }
         dropTargetId = nil
         return true

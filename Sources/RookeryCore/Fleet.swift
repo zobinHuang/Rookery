@@ -64,6 +64,14 @@ public enum JSONValue: Codable, Equatable, Sendable {
         return value
     }
 
+    /// The value as a number, or nil when it is not one.
+    public var numberValue: Double? {
+        guard case .number(let value) = self else {
+            return nil
+        }
+        return value
+    }
+
     /// The value as a flag, or nil when it is not a boolean.
     public var boolValue: Bool? {
         guard case .bool(let value) = self else {
@@ -192,6 +200,10 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
     /// The session this agent is a subagent of, or nil for a session of its own.
     public var parentId: String?
     public var lastUsedAt: String
+    /// Who it is to its teammates, as it, the user or Raven set it; empty when unset.
+    public var role: String
+    /// What it works on now, as it last said; empty when unset.
+    public var focus: String
 
     public init(
         id: String,
@@ -206,7 +218,9 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
         model: String = "",
         hostname: String = "",
         parentId: String? = nil,
-        lastUsedAt: String = ""
+        lastUsedAt: String = "",
+        role: String = "",
+        focus: String = ""
     ) {
         self.id = id
         self.name = name
@@ -221,6 +235,8 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
         self.hostname = hostname
         self.parentId = parentId
         self.lastUsedAt = lastUsedAt
+        self.role = role
+        self.focus = focus
     }
 
     /// The agent an agent resource describes.
@@ -242,7 +258,9 @@ public struct FleetAgent: Equatable, Identifiable, Sendable {
             model: mapAttributes["model"]?.stringValue ?? "",
             hostname: mapAttributes["machine"]?["hostname"]?.stringValue ?? "",
             parentId: mapAttributes["parent"]?.stringValue,
-            lastUsedAt: resource.lastUsedAt
+            lastUsedAt: resource.lastUsedAt,
+            role: mapAttributes["role"]?.stringValue ?? "",
+            focus: mapAttributes["focus"]?.stringValue ?? ""
         )
     }
 
@@ -309,8 +327,12 @@ public struct FleetDelivery: Decodable, Equatable, Identifiable, Sendable {
     /// `prompt`, `interrupt`, `approve` or `spawn`; a roost older than kinds sends none, and every delivery
     /// was a prompt.
     public let kind: String
+    /// The kind's options: a prompt's `thread`, `hop`, `team`, `no_reply` and `sender_title`, a spawn's
+    /// launch.
+    public let mapOptions: [String: JSONValue]
 
     enum CodingKeys: String, CodingKey {
+        case mapOptions = "options"
         case id
         case agentId = "agent_id"
         case text
@@ -331,6 +353,12 @@ public struct FleetDelivery: Decodable, Equatable, Identifiable, Sendable {
         mapDetail = try container.decodeIfPresent([String: JSONValue].self, forKey: .mapDetail) ?? [:]
         createdAt = try container.decode(String.self, forKey: .createdAt)
         kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? "prompt"
+        mapOptions = try container.decodeIfPresent([String: JSONValue].self, forKey: .mapOptions) ?? [:]
+    }
+
+    /// Whether roost holds it for the user to release or cancel.
+    public var isHeld: Bool {
+        status == "held"
     }
 
     /// The outcomes a delivery ends in.

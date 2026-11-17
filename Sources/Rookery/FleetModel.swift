@@ -31,6 +31,8 @@ final class FleetModel {
     /// Every resource, relation and recent event, for the Rookmaster console.
     private(set) var graph = ResourceGraph()
     private(set) var teams: AgentTeams
+    /// Why the last change to the teams failed, until the user dismisses it.
+    var teamError: String?
     private(set) var serverVersion: String?
 
     @ObservationIgnored private let preferences: Preferences
@@ -202,22 +204,39 @@ final class FleetModel {
 
     // MARK: - Teams
 
+    /// Make a team on roost, with an agent in it if one is given.
     func addTeam(title: String, with agentId: String? = nil) {
         let teamId = teams.addTeam(title: title)
         if let agentId {
-            teams.move(agentId, to: teamId)
+            teams.join(agentId, to: teamId)
         }
         saveTeams()
+        writeTeams("make team \(title)") { client in
+            _ = try await client.create(AgentFleet.teamKind, body: ["id": .string(teamId), "name": .string(title)])
+            if let agentId {
+                try await client.join(agentId, team: teamId, duty: "")
+            }
+        }
     }
 
     func renameTeam(_ teamId: String, to title: String) {
-        teams.rename(teamId, to: title)
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        teams.rename(teamId, to: trimmed)
         saveTeams()
+        writeTeams("rename team \(teamId)") { client in
+            _ = try await client.update(FleetRef(kind: AgentFleet.teamKind, id: teamId), body: ["name": .string(trimmed)])
+        }
     }
 
     func removeTeam(_ teamId: String) {
         teams.removeTeam(teamId)
         saveTeams()
+        writeTeams("remove team \(teamId)") { client in
+            try await client.delete(FleetRef(kind: AgentFleet.teamKind, id: teamId))
+        }
     }
 
     func toggleTeam(_ teamId: String) {
@@ -225,14 +244,124 @@ final class FleetModel {
         saveTeams()
     }
 
-    func move(_ agentId: String, to teamId: String?, before beforeAgentId: String? = nil) {
-        teams.move(agentId, to: teamId, before: beforeAgentId)
+    /// Put an agent in a team, before another of its agents, keeping it in its other teams; one already in
+    /// the team only moves within it.
+    func join(_ agentId: String, to teamId: String, before beforeAgentId: String? = nil) {
+        let isMember = teams.teamIds(of: agentId).contains(teamId)
+        teams.join(agentId, to: teamId, before: beforeAgentId)
         saveTeams()
+        guard !isMember else {
+            return
+        }
+        writeTeams("put \(agentId) in team \(teamId)") { client in
+            try await client.join(agentId, team: teamId, duty: "")
+        }
+    }
+
+    func leave(_ agentId: String, from teamId: String) {
+        teams.leave(agentId, from: teamId)
+        saveTeams()
+        writeTeams("take \(agentId) out of team \(teamId)") { client in
+            try await client.leave(agentId, team: teamId)
+        }
+    }
+
+    /// Move an agent from one team into another.
+    func move(_ agentId: String, from sourceTeamId: String, to teamId: String, before beforeAgentId: String? = nil) {
+        join(agentId, to: teamId, before: beforeAgentId)
+        if sourceTeamId != teamId {
+            leave(agentId, from: sourceTeamId)
+        }
+    }
+
+    /// Give a member a duty in its team.
+    func assignDuty(_ duty: String, to agentId: String, in teamId: String) {
+        writeTeams("give \(agentId) a duty in team \(teamId)") { client in
+            try await client.join(agentId, team: teamId, duty: duty.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
     }
 
     func moveTeam(_ teamId: String, before beforeTeamId: String?) {
         teams.moveTeam(teamId, before: beforeTeamId)
         saveTeams()
+    }
+
+    /// The messages roost holds for the user and the user has not decided on, as the recent events tell.
+    var listHeldEvents: [FleetEvent] {
+        let listEvents = graph.listRecentEvents
+        let setDecided = Set(listEvents.compactMap { event -> String? in
+            let isDecided = event.mapDetail["released"]?.boolValue == true
+                || event.verb == "undelivered"
+                || event.verb == "delivered"
+            return isDecided ? event.mapDetail["delivery"]?.stringValue : nil
+        })
+        return listEvents.filter { event in
+            event.verb == "messaged"
+                && event.mapDetail["held"] != nil
+                && !setDecided.contains(event.mapDetail["delivery"]?.stringValue ?? "")
+        }
+    }
+
+    /// How many held messages went through a team: sent to it, or between two of its members.
+    func heldCount(in teamId: String) -> Int {
+        guard let team = graph.resource(FleetRef(kind: AgentFleet.teamKind, id: teamId)) else {
+            return 0
+        }
+        let setMembers = Set(AgentTeams.memberIds(of: team))
+        return listHeldEvents.filter { event in
+            event.mapDetail["team"]?.stringValue == teamId
+                || (setMembers.contains(event.actor.id) && setMembers.contains(event.object?.id ?? ""))
+        }.count
+    }
+
+    /// The teams roost holds, by name.
+    var listTeamResources: [FleetResource] {
+        graph.listResources(of: AgentFleet.teamKind).sorted { $0.displayName < $1.displayName }
+    }
+
+    /// Change the teams on roost; the sidebar shows the change at once, and takes roost's teams back in
+    /// when roost refused it.
+    private func writeTeams(_ what: String, _ change: @escaping @MainActor (RoostClient) async throws -> Void) {
+        Task {
+            do {
+                try await change(requireClient())
+            } catch {
+                Self.logger.error("cannot \(what, privacy: .public): \(Self.describe(error), privacy: .public)")
+                teamError = "Could not \(what): \(Self.describe(error))"
+                syncTeams()
+            }
+        }
+    }
+
+    /// Take roost's teams into the sidebar's layout.
+    private func syncTeams() {
+        teams.adopt(graph.listResources(of: AgentFleet.teamKind))
+        saveTeams()
+    }
+
+    /// Carry the teams made on this Mac before roost held teams over to roost, once.
+    private func carryTeamsToRoost(_ client: RoostClient) async {
+        guard !teams.isOnRoost else {
+            return
+        }
+        let setOnRoost = Set(graph.listResources(of: AgentFleet.teamKind).map(\.id))
+        for team in teams.listTeams where !setOnRoost.contains(team.id) {
+            do {
+                graph.put(try await client.create(AgentFleet.teamKind, body: ["id": .string(team.id), "name": .string(team.title)]))
+                for agentId in team.listAgentIds {
+                    guard let agent = graph.resource(FleetRef(kind: AgentFleet.agentKind, id: agentId)), !agent.isRookeryOwn else {
+                        continue
+                    }
+                    try await client.join(agentId, team: team.id, duty: "")
+                }
+                graph.put(try await client.resource(FleetRef(kind: AgentFleet.teamKind, id: team.id)))
+            } catch {
+                Self.logger.error("cannot carry team \(team.title, privacy: .public) to roost: \(Self.describe(error), privacy: .public)")
+                return
+            }
+        }
+        teams.noteOnRoost()
+        syncTeams()
     }
 
     // MARK: - Following roost
@@ -291,8 +420,8 @@ final class FleetModel {
             recentEvents: listRecentEvents,
             lastSeq: lastSeq
         )
-        teams.prune(keeping: Set(fleet.mapAgents.keys))
-        saveTeams()
+        await carryTeamsToRoost(client)
+        syncTeams()
         connection = .online
         for try await event in client.events(after: lastSeq) {
             var setRefetch = Set(graph.apply(event))
@@ -301,6 +430,9 @@ final class FleetModel {
             }
             for ref in setRefetch {
                 await refetch(ref, from: client)
+            }
+            if event.object?.kind == AgentFleet.teamKind {
+                syncTeams()
             }
         }
         throw RoostError.unreachable("the live link closed")

@@ -121,20 +121,55 @@ struct FleetTests {
 }
 
 struct AgentTeamsTests {
-    @Test func movesAgentsBetweenTeamsKeepingOneHome() {
+    @Test func anAgentJoinsSeveralTeamsAndMovesWithinOne() {
         var teams = AgentTeams()
         let backend = teams.addTeam(title: "Backend")
         let frontend = teams.addTeam(title: "Frontend")
 
-        teams.move("a", to: backend)
-        teams.move("b", to: backend)
-        teams.move("c", to: backend, before: "a")
-        teams.move("a", to: frontend)
+        teams.join("a", to: backend)
+        teams.join("b", to: backend)
+        teams.join("c", to: backend, before: "a")
+        teams.join("a", to: frontend)
+        teams.join("b", to: backend, before: "c")
 
-        #expect(teams.listTeams[0].listAgentIds == ["c", "b"])
-        #expect(teams.teamId(of: "a") == frontend)
-        teams.move("a", to: nil)
-        #expect(teams.teamId(of: "a") == nil)
+        #expect(teams.listTeams[0].listAgentIds == ["b", "c", "a"])
+        #expect(teams.teamIds(of: "a") == [backend, frontend])
+        teams.leave("a", from: backend)
+        #expect(teams.teamIds(of: "a") == [frontend])
+    }
+
+    @Test func takesInRoostsTeamsKeepingTheLayoutHere() {
+        var teams = AgentTeams()
+        teams.addTeam(title: "Old name", id: "api")
+        teams.addTeam(title: "Gone", id: "gone")
+        teams.join("b", to: "api")
+        teams.join("a", to: "api")
+        teams.toggleCollapsed("api")
+        let members: JSONValue = .object([
+            "a": .object(["duty": .string("server"), "joined_at": .string("2026-11-17T01:00:00.000+00:00")]),
+            "b": .object(["duty": .string(""), "joined_at": .string("2026-11-17T02:00:00.000+00:00")]),
+            "c": .object(["duty": .string("docs"), "joined_at": .string("2026-11-17T03:00:00.000+00:00")]),
+        ])
+        let listRoost = [
+            FleetResource(kind: "team", id: "api", name: "API", mapAttributes: ["members": members], lastUsedAt: ""),
+            FleetResource(kind: "team", id: "web", name: "Web", mapAttributes: [:], lastUsedAt: ""),
+        ]
+
+        teams.adopt(listRoost)
+
+        #expect(teams.listTeams.map(\.id) == ["api", "web"])
+        #expect(teams.listTeams[0].title == "API")
+        #expect(teams.listTeams[0].listAgentIds == ["b", "a", "c"])
+        #expect(teams.listTeams[0].isCollapsed)
+        #expect(AgentTeams.memberIds(of: listRoost[0]) == ["a", "b", "c"])
+        #expect(AgentTeams.duty(of: "c", in: listRoost[0]) == "docs")
+    }
+
+    @Test func remembersThatItsTeamsWentToRoost() throws {
+        var teams = AgentTeams()
+        teams.noteOnRoost()
+        let decoded = try JSONDecoder().decode(AgentTeams.self, from: JSONEncoder().encode(teams))
+        #expect(decoded.isOnRoost)
     }
 
     @Test func readsTeamsSavedWhenTheyWereGroups() throws {
@@ -143,17 +178,6 @@ struct AgentTeamsTests {
         let teams = try JSONDecoder().decode(AgentTeams.self, from: Data(legacy.utf8))
 
         #expect(teams.listTeams.map(\.title) == ["Backend"])
-    }
-
-    @Test func forgetsAgentsRoostDropped() {
-        var teams = AgentTeams()
-        let backend = teams.addTeam(title: "Backend")
-        teams.move("a", to: backend)
-        teams.move("b", to: backend)
-
-        teams.prune(keeping: ["b"])
-
-        #expect(teams.listTeams[0].listAgentIds == ["b"])
     }
 
     @Test func reordersAndRenamesTeams() {

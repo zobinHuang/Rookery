@@ -281,6 +281,9 @@ struct RookmasterPanel: View {
                 }
             titleBar
             if memory.isPanelExpanded {
+                Rectangle()
+                    .fill(StageColors.separator)
+                    .frame(height: 1)
                 HStack(spacing: 0) {
                     Group {
                         switch memory.panelTab {
@@ -297,7 +300,26 @@ struct RookmasterPanel: View {
             }
         }
         .background(StageColors.sidebar)
+        .background {
+            Button("Show or Hide Raven", action: toggleFromShortcut)
+                .keyboardShortcut("j", modifiers: .command)
+                .opacity(0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .animation(Self.foldAnimation, value: memory.isPanelExpanded)
+    }
+
+    /// ⌘J: fold the panel away, or open it on Raven.
+    private func toggleFromShortcut() {
+        withAnimation(Self.foldAnimation) {
+            if memory.isPanelExpanded {
+                memory.isPanelExpanded = false
+            } else {
+                memory.panelTab = .raven
+                memory.isPanelExpanded = true
+            }
+        }
     }
 
     /// A strip along the panel's top edge that drags its height, lit while the pointer is on it.
@@ -344,7 +366,7 @@ struct RookmasterPanel: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(memory.isPanelExpanded ? "Fold the panel" : "Open the panel")
+            .help(memory.isPanelExpanded ? "Fold the panel (⌘J)" : "Open the panel (⌘J)")
             HStack(spacing: 2) {
                 panelTab(.raven, title: "Raven", count: nil, isBusy: fleetModel.raven.isAnyRunning)
                 panelTab(.log, title: "Log", count: listShown.count, isBusy: false)

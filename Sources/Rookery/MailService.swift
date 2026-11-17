@@ -22,6 +22,7 @@ enum MailToolError: Error, CustomStringConvertible {
 /// approve, and carried out here once they do. Only the accounts the user allows are seen.
 actor MailService: MailSource {
     private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "mail")
+    /// How long Mail's accounts are kept before they are read again, in the background.
     private static let accountsLifetime: TimeInterval = 300
     private static let maximumEventSpan: TimeInterval = 4 * 366 * 24 * 3600
     private static let proposalIdBytes = 6
@@ -32,6 +33,8 @@ actor MailService: MailSource {
     private let calendars = CalendarLibrary()
     private var listAccounts: [MailScriptAccount] = []
     private var accountsReadAt: Date?
+    /// Reading the accounts again once they are old, while the old ones still serve.
+    private var accountsRefresh: Task<Void, Never>?
     private let settingsURL = DataDirectory.file(named: MailAccountSettings.fileName)
 
     // MARK: - Tools
@@ -492,9 +495,24 @@ actor MailService: MailSource {
 
     /// Mail's accounts, read again every few minutes.
     func accounts() async throws -> [MailScriptAccount] {
-        if let accountsReadAt, Date.now.timeIntervalSince(accountsReadAt) < Self.accountsLifetime, !listAccounts.isEmpty {
-            return listAccounts
+        guard let accountsReadAt, !listAccounts.isEmpty else {
+            return try await readAccounts()
         }
+        if Date.now.timeIntervalSince(accountsReadAt) >= Self.accountsLifetime, accountsRefresh == nil {
+            accountsRefresh = Task {
+                defer { accountsRefresh = nil }
+                do {
+                    _ = try await readAccounts()
+                } catch {
+                    Self.logger.error("cannot read Mail's accounts again: \(String(describing: error), privacy: .public)")
+                }
+            }
+        }
+        return listAccounts
+    }
+
+    /// Ask Mail for its accounts, which only its scripting tells, and keep them.
+    private func readAccounts() async throws -> [MailScriptAccount] {
         listAccounts = try await MainActor.run { try MailScripting.accounts() }
         accountsReadAt = .now
         return listAccounts

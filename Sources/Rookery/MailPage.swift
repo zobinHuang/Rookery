@@ -61,10 +61,9 @@ struct MailPage: View {
 
     /// The widest the reader's conversation runs.
     private static let readerMaxWidth: CGFloat = 860
-    private static let threadLineWidth: CGFloat = 1.5
-    private static let threadDotSize: CGFloat = 11
-    /// How far down its card a message's dot sits, level with the sender's name.
-    private static let threadDotTop: CGFloat = 22
+    /// How many rows and messages stand in for a list or a conversation still on its way.
+    private static let skeletonRowCount = 8
+    private static let skeletonMessageCount = 2
 
     @State private var place = MailPlace.allInboxes
     @State private var searchText = ""
@@ -74,6 +73,8 @@ struct MailPage: View {
     /// The message last read for the reader, whether or not Mail still held it.
     @State private var loadedMessageId: Int?
     @State private var isLoading = false
+    /// Whether the list was read at least once, so an empty one means no mail rather than not yet.
+    @State private var hasLoadedList = false
     @State private var problem: String?
     /// The conversation of the message chosen, newest first, its messages read in full, and those the
     /// user folded; every other one is open.
@@ -231,18 +232,14 @@ struct MailPage: View {
                     .foregroundStyle(StageColors.secondaryText)
                 TextField("Search subject, sender, text", text: $searchText)
                     .textFieldStyle(.plain)
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.mini)
-                }
             }
             .font(.system(size: 12))
             .padding(.horizontal, 9)
             .padding(.vertical, 6)
             .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .padding(10)
-            if listMessages.isEmpty && isLoading {
-                PageLoading(title: "Reading \(place.title)")
+            if listMessages.isEmpty && (isLoading || !hasLoadedList) {
+                listSkeleton
             } else if listMessages.isEmpty {
                 SidebarNotice(icon: .envelopeOpen, title: searchText.isEmpty ? "Nothing here" : "No match", text: searchText.isEmpty ? "\(place.title) holds no mail." : "No message in \(place.title) matches.")
                 Spacer(minLength: 0)
@@ -318,7 +315,7 @@ struct MailPage: View {
     @ViewBuilder
     private var reader: some View {
         if let selectedId, loadedMessageId != selectedId {
-            PageLoading(title: "Opening the message")
+            readerSkeleton
                 .transition(.opacity)
         } else if let message = shownMessage {
             VStack(spacing: 0) {
@@ -330,8 +327,9 @@ struct MailPage: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         threadHeader(message)
                             .padding(.bottom, 18)
-                        ForEach(Array(listThread.enumerated()), id: \.element.id) { index, summary in
-                            threadItem(summary, isFirst: index == 0, isLast: index == listThread.count - 1)
+                        ForEach(listThread, id: \.id) { summary in
+                            threadItem(summary)
+                                .padding(.bottom, 22)
                         }
                     }
                     .padding(.horizontal, 22)
@@ -360,39 +358,63 @@ struct MailPage: View {
         }
     }
 
-    /// One message of the conversation on its line: a dot on the line that runs through them all, the
-    /// line drawn from the message before to the one after, and the message's card beside it.
-    private func threadItem(_ summary: MailMessageSummary, isFirst: Bool, isLast: Bool) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            VStack(spacing: 0) {
-                Rectangle()
-                    .fill(isFirst ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.separator))
-                    .frame(width: Self.threadLineWidth, height: Self.threadDotTop)
-                Circle()
-                    .fill(summary.isRead ? AnyShapeStyle(StageColors.window) : AnyShapeStyle(StageColors.primaryText))
-                    .overlay {
-                        Circle()
-                            .strokeBorder(summary.isRead ? AnyShapeStyle(StageColors.tertiaryText) : AnyShapeStyle(StageColors.primaryText), lineWidth: 1.5)
-                    }
-                    .frame(width: Self.threadDotSize, height: Self.threadDotSize)
-                Rectangle()
-                    .fill(isLast ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.separator))
-                    .frame(width: Self.threadLineWidth)
-                    .frame(maxHeight: .infinity)
-            }
-            .frame(width: Self.threadDotSize)
-            MailMessageCard(
-                summary: summary,
-                detail: mapDetails[summary.id],
-                isOpen: !setFoldedIds.contains(summary.id),
-                isChosen: summary.id == selectedId,
-                onToggle: { toggle(summary) }
-            )
-            .task(id: summary.id) {
-                await loadDetail(of: summary.id)
-            }
-            .padding(.bottom, isLast ? 0 : 12)
+    /// One message of the conversation, in its bubble on the side of whoever wrote it, read in full once
+    /// it comes into view.
+    private func threadItem(_ summary: MailMessageSummary) -> some View {
+        MailMessageCard(
+            summary: summary,
+            detail: mapDetails[summary.id],
+            isOpen: !setFoldedIds.contains(summary.id),
+            isMine: summary.from.address.caseInsensitiveCompare(summary.account) == .orderedSame,
+            onToggle: { toggle(summary) }
+        )
+        .task(id: summary.id) {
+            await loadDetail(of: summary.id)
         }
+    }
+
+    /// The rows of a list still being read: a mark, a sender, a subject and a line of text each.
+    private var listSkeleton: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(0..<Self.skeletonRowCount, id: \.self) { _ in
+                HStack(alignment: .top, spacing: 8) {
+                    SkeletonBlock(width: 6, height: 6, cornerRadius: 3)
+                        .padding(.top, 3)
+                    VStack(alignment: .leading, spacing: 6) {
+                        SkeletonBlock(width: 110, height: 9)
+                        SkeletonBlock(height: 8)
+                        SkeletonBlock(width: 170, height: 8)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+    }
+
+    /// A conversation still being opened: its subject and a message or two, as they will stand.
+    private var readerSkeleton: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            VStack(alignment: .leading, spacing: 8) {
+                SkeletonBlock(width: 300, height: 18, cornerRadius: 6)
+                SkeletonBlock(width: 170, height: 9)
+            }
+            ForEach(0..<Self.skeletonMessageCount, id: \.self) { _ in
+                HStack(alignment: .bottom, spacing: 10) {
+                    SkeletonBlock(width: MailMessageCard.markSize, height: MailMessageCard.markSize, cornerRadius: MailMessageCard.markSize / 2)
+                    VStack(alignment: .leading, spacing: 7) {
+                        SkeletonBlock(width: 140, height: 9)
+                        MailMessageCard.bubbleSkeleton(isMine: false)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 22)
+        .padding(.vertical, 20)
+        .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Read a message of the conversation in full, once.
@@ -468,7 +490,10 @@ struct MailPage: View {
 
     private func loadList() async {
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            hasLoadedList = true
+        }
         do {
             listMessages = try await service.search(place.query(text: searchText.trimmingCharacters(in: .whitespaces)))
             mapInboxCounts = try await service.inboxCounts()
@@ -527,19 +552,25 @@ struct MailPage: View {
     }
 }
 
-/// A message of a conversation in its card: its sender, to whom and when, then its own words, formatted as
-/// sent when it has HTML, the earlier mail it quotes shown only when asked, and its attachments; folded to
-/// its opening when the user folds it. Its head folds and opens it. It keeps its own height and quote, so
-/// the formatted text growing redraws only this card.
-private struct MailMessageCard: View {
-    /// A formatted message's height until its own is read, and the least it takes.
-    private static let bodyStartHeight: CGFloat = 120
+/// A message of a conversation as a bubble on the side of whoever wrote it, as a chat shows it: the
+/// user's own on the right, everyone else's on the left with their mark at its foot; over it the sender, when
+/// and to whom, which fold it to its opening and open it again. Inside, its own words, as sent when it has
+/// HTML, the earlier mail it quotes only when asked; under it, its attachments. It keeps its own height and
+/// quote, so the formatted text growing redraws only this message.
+struct MailMessageCard: View {
+    static let markSize: CGFloat = 32
+    private static let markSpacing: CGFloat = 10
+    /// The room a bubble leaves on the side away from its writer, so the two sides read apart.
+    private static let farSideRoom: CGFloat = 56
+    private static let cornerRadius: CGFloat = 17
     private static let bodyMinimumHeight: CGFloat = 40
+    private static let skeletonHeight: CGFloat = 112
+    private static let paperColor = Color.white
 
     let summary: MailMessageSummary
     let detail: MailMessageDetail?
     let isOpen: Bool
-    let isChosen: Bool
+    let isMine: Bool
     let onToggle: () -> Void
 
     @State private var bodyHeight: CGFloat?
@@ -548,72 +579,144 @@ private struct MailMessageCard: View {
     @Environment(\.people) private var people
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: onToggle) {
-                head
-            }
-            .buttonStyle(.plain)
-            .help(isOpen ? "Fold this message" : "Open this message")
-            if isOpen {
-                if let detail {
-                    messageBody(detail)
-                        .transition(.opacity)
-                } else {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+        let edgeAnchor: UnitPoint = isMine ? .trailing : .leading
+        VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
+            HStack(alignment: .bottom, spacing: Self.markSpacing) {
+                if !isMine {
+                    PersonMark(
+                        person: people?.person(withAddress: summary.from.address),
+                        fallbackName: summary.from.name,
+                        fallbackAddress: summary.from.address,
+                        size: Self.markSize
+                    )
+                    .padding(.bottom, 1)
                 }
+                VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
+                    Button(action: onToggle) {
+                        head
+                    }
+                    .buttonStyle(.plain)
+                    .help(isOpen ? "Fold this message" : "Open this message")
+                    bubble
+                }
+                .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+            }
+            if isOpen, let detail {
+                footer(detail)
+                    .fixedSize(horizontal: isMine, vertical: false)
+                    .padding(isMine ? .trailing : .leading, isMine ? 6 : Self.markSize + Self.markSpacing)
+                    .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+                    .transition(.opacity)
             }
         }
-        .padding(14)
-        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(isChosen ? AnyShapeStyle(StageColors.secondaryText.opacity(0.35)) : AnyShapeStyle(StageColors.separator))
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isOpen)
+        .animation(.easeOut(duration: 0.25), value: bodyHeight != nil)
+        .scrollTransition(.interactive, axis: .vertical) { view, phase in
+            view
+                .scaleEffect(phase.isIdentity ? 1 : 0.95, anchor: edgeAnchor)
+                .opacity(phase.isIdentity ? 1 : 0.6)
+                .offset(y: phase.value * 8)
         }
     }
 
+    /// Who wrote it and when, and while open to whom.
     private var head: some View {
-        HStack(alignment: .top, spacing: 10) {
-            PersonMark(
-                person: people?.person(withAddress: summary.from.address),
-                fallbackName: summary.from.name,
-                fallbackAddress: summary.from.address,
-                size: 30
-            )
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    AddressLabel(address: summary.from)
-                        .font(.system(size: 13, weight: .semibold))
-                    Spacer(minLength: 6)
-                    Text(summary.receivedAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 11).monospacedDigit())
-                        .foregroundStyle(StageColors.tertiaryText)
+        VStack(alignment: isMine ? .trailing : .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                if isMine {
+                    time
                 }
-                if isOpen, let detail, !detail.listTo.isEmpty {
-                    Text("to \(AddressLabel.names(detail.listTo + detail.listCc, people: people))")
-                        .font(.system(size: 11))
-                        .foregroundStyle(StageColors.secondaryText)
-                        .lineLimit(2)
-                } else if !isOpen {
-                    Text(summary.snippet)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(StageColors.secondaryText)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                AddressLabel(address: summary.from)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StageColors.primaryText)
+                if !isMine {
+                    time
                 }
             }
+            if isOpen, let detail, !detail.listTo.isEmpty {
+                Text("to \(AddressLabel.names(detail.listTo + detail.listCc, people: people))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .lineLimit(1)
+            }
         }
+        .padding(.horizontal, 6)
         .contentShape(Rectangle())
     }
 
-    /// A message's text: as sent, on a page of its own, when it has HTML; else its plain text; then its
-    /// attachments.
+    private var time: some View {
+        Text(summary.receivedAt.formatted(date: .abbreviated, time: .shortened))
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundStyle(StageColors.tertiaryText)
+    }
+
     @ViewBuilder
-    private func messageBody(_ detail: MailMessageDetail) -> some View {
-        let trimmedText = detail.html.isEmpty ? MailQuote.trimmed(detail.text) : nil
-        if !detail.html.isEmpty {
+    private var bubble: some View {
+        if !isOpen {
+            Button(action: onToggle) {
+                textBubble(summary.snippet.isEmpty ? "No text" : summary.snippet, lineLimit: 2)
+            }
+            .buttonStyle(.plain)
+            .help("Open this message")
+            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: isMine ? .topTrailing : .topLeading)))
+        } else if let detail {
+            if detail.html.isEmpty {
+                textBubble(textShown(of: detail), lineLimit: nil)
+                    .textSelection(.enabled)
+                    .transition(.opacity)
+            } else {
+                pageBubble(detail)
+            }
+        } else {
+            Self.bubbleSkeleton(isMine: isMine)
+                .transition(.opacity)
+        }
+    }
+
+    /// A bubble still on its way: its outline in the theme with lines of text sweeping in it.
+    static func bubbleSkeleton(isMine: Bool) -> some View {
+        SkeletonLines(count: 4, lineHeight: 8, spacing: 9)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            .frame(height: skeletonHeight, alignment: .top)
+            .background {
+                MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                    .fill(StageColors.agentBubble)
+                    .overlay {
+                        MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                            .stroke(StageColors.agentBubbleBorder, lineWidth: 1)
+                    }
+            }
+            .padding(isMine ? .leading : .trailing, farSideRoom)
+    }
+
+    /// Plain text in a bubble of the conversation's colors: the user's in the theme turned over.
+    private func textBubble(_ text: String, lineLimit: Int?) -> some View {
+        Text(text)
+            .font(.system(size: 13))
+            .lineSpacing(2.5)
+            .lineLimit(lineLimit)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(isMine ? AnyShapeStyle(StageColors.userBubbleText) : AnyShapeStyle(StageColors.primaryText))
+            .padding(.horizontal, 13)
+            .padding(.vertical, 8)
+            .background {
+                MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                    .fill(isMine ? AnyShapeStyle(StageColors.userBubble) : AnyShapeStyle(StageColors.agentBubble))
+                    .overlay {
+                        MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                            .stroke(isMine ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.agentBubbleBorder), lineWidth: 1)
+                    }
+            }
+            .padding(isMine ? .leading : .trailing, Self.farSideRoom)
+    }
+
+    /// Formatted text on its own white page, shaped as a bubble; its outline sweeps until the page is laid
+    /// out and takes its height.
+    private func pageBubble(_ detail: MailMessageDetail) -> some View {
+        let isLaidOut = bodyHeight != nil
+        return ZStack(alignment: .topLeading) {
             MailHTMLView(
                 html: detail.html,
                 isRemoteAllowed: true,
@@ -629,34 +732,59 @@ private struct MailMessageCard: View {
                     }
                 }
             )
-            .frame(height: max(bodyHeight ?? Self.bodyStartHeight, Self.bodyMinimumHeight))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(StageColors.separator)
+            .frame(height: max(bodyHeight ?? Self.skeletonHeight, Self.bodyMinimumHeight))
+            .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+            .background {
+                MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                    .fill(Self.paperColor)
+                    .overlay {
+                        MessageBubbleShape(isTrailing: isMine, hasTail: true)
+                            .stroke(StageColors.agentBubbleBorder, lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.07), radius: 8, y: 3)
             }
-        } else {
-            Text(detail.text.isEmpty ? "Mail has not downloaded this message's text; open it in Mail." : (isQuoteShown ? detail.text : trimmedText ?? detail.text))
-                .font(.system(size: 13))
-                .lineSpacing(3)
-                .foregroundStyle(detail.text.isEmpty ? AnyShapeStyle(StageColors.secondaryText) : AnyShapeStyle(StageColors.primaryText))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(isLaidOut ? 1 : 0)
+            if !isLaidOut {
+                Self.bubbleSkeleton(isMine: isMine)
+                    .transition(.opacity)
+            }
         }
-        if isQuoteTrimmed || trimmedText != nil {
-            Button {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    isQuoteShown.toggle()
+        .padding(isMine ? .leading : .trailing, isLaidOut ? Self.farSideRoom : 0)
+    }
+
+    private func textShown(of detail: MailMessageDetail) -> String {
+        if detail.text.isEmpty {
+            return "Mail has not downloaded this message's text; open it in Mail."
+        }
+        return isQuoteShown ? detail.text : MailQuote.trimmed(detail.text) ?? detail.text
+    }
+
+    /// Under the bubble: the quoted mail's switch, when there is any, and the attachments.
+    @ViewBuilder
+    private func footer(_ detail: MailMessageDetail) -> some View {
+        let hasQuote = isQuoteTrimmed || (detail.html.isEmpty && MailQuote.trimmed(detail.text) != nil)
+        if hasQuote || !detail.listAttachments.isEmpty {
+            FlowRow(spacing: 6) {
+                if hasQuote {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            isQuoteShown.toggle()
+                        }
+                    } label: {
+                        RookeryLabel(isQuoteShown ? "Hide Quoted Mail" : "Show Quoted Mail", icon: .ellipsis)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(StageColors.secondaryText)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 3)
+                            .background(StageColors.segmentGroove, in: Capsule())
+                            .overlay {
+                                Capsule()
+                                    .strokeBorder(StageColors.segmentGrooveBorder)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(isQuoteShown ? "Show only what this message says" : "Show the earlier mail this message quotes")
                 }
-            } label: {
-                RookeryLabel(isQuoteShown ? "Hide Quoted Mail" : "Show Quoted Mail", icon: .ellipsis)
-                    .font(.system(size: 11.5))
-            }
-            .help(isQuoteShown ? "Show only what this message says" : "Show the earlier mail this message quotes")
-        }
-        if !detail.listAttachments.isEmpty {
-            FlowRow(spacing: 5) {
                 ForEach(detail.listAttachments, id: \.self) { name in
                     InfoTag(name)
                 }

@@ -95,7 +95,14 @@ struct MailHTMLView: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
-        private static let heightScript = "return Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)"
+        private static let heightScript = """
+            const body = document.body;
+            if (!body) { return 0; }
+            const range = document.createRange();
+            range.selectNodeContents(body);
+            const bottom = Math.max(range.getBoundingClientRect().bottom, ...[...body.children].map(child => child.getBoundingClientRect().bottom));
+            return Math.ceil(bottom + window.scrollY + parseFloat(getComputedStyle(body).marginBottom || "0"));
+            """
 
         /// What the page was last loaded with, to load it again only when one changes.
         var loadedHTML: String?

@@ -7,7 +7,6 @@ import SwiftUI
 struct RavenPanel: View {
     let fleetModel: FleetModel
 
-    @State private var draft = ""
     @State private var listMentions: [FleetRef] = []
     @State private var highlightedIndex = 0
     @State private var renamingId: String?
@@ -24,6 +23,11 @@ struct RavenPanel: View {
         raven.openConversationId
     }
 
+    private var draft: String {
+        get { fleetModel.pageMemory.ravenDraft }
+        nonmutating set { fleetModel.pageMemory.ravenDraft = newValue }
+    }
+
     private var listSuggestions: [MentionTarget] {
         fleetModel.mentionTargets(in: draft)
     }
@@ -38,6 +42,15 @@ struct RavenPanel: View {
             }
             VStack(spacing: 0) {
                 conversation
+                    .overlay(alignment: .bottomLeading) {
+                        if !listSuggestions.isEmpty {
+                            suggestions
+                                .padding(.horizontal, 12)
+                                .padding(.bottom, 4)
+                                .transition(.opacity.combined(with: .offset(y: 6)))
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.15), value: listSuggestions.map(\.id))
                 composer
             }
             .overlay(alignment: .topLeading) {
@@ -199,7 +212,7 @@ struct RavenPanel: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             AgentComposer(
-                text: $draft,
+                text: Bindable(fleetModel.pageMemory).ravenDraft,
                 placeholder: isReady ? "Ask Raven" : "Connect to roost first",
                 isEnabled: isReady,
                 isBusy: raven.isRunning(openId),
@@ -218,18 +231,6 @@ struct RavenPanel: View {
             }
         }
         .padding(12)
-        .overlay(alignment: .topLeading) {
-            if !listSuggestions.isEmpty {
-                suggestions
-                    .padding(.horizontal, 12)
-                    .alignmentGuide(.top) { dimensions in
-                        dimensions[.bottom] - 6
-                    }
-                    .transition(.opacity.combined(with: .offset(y: 6)))
-            }
-        }
-        .zIndex(1)
-        .animation(.easeOut(duration: 0.15), value: listSuggestions.map(\.id))
     }
 
     /// Which code agent the conversation runs on: chosen for a new one, shown for one under way.
@@ -271,26 +272,29 @@ struct RavenPanel: View {
                                 .lineLimit(1)
                             Spacer(minLength: 4)
                             Text(person.listAddresses.first ?? "person")
-                                .foregroundStyle(StageColors.tertiaryText)
+                                .opacity(0.6)
                                 .lineLimit(1)
                         case .resource(let resource):
                             RookeryIconView(RookeryIcon.kind(resource.kind))
-                                .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
                                 .frame(width: 16)
                             Text(resource.displayName)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
                             Text(resource.kind)
-                                .foregroundStyle(StageColors.tertiaryText)
+                                .opacity(0.6)
                         }
                     }
                     .font(.system(size: 12))
+                    .foregroundStyle(index == highlightedIndex ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 5)
-                    .background(
-                        index == highlightedIndex ? AnyShapeStyle(Color.accentColor.opacity(0.18)) : AnyShapeStyle(StageColor.clear),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    )
+                    .background {
+                        if index == highlightedIndex {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(StageColors.selectedSegment)
+                                .strokeBorder(StageColors.contrastActiveBorder)
+                        }
+                    }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

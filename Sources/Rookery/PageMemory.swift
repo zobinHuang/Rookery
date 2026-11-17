@@ -34,6 +34,8 @@ final class PageMemory {
     /// How far each scroll area was scrolled, by the area's key: from the top, or for an area that
     /// follows its end, how far above its bottom.
     @ObservationIgnored var mapScrollOffsets: [String: CGPoint] = [:]
+    /// What is typed to Raven in the Rookmaster console and not yet sent.
+    var ravenDraft = ""
     /// The section of the settings shown.
     var settingsPane = SettingsPane.general
     /// The person open in the settings, as far as the user changed them.

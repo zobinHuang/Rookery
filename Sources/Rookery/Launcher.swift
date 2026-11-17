@@ -12,12 +12,9 @@ enum LauncherItem: Identifiable {
     case page(SwitcherEntry)
     case askRaven(String)
     case conversation(RavenConversation)
-    /// A person the `@` being typed could name, chosen to write their mention.
-    case mention(Person)
 
     var id: String {
         switch self {
-        case .mention(let person): "person:\(person.id)"
         case .application(let application, _): "app:\(application.id)"
         case .page(let entry): "page:\(entry.id)"
         case .askRaven: "ask"
@@ -42,6 +39,11 @@ final class LauncherModel {
     /// Changes with every request sent, to bring the conversation's end into view.
     var sendToken = 0
     var problem: String?
+    /// The people and resources the `@` being typed could name, offered over whatever is shown.
+    var listMentionTargets: [MentionTarget] = []
+    var mentionIndex = 0
+    /// The resources named in what is typed, by their mentions, told to Raven with the request.
+    var listMentionRefs: [FleetRef] = []
     /// The theme the user chose for Rookery; nil to follow the system.
     var chosenTheme: Theme?
 }
@@ -145,6 +147,8 @@ final class LauncherController {
         model.chosenTheme = preferences.theme
         panel.appearance = preferences.theme.map { NSAppearance(named: $0.appearanceName) } ?? nil
         model.query = ""
+        model.listMentionTargets = []
+        model.listMentionRefs = []
         model.problem = nil
         model.targetConversationId = nil
         model.shownConversationId = nil
@@ -204,10 +208,8 @@ final class LauncherController {
             return
         }
         var listItems: [LauncherItem] = []
-        if let mentionQuery = Mentions.activeQuery(in: model.query) {
-            listItems += fleetModel.people.book.suggestions(for: mentionQuery, limit: Mentions.suggestionLimit).map { .mention($0) }
-        }
-        if model.targetConversationId == nil && listItems.isEmpty {
+        let isMentioning = Mentions.activeQuery(in: model.query) != nil
+        if model.targetConversationId == nil && !isMentioning {
             let listApplicationMatches = listApplications.compactMap { application -> (InstalledApplication, Int)? in
                 let score = max(
                     LauncherMatch.score(of: query, in: application.name) ?? 0,
@@ -271,6 +273,35 @@ final class LauncherController {
     // MARK: - Choosing
 
     /// Move the chosen row up or down, wrapping around.
+    /// Offer what the `@` being typed could name.
+    func updateMentions() {
+        let listTargets = fleetModel.mentionTargets(in: model.query)
+        if listTargets.map(\.id) != model.listMentionTargets.map(\.id) {
+            model.mentionIndex = 0
+        }
+        model.listMentionTargets = listTargets
+    }
+
+    func moveMention(by step: Int) {
+        let count = model.listMentionTargets.count
+        guard count > 0 else {
+            return
+        }
+        model.mentionIndex = ((model.mentionIndex + step) % count + count) % count
+    }
+
+    /// Write the mention of the person or resource chosen in place of the `@` being typed.
+    func pickMention(_ target: MentionTarget) {
+        switch target {
+        case .person(let person):
+            model.query = Mentions.complete(model.query, with: person)
+        case .resource(let resource):
+            model.query = Mentions.complete(model.query, with: resource)
+            model.listMentionRefs.append(FleetRef(kind: resource.kind, id: resource.id))
+        }
+        updateMentions()
+    }
+
     func moveSelection(by step: Int) {
         let count = model.listItems.count
         guard count > 0 else {
@@ -303,8 +334,6 @@ final class LauncherController {
             hide()
         case .askRaven(let text):
             ask(text)
-        case .mention(let person):
-            model.query = Mentions.complete(model.query, with: person)
         case .conversation(let conversation):
             let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
             model.targetConversationId = conversation.id
@@ -358,7 +387,10 @@ final class LauncherController {
             model.problem = "Raven is still answering in this conversation."
             return
         }
-        guard let conversationId = raven.ask(text, mentioning: [], in: model.targetConversationId) else {
+        let listNamed = model.listMentionRefs.filter { ref in
+            fleetModel.graph.resource(ref).map { text.contains(Mentions.token(for: $0)) } ?? false
+        }
+        guard let conversationId = raven.ask(text, mentioning: listNamed, in: model.targetConversationId) else {
             model.problem = "Raven could not take the request."
             return
         }
@@ -367,6 +399,7 @@ final class LauncherController {
         model.shownConversationId = conversationId
         model.listItems = []
         model.query = ""
+        model.listMentionRefs = []
         model.sendToken += 1
     }
 

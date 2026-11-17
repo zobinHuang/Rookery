@@ -25,13 +25,7 @@ struct RavenPanel: View {
     }
 
     private var listSuggestions: [MentionTarget] {
-        guard let query = Mentions.activeQuery(in: draft) else {
-            return []
-        }
-        let listResources = fleetModel.graph.listKinds
-            .filter { !RookmasterView.setHiddenKinds.contains($0.name) }
-            .flatMap { fleetModel.graph.listResources(of: $0.name) }
-        return MentionTarget.suggestions(for: query, people: fleetModel.people.book, resources: listResources)
+        fleetModel.mentionTargets(in: draft)
     }
 
     var body: some View {
@@ -181,10 +175,6 @@ struct RavenPanel: View {
     private var composer: some View {
         let isReady = fleetModel.connection == .online
         return VStack(alignment: .leading, spacing: 6) {
-            if !listSuggestions.isEmpty {
-                suggestions
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
             engineRow
             let listNamedPeople = fleetModel.people.book.people(mentionedIn: draft)
             if !listNamedPeople.isEmpty {
@@ -228,6 +218,17 @@ struct RavenPanel: View {
             }
         }
         .padding(12)
+        .overlay(alignment: .topLeading) {
+            if !listSuggestions.isEmpty {
+                suggestions
+                    .padding(.horizontal, 12)
+                    .alignmentGuide(.top) { dimensions in
+                        dimensions[.bottom] - 6
+                    }
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+        }
+        .zIndex(1)
         .animation(.easeOut(duration: 0.15), value: listSuggestions.map(\.id))
     }
 
@@ -296,7 +297,14 @@ struct RavenPanel: View {
             }
         }
         .padding(4)
-        .background(StageColors.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(StageColors.window)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(StageColors.card)
+                }
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(StageColors.separator)

@@ -143,6 +143,18 @@ final class FleetModel {
     }
 
     /// The client for the roost set, or nil when none is.
+    /// The people and the resources an `@` being typed in a text could name, for a request to Raven;
+    /// empty when no `@` is being typed.
+    func mentionTargets(in text: String) -> [MentionTarget] {
+        guard let query = Mentions.activeQuery(in: text) else {
+            return []
+        }
+        let listResources = graph.listKinds
+            .filter { !RookmasterView.setHiddenKinds.contains($0.name) }
+            .flatMap { graph.listResources(of: $0.name) }
+        return MentionTarget.suggestions(for: query, people: people.book, resources: listResources)
+    }
+
     func client() -> RoostClient? {
         guard
             !preferences.roostAddress.isEmpty,

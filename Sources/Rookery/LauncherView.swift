@@ -13,6 +13,10 @@ struct LauncherView: View {
     private static let conversationHeight: CGFloat = 430
     private static let iconSize: CGFloat = 28
     private static let cornerRadius: CGFloat = 20
+    private static let fieldHeight: CGFloat = 58
+    /// Where the mentions offered start, under the text typed.
+    private static let mentionInset: CGFloat = 46
+    private static let mentionWidth: CGFloat = 380
 
     let controller: LauncherController
     @FocusState private var isFieldFocused: Bool
@@ -60,6 +64,15 @@ struct LauncherView: View {
                 .strokeBorder(StageColors.segmentGrooveBorder)
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
+        .overlay(alignment: .topLeading) {
+            if !model.listMentionTargets.isEmpty {
+                mentionList
+                    .padding(.leading, Self.mentionInset)
+                    .padding(.top, Self.fieldHeight - 4)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: model.listMentionTargets.map(\.id))
         .scaleEffect(model.isVisible ? 1 : 0.96, anchor: .top)
         .opacity(model.isVisible ? 1 : 0)
         .animation(Self.appearAnimation, value: model.isVisible)
@@ -76,6 +89,7 @@ struct LauncherView: View {
             }
         }
         .onChange(of: model.query) {
+            controller.updateMentions()
             if model.shownConversationId == nil {
                 controller.search()
             }
@@ -126,7 +140,7 @@ struct LauncherView: View {
             }
         }
         .padding(.horizontal, 18)
-        .frame(height: 58)
+        .frame(height: Self.fieldHeight)
         .animation(Self.appearAnimation, value: model.targetConversationId)
     }
 
@@ -152,6 +166,23 @@ struct LauncherView: View {
         guard !AgentComposer.isComposing else {
             return .ignored
         }
+        if !model.listMentionTargets.isEmpty {
+            switch keyPress.key {
+            case .downArrow:
+                controller.moveMention(by: 1)
+                return .handled
+            case .upArrow:
+                controller.moveMention(by: -1)
+                return .handled
+            case .return, .tab:
+                if model.listMentionTargets.indices.contains(model.mentionIndex) {
+                    controller.pickMention(model.listMentionTargets[model.mentionIndex])
+                }
+                return .handled
+            default:
+                break
+            }
+        }
         switch keyPress.key {
         case .downArrow where model.shownConversationId == nil:
             controller.moveSelection(by: 1)
@@ -167,6 +198,73 @@ struct LauncherView: View {
             return .ignored
         }
         return .handled
+    }
+
+    // MARK: - Mentions
+
+    /// The people and resources the `@` being typed could name, floating under the box over whatever
+    /// the launcher shows, the chosen one in the theme turned over.
+    private var mentionList: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(model.listMentionTargets.enumerated()), id: \.element.id) { index, target in
+                let isSelected = index == model.mentionIndex
+                Button {
+                    controller.pickMention(target)
+                } label: {
+                    HStack(spacing: 9) {
+                        switch target {
+                        case .person(let person):
+                            PersonMark(person: person, size: 20)
+                            Text(person.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(person.listAddresses.first ?? "")
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .opacity(0.7)
+                        case .resource(let resource):
+                            RookeryIconView(RookeryIcon.kind(resource.kind))
+                                .frame(width: 20)
+                            Text(resource.displayName)
+                                .font(.system(size: 13, weight: .medium))
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(resource.kind.capitalized)
+                                .font(.system(size: 11))
+                                .opacity(0.7)
+                        }
+                    }
+                    .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background {
+                        if isSelected {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(StageColors.selectedSegment)
+                                .strokeBorder(StageColors.contrastActiveBorder)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(5)
+        .frame(width: Self.mentionWidth)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(StageColors.window)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(StageColors.card)
+                }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(StageColors.segmentGrooveBorder)
+        }
+        .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
     }
 
     // MARK: - Rows
@@ -219,14 +317,12 @@ struct LauncherView: View {
         case .application: return "Applications"
         case .page: return "Rookery"
         case .askRaven: return "Raven"
-        case .mention: return "People"
         case .conversation: return model.query.isEmpty ? "Recent Conversations" : "Conversations"
         }
     }
 
     private static func kind(of item: LauncherItem) -> Int {
         switch item {
-        case .mention: -1
         case .application: 0
         case .page: 1
         case .askRaven: 2
@@ -275,8 +371,6 @@ struct LauncherView: View {
         case .page(let entry):
             RookeryIconView(entry.symbolName ?? .window, scale: 1.5)
                 .foregroundStyle(ink)
-        case .mention(let person):
-            PersonMark(person: person, size: Self.iconSize)
         case .askRaven:
             RavenView(isWorking: false)
                 .scaleEffect(Self.iconSize / CrowSize.regular.rawValue)
@@ -292,7 +386,6 @@ struct LauncherView: View {
         case .page(let entry): entry.title
         case .askRaven: "Ask Raven"
         case .conversation(let conversation): conversation.title
-        case .mention(let person): person.name
         }
     }
 
@@ -304,8 +397,6 @@ struct LauncherView: View {
             entry.subtitle.isEmpty ? nil : entry.subtitle
         case .askRaven(let text):
             text
-        case .mention(let person):
-            person.listAddresses.joined(separator: ", ")
         case .conversation(let conversation):
             "\(conversation.lastAt.formatted(.relative(presentation: .named))), \(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests")"
         }

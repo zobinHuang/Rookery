@@ -1,6 +1,6 @@
 ---
 name: day-brief
-description: Brief the user on their day across every account: what is on their calendars, what in their mail needs them, and what to prepare. Use when the user asks what is on today or tomorrow, what they have coming up, or to plan their day.
+description: Brief the user on their day across every account: what is on their calendars, what in their mail needs them, and what to prepare. Use only when the user asks for a brief of their day or to plan it. A question about their schedule alone (what is on tomorrow, when is the next meeting, am I free at 3) is not a brief: answer it from `list_events` and do not read their mail.
 ---
 
 # Brief the day

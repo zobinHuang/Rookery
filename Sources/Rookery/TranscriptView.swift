@@ -27,6 +27,8 @@ struct TranscriptView: View {
     /// Read the conversation from its start, when the page began at its last stretch.
     let onLoadEarlier: () -> Void
 
+    @Environment(\.people) private var people
+
     private var isSubagent: Bool {
         FleetAgent.transcriptSessionId(of: agentId) != agentId
     }
@@ -151,7 +153,7 @@ struct TranscriptView: View {
 
     private func prompt(_ entry: TranscriptEntry, hasTail: Bool) -> some View {
         MessageBubble(isTrailing: true, hasTail: hasTail) {
-            Text(entry.text)
+            mentionText(entry.text)
                 .font(.system(size: 13))
                 .lineSpacing(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -166,7 +168,7 @@ struct TranscriptView: View {
         let isFailed = delivery?.isFailed == true
         return VStack(alignment: .trailing, spacing: 4) {
             MessageBubble(isTrailing: true, hasTail: hasTail, isFailed: isFailed) {
-                Text(outgoing.text)
+                mentionText(outgoing.text)
                     .font(.system(size: 13))
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -395,6 +397,32 @@ struct TranscriptView: View {
         default: .tool
         }
     }
+
+    /// What the user wrote, each person they named shown as their mark and their name in place of the
+    /// mention.
+    private func mentionText(_ text: String) -> Text {
+        guard let people, !people.listPeople.isEmpty else {
+            return Text(text)
+        }
+        let listRanges = people.book.mentionRanges(in: text)
+        guard !listRanges.isEmpty else {
+            return Text(text)
+        }
+        var shown = Text("")
+        var index = text.startIndex
+        for mention in listRanges {
+            shown = shown + Text(text[index..<mention.range.lowerBound])
+            shown = shown
+                + Text(Image(nsImage: people.markImage(of: mention.person, side: Self.mentionMarkSide))).baselineOffset(Self.mentionMarkDrop)
+                + Text("\u{2009}\(mention.person.name)").fontWeight(.semibold)
+            index = mention.range.upperBound
+        }
+        return shown + Text(text[index...])
+    }
+
+    private static let mentionMarkSide: CGFloat = 15
+    /// How far the mark sits below the text's baseline, to center it on the line.
+    private static let mentionMarkDrop: CGFloat = -3
 
     private static func isPrompt(_ block: TranscriptBlock) -> Bool {
         if case .entry(let entry) = block, entry.role == .user {

@@ -12,9 +12,12 @@ enum LauncherItem: Identifiable {
     case page(SwitcherEntry)
     case askRaven(String)
     case conversation(RavenConversation)
+    /// A person the `@` being typed could name, chosen to write their mention.
+    case mention(Person)
 
     var id: String {
         switch self {
+        case .mention(let person): "person:\(person.id)"
         case .application(let application, _): "app:\(application.id)"
         case .page(let entry): "page:\(entry.id)"
         case .askRaven: "ask"
@@ -201,7 +204,10 @@ final class LauncherController {
             return
         }
         var listItems: [LauncherItem] = []
-        if model.targetConversationId == nil {
+        if let mentionQuery = Mentions.activeQuery(in: model.query) {
+            listItems += fleetModel.people.book.suggestions(for: mentionQuery, limit: Mentions.suggestionLimit).map { .mention($0) }
+        }
+        if model.targetConversationId == nil && listItems.isEmpty {
             let listApplicationMatches = listApplications.compactMap { application -> (InstalledApplication, Int)? in
                 let score = max(
                     LauncherMatch.score(of: query, in: application.name) ?? 0,
@@ -297,6 +303,8 @@ final class LauncherController {
             hide()
         case .askRaven(let text):
             ask(text)
+        case .mention(let person):
+            model.query = Mentions.complete(model.query, with: person)
         case .conversation(let conversation):
             let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
             model.targetConversationId = conversation.id

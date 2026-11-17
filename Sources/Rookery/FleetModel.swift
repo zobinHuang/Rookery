@@ -56,6 +56,8 @@ final class FleetModel {
     /// Where the user left the agents' pages and the Rookmaster console.
     @ObservationIgnored let pageMemory = PageMemory()
     @ObservationIgnored let pageColumns = PageColumns()
+    /// The people the user set down, whom Raven is told of and the mail and the calendars show.
+    @ObservationIgnored let people = PeopleStore()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
     private var cachedToken: String??

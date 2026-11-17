@@ -68,8 +68,6 @@ struct MailPage: View {
     /// A formatted message's height until its own is read, and the least it takes.
     private static let bodyStartHeight: CGFloat = 160
     private static let bodyMinimumHeight: CGFloat = 40
-    /// The colors of senders' marks.
-    private static let listSenderColors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .indigo, .brown]
 
     @State private var place = MailPlace.allInboxes
     @State private var searchText = ""
@@ -86,6 +84,8 @@ struct MailPage: View {
     @State private var mapDetails: [Int: MailMessageDetail] = [:]
     @State private var setOpenIds: Set<Int> = []
     @State private var mapBodyHeights: [Int: CGFloat] = [:]
+
+    @Environment(\.people) private var people
 
     private var service: any MailSource {
         fleetModel.mailSource
@@ -272,9 +272,8 @@ struct MailPage: View {
                     .padding(.top, 5)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(message.from.name.isEmpty ? message.from.address : message.from.name)
+                        AddressLabel(address: message.from, markSize: 16)
                             .font(.system(size: 12, weight: message.isRead ? .medium : .bold))
-                            .lineLimit(1)
                         Spacer(minLength: 4)
                         if message.isFlagged {
                             RookeryIconView(.flag)
@@ -394,23 +393,23 @@ struct MailPage: View {
                 toggle(summary)
             } label: {
                 HStack(alignment: .top, spacing: 10) {
-                    Text(Self.initials(of: summary.from))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Self.color(of: summary.from.address), in: Circle())
+                    PersonMark(
+                        person: people?.person(withAddress: summary.from.address),
+                        fallbackName: summary.from.name,
+                        fallbackAddress: summary.from.address,
+                        size: 30
+                    )
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(summary.from.name.isEmpty ? summary.from.address : summary.from.name)
+                            AddressLabel(address: summary.from)
                                 .font(.system(size: 13, weight: .semibold))
-                                .lineLimit(1)
                             Spacer(minLength: 6)
                             Text(summary.receivedAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.system(size: 11).monospacedDigit())
                                 .foregroundStyle(StageColors.tertiaryText)
                         }
                         if isOpen, let detail, !detail.listTo.isEmpty {
-                            Text("to \(Self.names(detail.listTo + detail.listCc))")
+                            Text("to \(AddressLabel.names(detail.listTo + detail.listCc, people: people))")
                                 .font(.system(size: 11))
                                 .foregroundStyle(StageColors.secondaryText)
                                 .lineLimit(2)
@@ -497,23 +496,6 @@ struct MailPage: View {
                 problem = String(describing: error)
             }
         }
-    }
-
-    /// A sender's initials, for the round mark before their name.
-    private static func initials(of address: MailAddress) -> String {
-        let name = address.name.isEmpty ? address.address : address.name
-        let listWords = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "@" }).prefix(2)
-        return listWords.compactMap(\.first).map { String($0).uppercased() }.joined()
-    }
-
-    /// A sender's color, the same for the same address every time.
-    private static func color(of address: String) -> Color {
-        let sum = address.lowercased().unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
-        return listSenderColors[sum % listSenderColors.count]
-    }
-
-    private static func names(_ listPeople: [MailAddress]) -> String {
-        listPeople.map { $0.name.isEmpty ? $0.address : $0.name }.joined(separator: ", ")
     }
 
     /// What the user can do to the message: with titles where they fit, as icons alone where they do not.

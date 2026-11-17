@@ -72,6 +72,7 @@ struct SettingsView: View {
                 roost
                 mailSettings
                 calendarSettings
+                PeopleSettingsSection(people: fleetModel.people)
                 codeAgents
                 worldClock
                 screenSaver
@@ -90,6 +91,7 @@ struct SettingsView: View {
         .background(onClose == nil ? StageColors.window : .clear)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, preferences.theme)
+        .environment(\.people, fleetModel.people)
         .buttonStyle(StageButtonStyle())
     }
 
@@ -990,6 +992,202 @@ private struct CalendarChoiceBody: View {
                 in: RoundedRectangle(cornerRadius: 6, style: .continuous)
             )
             .onHover { isHovered = $0 }
+    }
+}
+
+/// The people the user sets down: each with their mark, name and addresses, opened in place to change
+/// them, and a row to add one.
+private struct PeopleSettingsSection: View {
+    let people: PeopleStore
+
+    @State private var editingId: String?
+    /// The person just added, removed again if the user cancels before saving.
+    @State private var newPersonId: String?
+
+    var body: some View {
+        SettingsSection(title: "People", symbol: .person) {
+            ForEach(people.listPeople) { person in
+                if editingId == person.id {
+                    PersonEditor(people: people, person: person, isNew: newPersonId == person.id) {
+                        editingId = nil
+                        newPersonId = nil
+                    }
+                    .modifier(SettingsSeparator())
+                    .transition(.opacity)
+                } else {
+                    personRow(person)
+                }
+            }
+            if people.listPeople.isEmpty {
+                SettingsRow(title: "No one yet", detail: "add the people you write to, to @ them with Raven") {
+                    EmptyView()
+                }
+            }
+            SettingsActionRow(title: "Add Person…", symbol: .plus) {
+                let person = Person(name: "New Person", listAddresses: [])
+                people.put(person)
+                newPersonId = person.id
+                editingId = person.id
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: editingId)
+    }
+
+    private func personRow(_ person: Person) -> some View {
+        HStack(spacing: 10) {
+            PersonMark(person: person, size: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(person.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Text(person.listAddresses.isEmpty ? "No addresses" : person.listAddresses.joined(separator: ", "))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 12)
+            Button("Edit") {
+                editingId = person.id
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .modifier(SettingsSeparator())
+    }
+}
+
+/// A person opened to change: their name, their addresses, one per row with one to add, and their photo;
+/// saved, cancelled or the person removed.
+private struct PersonEditor: View {
+    let people: PeopleStore
+    let person: Person
+    let isNew: Bool
+    let onDone: () -> Void
+
+    @State private var name = ""
+    @State private var listAddresses: [String] = []
+    @State private var newAddress = ""
+    @State private var problem: String?
+    @FocusState private var isNameFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                PersonMark(person: people.book.person(withId: person.id) ?? person, size: 44)
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Name", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isNameFocused)
+                    HStack(spacing: 8) {
+                        Button("Choose Photo…", action: choosePhoto)
+                        if people.book.person(withId: person.id)?.hasPhoto == true {
+                            Button("Remove Photo") {
+                                people.removePhoto(of: person.id)
+                            }
+                        }
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Addresses")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(StageColors.tertiaryText)
+                ForEach(listAddresses, id: \.self) { address in
+                    HStack(spacing: 8) {
+                        Text(address)
+                            .font(.system(size: 12.5))
+                            .textSelection(.enabled)
+                        Spacer(minLength: 8)
+                        Button {
+                            listAddresses.removeAll { $0 == address }
+                        } label: {
+                            RookeryIconView(.close)
+                                .foregroundStyle(StageColors.tertiaryText)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Remove this address")
+                    }
+                }
+                TextField("Add an address and press Return", text: $newAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(addAddress)
+            }
+            if let problem {
+                Text(problem)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.orange)
+            }
+            HStack(spacing: 8) {
+                Button("Delete", role: .destructive) {
+                    people.remove(person.id)
+                    onDone()
+                }
+                Spacer(minLength: 0)
+                Button("Cancel") {
+                    if isNew {
+                        people.remove(person.id)
+                    }
+                    onDone()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Save", action: save)
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(14)
+        .background(StageColors.hoveredRow.opacity(0.5))
+        .onAppear {
+            name = isNew ? "" : person.name
+            listAddresses = person.listAddresses
+            isNameFocused = true
+        }
+    }
+
+    private func addAddress() {
+        let address = newAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !address.isEmpty else {
+            return
+        }
+        guard address.contains("@"), !address.contains(" ") else {
+            problem = "\(address) is not a mail address"
+            return
+        }
+        if !listAddresses.contains(where: { $0.caseInsensitiveCompare(address) == .orderedSame }) {
+            listAddresses.append(address)
+        }
+        newAddress = ""
+        problem = nil
+    }
+
+    private func save() {
+        addAddress()
+        var changed = people.book.person(withId: person.id) ?? person
+        changed.name = name.trimmingCharacters(in: .whitespaces)
+        changed.listAddresses = listAddresses
+        people.put(changed)
+        onDone()
+    }
+
+    private func choosePhoto() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a photo of \(name.isEmpty ? "this person" : name)"
+        NSApp.activate()
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else {
+                return
+            }
+            MainActor.assumeIsolated {
+                do {
+                    try people.takePhoto(from: url, for: person.id)
+                    problem = nil
+                } catch {
+                    problem = String(describing: error)
+                }
+            }
+        }
     }
 }
 

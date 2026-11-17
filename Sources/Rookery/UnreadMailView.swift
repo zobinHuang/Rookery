@@ -242,9 +242,8 @@ struct UnreadMailView: View {
                     .help(message.account)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(message.from.name.isEmpty ? message.from.address : message.from.name)
+                        AddressLabel(address: message.from, markSize: 15)
                             .font(.system(size: 12, weight: message.isRead ? .medium : .semibold))
-                            .lineLimit(1)
                         Spacer(minLength: 4)
                         if isHovered && !message.isRead {
                             Button {

@@ -69,6 +69,7 @@ struct LauncherView: View {
         .padding(.top, 20)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, model.chosenTheme)
+        .environment(\.people, controller.fleetModel.people)
         .onChange(of: model.isVisible) { _, isVisible in
             if isVisible {
                 isFieldFocused = true
@@ -218,12 +219,14 @@ struct LauncherView: View {
         case .application: return "Applications"
         case .page: return "Rookery"
         case .askRaven: return "Raven"
+        case .mention: return "People"
         case .conversation: return model.query.isEmpty ? "Recent Conversations" : "Conversations"
         }
     }
 
     private static func kind(of item: LauncherItem) -> Int {
         switch item {
+        case .mention: -1
         case .application: 0
         case .page: 1
         case .askRaven: 2
@@ -272,6 +275,8 @@ struct LauncherView: View {
         case .page(let entry):
             RookeryIconView(entry.symbolName ?? .window, scale: 1.5)
                 .foregroundStyle(ink)
+        case .mention(let person):
+            PersonMark(person: person, size: Self.iconSize)
         case .askRaven:
             RavenView(isWorking: false)
                 .scaleEffect(Self.iconSize / CrowSize.regular.rawValue)
@@ -287,6 +292,7 @@ struct LauncherView: View {
         case .page(let entry): entry.title
         case .askRaven: "Ask Raven"
         case .conversation(let conversation): conversation.title
+        case .mention(let person): person.name
         }
     }
 
@@ -298,6 +304,8 @@ struct LauncherView: View {
             entry.subtitle.isEmpty ? nil : entry.subtitle
         case .askRaven(let text):
             text
+        case .mention(let person):
+            person.listAddresses.joined(separator: ", ")
         case .conversation(let conversation):
             "\(conversation.lastAt.formatted(.relative(presentation: .named))), \(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests")"
         }

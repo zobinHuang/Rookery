@@ -152,6 +152,7 @@ final class RavenAgent {
         let prompt = Self.prompt(
             request,
             listMentions: listMentions,
+            listPeople: fleetModel.people.book.people(mentionedIn: request),
             graph: fleetModel.graph,
             agentId: sessionId,
             listDecisions: decisionLines(in: sessionId)
@@ -616,6 +617,7 @@ final class RavenAgent {
     static func prompt(
         _ request: String,
         listMentions: [FleetRef],
+        listPeople: [Person] = [],
         graph: ResourceGraph,
         agentId: String,
         listDecisions: [String]
@@ -636,6 +638,14 @@ final class RavenAgent {
             listLines.append("The request names these resources:")
             for ref in listUnique {
                 listLines.append("- \(ref.kind) \"\(graph.name(of: ref))\" (id \(ref.id))")
+            }
+        }
+        if !listPeople.isEmpty {
+            listLines.append("")
+            listLines.append("The request names these people, by their mention; write to them and invite them at these addresses:")
+            for person in listPeople {
+                let addresses = person.listAddresses.isEmpty ? "no address known" : person.listAddresses.joined(separator: ", ")
+                listLines.append("- \(person.mentionToken) is \(person.name): \(addresses)")
             }
         }
         listLines.append("")

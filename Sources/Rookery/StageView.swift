@@ -125,6 +125,7 @@ struct StageView: View {
         .background(StageColors.window)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .environment(\.chosenTheme, model.shownTheme)
+        .environment(\.people, fleetModel.people)
         .buttonStyle(StageButtonStyle())
         .opacity(model.isVisible ? 1 : 0)
         .animation(.easeOut(duration: 0.22), value: model.isVisible)

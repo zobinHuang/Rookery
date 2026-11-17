@@ -24,14 +24,14 @@ struct RavenPanel: View {
         raven.openConversationId
     }
 
-    private var listSuggestions: [FleetResource] {
+    private var listSuggestions: [MentionTarget] {
         guard let query = Mentions.activeQuery(in: draft) else {
             return []
         }
         let listResources = fleetModel.graph.listKinds
             .filter { !RookmasterView.setHiddenKinds.contains($0.name) }
             .flatMap { fleetModel.graph.listResources(of: $0.name) }
-        return Mentions.suggestions(for: query, among: listResources)
+        return MentionTarget.suggestions(for: query, people: fleetModel.people.book, resources: listResources)
     }
 
     var body: some View {
@@ -186,6 +186,28 @@ struct RavenPanel: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
             engineRow
+            let listNamedPeople = fleetModel.people.book.people(mentionedIn: draft)
+            if !listNamedPeople.isEmpty {
+                FlowRow(spacing: 5) {
+                    ForEach(listNamedPeople) { person in
+                        HStack(spacing: 5) {
+                            PersonMark(person: person, size: 16)
+                            Text(person.name)
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .padding(.leading, 2)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 2)
+                        .background(StageColors.segmentGroove, in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(StageColors.segmentGrooveBorder)
+                        }
+                        .help(person.listAddresses.joined(separator: ", "))
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             AgentComposer(
                 text: $draft,
                 placeholder: isReady ? "Ask Raven" : "Connect to roost first",
@@ -235,19 +257,31 @@ struct RavenPanel: View {
 
     private var suggestions: some View {
         VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(listSuggestions.enumerated()), id: \.element.id) { index, resource in
+            ForEach(Array(listSuggestions.enumerated()), id: \.element.id) { index, target in
                 Button {
-                    pick(resource)
+                    pick(target)
                 } label: {
                     HStack(spacing: 8) {
-                        RookeryIconView(RookeryIcon.kind(resource.kind))
-                            .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
-                            .frame(width: 16)
-                        Text(resource.displayName)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(resource.kind)
-                            .foregroundStyle(StageColors.tertiaryText)
+                        switch target {
+                        case .person(let person):
+                            PersonMark(person: person, size: 18)
+                                .frame(width: 16)
+                            Text(person.name)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(person.listAddresses.first ?? "person")
+                                .foregroundStyle(StageColors.tertiaryText)
+                                .lineLimit(1)
+                        case .resource(let resource):
+                            RookeryIconView(RookeryIcon.kind(resource.kind))
+                                .foregroundStyle(RookmasterStyle.tint(of: resource.kind))
+                                .frame(width: 16)
+                            Text(resource.displayName)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(resource.kind)
+                                .foregroundStyle(StageColors.tertiaryText)
+                        }
                     }
                     .font(.system(size: 12))
                     .padding(.horizontal, 8)
@@ -302,9 +336,14 @@ struct RavenPanel: View {
         return .handled
     }
 
-    private func pick(_ resource: FleetResource) {
-        draft = Mentions.complete(draft, with: resource)
-        listMentions.append(FleetRef(kind: resource.kind, id: resource.id))
+    private func pick(_ target: MentionTarget) {
+        switch target {
+        case .person(let person):
+            draft = Mentions.complete(draft, with: person)
+        case .resource(let resource):
+            draft = Mentions.complete(draft, with: resource)
+            listMentions.append(FleetRef(kind: resource.kind, id: resource.id))
+        }
         isFocused = true
     }
 

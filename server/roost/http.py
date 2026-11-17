@@ -11,6 +11,7 @@ from roost.config import ServerConfig
 from roost.catalog import ResourceCatalog
 from roost.database import Database
 from roost.accounts import AccountStore
+from roost.oauth import AccountLogin
 from roost.errors import (
     AuthError,
     BusyError,
@@ -482,7 +483,8 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
         map_query: dict[str, list[str]],
     ) -> None:
         accounts = self.server.accounts
-        if accounts is None:
+        login = self.server.login
+        if accounts is None or login is None:
             raise ConfigError("this server has no secrets key for the owner's accounts; run roost init again")
         if list_segments == ["providers"] and method == "GET":
             self._respond_json(HTTPStatus.OK, {"providers": [app.as_payload() for app in accounts.providers()]})
@@ -496,11 +498,36 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             )
             self._respond_json(HTTPStatus.OK, app.as_payload())
             return
+        if (
+            len(list_segments) == 3
+            and list_segments[0] == "providers"
+            and list_segments[2] == "authorize"
+            and method == "GET"
+        ):
+            url = login.authorize_url(
+                list_segments[1],
+                self._query_text(map_query, "redirect_uri") or "",
+                self._query_text(map_query, "code_challenge") or "",
+                self._query_text(map_query, "state") or "",
+            )
+            self._respond_json(HTTPStatus.OK, {"url": url})
+            return
+        if list_segments == ["mail-accounts"] and method == "POST":
+            map_body = self._read_json_body()
+            account = login.connect(
+                provider=str(map_body.get("provider") or ""),
+                code=str(map_body.get("code") or ""),
+                code_verifier=str(map_body.get("code_verifier") or ""),
+                redirect_uri=str(map_body.get("redirect_uri") or ""),
+                kind=str(map_body.get("kind") or ""),
+            )
+            self._respond_json(HTTPStatus.CREATED, account.as_payload())
+            return
         if list_segments == ["mail-accounts"] and method == "GET":
             self._respond_json(HTTPStatus.OK, {"accounts": [account.as_payload() for account in accounts.list()]})
             return
         if len(list_segments) == 2 and list_segments[0] == "mail-accounts" and method == "DELETE":
-            self._respond_json(HTTPStatus.OK, accounts.remove(list_segments[1]).as_payload())
+            self._respond_json(HTTPStatus.OK, login.disconnect(list_segments[1]).as_payload())
             return
         raise NotFoundError(self._no_such_route(method, list_segments))
 
@@ -813,8 +840,10 @@ class RoostServer(ThreadingHTTPServer):
         self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)
         self.roster = TeamRoster(self.resources, self.events)
         self.accounts: AccountStore | None = None
+        self.login: AccountLogin | None = None
         if config.secrets_key:
             self.accounts = AccountStore(self.resources.database, SecretVault(config.secrets_key_bytes()))
+            self.login = AccountLogin(self.accounts)
         self.deliveries = DeliveryStore(self.resources, self.events, self.roster)
         self.events.add_listener(self.deliveries.bind_launches)
         self.link = LinkHub(config, self.resources, self.events, self.deliveries)

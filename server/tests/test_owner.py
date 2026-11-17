@@ -1,3 +1,4 @@
+import base64
 import http.client
 import json
 import tempfile
@@ -6,10 +7,12 @@ import unittest
 from pathlib import Path
 from websockets.sync.client import ClientConnection, connect
 from roost.__main__ import ServerCli
-from roost.accounts import Account
+from roost.accounts import Account, AccountStore
 from roost.config import ServerConfig
+from roost.database import Database
 from roost.errors import ConfigError, ValidationError
 from roost.http import RoostServer
+from roost.oauth import AccountLogin, LoginRequiredError
 from roost.store import SessionStore
 from roost.vault import SecretVault
 
@@ -182,3 +185,97 @@ class InitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeProvider:
+    """A provider's token and profile endpoints, answering from what the test set."""
+
+    def __init__(self) -> None:
+        self.list_requests: list[tuple[str, str, dict[str, str] | None]] = []
+        self.map_answers: dict[str, list[tuple[int, dict[str, object]]]] = {}
+
+    def answer(self, url_part: str, status: int, map_body: dict[str, object]) -> None:
+        self.map_answers.setdefault(url_part, []).append((status, map_body))
+
+    def request(self, method, url, map_form=None, bearer=None):
+        self.list_requests.append((method, url, map_form))
+        for url_part, list_queue in self.map_answers.items():
+            if url_part in url and list_queue:
+                return list_queue.pop(0) if len(list_queue) > 1 else list_queue[0]
+        return 404, {}
+
+
+class AccountLoginTest(unittest.TestCase):
+    """Signing in to an account with a code Rookery got, and keeping its access fresh."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        database = Database(Path(self._tmp.name))
+        self.addCleanup(database.close)
+        self.accounts = AccountStore(database, SecretVault(bytes(range(32))))
+        self.accounts.put_provider("google", "cid", "csecret")
+        self.accounts.put_provider("microsoft", "mid", "")
+        self.provider = FakeProvider()
+        self.now = 1000.0
+        self.login = AccountLogin(self.accounts, self.provider, clock=lambda: self.now)
+
+    def sign_in_google(self, map_profile: dict[str, object] | None = None) -> Account:
+        self.provider.answer("oauth2.googleapis.com/token", 200, {"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600})
+        self.provider.answer("userinfo", 200, map_profile or {"email": "me@gmail.com", "name": "Me"})
+        return self.login.connect("google", "code", "verifier", "http://127.0.0.1:5000/callback")
+
+    def test_the_sign_in_page_asks_for_no_mail_sending(self) -> None:
+        url = self.login.authorize_url("google", "http://127.0.0.1:5000/callback", "challenge", "state")
+        self.assertIn("client_id=cid", url)
+        self.assertIn("access_type=offline", url)
+        self.assertIn("gmail.compose", url)
+        self.assertNotIn("gmail.send", url)
+        with self.assertRaises(ValidationError):
+            self.login.authorize_url("google", "https://evil.example/callback", "challenge", "state")
+
+    def test_a_code_becomes_an_account_whose_token_stays_on_roost(self) -> None:
+        account = self.sign_in_google()
+        self.assertEqual((account.email, account.kind, account.status), ("me@gmail.com", "personal", "connected"))
+        self.assertEqual(self.accounts.refresh_token(account.id), "rt-1")
+        _, url, map_form = self.provider.list_requests[0]
+        self.assertEqual((map_form["code_verifier"], map_form["client_secret"]), ("verifier", "csecret"))
+        self.assertEqual(self.login.access_token(account.id), "at-1")
+
+    def test_a_workspace_account_is_a_work_one(self) -> None:
+        self.assertEqual(self.sign_in_google({"email": "me@corp.com", "hd": "corp.com"}).kind, "work")
+
+    def test_a_microsoft_personal_account_is_told_by_its_tenant(self) -> None:
+        claims = base64_claims({"tid": "9188040d-6c67-4c5b-b112-36a304b66dad"})
+        self.provider.answer("oauth2/v2.0/token", 200, {"access_token": "at", "refresh_token": "rt", "id_token": claims})
+        self.provider.answer("graph.microsoft.com/v1.0/me", 200, {"mail": None, "userPrincipalName": "me@outlook.com", "displayName": "Me"})
+        account = self.login.connect("microsoft", "code", "verifier", "http://localhost:5000")
+        self.assertEqual((account.email, account.kind), ("me@outlook.com", "personal"))
+        self.assertNotIn("client_secret", self.provider.list_requests[0][2])
+
+    def test_access_is_renewed_before_it_expires_and_a_rotated_token_kept(self) -> None:
+        account = self.sign_in_google()
+        self.now += 3600 - 60
+        self.provider.map_answers["oauth2.googleapis.com/token"] = [(200, {"access_token": "at-2", "refresh_token": "rt-2", "expires_in": 3600})]
+        self.assertEqual(self.login.access_token(account.id), "at-2")
+        self.assertEqual(self.accounts.refresh_token(account.id), "rt-2")
+
+    def test_a_revoked_grant_asks_the_owner_to_sign_in_again(self) -> None:
+        account = self.sign_in_google()
+        self.now += 7200
+        self.provider.map_answers["oauth2.googleapis.com/token"] = [(400, {"error": "invalid_grant", "error_description": "Token has been expired or revoked."})]
+        with self.assertRaises(LoginRequiredError):
+            self.login.access_token(account.id)
+        self.assertEqual(self.accounts.get(account.id).status, "needs_login")
+
+    def test_disconnecting_revokes_and_forgets(self) -> None:
+        account = self.sign_in_google()
+        self.provider.answer("oauth2.googleapis.com/revoke", 200, {})
+        self.login.disconnect(account.id)
+        self.assertEqual(self.accounts.list(), [])
+        self.assertIn(("POST", "https://oauth2.googleapis.com/revoke", {"token": "rt-1"}), self.provider.list_requests)
+
+
+def base64_claims(map_claims: dict[str, object]) -> str:
+    body = base64.urlsafe_b64encode(json.dumps(map_claims).encode()).decode().rstrip("=")
+    return f"header.{body}.signature"

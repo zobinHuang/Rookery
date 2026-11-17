@@ -112,7 +112,7 @@ ROOST_CONFIG="$HOME/.config/roost/config.json"
 ROOST_BIN="$HOME/.local/bin/roost"
 
 mkdir -p "$ROOST_APP_DIR/roost" "$HOME/.local/bin"
-for MODULE in __init__.py __main__.py accounts.py catalog.py config.py database.py errors.py events.py http.py link.py messages.py playbooks.py records.py resources.py skills.py store.py teams.py vault.py; do
+for MODULE in __init__.py __main__.py accounts.py catalog.py config.py database.py errors.py events.py http.py link.py messages.py oauth.py playbooks.py records.py resources.py skills.py store.py teams.py vault.py; do
   if ! roost_install_file "server/roost/$MODULE" "$ROOST_APP_DIR/roost/$MODULE"; then
     err "Failed to install roost/$MODULE"
     exit 1

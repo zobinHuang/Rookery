@@ -346,7 +346,11 @@ roost holds two tokens. The fleet's, `roost token`, goes to every rook and reach
 | `GET /v1/providers` | the apps the owner registered with Google and Microsoft: `provider`, `client_id`, `has_client_secret` |
 | `PUT /v1/providers/<google\|microsoft>` | `{"client_id": "...", "client_secret": "..."}` keeps an app; the secret is never shown again |
 | `GET /v1/mail-accounts` | the owner's accounts: `id`, `provider`, `kind` (`personal` or `work`), `email`, `display_name`, `scopes`, `status` (`connected`, `needs_login`, `failing`), `error`, `synced_at`; never their tokens |
-| `DELETE /v1/mail-accounts/<id>` | forgets an account and its credentials |
+| `GET /v1/providers/<provider>/authorize` | with `redirect_uri` (a loopback address on the Mac), `code_challenge` (PKCE, S256) and `state`: `{"url": ...}`, the sign-in page for Rookery to open |
+| `POST /v1/mail-accounts` | `{"provider", "code", "code_verifier", "redirect_uri", "kind"}`: roost exchanges the code the sign-in returned and keeps the account; `kind` may be left out, and is then told from the account (a Google Workspace domain, a Microsoft work tenant) |
+| `DELETE /v1/mail-accounts/<id>` | revokes roost's access where the provider allows it, and forgets the account and its credentials |
+
+Rookery signs the owner in on the Mac, in the browser, and hands roost only the code: the refresh token is exchanged and kept on roost alone, and renewed there; an account whose grant the provider withdrew turns `needs_login`. roost asks Google to read and draft mail and to read and change calendar events, and Microsoft for `Mail.ReadWrite` and `Calendars.ReadWrite`; it never asks to send mail.
 
 ## The live link
 

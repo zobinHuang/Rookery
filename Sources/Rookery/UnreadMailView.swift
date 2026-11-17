@@ -111,17 +111,18 @@ struct UnreadMailView: View {
         .padding(.bottom, 10)
     }
 
-    /// The tab of every inbox's unread mail, then one per account, each with its unread count.
+    /// The tab of every inbox's unread mail, then one per account by its full address, each with its unread
+    /// count, wrapping onto more lines where they do not fit on one.
     private var accountTabs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
-                accountTab(nil, title: "All Unread", count: personal.unreadTotal)
-                ForEach(listAccounts, id: \.self) { account in
-                    accountTab(account, title: Self.shortName(of: account), count: personal.mapInboxCounts[account]?.unread)
-                }
+        FlowRow(spacing: 5) {
+            accountTab(nil, title: "All Unread", count: personal.unreadTotal)
+            ForEach(listAccounts, id: \.self) { account in
+                accountTab(account, title: account, count: personal.mapInboxCounts[account]?.unread)
             }
-            .padding(.horizontal, 12)
         }
+        .padding(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 11)
         .padding(.bottom, 8)
     }
 
@@ -162,28 +163,6 @@ struct UnreadMailView: View {
         }
         .buttonStyle(.plain)
         .help(account ?? "Every inbox's unread mail")
-    }
-
-    private static let setMailProviders: Set<String> = ["gmail", "googlemail", "outlook", "hotmail", "live", "icloud", "me", "yahoo", "qq", "163", "126", "foxmail"]
-    private static let setDomainSuffixes: Set<String> = ["com", "net", "org", "edu", "gov", "ac", "co", "io", "ai"]
-
-    /// An account as a tab names it: the part before the @ for a mail provider's address, else the
-    /// organization its domain names, the label before the domain's suffix (`nus` for `u.nus.edu`,
-    /// `ox` for `cs.ox.ac.uk`).
-    static func shortName(of address: String) -> String {
-        let listParts = address.lowercased().split(separator: "@")
-        guard listParts.count == 2 else {
-            return address
-        }
-        var listLabels = listParts[1].split(separator: ".").map(String.init)
-        if listLabels.count > 1 {
-            listLabels.removeLast()
-        }
-        while listLabels.count > 1, let last = listLabels.last, Self.setDomainSuffixes.contains(last) {
-            listLabels.removeLast()
-        }
-        let organization = listLabels.last ?? ""
-        return Self.setMailProviders.contains(organization) || organization.isEmpty ? String(listParts[0]) : organization
     }
 
     /// A titled list of one page of messages, with the page's place among them all and a way to the pages

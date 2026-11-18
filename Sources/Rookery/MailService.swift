@@ -303,17 +303,15 @@ actor MailService: MailSource {
         case .removeDrafts:
             let listDraftIds = Self.strings(mapPayload, "draft_ids")
             let listMailIds = mapPayload["mail_ids"]?.arrayValue?.compactMap(\.numberValue).map { Int($0) } ?? []
-            var listHeaders: [String] = []
+            var listPlaces: [MailMessagePlace] = []
             for mailId in listMailIds {
-                if let header = try await message(mailId)?.messageIdHeader, !header.isEmpty {
-                    listHeaders.append(header)
+                if let place = try await message(mailId)?.place {
+                    listPlaces.append(place)
                 }
             }
-            try await MainActor.run {
-                try MailDrafts.trash(listHeaders)
-            }
+            try await MailDrafts.trash(listPlaces)
             await drafts.remove(listDraftIds)
-            let count = listDraftIds.count + listHeaders.count
+            let count = listDraftIds.count + listPlaces.count
             return count == 1 ? "Threw away 1 draft" : "Threw away \(count) drafts"
         case .openEvent:
             let eventId = try Self.string(mapPayload, "event_id")
@@ -427,10 +425,10 @@ actor MailService: MailSource {
             throw MailToolError.badArgument("the mail has no recipient")
         }
         var account = draft.account.lowercased()
-        var header: String?
+        var originalPlace: MailMessagePlace?
         var body = draft.body
         if let replyToMessageId = draft.replyToMessageId, let original = try await message(replyToMessageId) {
-            header = original.messageIdHeader
+            originalPlace = original.place
             body = MailQuote.reply(to: original, body: draft.body)
             if account.isEmpty {
                 account = original.summary.account.lowercased()
@@ -439,16 +437,14 @@ actor MailService: MailSource {
         guard try await allowedAccountAddresses().values.contains(account) else {
             throw MailToolError.badArgument("Rookery may not send from \(draft.account)")
         }
-        try await MainActor.run {
-            try MailDrafts.send(
-                sender: account,
-                replyingTo: header,
-                listTo: draft.listTo,
-                listCc: draft.listCc,
-                subject: draft.subject,
-                body: body
-            )
-        }
+        try await MailDrafts.send(
+            sender: account,
+            replyingTo: originalPlace,
+            listTo: draft.listTo,
+            listCc: draft.listCc,
+            subject: draft.subject,
+            body: body
+        )
     }
 
     /// One message read whole, from an allowed account.
@@ -460,18 +456,18 @@ actor MailService: MailSource {
     ///
     /// - Throws: `MailToolError` when Mail's copy cannot be found, `MailScriptingError`
     func markRead(_ summary: MailMessageSummary, isRead: Bool) async throws {
-        guard let header = try await message(summary.id)?.messageIdHeader, !header.isEmpty else {
+        guard let place = try await message(summary.id)?.place else {
             throw MailToolError.unavailable("Mail's copy of the message cannot be found")
         }
-        try await MainActor.run { try MailActions.markRead(messageId: header, isRead: isRead) }
+        try await MailActions.markRead(place, isRead: isRead)
     }
 
     /// Flag a message, or take its flag off, in Mail.
     func flag(_ summary: MailMessageSummary, isFlagged: Bool) async throws {
-        guard let header = try await message(summary.id)?.messageIdHeader, !header.isEmpty else {
+        guard let place = try await message(summary.id)?.place else {
             throw MailToolError.unavailable("Mail's copy of the message cannot be found")
         }
-        try await MainActor.run { try MailActions.flag(messageId: header, isFlagged: isFlagged) }
+        try await MailActions.flag(place, isFlagged: isFlagged)
     }
 
     /// When Mail last wrote its library, which changes as mail arrives or is read.
@@ -581,7 +577,7 @@ actor MailService: MailSource {
 
     /// Ask Mail for its accounts, which only its scripting tells, and keep them.
     private func readAccounts() async throws -> [MailScriptAccount] {
-        listAccounts = try await MainActor.run { try MailScripting.accounts() }
+        listAccounts = try await MailScripting.accounts()
         accountsReadAt = .now
         return listAccounts
     }

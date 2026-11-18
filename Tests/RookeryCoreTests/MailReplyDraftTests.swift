@@ -109,3 +109,14 @@ struct MailDraftBoxTests {
         #expect(box.listDrafts.map(\.id) == [older.id])
     }
 }
+
+struct MailMessagePlaceTests {
+    @Test func aPlaceIsReadFromTheMailboxURLItsPathDecoded() throws {
+        let place = try #require(MailMessagePlace(messageId: 33131, mailboxURL: "imap://E6C13C17-677F/%5BGmail%5D/All%20Mail"))
+        #expect(place.accountId == "E6C13C17-677F")
+        #expect(place.mailboxPath == "[Gmail]/All Mail")
+        #expect(place.messageId == 33131)
+        #expect(MailMessagePlace(messageId: 1, mailboxURL: "imap://E6C13C17-677F") == nil)
+        #expect(MailMessagePlace(messageId: 1, mailboxURL: "") == nil)
+    }
+}

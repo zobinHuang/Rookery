@@ -24,7 +24,7 @@ enum MailProbe {
             report.listProblems.append(String(describing: error))
         }
         do {
-            report.listAccounts = try await MainActor.run { try MailScripting.accounts() }
+            report.listAccounts = try await MailScripting.accounts()
         } catch {
             report.listProblems.append(String(describing: error))
         }

@@ -187,7 +187,8 @@ extension MailLibrary {
             messageIdHeader: (mime?.header("message-id") ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "<> ")),
             html: mime.map { message in
                 MimeMessage.embedding(inlineImages(of: message, messageId: messageId, file: file), in: message.html ?? "")
-            } ?? ""
+            } ?? "",
+            mailboxURL: mailboxURL
         )
     }
 

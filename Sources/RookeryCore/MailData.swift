@@ -209,10 +209,12 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
     /// Whether Mail holds only part of it: attachments or long parts not yet downloaded, which opening it in
     /// Mail fetches; its text is usually there.
     public let isPartial: Bool
-    /// Its `Message-ID` header, without the angle brackets, by which Mail finds it.
+    /// Its `Message-ID` header, without the angle brackets.
     public let messageIdHeader: String
     /// Its HTML as sent, for showing it formatted; empty when it has none.
     public let html: String
+    /// The URL of the mailbox Mail keeps it in, as Mail's library names it; empty when unknown.
+    public let mailboxURL: String
 
     public init(
         summary: MailMessageSummary,
@@ -222,7 +224,8 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
         listAttachments: [String],
         isPartial: Bool,
         messageIdHeader: String = "",
-        html: String = ""
+        html: String = "",
+        mailboxURL: String = ""
     ) {
         self.summary = summary
         self.listTo = listTo
@@ -232,6 +235,39 @@ public struct MailMessageDetail: Codable, Equatable, Sendable {
         self.isPartial = isPartial
         self.messageIdHeader = messageIdHeader
         self.html = html
+        self.mailboxURL = mailboxURL
+    }
+
+    /// Where Mail's scripting finds it, or nil when its mailbox is unknown.
+    public var place: MailMessagePlace? {
+        MailMessagePlace(messageId: summary.id, mailboxURL: mailboxURL)
+    }
+}
+
+/// Where Mail keeps a message, as its scripting reaches it at once: the account's id, the mailbox's path
+/// under it, and the message's id, which is its row in Mail's library. Finding a message by its
+/// `Message-ID` instead searches every inbox, which takes Mail half a minute in a large one.
+public struct MailMessagePlace: Equatable, Sendable {
+    public let accountId: String
+    /// The mailbox's path under its account, as Mail's library names it: `INBOX`, `[Gmail]/All Mail`;
+    /// Mail's scripting may name the same mailbox otherwise.
+    public let mailboxPath: String
+    public let messageId: Int
+
+    /// The place of a message in a mailbox, or nil when the mailbox's URL names no account or mailbox.
+    ///
+    /// - Parameters:
+    ///   - messageId: the message's row in Mail's library
+    ///   - mailboxURL: the URL of its mailbox, as Mail's library names it
+    public init?(messageId: Int, mailboxURL: String) {
+        let accountId = MailFolder.accountId(ofMailboxURL: mailboxURL)
+        let mailboxPath = MailFolder.path(ofMailboxURL: mailboxURL).joined(separator: "/")
+        guard !accountId.isEmpty, !mailboxPath.isEmpty else {
+            return nil
+        }
+        self.accountId = accountId
+        self.mailboxPath = mailboxPath
+        self.messageId = messageId
     }
 }
 

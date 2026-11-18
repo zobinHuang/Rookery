@@ -496,6 +496,13 @@ class TeamCommandsTest(QueueAndSendTest):
             self.assertIn("agent b left", context)
             self.assertIsNone(self.hook_output({"session_id": "a", "hook_event_name": "UserPromptSubmit"}))
 
+    def test_a_prompt_is_told_of_a_team_it_joined_after_it_started(self) -> None:
+        self.assertIsNone(self.hook_output({"session_id": "c", "hook_event_name": "SessionStart"}))
+        self.server.roster.join("api", "c", "docs", None)
+        with mock.patch.object(rook_client.TeamBriefing, "BRIEFING_CHECK_SECONDS", 0):
+            output = self.hook_output({"session_id": "c", "hook_event_name": "UserPromptSubmit"})
+        self.assertIn("You joined team API (api) as: docs.", output["hookSpecificOutput"]["additionalContext"])
+
     def test_an_answer_and_a_team_message_carry_their_thread(self) -> None:
         first = self.run_client(["message", "b", "does", "the", "schema", "hold?"]).split()
         thread = first[first.index("thread") + 1]

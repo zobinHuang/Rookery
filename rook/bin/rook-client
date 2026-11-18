@@ -1707,7 +1707,8 @@ class TeamBriefing:
         for team_id, map_team in map_new.items():
             map_before = map_old.get(team_id)
             if map_before is None:
-                list_lines.append(f"You joined team {map_team['name']} ({team_id}) as: {map_team['duty'] or 'member'}.")
+                duty = map_team["members"].get(session_id, "")
+                list_lines.append(f"You joined team {map_team['name']} ({team_id}) as: {duty or 'member'}.")
                 continue
             for agent_id, duty in map_team["members"].items():
                 if agent_id not in map_before["members"]:

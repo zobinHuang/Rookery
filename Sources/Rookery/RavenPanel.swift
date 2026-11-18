@@ -2,13 +2,10 @@ import RookeryCore
 import SwiftUI
 
 /// The Rookmaster console's Raven column: the conversations with Raven, the one last active first, beside
-/// the one open, read as an agent's conversation is, and a box to ask in plain words, naming agents and
-/// resources with @ and choosing them from suggestions.
+/// the one open, read as an agent's conversation is, and the box to ask Raven in (`RavenComposer`).
 struct RavenPanel: View {
     let fleetModel: FleetModel
 
-    @State private var listMentions: [FleetRef] = []
-    @State private var highlightedIndex = 0
     @State private var renamingId: String?
     @State private var renameDraft = ""
     /// Changes with every request sent, to bring the conversation's end into view.
@@ -28,10 +25,6 @@ struct RavenPanel: View {
         nonmutating set { fleetModel.pageMemory.ravenDraft = newValue }
     }
 
-    private var listSuggestions: [MentionTarget] {
-        fleetModel.mentionTargets(in: draft)
-    }
-
     var body: some View {
         HStack(spacing: 0) {
             if !fleetModel.pageColumns.isHidden(.ravenConversations) {
@@ -42,15 +35,6 @@ struct RavenPanel: View {
             }
             VStack(spacing: 0) {
                 conversation
-                    .overlay(alignment: .bottomLeading) {
-                        if !listSuggestions.isEmpty {
-                            suggestions
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 4)
-                                .transition(.opacity.combined(with: .offset(y: 6)))
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.15), value: listSuggestions.map(\.id))
                 composer
             }
             .overlay(alignment: .topLeading) {
@@ -229,46 +213,20 @@ struct RavenPanel: View {
         let isReady = fleetModel.connection == .online
         return VStack(alignment: .leading, spacing: 6) {
             engineRow
-            let listNamedPeople = fleetModel.people.book.people(mentionedIn: draft)
-            if !listNamedPeople.isEmpty {
-                FlowRow(spacing: 5) {
-                    ForEach(listNamedPeople) { person in
-                        HStack(spacing: 5) {
-                            PersonMark(person: person, size: 16)
-                            Text(person.name)
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .padding(.leading, 2)
-                        .padding(.trailing, 8)
-                        .padding(.vertical, 2)
-                        .background(StageColors.segmentGroove, in: Capsule())
-                        .overlay {
-                            Capsule()
-                                .strokeBorder(StageColors.segmentGrooveBorder)
-                        }
-                        .help(person.listAddresses.joined(separator: ", "))
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            AgentComposer(
+            RavenComposer(
+                fleetModel: fleetModel,
                 text: Bindable(fleetModel.pageMemory).ravenDraft,
                 placeholder: isReady ? "Ask Raven" : "Connect to roost first",
                 isEnabled: isReady,
                 isBusy: raven.isRunning(openId),
-                fontSize: 12,
                 onStop: {
                     if let openId {
                         raven.cancel(openId)
                     }
                 },
                 onSend: send,
-                onKey: takeSuggestionKey,
                 isFocused: $isFocused
             )
-            .onChange(of: draft) {
-                highlightedIndex = 0
-            }
         }
         .padding(12)
     }
@@ -297,122 +255,14 @@ struct RavenPanel: View {
         }
     }
 
-    private var suggestions: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(listSuggestions.enumerated()), id: \.element.id) { index, target in
-                Button {
-                    pick(target)
-                } label: {
-                    HStack(spacing: 8) {
-                        switch target {
-                        case .person(let person):
-                            PersonMark(person: person, size: 18)
-                                .frame(width: 16)
-                            Text(person.name)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(person.listAddresses.first ?? "person")
-                                .opacity(0.6)
-                                .lineLimit(1)
-                        case .resource(let resource):
-                            RookeryIconView(RookeryIcon.kind(resource.kind))
-                                .frame(width: 16)
-                            Text(resource.displayName)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(resource.kind)
-                                .opacity(0.6)
-                        }
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(index == highlightedIndex ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background {
-                        if index == highlightedIndex {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(StageColors.selectedSegment)
-                                .strokeBorder(StageColors.contrastActiveBorder)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(4)
-        .background {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(StageColors.window)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(StageColors.card)
-                }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(StageColors.separator)
-        }
-        .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
-    }
-
-    /// The keys that work the suggestions while they show.
-    private func takeSuggestionKey(_ keyPress: KeyPress) -> KeyPress.Result {
-        switch keyPress.key {
-        case .upArrow:
-            return moveHighlight(by: -1)
-        case .downArrow:
-            return moveHighlight(by: 1)
-        case .tab:
-            return pickHighlighted()
-        case .return where !listSuggestions.isEmpty:
-            return pickHighlighted()
-        default:
-            return .ignored
-        }
-    }
-
-    private func moveHighlight(by step: Int) -> KeyPress.Result {
-        guard !listSuggestions.isEmpty else {
-            return .ignored
-        }
-        highlightedIndex = (highlightedIndex + step + listSuggestions.count) % listSuggestions.count
-        return .handled
-    }
-
-    private func pickHighlighted() -> KeyPress.Result {
-        guard listSuggestions.indices.contains(highlightedIndex) else {
-            return .ignored
-        }
-        pick(listSuggestions[highlightedIndex])
-        return .handled
-    }
-
-    private func pick(_ target: MentionTarget) {
-        switch target {
-        case .person(let person):
-            draft = Mentions.complete(draft, with: person)
-        case .resource(let resource):
-            draft = Mentions.complete(draft, with: resource)
-            listMentions.append(FleetRef(kind: resource.kind, id: resource.id))
-        }
-        isFocused = true
-    }
-
-    private func send() {
-        let request = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !request.isEmpty, !raven.isRunning(openId) else {
+    private func send(_ request: String, mentioning listNamed: [FleetRef]) {
+        guard !raven.isRunning(openId) else {
             return
-        }
-        let listNamed = listMentions.filter { ref in
-            fleetModel.graph.resource(ref).map { request.contains(Mentions.token(for: $0)) } ?? false
         }
         withAnimation(.easeOut(duration: 0.2)) {
             _ = raven.ask(request, mentioning: listNamed, in: openId)
         }
         sendToken += 1
         draft = ""
-        listMentions = []
-        isFocused = true
     }
 }

@@ -66,20 +66,18 @@ struct MailRavenPanel: View {
             } else {
                 suggestions
             }
-            AgentComposer(
+            RavenComposer(
+                fleetModel: fleetModel,
                 text: Bindable(fleetModel.pageMemory).mailRavenDraft,
                 placeholder: fleetModel.client() == nil ? "Connect to roost first" : "Ask Raven about this mail",
                 isEnabled: fleetModel.client() != nil,
                 isBusy: raven.isRunning(conversationId),
-                fontSize: 12,
                 onStop: {
                     if let conversationId {
                         raven.cancel(conversationId)
                     }
                 },
-                onSend: {
-                    send(fleetModel.pageMemory.mailRavenDraft)
-                },
+                onSend: send,
                 isFocused: $isFocused
             )
             .padding(12)
@@ -130,7 +128,7 @@ struct MailRavenPanel: View {
                 .fixedSize(horizontal: false, vertical: true)
             ForEach(Self.listSuggestions, id: \.self) { suggestion in
                 Button {
-                    send(suggestion)
+                    send(suggestion, mentioning: [])
                 } label: {
                     RookeryLabel(suggestion, icon: .sparkles, spacing: 6)
                         .font(.system(size: 12))
@@ -152,13 +150,13 @@ struct MailRavenPanel: View {
 
     /// Send a request in the thread's conversation, or open one with it, telling Raven which mail it is
     /// about and how the user finishes a reply.
-    private func send(_ text: String) {
+    private func send(_ text: String, mentioning listNamed: [FleetRef]) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
         }
         if let conversationId {
-            guard raven.ask(trimmed, mentioning: [], in: conversationId) != nil else {
+            guard raven.ask(trimmed, mentioning: listNamed, in: conversationId) != nil else {
                 return
             }
         } else {
@@ -171,7 +169,7 @@ struct MailRavenPanel: View {
                 Read it and its thread with the mail tools first. When I am happy with a reply, write it with propose_draft, \
                 reply_to \(summary.id); I will change it and send it myself in Rookery's Mail page.
                 """
-            guard let newId = raven.ask(request, mentioning: [], in: nil, origin: .mail) else {
+            guard let newId = raven.ask(request, mentioning: listNamed, in: nil, origin: .mail) else {
                 return
             }
             raven.link(newId, toMail: summary.id)

@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Raven beside the mail being read, in the Mail page's right column: the thread's conversations, kept
 /// with Raven's other conversations, the latest shown unless the user picks another or starts a new one;
-/// a conversation's first request carries which mail it is about. When the user
-/// is happy with a reply Raven proposes it as a draft, which goes into the reply editor under the thread.
+/// a conversation's first request carries which mail it is about. When the user is happy with a reply
+/// Raven proposes it as a draft, which goes into Rookery's drafts and opens under the thread.
 struct MailRavenPanel: View {
     let fleetModel: FleetModel
     let message: MailMessageDetail
@@ -57,9 +57,9 @@ struct MailRavenPanel: View {
                 .fill(StageColors.separator)
                 .frame(height: 1)
             if let conversationId {
-                RavenThreadView(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken) { draft in
+                RavenThreadView(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken) { draftId in
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
-                        fleetModel.pageMemory.mailReplyDraft = draft
+                        fleetModel.pageMemory.openDraftId = draftId
                     }
                 }
                 .id(conversationId)
@@ -124,7 +124,7 @@ struct MailRavenPanel: View {
     /// Where a thread with no conversation yet starts one: what Raven can do with it.
     private var suggestions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Talk this mail over with Raven. When you like a reply, Raven drafts it into the editor under the thread, for you to change and send.")
+            Text("Talk this mail over with Raven. When you like a reply, Raven puts it in Drafts and opens it under the thread, for you to change and send.")
                 .font(.system(size: 12))
                 .foregroundStyle(StageColors.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -182,9 +182,9 @@ struct MailRavenPanel: View {
     }
 }
 
-/// The mail being written under a thread, Raven's draft or the user's own reply: who it goes from and to,
-/// its subject and its text, all editable, sent by Mail when the user presses Send, or opened in Mail to
-/// finish there. It lives in the page's memory, so it survives leaving the page.
+/// The mail being written, one of Rookery's drafts: a reply under the thread it answers, or a new message
+/// on its own; who it goes from and to, its subject and its text, all editable and kept as typed. Mail
+/// sends it when the user presses Send, without showing a window, and it leaves the drafts.
 struct MailReplyEditor: View {
     let fleetModel: FleetModel
     /// Who wrote the message the reply answers, quoted under its text as it is sent.
@@ -193,22 +193,26 @@ struct MailReplyEditor: View {
 
     @State private var toLine = ""
     @State private var ccLine = ""
-    @State private var isWorking = false
+    @State private var isSending = false
     @State private var problem: String?
 
     private var memory: PageMemory {
         fleetModel.pageMemory
     }
 
+    private var draft: MailReplyDraft? {
+        memory.openDraftId.flatMap(fleetModel.mailDrafts.draft)
+    }
+
     var body: some View {
-        if let draft = memory.mailReplyDraft {
+        if let draft {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
-                    RookeryIconView(.undo)
+                    RookeryIconView(draft.replyToMessageId == nil ? .draft : .undo)
                         .foregroundStyle(Color.accentColor)
-                    Text("Reply")
+                    Text(draft.replyToMessageId == nil ? "New Message" : "Reply")
                         .font(.system(size: 13, weight: .semibold))
-                    Text("from \(draft.account)")
+                    Text(draft.account.isEmpty ? "from the account it answers" : "from \(draft.account)")
                         .font(.system(size: 12))
                         .foregroundStyle(StageColors.secondaryText)
                     Spacer(minLength: 0)
@@ -217,14 +221,14 @@ struct MailReplyEditor: View {
                     TextField("Recipients", text: $toLine)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: toLine) { _, line in
-                            memory.mailReplyDraft?.listTo = MailReplyDraft.addresses(in: line)
+                            change { $0.listTo = MailReplyDraft.addresses(in: line) }
                         }
                 }
                 field("Cc") {
                     TextField("Copied", text: $ccLine)
                         .textFieldStyle(.roundedBorder)
                         .onChange(of: ccLine) { _, line in
-                            memory.mailReplyDraft?.listCc = MailReplyDraft.addresses(in: line)
+                            change { $0.listCc = MailReplyDraft.addresses(in: line) }
                         }
                 }
                 field("Subject") {
@@ -235,7 +239,7 @@ struct MailReplyEditor: View {
                     .font(.system(size: 13))
                     .scrollContentBackground(.hidden)
                     .padding(8)
-                    .frame(minHeight: 180)
+                    .frame(minHeight: draft.replyToMessageId == nil ? 320 : 180)
                     .background(StageColors.content, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -254,18 +258,18 @@ struct MailReplyEditor: View {
                 HStack(spacing: 8) {
                     Button("Discard") {
                         withAnimation(.easeOut(duration: 0.2)) {
-                            memory.mailReplyDraft = nil
+                            memory.openDraftId = nil
+                            fleetModel.mailDrafts.remove(draft.id)
                         }
                     }
                     Spacer(minLength: 0)
-                    Button("Open in Mail") {
-                        hand(draft, isSending: false)
-                    }
-                    .disabled(isWorking)
+                    Text("Kept in Drafts as you write")
+                        .font(.system(size: 11))
+                        .foregroundStyle(StageColors.tertiaryText)
                     Button {
-                        hand(draft, isSending: true)
+                        send(draft)
                     } label: {
-                        if isWorking {
+                        if isSending {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
@@ -273,7 +277,7 @@ struct MailReplyEditor: View {
                         }
                     }
                     .buttonStyle(StageButtonStyle(kind: .prominent))
-                    .disabled(isWorking || draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (draft.listTo.isEmpty && draft.replyToMessageId == nil))
+                    .disabled(isSending || draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (draft.listTo.isEmpty && draft.replyToMessageId == nil))
                     .keyboardShortcut(.return, modifiers: .command)
                 }
                 .controlSize(.small)
@@ -288,9 +292,10 @@ struct MailReplyEditor: View {
                 toLine = draft.listTo.joined(separator: ", ")
                 ccLine = draft.listCc.joined(separator: ", ")
             }
-            .onChange(of: draft.replyToMessageId) {
-                toLine = memory.mailReplyDraft?.listTo.joined(separator: ", ") ?? ""
-                ccLine = memory.mailReplyDraft?.listCc.joined(separator: ", ") ?? ""
+            .onChange(of: draft.id) {
+                toLine = self.draft?.listTo.joined(separator: ", ") ?? ""
+                ccLine = self.draft?.listCc.joined(separator: ", ") ?? ""
+                problem = nil
             }
         }
     }
@@ -305,28 +310,40 @@ struct MailReplyEditor: View {
         }
     }
 
+    /// Change the open draft and keep it.
+    private func change(_ edit: (inout MailReplyDraft) -> Void) {
+        guard var changed = draft else {
+            return
+        }
+        edit(&changed)
+        fleetModel.mailDrafts.update(changed)
+    }
+
     private func binding(_ keyPath: WritableKeyPath<MailReplyDraft, String>) -> Binding<String> {
         Binding(
-            get: { memory.mailReplyDraft?[keyPath: keyPath] ?? "" },
-            set: { memory.mailReplyDraft?[keyPath: keyPath] = $0 }
+            get: { draft?[keyPath: keyPath] ?? "" },
+            set: { value in change { $0[keyPath: keyPath] = value } }
         )
     }
 
-    /// Hand the mail to Mail, sent or opened, and let it go from the editor once Mail has it.
-    private func hand(_ draft: MailReplyDraft, isSending: Bool) {
-        isWorking = true
+    /// Have Mail send the draft, then let it go from the drafts.
+    private func send(_ draft: MailReplyDraft) {
+        isSending = true
         problem = nil
         Task {
             do {
-                try await fleetModel.mailService.write(draft, isSending: isSending)
+                try await fleetModel.mailService.send(draft)
                 withAnimation(.easeOut(duration: 0.2)) {
-                    memory.mailReplyDraft = nil
+                    if memory.openDraftId == draft.id {
+                        memory.openDraftId = nil
+                    }
+                    fleetModel.mailDrafts.remove(draft.id)
                 }
                 onSent()
             } catch {
                 problem = String(describing: error)
             }
-            isWorking = false
+            isSending = false
         }
     }
 }

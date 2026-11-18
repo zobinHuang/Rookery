@@ -162,9 +162,13 @@ final class RavenAgent {
         var reader = TranscriptReader()
         if let data = try? Data(contentsOf: historyFile(of: conversationId)) {
             reader.append(data)
-            mapProposals[conversationId] = data
+            let listProposals = data
                 .split(separator: UInt8(ascii: "\n"))
                 .flatMap { RavenProposal.proposals(in: Data($0)) }
+            mapProposals[conversationId] = listProposals
+            Task { @MainActor [weak self] in
+                self?.fileDrafts(listProposals, in: conversationId)
+            }
         }
         mapLiveReaders[conversationId] = reader
         mapReaders[conversationId] = reader
@@ -430,6 +434,10 @@ final class RavenAgent {
     /// prompt, or start its new session.
     func approve(_ proposal: RavenProposal, in conversationId: String) async {
         mapProposalErrors[proposal.id] = nil
+        if proposal.action == .draftMail {
+            fileDrafts([proposal], in: conversationId)
+            return
+        }
         if proposal.action.isOnMailOrCalendar {
             do {
                 let outcome = try await fleetModel.mailService.carryOut(proposal)
@@ -547,10 +555,29 @@ final class RavenAgent {
     }
 
     /// Take a proposed draft into the Mail page's editor, as the user, which settles the proposal.
-    func takeDraft(_ proposal: RavenProposal, in conversationId: String) {
-        mapProposalOutcomes[proposal.id] = "Moved into the reply"
-        conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
-        saveIndex()
+    /// Put the mail drafts among proposals the user has not decided on into Rookery's drafts, where they
+    /// are edited and sent, which settles them as proposals.
+    func fileDrafts(_ listProposals: [RavenProposal], in conversationId: String) {
+        let mapDecisions = conversations.conversation(conversationId)?.mapDecisions ?? [:]
+        var isChanged = false
+        for proposal in listProposals where mapDecisions[proposal.id] == nil {
+            guard let draft = MailReplyDraft(proposal: proposal) else {
+                continue
+            }
+            fleetModel.mailDrafts.add(draft)
+            mapProposalOutcomes[proposal.id] = "Put in Drafts"
+            conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
+            isChanged = true
+        }
+        if isChanged {
+            saveIndex()
+        }
+    }
+
+    /// The drafts in Rookery's drafts that a conversation's proposals made, the newest first.
+    func drafts(of conversationId: String) -> [MailReplyDraft] {
+        let setProposalIds = Set((mapProposals[conversationId] ?? []).map(\.id))
+        return fleetModel.mailDrafts.listDrafts.filter { $0.proposalId.map(setProposalIds.contains) ?? false }
     }
 
     func rename(_ conversationId: String, to title: String) {
@@ -749,6 +776,7 @@ final class RavenAgent {
         let listProposed = RavenProposal.proposals(in: line)
         if !listProposed.isEmpty {
             mapProposals[conversationId, default: []].append(contentsOf: listProposed)
+            fileDrafts(listProposed, in: conversationId)
         }
         let terminated = line + Data("\n".utf8)
         reader.append(terminated)

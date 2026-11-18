@@ -2,12 +2,13 @@ import AppKit
 import RookeryCore
 import SwiftUI
 
-/// A place in the mail page's list of folders: every inbox, the unread or flagged mail of all of them, or
-/// one account's folder.
+/// A place in the mail page's list of folders: every inbox, the unread or flagged mail of all of them, the
+/// mails being written in Rookery, or one account's folder.
 enum MailPlace: Hashable {
     case allInboxes
     case unread
     case flagged
+    case drafts
     case account(String, MailFolder)
 
     var title: String {
@@ -15,6 +16,7 @@ enum MailPlace: Hashable {
         case .allInboxes: "All Inboxes"
         case .unread: "Unread"
         case .flagged: "Flagged"
+        case .drafts: "Drafts"
         case .account(_, let folder): folder.title
         }
     }
@@ -24,6 +26,7 @@ enum MailPlace: Hashable {
         case .allInboxes: .mail
         case .unread: .envelopeOpen
         case .flagged: .flag
+        case .drafts: .draft
         case .account(_, let folder): folder == .sent ? .send : .mail
         }
     }
@@ -41,6 +44,8 @@ enum MailPlace: Hashable {
             query.isUnreadOnly = true
         case .flagged:
             query.isFlaggedOnly = true
+        case .drafts:
+            query.folder = .drafts
         case .account(let address, let folder):
             query.listAccounts = [address]
             query.folder = folder
@@ -50,8 +55,8 @@ enum MailPlace: Hashable {
 }
 
 /// Every account's mail in the content area: the folders on the left, the list in the middle with a search,
-/// and the message read on the right, with what the user can do to it: reply in Mail, mark it read or
-/// unread, flag it, open it in Mail, or have Raven draft a reply.
+/// and the message read on the right, with what the user can do to it: reply, mark it read or unread, flag
+/// it, or talk it over with Raven; and the mails being written in Rookery, Raven's drafts among them.
 struct MailPage: View {
 
     let fleetModel: FleetModel
@@ -68,7 +73,6 @@ struct MailPage: View {
     private static let titledToolbarWidth: CGFloat = 620
     private static let skeletonMessageCount = 2
 
-    @State private var place = MailPlace.allInboxes
     @State private var searchText = ""
     @State private var listMessages: [MailMessageSummary] = []
     @State private var mapInboxCounts: [String: MailboxCount] = [:]
@@ -102,10 +106,26 @@ struct MailPage: View {
 
     private static let replyEditorId = "mail.reply"
 
+    /// The folder shown, kept in the page's memory.
+    private var place: MailPlace {
+        get { fleetModel.pageMemory.mailPlace }
+        nonmutating set { fleetModel.pageMemory.mailPlace = newValue }
+    }
+
+    /// The draft open in the editor, if it is still kept.
+    private var openDraft: MailReplyDraft? {
+        fleetModel.pageMemory.openDraftId.flatMap(fleetModel.mailDrafts.draft)
+    }
+
+    /// Whether Drafts shows a new message being written, or none, rather than a reply under its thread.
+    private var isWritingNew: Bool {
+        place == .drafts && openDraft?.replyToMessageId == nil
+    }
+
     /// Who wrote the message the mail being written answers, by name if they gave one.
     private var quotedSender: String? {
         guard
-            let replyToId = fleetModel.pageMemory.mailReplyDraft?.replyToMessageId,
+            let replyToId = openDraft?.replyToMessageId,
             let original = listThread.first(where: { $0.id == replyToId })
         else {
             return nil
@@ -115,7 +135,7 @@ struct MailPage: View {
 
     /// Whether the mail being written answers a message of the thread shown.
     private var isReplyInThread: Bool {
-        guard let replyToId = fleetModel.pageMemory.mailReplyDraft?.replyToMessageId else {
+        guard let replyToId = openDraft?.replyToMessageId else {
             return false
         }
         return listThread.contains { $0.id == replyToId }
@@ -139,7 +159,7 @@ struct MailPage: View {
                 ColumnDivider(columns: columns, column: .mailMessages)
                 reader
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if let message = shownMessage, !columns.isHidden(.mailRaven) {
+                if let message = shownMessage, !isWritingNew, !columns.isHidden(.mailRaven) {
                     ColumnDivider(columns: columns, column: .mailRaven, isTrailing: true)
                     MailRavenPanel(fleetModel: fleetModel, message: message, listThreadIds: listThread.map(\.id))
                         .frame(width: columns.width(of: .mailRaven))
@@ -202,6 +222,7 @@ struct MailPage: View {
                 placeRow(.allInboxes, count: mapInboxCounts.values.map(\.unread).reduce(0, +))
                 placeRow(.unread, count: nil)
                 placeRow(.flagged, count: nil)
+                placeRow(.drafts, count: fleetModel.mailDrafts.listDrafts.isEmpty ? nil : fleetModel.mailDrafts.listDrafts.count)
                 ForEach(mapInboxCounts.keys.sorted(), id: \.self) { address in
                     HStack(spacing: 6) {
                         Text(address)
@@ -270,7 +291,9 @@ struct MailPage: View {
             .padding(.vertical, 6)
             .background(StageColors.groove, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .padding(10)
-            if listMessages.isEmpty && (isLoading || !hasLoadedList) {
+            if place == .drafts {
+                draftList
+            } else if listMessages.isEmpty && (isLoading || !hasLoadedList) {
                 listSkeleton
             } else if listMessages.isEmpty {
                 SidebarNotice(icon: .envelopeOpen, title: searchText.isEmpty ? "Nothing here" : "No match", text: searchText.isEmpty ? "\(place.title) holds no mail." : "No message in \(place.title) matches.")
@@ -286,6 +309,91 @@ struct MailPage: View {
                     .padding(.bottom, 8)
                 }
             }
+        }
+    }
+
+    /// The mails being written in Rookery, the newest first: to whom, about what, how it opens.
+    @ViewBuilder
+    private var draftList: some View {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        let listDrafts = fleetModel.mailDrafts.listDrafts.filter { draft in
+            query.isEmpty
+                || draft.subject.localizedCaseInsensitiveContains(query)
+                || draft.body.localizedCaseInsensitiveContains(query)
+                || draft.listTo.contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+        if listDrafts.isEmpty, !query.isEmpty {
+            SidebarNotice(icon: .draft, title: "No match", text: "No draft matches.")
+            Spacer(minLength: 0)
+        } else if listDrafts.isEmpty {
+            SidebarNotice(icon: .draft, title: "No drafts", text: "Replies you start and the drafts Raven writes wait here until you send them.")
+            Spacer(minLength: 0)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(listDrafts) { draft in
+                        draftRow(draft)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.bottom, 8)
+            }
+        }
+    }
+
+    private func draftRow(_ draft: MailReplyDraft) -> some View {
+        let isSelected = fleetModel.pageMemory.openDraftId == draft.id
+        return Button {
+            open(draft)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(draft.listTo.isEmpty ? "No recipient" : draft.listTo.joined(separator: ", "))
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(draft.createdAt, format: .relative(presentation: .named))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(StageColors.tertiaryText)
+                }
+                Text(draft.subject.isEmpty ? "No subject" : draft.subject)
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+                Text(draft.body.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(StageColors.selectedRow)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Delete Draft", role: .destructive) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    if fleetModel.pageMemory.openDraftId == draft.id {
+                        fleetModel.pageMemory.openDraftId = nil
+                    }
+                    fleetModel.mailDrafts.remove(draft.id)
+                }
+            }
+        }
+    }
+
+    /// Open a draft in the editor: a reply under the thread it answers, a new message on its own.
+    private func open(_ draft: MailReplyDraft) {
+        fleetModel.pageMemory.openDraftId = draft.id
+        if let replyToId = draft.replyToMessageId {
+            fleetModel.pageMemory.selectedMailId = replyToId
         }
     }
 
@@ -346,7 +454,18 @@ struct MailPage: View {
 
     @ViewBuilder
     private var reader: some View {
-        if let message = shownMessage {
+        if isWritingNew, openDraft == nil {
+            SidebarNotice(icon: .draft, title: "No draft chosen", text: "Pick a draft to write it here.")
+        } else if isWritingNew {
+            ScrollView {
+                MailReplyEditor(fleetModel: fleetModel, quotedSender: nil) {
+                    act {}
+                }
+                .padding(22)
+                .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if let message = shownMessage {
             let isSwitching = selectedId != nil && loadedMessageId != selectedId
             VStack(spacing: 0) {
                 readerToolbar(message)
@@ -376,8 +495,8 @@ struct MailPage: View {
                         .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .onChange(of: fleetModel.pageMemory.mailReplyDraft?.replyToMessageId) { _, replyToId in
-                        guard replyToId != nil else {
+                    .onChange(of: fleetModel.pageMemory.openDraftId) { _, draftId in
+                        guard draftId != nil else {
                             return
                         }
                         withAnimation(.easeOut(duration: 0.3)) {
@@ -512,12 +631,11 @@ struct MailPage: View {
             toolbarButton("Reply", icon: .undo, isTitled: isTitled) {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
                     if !isReplyInThread {
-                        fleetModel.pageMemory.mailReplyDraft = MailReplyDraft(replyingTo: message.summary)
+                        let draft = MailReplyDraft(replyingTo: message.summary)
+                        fleetModel.mailDrafts.add(draft)
+                        fleetModel.pageMemory.openDraftId = draft.id
                     }
                 }
-            }
-            toolbarButton("Reply in Mail", icon: .release, isTitled: isTitled) {
-                act { try await service.reply(to: message.summary) }
             }
             toolbarButton(message.summary.isRead ? "Mark Unread" : "Mark Read", icon: .envelopeOpen, isTitled: isTitled) {
                 act { try await service.markRead(message.summary, isRead: !message.summary.isRead) }
@@ -528,9 +646,6 @@ struct MailPage: View {
             Spacer(minLength: 0)
             toolbarButton(columns.isHidden(.mailRaven) ? "Ask Raven" : "Hide Raven", icon: .sparkles, isTitled: isTitled) {
                 columns.toggle(.mailRaven)
-            }
-            toolbarButton("Open in Mail", icon: .release, isTitled: isTitled) {
-                act { try await service.openInMail(message.summary) }
             }
         }
     }
@@ -560,10 +675,12 @@ struct MailPage: View {
             hasLoadedList = true
         }
         do {
-            listMessages = try await service.search(place.query(text: searchText.trimmingCharacters(in: .whitespaces)))
+            if place != .drafts {
+                listMessages = try await service.search(place.query(text: searchText.trimmingCharacters(in: .whitespaces)))
+            }
             mapInboxCounts = try await service.inboxCounts()
             problem = nil
-            if selectedId == nil {
+            if selectedId == nil, place != .drafts {
                 fleetModel.pageMemory.selectedMailId = listMessages.first?.id
             }
         } catch {

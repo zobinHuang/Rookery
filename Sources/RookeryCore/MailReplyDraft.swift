@@ -1,8 +1,13 @@
 import Foundation
 
 /// A mail being written in Rookery's Mail page before the user sends it: the account it goes from, the
-/// message it answers, its recipients, subject and text. Raven's proposed drafts become one to edit.
-public struct MailReplyDraft: Equatable, Sendable {
+/// message it answers, its recipients, subject and text. Raven's proposed drafts become one to edit, kept
+/// in Rookery's drafts until sent or thrown away.
+public struct MailReplyDraft: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let createdAt: Date
+    /// The Raven proposal it came from, so one proposal makes one draft.
+    public let proposalId: String?
     /// The account's address the mail is sent from.
     public var account: String
     /// The message it answers, by the mail library's id; nil for a new message.
@@ -12,7 +17,20 @@ public struct MailReplyDraft: Equatable, Sendable {
     public var subject: String
     public var body: String
 
-    public init(account: String, replyToMessageId: Int?, listTo: [String], listCc: [String], subject: String, body: String) {
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        createdAt: Date = .now,
+        proposalId: String? = nil,
+        account: String,
+        replyToMessageId: Int?,
+        listTo: [String],
+        listCc: [String],
+        subject: String,
+        body: String
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.proposalId = proposalId
         self.account = account
         self.replyToMessageId = replyToMessageId
         self.listTo = listTo
@@ -31,6 +49,7 @@ public struct MailReplyDraft: Equatable, Sendable {
             mapPayload[key]?.arrayValue?.compactMap(\.stringValue) ?? []
         }
         self.init(
+            proposalId: proposal.id,
             account: mapPayload["account"]?.stringValue ?? "",
             replyToMessageId: mapPayload["reply_to"]?.numberValue.map { Int($0) },
             listTo: strings("to"),
@@ -53,3 +72,45 @@ public struct MailReplyDraft: Equatable, Sendable {
         line.split(whereSeparator: { $0 == "," || $0 == ";" }).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 }
+
+/// The mails being written in Rookery, Raven's drafts among them, the newest first.
+public struct MailDraftBox: Codable, Equatable, Sendable {
+    public static let fileName = "mail-drafts.json"
+
+    public private(set) var listDrafts: [MailReplyDraft] = []
+
+    public init(listDrafts: [MailReplyDraft] = []) {
+        self.listDrafts = listDrafts.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// The draft with an id, if it is kept.
+    public func draft(_ draftId: String) -> MailReplyDraft? {
+        listDrafts.first { $0.id == draftId }
+    }
+
+    /// Keep a draft, unless one from the same proposal is kept already.
+    ///
+    /// - Returns: whether it was added
+    @discardableResult
+    public mutating func add(_ draft: MailReplyDraft) -> Bool {
+        if let proposalId = draft.proposalId, listDrafts.contains(where: { $0.proposalId == proposalId }) {
+            return false
+        }
+        let index = listDrafts.firstIndex { $0.createdAt < draft.createdAt } ?? listDrafts.endIndex
+        listDrafts.insert(draft, at: index)
+        return true
+    }
+
+    /// Replace a kept draft with its edited self.
+    public mutating func update(_ draft: MailReplyDraft) {
+        guard let index = listDrafts.firstIndex(where: { $0.id == draft.id }) else {
+            return
+        }
+        listDrafts[index] = draft
+    }
+
+    public mutating func remove(_ draftId: String) {
+        listDrafts.removeAll { $0.id == draftId }
+    }
+}
+

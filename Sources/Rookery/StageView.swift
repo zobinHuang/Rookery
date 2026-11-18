@@ -127,6 +127,13 @@ struct StageView: View {
         .environment(\.chosenTheme, model.shownTheme)
         .environment(\.people, fleetModel.people)
         .buttonStyle(StageButtonStyle())
+        .onChange(of: fleetModel.pageMemory.requestedPage) { _, page in
+            guard let page else {
+                return
+            }
+            fleetModel.pageMemory.requestedPage = nil
+            actions.showPage(page)
+        }
         .opacity(model.isVisible ? 1 : 0)
         .animation(.easeOut(duration: 0.22), value: model.isVisible)
         .animation(Self.zoneAnimation, value: model.highlightedZone)

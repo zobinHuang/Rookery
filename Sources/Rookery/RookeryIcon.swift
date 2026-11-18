@@ -89,6 +89,7 @@ enum RookeryIcon: String, CaseIterable {
     case envelopeOpen = "envelope-open"
     case flag
     case sliders
+    case draft
 
     private static let setBadges: Set<RookeryIcon> = [
         .agent, .board, .command, .crown, .gauge, .gear, .globe, .hand, .machine, .memory, .mixer, .moon,
@@ -195,6 +196,7 @@ enum RookeryIcon: String, CaseIterable {
         case .envelopeOpen: "envelope.open"
         case .flag: "flag.fill"
         case .sliders: "slider.vertical.3"
+        case .draft: "square.and.pencil"
         }
     }
 

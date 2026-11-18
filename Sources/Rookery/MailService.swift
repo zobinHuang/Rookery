@@ -214,11 +214,7 @@ actor MailService: MailSource {
         let mapPayload = proposal.mapPayload
         switch proposal.action {
         case .draftMail:
-            guard let draft = MailReplyDraft(proposal: proposal) else {
-                throw MailToolError.badArgument("the proposal is no draft")
-            }
-            try await write(draft, isSending: false)
-            return "Opened the draft in Mail, from \(draft.account)"
+            throw MailToolError.badArgument("a draft goes to Rookery's drafts, to be written and sent there")
         case .addEvent:
             let event = try calendars.addEvent(
                 calendarId: try Self.string(mapPayload, "calendar_id"),
@@ -345,65 +341,37 @@ actor MailService: MailSource {
         try calendars.removeEvent(eventId)
     }
 
-    /// Open Mail's reply to a message, or the message itself when it is not in an inbox.
-    /// Hand a mail written in Rookery to Mail, from an account Rookery may use, answering its message in
-    /// its thread when it is a reply, that message quoted under the user's text: opened for the user to
-    /// finish there, or sent.
+    /// Have Mail send a mail written in Rookery, from an account Rookery may use, without showing it: a
+    /// reply answers its message in its thread, that message quoted under the user's text as Outlook
+    /// quotes it.
     ///
-    /// - Parameters:
-    ///   - draft: the mail as written
-    ///   - isSending: whether Mail sends it at once
     /// - Throws: `MailToolError` for an account Rookery may not use or no recipient, `MailScriptingError`
-    func write(_ draft: MailReplyDraft, isSending: Bool) async throws {
-        let mapAccounts = try await allowedAccountAddresses()
-        let account = draft.account.lowercased()
-        guard mapAccounts.values.contains(account) else {
-            throw MailToolError.badArgument("Rookery may not send from \(draft.account)")
-        }
+    func send(_ draft: MailReplyDraft) async throws {
         guard !draft.listTo.isEmpty || draft.replyToMessageId != nil else {
             throw MailToolError.badArgument("the mail has no recipient")
         }
+        var account = draft.account.lowercased()
         var header: String?
         var body = draft.body
         if let replyToMessageId = draft.replyToMessageId, let original = try await message(replyToMessageId) {
             header = original.messageIdHeader
             body = MailQuote.reply(to: original, body: draft.body)
+            if account.isEmpty {
+                account = original.summary.account.lowercased()
+            }
+        }
+        guard try await allowedAccountAddresses().values.contains(account) else {
+            throw MailToolError.badArgument("Rookery may not send from \(draft.account)")
         }
         try await MainActor.run {
-            try MailDrafts.write(
+            try MailDrafts.send(
                 sender: account,
                 replyingTo: header,
                 listTo: draft.listTo,
                 listCc: draft.listCc,
                 subject: draft.subject,
-                body: body,
-                isSending: isSending
+                body: body
             )
-        }
-    }
-
-    func reply(to summary: MailMessageSummary) async throws {
-        guard let header = try await message(summary.id)?.messageIdHeader, !header.isEmpty else {
-            throw MailToolError.unavailable("Mail's copy of the message cannot be found")
-        }
-        do {
-            try await MainActor.run { try MailActions.reply(messageId: header) }
-        } catch {
-            if let url = MailActions.url(messageId: header) {
-                await MainActor.run {
-                    _ = NSWorkspace.shared.open(url)
-                }
-            }
-        }
-    }
-
-    /// Open a message in Mail.
-    func openInMail(_ summary: MailMessageSummary) async throws {
-        guard let header = try await message(summary.id)?.messageIdHeader, let url = MailActions.url(messageId: header) else {
-            throw MailToolError.unavailable("Mail's copy of the message cannot be found")
-        }
-        await MainActor.run {
-            _ = NSWorkspace.shared.open(url)
         }
     }
 

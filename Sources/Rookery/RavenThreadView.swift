@@ -8,12 +8,12 @@ struct RavenThreadView: View {
     let conversationId: String
     /// Changes when the user sends, to bring the end into view.
     var sendToken = 0
-    /// Takes a proposed draft into an editor beside the conversation, in place of opening it in Mail.
-    var onEditDraft: ((MailReplyDraft) -> Void)?
+    /// Opens one of the conversation's mail drafts, by its id; nil to show them in the Mail page's Drafts.
+    var onOpenDraft: ((String) -> Void)?
 
     var body: some View {
         LayoutIsland {
-            RavenThreadContent(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken, onEditDraft: onEditDraft)
+            RavenThreadContent(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken, onOpenDraft: onOpenDraft)
         }
     }
 }
@@ -31,7 +31,7 @@ private struct RavenThreadContent: View {
     let conversationId: String
     /// Changes with every request sent, to bring the conversation's end into view.
     var sendToken = 0
-    var onEditDraft: ((MailReplyDraft) -> Void)?
+    var onOpenDraft: ((String) -> Void)?
 
     @State private var setSendingIds: Set<String> = []
 
@@ -178,12 +178,16 @@ private struct RavenThreadContent: View {
     /// buttons to carry them out or not, and the latest decided ones in a line each.
     @ViewBuilder
     private func proposals(in conversationId: String) -> some View {
-        let listProposals = raven.mapProposals[conversationId] ?? []
+        let listProposals = (raven.mapProposals[conversationId] ?? []).filter { $0.action != .draftMail }
         let mapDecisions = raven.conversations.conversation(conversationId)?.mapDecisions ?? [:]
         let listPending = listProposals.filter { mapDecisions[$0.id] == nil }
         let listDecided = listProposals.filter { mapDecisions[$0.id] != nil }.suffix(Self.shownDecidedLimit)
-        if !listPending.isEmpty || !listDecided.isEmpty {
+        let listDrafts = raven.drafts(of: conversationId)
+        if !listPending.isEmpty || !listDecided.isEmpty || !listDrafts.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
+                if !listDrafts.isEmpty {
+                    draftsLine(listDrafts)
+                }
                 ForEach(Array(listDecided)) { proposal in
                     decidedLine(proposal, decision: mapDecisions[proposal.id])
                 }
@@ -195,6 +199,37 @@ private struct RavenThreadContent: View {
             .padding(.top, 6)
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listPending.map(\.id))
         }
+    }
+
+    /// The mail drafts the conversation put in Rookery's drafts, in a line, with a way to them.
+    private func draftsLine(_ listDrafts: [MailReplyDraft]) -> some View {
+        HStack(spacing: 8) {
+            RookeryIconView(.mail)
+                .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(listDrafts.count == 1 ? "1 draft in Drafts" : "\(listDrafts.count) drafts in Drafts")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(listDrafts.prefix(2).map { $0.subject.isEmpty ? "No subject" : $0.subject }.joined(separator: ", ") + (listDrafts.count > 2 ? ", …" : ""))
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button("Open") {
+                if let onOpenDraft, let latest = listDrafts.first {
+                    onOpenDraft(latest.id)
+                } else {
+                    let memory = fleetModel.pageMemory
+                    memory.mailPlace = .drafts
+                    memory.openDraftId = listDrafts.first?.id
+                    memory.requestedPage = .mail
+                }
+            }
+            .buttonStyle(StageButtonStyle(kind: .prominent))
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func proposalCard(_ proposal: RavenProposal, in conversationId: String) -> some View {
@@ -244,28 +279,18 @@ private struct RavenThreadContent: View {
                     }
                 }
                 .disabled(isSending)
-                if let onEditDraft, let draft = MailReplyDraft(proposal: proposal) {
-                    Button("Edit Reply") {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            raven.takeDraft(proposal, in: conversationId)
-                        }
-                        onEditDraft(draft)
+                Button {
+                    send(proposal, in: conversationId)
+                } label: {
+                    if isSending {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(Self.verb(of: proposal))
                     }
-                    .buttonStyle(StageButtonStyle(kind: .prominent))
-                } else {
-                    Button {
-                        send(proposal, in: conversationId)
-                    } label: {
-                        if isSending {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text(Self.verb(of: proposal))
-                        }
-                    }
-                    .buttonStyle(StageButtonStyle(kind: .prominent))
-                    .disabled(isSending)
                 }
+                .buttonStyle(StageButtonStyle(kind: .prominent))
+                .disabled(isSending)
             }
             .controlSize(.small)
         }

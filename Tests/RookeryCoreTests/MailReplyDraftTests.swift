@@ -84,3 +84,26 @@ struct MailQuotePassageTests {
         ])
     }
 }
+
+struct MailDraftBoxTests {
+    @Test func aProposalMakesOneDraftTheNewestFirstAndEditsAndRemovalsHold() throws {
+        var box = MailDraftBox()
+        let older = MailReplyDraft(createdAt: Date(timeIntervalSince1970: 1), proposalId: "p1", account: "me@x.com", replyToMessageId: 3, listTo: ["a@x.com"], listCc: [], subject: "Re: A", body: "One")
+        let newer = MailReplyDraft(createdAt: Date(timeIntervalSince1970: 2), account: "me@x.com", replyToMessageId: nil, listTo: ["b@x.com"], listCc: [], subject: "B", body: "Two")
+        let isOlderAdded = box.add(older)
+        let isRepeatAdded = box.add(MailReplyDraft(proposalId: "p1", account: "me@x.com", replyToMessageId: 3, listTo: [], listCc: [], subject: "", body: ""))
+        let isNewerAdded = box.add(newer)
+        #expect(isOlderAdded)
+        #expect(!isRepeatAdded)
+        #expect(isNewerAdded)
+        #expect(box.listDrafts.map(\.id) == [newer.id, older.id])
+        var edited = older
+        edited.body = "Changed"
+        box.update(edited)
+        #expect(box.draft(older.id)?.body == "Changed")
+        let saved = try JSONDecoder().decode(MailDraftBox.self, from: JSONEncoder().encode(box))
+        #expect(saved == box)
+        box.remove(newer.id)
+        #expect(box.listDrafts.map(\.id) == [older.id])
+    }
+}

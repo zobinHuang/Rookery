@@ -53,8 +53,13 @@ final class PageMemory {
     var isRavenListingAll = false
     /// What the user is writing to Raven beside a mail, before sending it.
     var mailRavenDraft = ""
-    /// The mail being written in the Mail page, as the user left it.
-    var mailReplyDraft: MailReplyDraft?
+    /// The draft open in the Mail page's editor, by its id in Rookery's drafts.
+    var openDraftId: String?
+    /// The folder the Mail page shows.
+    var mailPlace = MailPlace.allInboxes
+    /// A page something asked the stage to show, as a draft's Open asks for Mail; the stage shows it and
+    /// clears it.
+    var requestedPage: StagePage?
     /// The git host's token being added or replaced in the settings, as the user left it; kept while the
     /// app runs, never written down.
     var gitCredentialDraft: GitCredentialDraft?

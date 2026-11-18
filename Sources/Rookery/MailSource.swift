@@ -18,8 +18,6 @@ protocol MailSource: Actor {
     func message(_ messageId: Int) async throws -> MailMessageDetail?
     func markRead(_ summary: MailMessageSummary, isRead: Bool) async throws
     func flag(_ summary: MailMessageSummary, isFlagged: Bool) async throws
-    func reply(to summary: MailMessageSummary) async throws
-    func openInMail(_ summary: MailMessageSummary) async throws
     func addEvent(
         calendarId: String,
         title: String,

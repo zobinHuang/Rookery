@@ -87,13 +87,12 @@ public enum MailScripting {
     }
 }
 
-/// A mail written in Rookery handed to Mail: opened in a compose window for the user to finish there, or
-/// sent when the user presses Send in Rookery, the draft Mail keeps of a scripted message then let go. A reply is made with Mail's own reply to the message it
+/// A mail written in Rookery handed to Mail to send, without a window, when the user presses Send in
+/// Rookery; the draft Mail keeps of a scripted message then let go. A reply is made with Mail's own reply to the message it
 /// answers, so it stays in its thread; its quoted text is replaced by what the user wrote.
 @MainActor
 public enum MailDrafts {
-    /// Write a mail in Mail, from an account, with its recipients, subject and text filled in, then open it
-    /// or send it.
+    /// Send a mail through Mail, from an account, with its recipients, subject and text.
     ///
     /// - Parameters:
     ///   - sender: the address to send from
@@ -103,28 +102,17 @@ public enum MailDrafts {
     ///   - listCc: the copied recipients
     ///   - subject: the subject
     ///   - body: the text
-    ///   - isSending: whether Mail sends it at once, rather than opening it for the user
     /// - Throws: `MailScriptingError`
-    public static func write(
+    public static func send(
         sender: String,
         replyingTo messageId: String?,
         listTo: [String],
         listCc: [String],
         subject: String,
-        body: String,
-        isSending: Bool
+        body: String
     ) throws {
         let recipients = listTo.map { "make new to recipient at end of to recipients with properties {address:\(quoted($0))}" }
             + listCc.map { "make new cc recipient at end of cc recipients with properties {address:\(quoted($0))}" }
-        let finish = isSending
-            ? """
-            send theMessage
-                delay 2
-                repeat with theDraft in (every message of drafts mailbox whose subject is \(quoted(subject)) and date received ≥ theStart)
-                    delete theDraft
-                end repeat
-            """
-            : "set visible of theMessage to true\n    activate"
         let source = """
             tell application "Mail"
                 set theStart to (current date) - 5
@@ -144,7 +132,11 @@ public enum MailDrafts {
                     delete every cc recipient
                     \(recipients.joined(separator: "\n            "))
                 end tell
-                \(finish)
+                send theMessage
+                delay 2
+                repeat with theDraft in (every message of drafts mailbox whose subject is \(quoted(subject)) and date received ≥ theStart)
+                    delete theDraft
+                end repeat
             end tell
             """
         _ = try MailScripting.run(source)
@@ -181,24 +173,5 @@ public enum MailActions {
             """)
     }
 
-    /// Open Mail's reply to an inbox message, for the user to write and send.
-    ///
-    /// - Throws: `MailScriptingError`
-    public static func reply(messageId: String) throws {
-        _ = try MailScripting.run("""
-            tell application "Mail"
-                set theMessages to (every message of inbox whose message id is \(MailDrafts.quoted(messageId)))
-                if (count of theMessages) is 0 then error "the message is not in an inbox"
-                reply (item 1 of theMessages) opening window yes
-                activate
-            end tell
-            """)
-    }
-
-    /// The address that opens a message in Mail.
-    public nonisolated static func url(messageId: String) -> URL? {
-        let encoded = ("<" + messageId + ">").addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: ".@-_"))) ?? messageId
-        return URL(string: "message://" + encoded)
-    }
 }
 

@@ -58,6 +58,8 @@ final class FleetModel {
     @ObservationIgnored let pageColumns = PageColumns()
     /// The people the user set down, whom Raven is told of and the mail and the calendars show.
     @ObservationIgnored let people = PeopleStore()
+    /// The mails being written in Rookery, Raven's drafts among them.
+    @ObservationIgnored let mailDrafts = MailDraftStore()
     /// What Raven reaches on the board, drawn as lines from its tab.
     @ObservationIgnored let ravenLinks = RavenLinks()
     @ObservationIgnored private let tokenStore: any SecretStore

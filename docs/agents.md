@@ -18,7 +18,9 @@ The sidebar's Agents mode shows every code agent roost knows of, one crow each p
 
 ## The crows
 
-`branding/` renders each state's loop into `Resources/Crow_<state>.png` (a strip of 64-pixel frames) and `Resources/Crows.json`. `CrowView` plays them through `PixelAnimationView`, the same layer the sidebar logo uses: a discrete keyframe animation on the layer's contents, scaled without smoothing, so the loops cost the app nothing while they play and stand still under Reduce Motion. At 32 points on a Retina screen a crow is drawn pixel for pixel.
+`CrowRig` in `RookeryCore` draws the crow in flat facets lit from the top left, each state a crow's behaviour rather than a mark over its head: asleep on its perch with its head tucked (idle), gliding (thinking), beating its wings (working), pressing down a stack (compacting), calling out with its beak open and wings raised (needs approval), staring with its head cocked (needs input), spreading its wings (done), ruffled and off balance (error), hunched in the rain (rate limited), and an empty perch with a feather (ended); Raven is larger, with a raven's throat and wedge tail, guarding a letter or carrying one. The state's color shows only as a thin signal line under the perch. The crow is graphite in light themes and silver in dark ones, pure black or white in high contrast. Every act is a loop of continuous curves whose periods divide its length, so it ends where it begins (`CrowRigTests` checks each), centred on the box its whole loop fills, every agent's crow at one scale so it does not jump when its state changes.
+
+`CrowView` and `RavenView` play them through `CrowAnimationView`: `CrowFrames` draws a loop off the main thread at the view's size in pixels and in the theme's colors, 30 frames a second or 60 for fast wingbeats, once however many crows show it, keeping the 32 most recently used; the view shows the still frame at once, then hands the frames to a discrete keyframe animation on its layer's contents, so the loops cost the app nothing while they play. Under Reduce Motion the still frame stays; while the window is hidden the loop holds.
 
 ## The agent's page
 

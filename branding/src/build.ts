@@ -2,12 +2,11 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Animation, Animator } from "./animation.ts";
-import { type CrowState, CrowStates, type SpriteStamp } from "./crow-states.ts";
+import { type CrowState, CrowStates } from "./crow-states.ts";
 import { GifWriter } from "./gif-writer.ts";
 import { Icons } from "./icons.ts";
-import { type PaletteKey, PixelGrid } from "./pixel-grid.ts";
+import { PixelGrid } from "./pixel-grid.ts";
 import { PngWriter } from "./png-writer.ts";
-import { Sprites } from "./sprites.ts";
 import { type Lockup, RookeryMark } from "./rookery-mark.ts";
 
 /**
@@ -16,28 +15,14 @@ import { type Lockup, RookeryMark } from "./rookery-mark.ts";
  */
 class LogoBuild {
     static readonly OUTPUT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "dist");
-    /** The app's resources, where the sidebar's logo goes. */
+    /** The app's resources, where the interface icons go. */
     static readonly APP_RESOURCES_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "Resources");
-    static readonly SIDEBAR_LOGO_NAME = "SidebarLogo";
-    /** The crows the app's Agents list shows, one strip per state, and the timeline of all of them. */
-    static readonly CROW_STRIP_PREFIX = "Crow_";
-    static readonly CROW_TIMELINE_NAME = "Crows";
-    static readonly RAVEN_STRIP_PREFIX = "Raven_";
-    static readonly RAVEN_TIMELINE_NAME = "Raven";
-    /** The raven's sheen in place of the crow's mid grey and highlight. */
-    static readonly RAVEN_SHEEN: Partial<Record<PaletteKey, PaletteKey>> = { M: "U", H: "V" };
-    /** The letter Raven holds, its corner at the beak's tip. */
-    static readonly RAVEN_LETTER: SpriteStamp = { sprite: Sprites.LETTER, anchor: "beak", dx: -2, dy: -2 };
     /** The logo's files for use outside the app. */
     static readonly EXPORT_DIRECTORY = join(dirname(fileURLToPath(import.meta.url)), "..", "exports");
     /** How many file pixels a grid pixel becomes in the exported PNGs and GIFs. */
     static readonly EXPORT_SCALE = 4;
     /** The interface icons' folder in the app's resources. */
     static readonly ICON_DIRECTORY_NAME = "Icons";
-    /** The still logo the repository's README shows, each pixel a block of this many. */
-    static readonly README_LOGO_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "images", "rookery-logo.png");
-    static readonly README_LOGO_SCALE = 2;
-    /** The screen scales the sidebar's logo is written for, each pixel a block of that many. */
     /** The backing the logo uses: a yellow outline around the black. */
     static readonly BACKING = "outline";
     static readonly LIST_HARNESSES: readonly string[] = ["Claude Code", "Codex", "dsh"];
@@ -62,12 +47,8 @@ class LogoBuild {
         const path = join(LogoBuild.OUTPUT_DIRECTORY, "preview.html");
         writeFileSync(path, LogoBuild._page(map_animations));
         console.log(path);
-        LogoBuild._write_sidebar_logo();
-        LogoBuild._write_crows();
-        LogoBuild._write_raven();
         LogoBuild._write_icons();
         LogoBuild._write_exports();
-        LogoBuild._write_readme_logo();
     }
 
     /**
@@ -116,128 +97,6 @@ class LogoBuild {
             writeFileSync(join(directory, `${icon.name}.png`), PngWriter.encode(Icons.glyph_grid(icon)));
         }
         console.log(directory, `${Icons.LIST_BADGES.length} badges, ${Icons.LIST_GLYPHS.length} glyphs`);
-    }
-
-    /**
-     * The crow in each state, for the app: one PNG strip of a state's distinct frames at one pixel a grid
-     * pixel, named by the state as roost reports it, and one timeline for all of them. The app scales them
-     * with nearest-neighbour filtering, so a 64-pixel crow fills 32 points on a Retina screen exactly.
-     */
-    private static _write_crows(): void {
-        LogoBuild._write_sheet(
-            LogoBuild.CROW_TIMELINE_NAME,
-            LogoBuild.CROW_STRIP_PREFIX,
-            CrowStates.LIST_STATES.map((state) => ({
-                name: state.name.replaceAll("-", "_"),
-                animation: Animator.animate(state, LogoBuild.BACKING),
-            })),
-        );
-    }
-
-    /**
-     * Raven, Rookery's agent over the fleet, told from the agents' crows at a glance: a raven's violet sheen
-     * on its feathers, a sealed letter in its beak, facing left toward the conversation, outlined in white;
-     * at rest and at work, in strips and a timeline as the crows'.
-     */
-    private static _write_raven(): void {
-        const list_loops = [
-            { name: "idle", state: CrowStates.IDLE },
-            { name: "working", state: CrowStates.THINKING },
-        ];
-        LogoBuild._write_sheet(
-            LogoBuild.RAVEN_TIMELINE_NAME,
-            LogoBuild.RAVEN_STRIP_PREFIX,
-            list_loops.map(({ name, state }) => {
-                const raven: CrowState = {
-                    ...state,
-                    tint: "W",
-                    list_frames: state.list_frames.map((frame) => ({
-                        ...frame,
-                        list_stamps: [...frame.list_stamps, LogoBuild.RAVEN_LETTER],
-                    })),
-                };
-                const animation = Animator.animate(raven, LogoBuild.BACKING);
-                return {
-                    name,
-                    animation: {
-                        ...animation,
-                        list_frames: animation.list_frames.map((frame) => frame.recolored(LogoBuild.RAVEN_SHEEN).mirrored()),
-                    },
-                };
-            }),
-        );
-    }
-
-    /** Named loops of one size, each a PNG strip of its distinct frames, and one timeline for all of them. */
-    private static _write_sheet(
-        timeline_name: string,
-        strip_prefix: string,
-        list_loops: readonly { name: string; animation: Animation }[],
-    ): void {
-        const map_loops: Record<string, { frame_count: number; sequence: readonly number[] }> = {};
-        let width = 0;
-        let height = 0;
-        let frames_per_second = 0;
-        for (const { name, animation } of list_loops) {
-            const strip = PixelGrid.compose(
-                animation.width * animation.list_frames.length,
-                animation.height,
-                animation.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * animation.width, top: 0 })),
-            );
-            writeFileSync(join(LogoBuild.APP_RESOURCES_DIRECTORY, `${strip_prefix}${name}.png`), PngWriter.encode(strip));
-            map_loops[name] = { frame_count: animation.list_frames.length, sequence: animation.list_sequence };
-            width = animation.width;
-            height = animation.height;
-            frames_per_second = animation.frames_per_second;
-        }
-        const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${timeline_name}.json`);
-        writeFileSync(path, `${JSON.stringify({ frame_width: width, frame_height: height, frames_per_second, states: map_loops }, undefined, 4)}\n`);
-        console.log(path, `${list_loops.length} loops, ${width} × ${height}`);
-    }
-
-    /** The full-size horizontal mark's first frame, for the README. */
-    private static _write_readme_logo(): void {
-        const animation = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.FULL_SIZE, true);
-        const first = animation.list_frames[animation.list_sequence[0] ?? 0];
-        if (first === undefined) {
-            throw new Error("the mark has no frames");
-        }
-        mkdirSync(dirname(LogoBuild.README_LOGO_PATH), { recursive: true });
-        writeFileSync(LogoBuild.README_LOGO_PATH, PngWriter.encode(first.enlarged(LogoBuild.README_LOGO_SCALE)));
-        console.log(LogoBuild.README_LOGO_PATH, `${first.width * LogoBuild.README_LOGO_SCALE} × ${first.height * LogoBuild.README_LOGO_SCALE}`);
-    }
-
-    /**
-     * The animated horizontal mark the app's sidebar shows: its distinct frames side by side in one PNG per
-     * screen scale, and how to play them, for the app to hand to Core Animation. The Retina strip is drawn
-     * on a grid twice as fine rather than enlarged, so the mark keeps its pixels' look at twice the detail.
-     */
-    private static _write_sidebar_logo(): void {
-        const animation = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_SIZE, true);
-        const retina = RookeryMark.animate("horizontal", LogoBuild.BACKING, RookeryMark.SIDEBAR_RETINA_SIZE, true);
-        if (JSON.stringify(retina.list_sequence) !== JSON.stringify(animation.list_sequence)) {
-            throw new Error("the sidebar mark's Retina frames do not follow the same sequence");
-        }
-        for (const [suffix, drawn] of [["", animation], ["@2x", retina]] as const) {
-            const strip = PixelGrid.compose(
-                drawn.width * drawn.list_frames.length,
-                drawn.height,
-                drawn.list_frames.map((frame, frame_index) => ({ grid: frame, left: frame_index * drawn.width, top: 0 })),
-            );
-            const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}${suffix}.png`);
-            writeFileSync(path, PngWriter.encode(strip));
-            console.log(path, `${drawn.width} × ${drawn.height}`);
-        }
-        const path = join(LogoBuild.APP_RESOURCES_DIRECTORY, `${LogoBuild.SIDEBAR_LOGO_NAME}.json`);
-        writeFileSync(path, `${JSON.stringify({
-            frame_width: animation.width,
-            frame_height: animation.height,
-            retina_frame_width: retina.width,
-            retina_frame_height: retina.height,
-            frames_per_second: animation.frames_per_second,
-            sequence: animation.list_sequence,
-        }, undefined, 4)}\n`);
-        console.log(path, `${animation.list_frames.length} frames`);
     }
 
     /** An animation's frames, each run-length encoded row after row, for the page's player. */

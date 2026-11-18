@@ -1,140 +1,100 @@
 import AppKit
-import ImageIO
-import os
 import RookeryCore
 import SwiftUI
 
-/// How a set of looping pixel animations plays, as `branding/` writes it beside their strips: the frame
-/// size in pixels, the frame rate, and each loop's frame count and order.
-struct PixelSheetTimeline: Decodable {
-    struct LoopTimeline: Decodable {
-        let frameCount: Int
-        let listSequence: [Int]
-
-        enum CodingKeys: String, CodingKey {
-            case frameCount = "frame_count"
-            case listSequence = "sequence"
-        }
-    }
-
-    let frameWidth: Int
-    let frameHeight: Int
-    let framesPerSecond: Double
-    let mapLoops: [String: LoopTimeline]
-
-    enum CodingKeys: String, CodingKey {
-        case frameWidth = "frame_width"
-        case frameHeight = "frame_height"
-        case framesPerSecond = "frames_per_second"
-        case mapLoops = "states"
-    }
-}
-
-/// A set of named looping pixel animations in the app's resources, as `branding/` writes them: a timeline,
-/// and one strip of frames per loop at a pixel a grid pixel, which a view scales without smoothing. Each
-/// strip is read once and kept.
-@MainActor
-final class PixelAnimationSheet {
-    private static let logger = Logger(subsystem: "io.github.zobinhuang.rookery", category: "stage")
-
-    private let timelineName: String
-    private let stripPrefix: String
-    private var cachedTimeline: PixelSheetTimeline??
-    private var mapFrames: [String: [CGImage]] = [:]
-
-    /// - Parameters:
-    ///   - timelineName: the timeline's resource name
-    ///   - stripPrefix: what each loop's strip is named with before the loop's name
-    init(timelineName: String, stripPrefix: String) {
-        self.timelineName = timelineName
-        self.stripPrefix = stripPrefix
-    }
-
-    /// The timeline, or nil when the resources are missing.
-    var timeline: PixelSheetTimeline? {
-        if let cachedTimeline {
-            return cachedTimeline
-        }
-        var timeline: PixelSheetTimeline?
-        if let url = Bundle.main.url(forResource: timelineName, withExtension: "json") {
-            do {
-                timeline = try JSONDecoder().decode(PixelSheetTimeline.self, from: Data(contentsOf: url))
-            } catch {
-                Self.logger.error("cannot read the timeline \(self.timelineName, privacy: .public): \(error)")
-            }
-        }
-        cachedTimeline = .some(timeline)
-        return timeline
-    }
-
-    /// One loop, or nil when the resources lack it.
-    func animation(named name: String) -> PixelAnimation? {
-        guard let timeline, let loopTimeline = timeline.mapLoops[name] else {
-            return nil
-        }
-        return PixelAnimation(
-            framesForScale: { [self] _ in frames(of: name) },
-            listSequence: loopTimeline.listSequence,
-            framesPerSecond: timeline.framesPerSecond
-        )
-    }
-
-    private func frames(of name: String) -> [CGImage] {
-        if let frames = mapFrames[name] {
-            return frames
-        }
-        var listFrames: [CGImage] = []
-        if
-            let timeline,
-            let url = Bundle.main.url(forResource: stripPrefix + name, withExtension: "png"),
-            let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let strip = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        {
-            listFrames = (0..<(strip.width / max(timeline.frameWidth, 1))).compactMap { frameIndex in
-                strip.cropping(to: CGRect(
-                    x: frameIndex * timeline.frameWidth,
-                    y: 0,
-                    width: timeline.frameWidth,
-                    height: timeline.frameHeight
-                ))
-            }
-        } else {
-            Self.logger.error("cannot read the frames of \(self.stripPrefix + name, privacy: .public)")
-        }
-        mapFrames[name] = listFrames
-        return listFrames
-    }
-}
-
-/// The crow's art: one loop per agent state, named as roost reports the state.
-@MainActor
-enum CrowArt {
-    static let sheet = PixelAnimationSheet(timelineName: "Crows", stripPrefix: "Crow_")
-
-    /// A state's loop.
-    static func animation(for state: AgentState) -> PixelAnimation? {
-        sheet.animation(named: state.rawValue)
-    }
-}
-
-/// Raven's art: the crow facing left, outlined in white, at rest and at work.
-@MainActor
-enum RavenArt {
-    static let sheet = PixelAnimationSheet(timelineName: "Raven", stripPrefix: "Raven_")
-
-    static func animation(isWorking: Bool) -> PixelAnimation? {
-        sheet.animation(named: isWorking ? "working" : "idle")
-    }
-}
-
-/// How large a crow is drawn: always a whole number of screen pixels a pixel of its art, so no pixel is
-/// dropped or smeared; on a Retina screen the regular crow is its art pixel for pixel.
+/// How large a crow is drawn.
 enum CrowSize: CGFloat {
     case regular = 32
     case large = 64
 }
 
-/// One agent's crow, playing the loop of its state; the agent badge when the art is missing.
+/// The frames of every crow on screen, drawn by `CrowRig` at the pixel size and in the theme they are shown
+/// in, each loop once however many crows play it, off the main thread; the least recently used are let
+/// go once more than a handful are kept.
+@MainActor
+final class CrowFrames {
+    static let shared = CrowFrames()
+    private static let keptLoopCount = 32
+
+    /// One drawn loop: what it shows, at which side in pixels, in which theme's colors.
+    struct Key: Hashable {
+        let act: CrowAct
+        let side: Int
+        let look: CrowLook
+    }
+
+    private var mapLoops: [Key: [CGImage]] = [:]
+    private var listRecent: [Key] = []
+    private var mapPending: [Key: Task<[CGImage], Never>] = [:]
+
+    /// A loop's frames, drawn now or taken from those kept.
+    func loop(_ key: Key) async -> [CGImage] {
+        if let listFrames = mapLoops[key] {
+            touch(key)
+            return listFrames
+        }
+        if let pending = mapPending[key] {
+            return await pending.value
+        }
+        let pending = Task.detached(priority: .utility) { Self.draw(key) }
+        mapPending[key] = pending
+        let listFrames = await pending.value
+        mapPending[key] = nil
+        mapLoops[key] = listFrames
+        touch(key)
+        return listFrames
+    }
+
+    /// A theme's colors for its crows.
+    static func look(of theme: Theme) -> CrowLook {
+        switch theme {
+        case .light: .light
+        case .dark: .dark
+        case .highContrastLight: .highContrastLight
+        case .highContrastDark: .highContrastDark
+        }
+    }
+
+    /// The frame that stands for an act held still, drawn at once.
+    func still(_ key: Key) -> CGImage? {
+        Self.frame(key.act, at: CrowRig.stillTime(of: key.act), side: key.side, look: key.look)
+    }
+
+    private func touch(_ key: Key) {
+        listRecent.removeAll { $0 == key }
+        listRecent.append(key)
+        while listRecent.count > Self.keptLoopCount {
+            mapLoops[listRecent.removeFirst()] = nil
+        }
+    }
+
+    nonisolated private static func draw(_ key: Key) -> [CGImage] {
+        let period = CrowRig.period(of: key.act)
+        let count = max(1, Int((period * CrowRig.framesPerSecond(of: key.act)).rounded()))
+        return (0..<count).compactMap { index in
+            frame(key.act, at: period * Double(index) / Double(count), side: key.side, look: key.look)
+        }
+    }
+
+    nonisolated private static func frame(_ act: CrowAct, at time: Double, side: Int, look: CrowLook) -> CGImage? {
+        guard
+            side > 0,
+            let context = CGContext(
+                data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else {
+            return nil
+        }
+        context.translateBy(x: 0, y: CGFloat(side))
+        context.scaleBy(x: 1, y: -1)
+        CrowRig.draw(act, at: time, in: context, side: CGFloat(side), look: look)
+        return context.makeImage()
+    }
+}
+
+/// One agent's crow, acting out its state.
 struct CrowView: View {
     let state: AgentState
     let crowSize: CrowSize
@@ -145,61 +105,167 @@ struct CrowView: View {
     }
 
     var body: some View {
-        if let animation = CrowArt.animation(for: state) {
-            PixelAnimationLayer(animation: animation, loopName: state.rawValue)
-                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
-                .accessibilityElement()
-                .accessibilityLabel(state.title)
-        } else {
-            RookeryIconView(.agent)
-                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
-        }
+        CrowActView(act: .agent(state))
+            .frame(width: crowSize.rawValue, height: crowSize.rawValue)
+            .accessibilityElement()
+            .accessibilityLabel(state.title)
     }
 }
 
-/// Raven, at rest or at work; the agent badge when the art is missing.
+/// Raven, at rest or at work.
 struct RavenView: View {
     let isWorking: Bool
     var crowSize = CrowSize.regular
 
     var body: some View {
-        if let animation = RavenArt.animation(isWorking: isWorking) {
-            PixelAnimationLayer(animation: animation, loopName: isWorking ? "working" : "idle")
-                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
-                .accessibilityElement()
-                .accessibilityLabel(isWorking ? "Raven, working" : "Raven")
-        } else {
-            RookeryIconView(.agent)
-                .frame(width: crowSize.rawValue, height: crowSize.rawValue)
-        }
+        CrowActView(act: isWorking ? .ravenWorking : .ravenIdle)
+            .frame(width: crowSize.rawValue, height: crowSize.rawValue)
+            .accessibilityElement()
+            .accessibilityLabel(isWorking ? "Raven, working" : "Raven")
     }
 }
 
-/// The layer that plays a pixel animation, switching loops when the loop named changes.
-private struct PixelAnimationLayer: NSViewRepresentable {
-    let animation: PixelAnimation
-    let loopName: String
+/// A crow in the theme's colors, its act played by the view below.
+private struct CrowActView: NSViewRepresentable {
+    let act: CrowAct
+    @Environment(\.stageTheme) private var theme
 
-    func makeNSView(context: Context) -> PixelAnimationView {
-        let view = PixelAnimationView()
-        context.coordinator.shownLoopName = loopName
-        view.show(animation)
+    func makeNSView(context: Context) -> CrowAnimationView {
+        let view = CrowAnimationView()
+        view.show(act, look: CrowFrames.look(of: theme))
         return view
     }
 
-    func updateNSView(_ nsView: PixelAnimationView, context: Context) {
-        guard context.coordinator.shownLoopName != loopName else {
+    func updateNSView(_ view: CrowAnimationView, context: Context) {
+        view.show(act, look: CrowFrames.look(of: theme))
+    }
+}
+
+/// A view that plays a crow's loop in one layer: the still frame at once, then, once its frames are drawn,
+/// a keyframe animation that steps the layer's contents through them in the render server, so the app does
+/// no work while it loops. Drawn again for the screen's scale and the view's size; holds the still frame
+/// under Reduce Motion and while the window is hidden.
+final class CrowAnimationView: NSView {
+    private static let animationKey = "frames"
+
+    private let frameLayer = CALayer()
+    private var act: CrowAct?
+    private var look = CrowLook.light
+    private var shownKey: CrowFrames.Key?
+    private var loopTask: Task<Void, Never>?
+    private var occlusionObserver: NSObjectProtocol?
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        frameLayer.contentsGravity = .resize
+        layer?.addSublayer(frameLayer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    isolated deinit {
+        loopTask?.cancel()
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+        }
+    }
+
+    /// Play an act in a theme's colors; a no-op when it is already playing.
+    func show(_ act: CrowAct, look: CrowLook) {
+        guard act != self.act || look != self.look else {
             return
         }
-        context.coordinator.shownLoopName = loopName
-        nsView.show(animation)
+        self.act = act
+        self.look = look
+        play()
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 
-    final class Coordinator {
-        var shownLoopName: String?
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frameLayer.frame = bounds
+        CATransaction.commit()
+        play()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let occlusionObserver {
+            NotificationCenter.default.removeObserver(occlusionObserver)
+            self.occlusionObserver = nil
+        }
+        if let window {
+            occlusionObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.syncVisibility()
+                }
+            }
+        }
+        play()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        play()
+    }
+
+    /// Show the still frame for this size, scale and theme, then the loop once it is drawn.
+    private func play() {
+        guard let window, let act, bounds.width > 0 else {
+            return
+        }
+        let scale = window.backingScaleFactor
+        let key = CrowFrames.Key(act: act, side: Int((bounds.width * scale).rounded()), look: look)
+        guard key != shownKey else {
+            return
+        }
+        shownKey = key
+        loopTask?.cancel()
+        frameLayer.removeAnimation(forKey: Self.animationKey)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        frameLayer.contentsScale = scale
+        frameLayer.contents = CrowFrames.shared.still(key)
+        CATransaction.commit()
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            return
+        }
+        loopTask = Task { [weak self] in
+            let listFrames = await CrowFrames.shared.loop(key)
+            guard !Task.isCancelled, let self, self.shownKey == key, listFrames.count > 1 else {
+                return
+            }
+            let keyframes = CAKeyframeAnimation(keyPath: "contents")
+            keyframes.values = listFrames
+            keyframes.calculationMode = .discrete
+            keyframes.keyTimes = (0...listFrames.count).map { NSNumber(value: Double($0) / Double(listFrames.count)) }
+            keyframes.duration = CrowRig.period(of: key.act)
+            keyframes.repeatCount = .infinity
+            self.frameLayer.add(keyframes, forKey: Self.animationKey)
+            self.syncVisibility()
+        }
+    }
+
+    /// Hold the loop still while the window is hidden, and let it run again when it shows.
+    private func syncVisibility() {
+        let isVisible = window?.occlusionState.contains(.visible) ?? false
+        frameLayer.speed = isVisible ? 1 : 0
+        if isVisible {
+            frameLayer.timeOffset = 0
+            frameLayer.beginTime = CACurrentMediaTime()
+        }
     }
 }

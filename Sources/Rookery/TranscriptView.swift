@@ -876,6 +876,9 @@ struct SpeakerHeading: View {
     /// The wash of a rook's messages and the colour of its name, the crows' gold.
     static let rookTint = RookmasterStyle.tint(of: AgentFleet.agentKind)
     private static let avatarSize: CGFloat = 18
+    /// The pixels a point the avatar is drawn at, enough for any screen.
+    private static let avatarScale: CGFloat = 3
+    @Environment(\.stageTheme) private var theme
 
     let name: String
     let isRaven: Bool
@@ -905,10 +908,13 @@ struct SpeakerHeading: View {
 
     @ViewBuilder
     private var avatar: some View {
-        let animation = isRaven ? RavenArt.animation(isWorking: false) : CrowArt.animation(for: .idle)
-        if let still = animation?.framesForScale(2).first {
-            Image(decorative: still, scale: 2)
-                .interpolation(.none)
+        let key = CrowFrames.Key(
+            act: isRaven ? .ravenIdle : .agent(.needsInput),
+            side: Int(Self.avatarSize * Self.avatarScale),
+            look: CrowFrames.look(of: theme)
+        )
+        if let still = CrowFrames.shared.still(key) {
+            Image(decorative: still, scale: Self.avatarScale)
                 .resizable()
                 .frame(width: Self.avatarSize, height: Self.avatarSize)
         } else {

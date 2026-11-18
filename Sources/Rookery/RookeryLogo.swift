@@ -1,6 +1,5 @@
 import AppKit
 import CoreText
-import ImageIO
 import os
 import RookeryCore
 import SwiftUI
@@ -77,97 +76,5 @@ enum BrandArt {
         }
         image.isTemplate = true
         return image
-    }
-}
-
-/// A looping pixel animation: its distinct frames for a screen scale, the order they show in, and how fast.
-struct PixelAnimation {
-    /// The distinct frames drawn for a screen scale, 1 or 2; art drawn once returns the same for both.
-    let framesForScale: @MainActor (Int) -> [CGImage]
-    let listSequence: [Int]
-    let framesPerSecond: Double
-}
-
-/// A view that plays a pixel animation in one layer: a discrete keyframe animation steps its contents
-/// through the frames, scaled to the view without smoothing, in the render server, so the app does no work
-/// while it loops. Set up again whenever the view lands in a window or on a screen of another scale; holds
-/// still under Reduce Motion.
-final class PixelAnimationView: NSView {
-    private static let animationKey = "frames"
-    private static let retinaScale = 2
-
-    private let frameLayer = CALayer()
-    private var animation: PixelAnimation?
-
-    init() {
-        super.init(frame: .zero)
-        wantsLayer = true
-        frameLayer.magnificationFilter = .nearest
-        frameLayer.minificationFilter = .nearest
-        frameLayer.contentsGravity = .resize
-        layer?.addSublayer(frameLayer)
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    /// Play another animation, from its start.
-    func show(_ animation: PixelAnimation) {
-        self.animation = animation
-        play()
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        frameLayer.frame = bounds
-        CATransaction.commit()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        play()
-    }
-
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        play()
-    }
-
-    /// Show the frames drawn for this screen's scale, looping them unless Reduce Motion is on.
-    private func play() {
-        guard let window, let animation else {
-            frameLayer.removeAnimation(forKey: Self.animationKey)
-            return
-        }
-        let scale = window.backingScaleFactor > 1 ? Self.retinaScale : 1
-        let listFrames = animation.framesForScale(scale)
-        let listShown = animation.listSequence.compactMap { listFrames.indices.contains($0) ? listFrames[$0] : nil }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        frameLayer.contentsScale = CGFloat(scale)
-        frameLayer.contents = listShown.first
-        CATransaction.commit()
-        frameLayer.removeAnimation(forKey: Self.animationKey)
-        guard
-            listShown.count > 1,
-            animation.framesPerSecond > 0,
-            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        else {
-            return
-        }
-        let keyframes = CAKeyframeAnimation(keyPath: "contents")
-        keyframes.values = listShown
-        keyframes.calculationMode = .discrete
-        keyframes.keyTimes = (0...listShown.count).map { NSNumber(value: Double($0) / Double(listShown.count)) }
-        keyframes.duration = Double(listShown.count) / animation.framesPerSecond
-        keyframes.repeatCount = .infinity
-        frameLayer.add(keyframes, forKey: Self.animationKey)
     }
 }

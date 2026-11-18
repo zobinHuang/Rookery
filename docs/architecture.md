@@ -17,7 +17,7 @@ Rookery is one SwiftPM package with a Dock app (with a menu bar item), a command
 | `extensions/chrome` | npm package | The Chrome extension: background service worker, content script, offscreen capture document. |
 | `rook/` | shell | The command line around code agents in tmux: `rook` sessions, `rook-agent` (each pane's agent state and the status bar), `rook-hooks` (merges the hooks into Claude Code and codex), `rook-session` (uploads transcripts), `rook-playbook` (installs a playbook's skills), `rook-client` (reports agent events to roost, backs `rook resource` and `rook message`), `rook-link` (the live link to roost, a user service that types prompts and messages into agents' panes; see `rook/docs/link.md`), and `setup.sh`. See `rook/README.md`. |
 | `server/roost` | Python package | The server rook reports to: session transcripts, and the resources (agents, skills, playbooks, memories), their relations and the event log, in SQLite, over HTTP with a bearer token and a live event stream. See `docs/resources.md`. Standard library only. See `server/README.md` and `server/API.md`. |
-| `branding/` | npm package | The pixel crow logo, rendered from a 3D model into the sidebar's frames and the preview page. |
+| `branding/` | npm package | The earlier pixel crow, rendered from a 3D model into a preview page, and the two pixel interface icons. The logo and the crows are drawn by `BrandMark` and `CrowRig` in `RookeryCore`. |
 
 Warnings are errors and the Swift 6 language mode is on everywhere; see `Package.swift`.
 
@@ -53,7 +53,7 @@ Warnings are errors and the Swift 6 language mode is on everywhere; see `Package
 - `Preferences`: everything in `UserDefaults` (`io.github.zobinhuang.rookery`), with change callbacks the controllers subscribe to.
 - `ControlServer`: serves `rookeryctl` and browser sessions.
 
-Every icon in the app is a `RookeryIcon`, in the logo's colors: badges are a dark body lit from the top left inside a yellow outline, glyphs are one color and take the text's. The crow's head and the crow are its pixel art, drawn by `branding/src/icons.ts` into `Resources/Icons` like the logo and the crows; every other icon is drawn at the screen's full resolution from a system symbol. Add an icon as a case with its symbol.
+Every icon in the app is a `RookeryIcon`, in the logo's colors: badges are a dark body lit from the top left inside a yellow outline, glyphs are one color and take the text's. The crow's head and the crow are its pixel art, drawn by `branding/src/icons.ts` into `Resources/Icons`; every other icon is drawn at the screen's full resolution from a system symbol. Add an icon as a case with its symbol.
 
 UI state is `@MainActor`; the window tracker is an actor with a run loop thread per application; audio callbacks run on Core Audio's threads with lock-protected shared buffers.
 

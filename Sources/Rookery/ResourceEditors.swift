@@ -659,43 +659,58 @@ struct MemoryEditor: View {
 /// Views laid out left to right, wrapping onto a new line where the width runs out.
 struct FlowRow: Layout {
     var spacing: CGFloat = 6
+    /// Whether each line sits at the trailing edge rather than the leading one.
+    var isTrailing = false
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var lineHeight: CGFloat = 0
-        var widest: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > maxWidth {
-                y += lineHeight + spacing
-                x = 0
-                lineHeight = 0
-            }
-            x += size.width + spacing
-            widest = max(widest, x - spacing)
-            lineHeight = max(lineHeight, size.height)
-        }
-        return CGSize(width: proposal.width ?? widest, height: y + lineHeight)
+        let listLines = lines(of: subviews, within: maxWidth)
+        let widest = listLines.map(\.width).max() ?? 0
+        let height = listLines.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, listLines.count - 1))
+        return CGSize(width: proposal.width ?? widest, height: height)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX
         var y = bounds.minY
-        var lineHeight: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX, x + size.width > bounds.maxX {
-                y += lineHeight + spacing
-                x = bounds.minX
-                lineHeight = 0
+        for line in lines(of: subviews, within: bounds.width) {
+            var x = isTrailing ? bounds.maxX - line.width : bounds.minX
+            for (index, size) in zip(line.listIndices, line.listSizes) {
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
             }
-            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
+            y += line.height + spacing
         }
     }
+
+    /// The subviews laid out in lines that fit a width, each no wider than the width itself.
+    private func lines(of subviews: Subviews, within maxWidth: CGFloat) -> [FlowLine] {
+        var listLines: [FlowLine] = []
+        var current = FlowLine()
+        for index in subviews.indices {
+            let natural = subviews[index].sizeThatFits(.unspecified)
+            let size = CGSize(width: min(natural.width, maxWidth), height: natural.height)
+            if !current.listIndices.isEmpty, current.width + spacing + size.width > maxWidth {
+                listLines.append(current)
+                current = FlowLine()
+            }
+            current.width += (current.listIndices.isEmpty ? 0 : spacing) + size.width
+            current.height = max(current.height, size.height)
+            current.listIndices.append(index)
+            current.listSizes.append(size)
+        }
+        if !current.listIndices.isEmpty {
+            listLines.append(current)
+        }
+        return listLines
+    }
+}
+
+/// One line of a `FlowRow`: which subviews it holds, at what sizes, and how wide and tall it is.
+struct FlowLine {
+    var listIndices: [Int] = []
+    var listSizes: [CGSize] = []
+    var width: CGFloat = 0
+    var height: CGFloat = 0
 }
 
 // MARK: - Agent

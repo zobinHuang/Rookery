@@ -1376,18 +1376,11 @@ struct SwitchingTabs: View {
 }
 
 /// What stands in for a page of Rookery's own while the windows it covers are set aside and it is built,
-/// or while it reads what it shows: a spinner and what is on the way.
+/// or while it reads what it shows: the wordmark as a skeleton and what is on the way.
 struct PageLoading: View {
     let title: String
 
     var body: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.regular)
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(StageColors.secondaryText)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        LoadingMark(title: title)
     }
 }

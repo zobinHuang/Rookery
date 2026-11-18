@@ -39,6 +39,11 @@ enum BrandArt {
     /// The sidebar's wordmark typeface at its size, or nil when the typeface is missing from the app.
     static let wordmarkFont: CTFont? = makeWordmarkFont()
 
+    /// The wordmark's typeface at another size, or nil when the typeface is missing from the app.
+    static func wordmarkFont(size: CGFloat) -> CTFont? {
+        wordmarkFont.map { CTFontCreateCopyWithAttributes($0, size, nil, nil) }
+    }
+
     /// The menu bar's mark: the pair of eyes as a template the menu bar tints.
     static func menuBarImage() -> NSImage {
         let side = menuBarSide
@@ -68,16 +73,24 @@ enum BrandArt {
     }
 }
 
-/// The wordmark with eyes that move, in the theme's text color.
+/// The wordmark with eyes that move, in the theme's text color, or as the shape of something still on
+/// its way: in the color content on its way takes, a light sweeping across it.
 struct AnimatedWordmark: NSViewRepresentable {
     let font: CTFont
+    var isSkeleton = false
 
     func makeNSView(context: Context) -> AnimatedWordmarkView {
-        AnimatedWordmarkView(font: font)
+        AnimatedWordmarkView(font: font, isSkeleton: isSkeleton)
     }
 
     func updateNSView(_ view: AnimatedWordmarkView, context: Context) {
-        view.ink = StageColors.primaryText.color(in: context.environment.stageTheme)
+        let theme = context.environment.stageTheme
+        if isSkeleton {
+            view.ink = StageColors.skeleton.color(in: theme)
+            view.shine = StageColors.skeletonLight.color(in: theme)
+        } else {
+            view.ink = StageColors.primaryText.color(in: theme)
+        }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: AnimatedWordmarkView, context: Context) -> CGSize? {
@@ -101,6 +114,11 @@ final class AnimatedWordmarkView: NSView {
         (0, 0), (4.9, 0), (4.97, 1), (5.01, 1), (5.13, 0), (5.3, 0), (5.37, 1), (5.41, 1), (5.53, 0), (7, 0),
     ]
 
+    /// How long the light takes to sweep across a skeleton, in seconds.
+    private static let sweepDuration: CFTimeInterval = 1.3
+    /// The light's width, as a share of the word's.
+    private static let sweepShare: CGFloat = 0.6
+
     var ink: NSColor = .labelColor {
         didSet {
             if ink != oldValue {
@@ -108,15 +126,28 @@ final class AnimatedWordmarkView: NSView {
             }
         }
     }
+    /// The light sweeping across a skeleton.
+    var shine: NSColor = .white {
+        didSet {
+            if shine != oldValue {
+                applyInk()
+            }
+        }
+    }
 
     private let font: CTFont
+    private let isSkeleton: Bool
     private let wordBounds: CGRect
     private let inkLayer = CALayer()
     private let wordMask = CALayer()
+    private let sweepHolder = CALayer()
+    private let sweepMask = CALayer()
+    private let sweep = CAGradientLayer()
     private var listShapes: [CAShapeLayer] = []
 
-    init(font: CTFont) {
+    init(font: CTFont, isSkeleton: Bool = false) {
         self.font = font
+        self.isSkeleton = isSkeleton
         wordBounds = BrandMark.wordmarkBounds(font: font).integral
         super.init(frame: CGRect(origin: .zero, size: wordBounds.size))
         wantsLayer = true
@@ -129,6 +160,13 @@ final class AnimatedWordmarkView: NSView {
                 at: CGPoint(x: center.x - wordBounds.minX, y: center.y - wordBounds.minY),
                 radius: xHeight / 2
             )
+        }
+        if isSkeleton {
+            sweep.startPoint = CGPoint(x: 0, y: 0.5)
+            sweep.endPoint = CGPoint(x: 1, y: 0.5)
+            sweepHolder.mask = sweepMask
+            sweepHolder.addSublayer(sweep)
+            layer?.addSublayer(sweepHolder)
         }
         applyInk()
     }
@@ -148,7 +186,33 @@ final class AnimatedWordmarkView: NSView {
         CATransaction.setDisableActions(true)
         inkLayer.frame = bounds
         wordMask.frame = inkLayer.bounds
+        sweepHolder.frame = bounds
+        sweepMask.frame = sweepHolder.bounds
+        let sweepWidth = bounds.width * Self.sweepShare
+        sweep.bounds = CGRect(x: 0, y: 0, width: sweepWidth, height: bounds.height)
+        sweep.position = CGPoint(x: -sweepWidth / 2, y: bounds.midY)
         CATransaction.commit()
+        startSweep()
+    }
+
+    /// Run the light across the skeleton, from beyond its left edge to beyond its right, over and over.
+    private func startSweep() {
+        guard
+            isSkeleton,
+            sweep.animation(forKey: "sweep") == nil,
+            bounds.width > 0,
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else {
+            return
+        }
+        let sweepWidth = bounds.width * Self.sweepShare
+        let animation = CABasicAnimation(keyPath: "position.x")
+        animation.fromValue = -sweepWidth / 2
+        animation.toValue = bounds.width + sweepWidth / 2
+        animation.duration = Self.sweepDuration
+        animation.repeatCount = .infinity
+        animation.isRemovedOnCompletion = false
+        sweep.add(animation, forKey: "sweep")
     }
 
     override func viewDidChangeBackingProperties() {
@@ -191,10 +255,13 @@ final class AnimatedWordmarkView: NSView {
             ink: CGColor(gray: 0, alpha: 1),
             isDrawingEyes: false
         )
+        let image = context.makeImage()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        wordMask.contents = context.makeImage()
+        wordMask.contents = image
         wordMask.contentsScale = scale
+        sweepMask.contents = image
+        sweepMask.contentsScale = scale
         CATransaction.commit()
     }
 
@@ -278,16 +345,47 @@ final class AnimatedWordmarkView: NSView {
     /// Color the word and the eyes, the ink taken in the view's own appearance.
     private func applyInk() {
         var color = ink.cgColor
+        var light = shine.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
             color = ink.cgColor
+            light = shine.cgColor
         }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        sweep.colors = [light.copy(alpha: 0) ?? light, light, light.copy(alpha: 0) ?? light]
         inkLayer.backgroundColor = color
         for shape in listShapes {
             shape.fillColor = color
         }
         CATransaction.commit()
+    }
+}
+
+/// What stands in for something on its way, a page or a conversation: Rookery's wordmark as a skeleton,
+/// a light sweeping across it and its eyes looking about, over what is coming. A build without the
+/// typeface shows a spinner.
+struct LoadingMark: View {
+    private static let typeSize: CGFloat = 30
+
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 14) {
+            if let font = BrandArt.wordmarkFont(size: Self.typeSize) {
+                let size = BrandMark.wordmarkBounds(font: font).integral.size
+                AnimatedWordmark(font: font, isSkeleton: true)
+                    .frame(width: size.width, height: size.height)
+                    .accessibilityHidden(true)
+            } else {
+                ProgressView()
+                    .controlSize(.regular)
+            }
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(StageColors.secondaryText)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 

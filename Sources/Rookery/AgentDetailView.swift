@@ -30,6 +30,8 @@ struct AgentDetailView: View {
 
     @State private var reader = TranscriptReader()
     @State private var hasTranscript = true
+    /// Whether the page has read what the transcript holds, kept or from roost, once since it opened.
+    @State private var isTranscriptRead = false
     @State private var listDeliveries: [FleetDelivery] = []
     /// When each prompt was first seen settled; those settled before the page opened count as long ago.
     @State private var mapSettledAt: [String: Date] = [:]
@@ -369,8 +371,20 @@ struct AgentDetailView: View {
 
     // MARK: - Conversation
 
-    /// The agent's conversation, laid out apart from the window, since it grows and scrolls on its own.
+    /// The agent's conversation, or the wordmark as a skeleton until the page has read it.
+    @ViewBuilder
     private var conversation: some View {
+        if !isTranscriptRead && reader.listEntries.isEmpty {
+            LoadingMark(title: "Reading the conversation")
+                .transition(.opacity)
+        } else {
+            transcript
+                .transition(.opacity)
+        }
+    }
+
+    /// The conversation, laid out apart from the window, since it grows and scrolls on its own.
+    private var transcript: some View {
         LayoutIsland {
             TranscriptView(
                 reader: reader,
@@ -555,10 +569,20 @@ struct AgentDetailView: View {
 
     // MARK: - Following
 
+    private func markTranscriptRead() {
+        guard !isTranscriptRead else {
+            return
+        }
+        withAnimation(.easeOut(duration: 0.2)) {
+            isTranscriptRead = true
+        }
+    }
+
     /// Read the transcript's new bytes and the prompts' outcomes until the page goes away.
     private func follow() async {
         reader = TranscriptReader()
         hasTranscript = true
+        isTranscriptRead = false
         listDeliveries = []
         listOutgoing = []
         mapSettledAt = [:]
@@ -571,6 +595,7 @@ struct AgentDetailView: View {
         while !Task.isCancelled {
             if let client = fleetModel.client() {
                 await readTranscript(from: client)
+                markTranscriptRead()
                 listOutgoing.removeAll { $0.isRecorded(in: reader.listEntries) }
                 do {
                     listDeliveries = try await client.deliveries(to: agentId)
@@ -579,6 +604,8 @@ struct AgentDetailView: View {
                 } catch {
                     Self.logger.info("cannot read deliveries: \(FleetModel.describe(error), privacy: .public)")
                 }
+            } else {
+                markTranscriptRead()
             }
             do {
                 try await Task.sleep(for: Self.pollInterval)

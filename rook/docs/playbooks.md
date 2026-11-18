@@ -66,3 +66,7 @@ when you pick one with `Ctrl+t` `p`. Nothing polls in the background.
 
 Fetched trees are cached by commit under `~/.local/share/rook/skills/`, so
 switching back to a playbook you have used before costs no network at all.
+
+## Private repositories
+
+A skill in a private repository installs like any other once the user registers a token for the repository's host in Rookery (Settings, Roost, Git Credentials), which keeps it on roost (../../server/API.md#git-credentials). Before fetching a skill from a repository reached over `https`, `rook-playbook` asks roost for the token of its host and hands it to git through its environment and a helper on git's command line, for those fetches alone: it is never written to disk here and never shows in a process listing. A repository reached over ssh uses the machine's own keys.

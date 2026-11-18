@@ -170,6 +170,14 @@ load_connection() {
   [ -n "$ROOK_BASE_URL" ] && [ -n "$ROOK_TOKEN" ]
 }
 
+url_encode() {
+  # url_encode <text> — the text as one query parameter's value
+  case "$(json_tool)" in
+    jq) printf '%s' "$1" | jq -sRr @uri ;;
+    python3) python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1" ;;
+  esac
+}
+
 api_get() {
   # api_get <path> <dest-file>
   set -- -sS -H "Authorization: Bearer $ROOK_TOKEN" \
@@ -201,6 +209,20 @@ checkout_skill() {
   git -C "$_co_work" init -q 2>>"$ROOK_LOG" || { rm -rf "$_co_work"; return 1; }
   git -C "$_co_work" remote add origin "$_co_repo" 2>>"$ROOK_LOG" || { rm -rf "$_co_work"; return 1; }
 
+  # A private repository over https: the token the user registered on roost
+  # for its host, handed to git through its environment for these fetches
+  # alone, never written down here.
+  ROOK_GIT_USERNAME=""; ROOK_GIT_PASSWORD=""
+  case "$_co_repo" in
+    https://*|http://*)
+      if api_get "/v1/credentials/match?repo=$(url_encode "$_co_repo")" "$_co_work/credential.json"; then
+        ROOK_GIT_USERNAME="$(json_scalar "$_co_work/credential.json" username)"
+        ROOK_GIT_PASSWORD="$(json_scalar "$_co_work/credential.json" token)"
+      fi
+      rm -f "$_co_work/credential.json" ;;
+  esac
+  export ROOK_GIT_USERNAME ROOK_GIT_PASSWORD
+
   _co_got=0
   for _co_attempt in blobless plain ref; do
     case "$_co_attempt" in
@@ -214,6 +236,7 @@ checkout_skill() {
       break
     fi
   done
+  unset ROOK_GIT_USERNAME ROOK_GIT_PASSWORD
   [ "$_co_got" -eq 1 ] || { rm -rf "$_co_work"; log "could not fetch $_co_repo"; return 1; }
 
   # A ref fetch can land on a different commit than the server resolved;
@@ -256,12 +279,21 @@ checkout_skill() {
 }
 
 timeout_git() {
-  # timeout_git <repo-dir> <git-args>... — bounded, never prompting
+  # timeout_git <repo-dir> <git-args>... — bounded, never prompting; with a
+  # token in ROOK_GIT_PASSWORD, git takes it from its environment through a
+  # helper, so it never shows on a command line
   _tg_dir="$1"; shift
-  if command -v timeout >/dev/null 2>&1; then
-    GIT_TERMINAL_PROMPT=0 timeout "$ROOK_GIT_TIMEOUT" git -C "$_tg_dir" "$@" 2>>"$ROOK_LOG"
+  if [ -n "${ROOK_GIT_PASSWORD:-}" ]; then
+    set -- -c credential.helper= \
+      -c 'credential.helper=!f() { echo "username=$ROOK_GIT_USERNAME"; echo "password=$ROOK_GIT_PASSWORD"; }; f' \
+      -C "$_tg_dir" "$@"
   else
-    GIT_TERMINAL_PROMPT=0 git -C "$_tg_dir" "$@" 2>>"$ROOK_LOG"
+    set -- -C "$_tg_dir" "$@"
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    GIT_TERMINAL_PROMPT=0 timeout "$ROOK_GIT_TIMEOUT" git "$@" 2>>"$ROOK_LOG"
+  else
+    GIT_TERMINAL_PROMPT=0 git "$@" 2>>"$ROOK_LOG"
   fi
 }
 

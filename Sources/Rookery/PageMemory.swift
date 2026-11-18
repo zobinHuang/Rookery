@@ -43,8 +43,23 @@ final class PageMemory {
     /// The roost address and token typed in the settings and not yet used; nil for the ones kept.
     var roostAddressDraft: String?
     var roostTokenDraft: String?
+    /// The git host's token being added or replaced in the settings, as the user left it; kept while the
+    /// app runs, never written down.
+    var gitCredentialDraft: GitCredentialDraft?
     /// The search for a city to add to the world clock.
     @ObservationIgnored let clockCitySearch = WorldClockCitySearch()
+}
+
+/// A token for a git host being added or replaced in the settings, as the user left it: the host being
+/// replaced (empty for a new one), the host, the token, the user name, the repository to try it on and
+/// what trying it said.
+struct GitCredentialDraft {
+    let replacedHost: String
+    var host: String
+    var token = ""
+    var username: String
+    var repo = ""
+    var checkResult: String?
 }
 
 /// A person open in the settings to change, as the user left them: their name, their addresses, an

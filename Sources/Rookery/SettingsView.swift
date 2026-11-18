@@ -156,6 +156,7 @@ struct SettingsView: View {
                 .padding(.bottom, 60)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .modifier(RememberedScroll(key: "settings.\(selectedPane.rawValue)", memory: memory))
         .id(selectedPane)
         .transition(.opacity)
         .animation(.easeOut(duration: 0.15), value: selectedPane)
@@ -322,7 +323,7 @@ struct SettingsView: View {
             SettingsRow(title: "Log Times", detail: "in Rookmaster's log") {
                 StageSegmentedControl(selection: $preferences.logClock, listOptions: LogClock.allCases, title: \.title)
             }
-            GitCredentialsSettings(fleetModel: fleetModel)
+            GitCredentialsSettings(fleetModel: fleetModel, memory: memory)
         }
         .onAppear {
         }
@@ -1440,18 +1441,32 @@ private struct PersonEditor: View {
 /// only to roost; this Mac keeps none.
 private struct GitCredentialsSettings: View {
     let fleetModel: FleetModel
+    let memory: PageMemory
 
     @State private var listCredentials: [GitCredential] = []
     @State private var problem: String?
-    /// The host whose token is being replaced, or the empty host while a new one is being added.
-    @State private var editingHost: String?
-    @State private var hostDraft = GitCredential.githubHost
-    @State private var tokenDraft = ""
-    @State private var usernameDraft = ""
-    @State private var repoDraft = ""
-    @State private var checkResult: String?
     @State private var isChecking = false
     @State private var isSaving = false
+
+    /// The host whose token is being replaced, or the empty host while a new one is being added.
+    private var editingHost: String? {
+        memory.gitCredentialDraft?.replacedHost
+    }
+
+    private var draft: GitCredentialDraft {
+        memory.gitCredentialDraft ?? GitCredentialDraft(replacedHost: "", host: GitCredential.githubHost, username: "")
+    }
+
+    private func binding(_ keyPath: WritableKeyPath<GitCredentialDraft, String>) -> Binding<String> {
+        Binding(
+            get: { draft[keyPath: keyPath] },
+            set: { value in
+                var changed = draft
+                changed[keyPath: keyPath] = value
+                memory.gitCredentialDraft = changed
+            }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1519,16 +1534,16 @@ private struct GitCredentialsSettings: View {
                 .font(.system(size: 13, weight: .semibold))
             if isNew {
                 field("Host") {
-                    TextField(GitCredential.githubHost, text: $hostDraft)
+                    TextField(GitCredential.githubHost, text: binding(\.host))
                         .textFieldStyle(.roundedBorder)
                 }
             }
             field("Token") {
-                SecureField("read-only token", text: $tokenDraft)
+                SecureField("read-only token", text: binding(\.token))
                     .textFieldStyle(.roundedBorder)
             }
             field("User name") {
-                TextField(Self.usualUsername(of: isNew ? hostDraft : editingHost ?? ""), text: $usernameDraft)
+                TextField(Self.usualUsername(of: draft.host), text: binding(\.username))
                     .textFieldStyle(.roundedBorder)
             }
             Text("Give the token read access to the repositories' contents alone: on GitHub a fine-grained token with Contents read-only on the repositories it needs, on GitLab one with read_repository.")
@@ -1537,15 +1552,15 @@ private struct GitCredentialsSettings: View {
                 .fixedSize(horizontal: false, vertical: true)
             field("Try it on") {
                 HStack(spacing: 8) {
-                    TextField("owner/repo or a repository's URL", text: $repoDraft)
+                    TextField("owner/repo or a repository's URL", text: binding(\.repo))
                         .textFieldStyle(.roundedBorder)
                     Button(isChecking ? "Trying…" : "Try") {
                         check()
                     }
-                    .disabled(repoDraft.trimmingCharacters(in: .whitespaces).isEmpty || isChecking)
+                    .disabled(draft.repo.trimmingCharacters(in: .whitespaces).isEmpty || isChecking)
                 }
             }
-            if let checkResult {
+            if let checkResult = draft.checkResult {
                 Text(checkResult)
                     .font(.system(size: 11.5))
                     .foregroundStyle(StageColors.secondaryText)
@@ -1554,12 +1569,12 @@ private struct GitCredentialsSettings: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 Button("Cancel") {
-                    editingHost = nil
+                    memory.gitCredentialDraft = nil
                 }
                 .keyboardShortcut(.cancelAction)
                 Button(isSaving ? "Saving…" : "Save", action: save)
                     .buttonStyle(StageButtonStyle(kind: .prominent))
-                    .disabled(tokenDraft.trimmingCharacters(in: .whitespaces).isEmpty || hostDraft.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .disabled(draft.token.trimmingCharacters(in: .whitespaces).isEmpty || draft.host.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
             }
         }
         .padding(14)
@@ -1579,12 +1594,12 @@ private struct GitCredentialsSettings: View {
     }
 
     private func open(host: String, username: String = "") {
-        editingHost = host
-        hostDraft = host.isEmpty ? GitCredential.githubHost : host
-        tokenDraft = ""
-        usernameDraft = username == Self.usualUsername(of: hostDraft) ? "" : username
-        repoDraft = ""
-        checkResult = nil
+        let shownHost = host.isEmpty ? GitCredential.githubHost : host
+        memory.gitCredentialDraft = GitCredentialDraft(
+            replacedHost: host,
+            host: shownHost,
+            username: username == Self.usualUsername(of: shownHost) ? "" : username
+        )
     }
 
     private func load() async {
@@ -1608,12 +1623,11 @@ private struct GitCredentialsSettings: View {
         Task {
             do {
                 _ = try await client.registerGitCredential(
-                    host: hostDraft.trimmingCharacters(in: .whitespaces),
-                    username: usernameDraft.trimmingCharacters(in: .whitespaces),
-                    token: tokenDraft.trimmingCharacters(in: .whitespaces)
+                    host: draft.host.trimmingCharacters(in: .whitespaces),
+                    username: draft.username.trimmingCharacters(in: .whitespaces),
+                    token: draft.token.trimmingCharacters(in: .whitespaces)
                 )
-                tokenDraft = ""
-                editingHost = nil
+                memory.gitCredentialDraft = nil
                 problem = nil
                 await load()
             } catch {
@@ -1630,22 +1644,25 @@ private struct GitCredentialsSettings: View {
             return
         }
         isChecking = true
-        checkResult = nil
+        memory.gitCredentialDraft?.checkResult = nil
+        let tried = draft
         Task {
+            var result: String
             do {
-                if !tokenDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+                if !tried.token.trimmingCharacters(in: .whitespaces).isEmpty {
                     _ = try await client.registerGitCredential(
-                        host: hostDraft.trimmingCharacters(in: .whitespaces),
-                        username: usernameDraft.trimmingCharacters(in: .whitespaces),
-                        token: tokenDraft.trimmingCharacters(in: .whitespaces)
+                        host: tried.host.trimmingCharacters(in: .whitespaces),
+                        username: tried.username.trimmingCharacters(in: .whitespaces),
+                        token: tried.token.trimmingCharacters(in: .whitespaces)
                     )
                     await load()
                 }
-                let branch = try await client.checkGitAccess(repo: repoDraft.trimmingCharacters(in: .whitespaces))
-                checkResult = "roost can read it; its default branch is \(branch)."
+                let branch = try await client.checkGitAccess(repo: tried.repo.trimmingCharacters(in: .whitespaces))
+                result = "roost can read it; its default branch is \(branch)."
             } catch {
-                checkResult = "roost cannot read it: \(FleetModel.describe(error))"
+                result = "roost cannot read it: \(FleetModel.describe(error))"
             }
+            memory.gitCredentialDraft?.checkResult = result
             isChecking = false
         }
     }

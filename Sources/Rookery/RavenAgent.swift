@@ -65,6 +65,8 @@ final class RavenAgent {
     private(set) var conversations = RavenConversations()
     @ObservationIgnored private var titleTask: Task<Void, Never>?
     @ObservationIgnored private var inboxTask: Task<Void, Never>?
+    /// The conversations in teams checked since launch to be open on roost.
+    @ObservationIgnored private var setReopenedIds: Set<String> = []
     /// Messages from teammates read while their conversation was answering, framed, to answer next.
     @ObservationIgnored private var mapWaitingMessages: [String: [String]] = [:]
     /// Why the last team change in a conversation failed, shown in its header.
@@ -262,8 +264,39 @@ final class RavenAgent {
     /// Put a conversation in a team, to direct it for the user; its teammates are told by rook.
     func join(_ conversationId: String, team teamId: String) async {
         await changeTeam(of: conversationId, team: teamId) { client in
+            await reopenIfEnded(conversationId, client: client)
             try await client.join(conversationId, team: teamId, duty: Self.teamDuty)
         }
+    }
+
+    /// What tells roost a conversation is under way: its name, the code agent it runs on, where, and its
+    /// title. A conversation stays under way between its turns, so its teammates can answer it, and ends
+    /// only when the user removes it.
+    private func startedEvent(_ conversationId: String, cwd: String) -> [String: JSONValue] {
+        Self.event(conversationId, "started", detail: [
+            "name": .string(Self.agentName),
+            "harness": .string(conversations.conversation(conversationId)?.engine ?? RavenConversation.engineClaude),
+            "rook_name": .string(Self.rookName),
+            "tab": .string("raven"),
+            "cwd": .string(cwd),
+            "title": .string(conversations.conversation(conversationId)?.title ?? ""),
+        ])
+    }
+
+    /// Tell roost a conversation is under way again when it holds it as ended, as every conversation was
+    /// once its turn finished before conversations stayed open, so its teammates can reach it.
+    private func reopenIfEnded(_ conversationId: String, client: RoostClient) async {
+        let ref = FleetRef(kind: AgentFleet.agentKind, id: conversationId)
+        let resource = fleetModel.graph.resource(ref)
+        let isEnded = resource == nil || resource?.mapAttributes["closed_at"].map { $0 != .null } == true
+        guard isEnded else {
+            return
+        }
+        let cwd = resource?.mapAttributes["cwd"]?.stringValue ?? ""
+        await report(conversationId, [
+            startedEvent(conversationId, cwd: cwd),
+            Self.event(conversationId, "state", detail: ["state": .string(AgentState.idle.rawValue)]),
+        ], to: client)
     }
 
     /// Take a conversation out of a team.
@@ -287,9 +320,13 @@ final class RavenAgent {
     private func readInboxForever() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: Self.inboxInterval)
-            let isAnyInTeam = conversations.listConversations.contains { !teams(of: $0.id).isEmpty }
-            guard isAnyInTeam, let client = fleetModel.client() else {
+            let listInTeams = conversations.listConversations.filter { !teams(of: $0.id).isEmpty }
+            guard !listInTeams.isEmpty, let client = fleetModel.client() else {
                 continue
+            }
+            for conversation in listInTeams where !setReopenedIds.contains(conversation.id) {
+                setReopenedIds.insert(conversation.id)
+                await reopenIfEnded(conversation.id, client: client)
             }
             do {
                 try await readInbox(client: client)
@@ -359,6 +396,11 @@ final class RavenAgent {
     /// Forget a conversation and what was said in it; roost keeps its agent and what it changed.
     func remove(_ conversationId: String) {
         cancel(conversationId)
+        if let client = fleetModel.client() {
+            Task {
+                await report(conversationId, [Self.event(conversationId, "ended", detail: [:])], to: client)
+            }
+        }
         conversations.remove(conversationId)
         mapReaders[conversationId] = nil
         mapLiveReaders[conversationId] = nil
@@ -506,14 +548,7 @@ final class RavenAgent {
             return
         }
         await report(sessionId, [
-            Self.event(sessionId, "started", detail: [
-                "name": .string(Self.agentName),
-                "harness": .string(conversations.conversation(sessionId)?.engine ?? RavenConversation.engineClaude),
-                "rook_name": .string(Self.rookName),
-                "tab": .string("raven"),
-                "cwd": .string(workspace.path),
-                "title": .string(conversations.conversation(sessionId)?.title ?? ""),
-            ]),
+            startedEvent(sessionId, cwd: workspace.path),
             Self.event(sessionId, "state", detail: ["state": .string(AgentState.thinking.rawValue)]),
         ], to: client)
         let isCodex = conversations.conversation(sessionId)?.engine == RavenConversation.engineCodex
@@ -556,8 +591,7 @@ final class RavenAgent {
         }
         mapTasks[sessionId] = nil
         await report(sessionId, [
-            Self.event(sessionId, "state", detail: ["state": .string(finalState.rawValue)]),
-            Self.event(sessionId, "ended", detail: [:]),
+            Self.event(sessionId, "state", detail: ["state": .string(finalState == .done ? AgentState.idle.rawValue : finalState.rawValue)]),
         ], to: client)
         if case .finished = mapStatuses[sessionId], conversations.conversation(sessionId)?.titleSource == nil {
             await writeTitle(of: sessionId, client: client)

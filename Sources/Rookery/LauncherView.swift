@@ -82,6 +82,7 @@ struct LauncherView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 20)
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
+        .buttonStyle(StageButtonStyle())
         .environment(\.chosenTheme, model.chosenTheme)
         .environment(\.people, controller.fleetModel.people)
         .onChange(of: model.isVisible) { _, isVisible in

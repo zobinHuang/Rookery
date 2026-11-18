@@ -357,7 +357,8 @@ final class RavenAgent {
             try await client.report(delivery.id, status: "delivered", reason: "read by Raven")
             fleetModel.ravenLinks.note(
                 FleetRef(kind: AgentFleet.agentKind, id: delivery.sender.id.split(separator: "~").first.map(String.init) ?? delivery.sender.id),
-                by: conversationId
+                by: conversationId,
+                isFromResource: true
             )
             record(Self.requestLine(framed, at: .now), in: conversationId)
             mapWaitingMessages[conversationId, default: []].append(framed)

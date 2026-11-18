@@ -17,13 +17,21 @@ final class RavenLinks {
     /// Where Raven's own end of the links is on the board's anchors.
     static let ravenRef = FleetRef(kind: "raven", id: "panel")
 
-    /// When each conversation touched each resource, by conversation.
-    private(set) var mapTouches: [String: [FleetRef: Date]] = [:]
+    /// When each conversation touched each resource, and which way, by conversation.
+    private(set) var mapTouches: [String: [FleetRef: RavenTouch]] = [:]
     @ObservationIgnored private var pruneTask: Task<Void, Never>?
 
-    /// Note that a conversation touched a resource now; the link goes once its lifetime is over.
-    func note(_ ref: FleetRef, by conversationId: String, at date: Date = .now) {
-        mapTouches[conversationId, default: [:]][ref] = date
+    /// Note that a conversation touched a resource now, or heard from it; the link goes once its lifetime
+    /// is over.
+    ///
+    /// - Parameters:
+    ///   - ref: what was touched
+    ///   - conversationId: the conversation that touched it
+    ///   - isFromResource: whether the resource reached Raven, as a teammate's message does, rather than
+    ///     Raven it
+    ///   - date: when
+    func note(_ ref: FleetRef, by conversationId: String, isFromResource: Bool = false, at date: Date = .now) {
+        mapTouches[conversationId, default: [:]][ref] = RavenTouch(at: date, isFromResource: isFromResource)
         prune(now: date)
         pruneTask?.cancel()
         pruneTask = Task { [weak self] in
@@ -37,19 +45,19 @@ final class RavenLinks {
 
     private func prune(now: Date) {
         let mapLive = mapTouches
-            .mapValues { $0.filter { now.timeIntervalSince($0.value) < Self.touchLifetime } }
+            .mapValues { $0.filter { now.timeIntervalSince($0.value.at) < Self.touchLifetime } }
             .filter { !$0.value.isEmpty }
         if mapLive != mapTouches {
             mapTouches = mapLive
         }
     }
 
-    /// When a conversation last touched each resource, within the lifetime of a link.
-    func touches(by conversationId: String?, now: Date) -> [FleetRef: Date] {
+    /// When a conversation last touched each resource, and which way, within the lifetime of a link.
+    func touches(by conversationId: String?, now: Date) -> [FleetRef: RavenTouch] {
         guard let conversationId else {
             return [:]
         }
-        return (mapTouches[conversationId] ?? [:]).filter { now.timeIntervalSince($0.value) < Self.touchLifetime }
+        return (mapTouches[conversationId] ?? [:]).filter { now.timeIntervalSince($0.value.at) < Self.touchLifetime }
     }
 
     /// Note what an event from roost says Raven did: a change, a message or a mention of a resource, by
@@ -67,7 +75,13 @@ final class RavenLinks {
     }
 }
 
-/// Raven's links drawn over the board: from its tab, a line to each team a conversation directs, slow and
+/// One touch between Raven and a resource: when, and whether the resource reached Raven or Raven it.
+struct RavenTouch: Equatable {
+    let at: Date
+    let isFromResource: Bool
+}
+
+/// Raven's links drawn over the board, cut away where the cards are so they run beneath them: from its tab, a line to each team a conversation directs, slow and
 /// faint, and to what it touched a moment ago, bright, swaying like a rope shaken from the bottom, with a
 /// light running up it, fading as it ages. SwiftUI only finds where each line runs, when the cards move;
 /// Core Animation sways and fades them, so a link costs the app nothing frame by frame.
@@ -80,9 +94,17 @@ struct RavenLinksOverlay: View {
 
     var body: some View {
         GeometryReader { proxy in
-            RavenLinksLayer(listLinks: listLinks(proxy: proxy))
+            RavenLinksLayer(listLinks: listLinks(proxy: proxy), listCardFrames: listCardFrames(proxy: proxy))
         }
         .allowsHitTesting(false)
+    }
+
+    /// The frames of the board's cards, which the links pass beneath.
+    private func listCardFrames(proxy: GeometryProxy) -> [CGRect] {
+        mapAnchors
+            .filter { $0.key != RavenLinks.ravenRef }
+            .map { proxy[$0.value] }
+            .sorted { ($0.minX, $0.minY) < ($1.minX, $1.minY) }
     }
 
     private func listLinks(proxy: GeometryProxy) -> [RavenLink] {
@@ -103,7 +125,7 @@ struct RavenLinksOverlay: View {
                 start: start,
                 end: CGPoint(x: target.midX, y: target.maxY),
                 isHeld: listHeldRefs.contains(ref),
-                touchedAt: mapTouched[ref]
+                touch: mapTouched[ref]
             ))
         }
         return listLinks.sorted { $0.ref.id < $1.ref.id }
@@ -111,18 +133,19 @@ struct RavenLinksOverlay: View {
 }
 
 /// One line from Raven's tab: what it reaches, between which points, whether it is held while a
-/// conversation directs a team, and when Raven last touched what it reaches.
+/// conversation directs a team, and when and which way Raven and what it reaches last touched.
 struct RavenLink: Equatable {
     let ref: FleetRef
     let start: CGPoint
     let end: CGPoint
     let isHeld: Bool
-    let touchedAt: Date?
+    let touch: RavenTouch?
 }
 
 /// The links as Core Animation layers.
 struct RavenLinksLayer: NSViewRepresentable {
     let listLinks: [RavenLink]
+    let listCardFrames: [CGRect]
 
     func makeNSView(context: Context) -> RavenLinksView {
         RavenLinksView()
@@ -130,12 +153,17 @@ struct RavenLinksLayer: NSViewRepresentable {
 
     func updateNSView(_ view: RavenLinksView, context: Context) {
         view.show(listLinks)
+        view.passBeneath(listCardFrames)
     }
 }
 
-/// The layers of Raven's links: for each, a faint echo, the line, a light climbing it and a dot pulsing at
-/// its end, swaying and fading by Core Animation alone.
+/// The layers of Raven's links: for each, a faint echo, the line, a light climbing it, a dot at the end it
+/// leaves and an arrowhead at the end it reaches, swaying and fading by Core Animation alone, masked
+/// away where the cards are.
 final class RavenLinksView: NSView {
+    private static let cardCornerRadius: CGFloat = 10
+    private static let arrowLength: CGFloat = 9
+    private static let arrowHalfWidth: CGFloat = 4.5
     private static let swayPeriod: CFTimeInterval = 2.6
     private static let swayFrames = 12
     private static let touchedSway: CGFloat = 26
@@ -150,6 +178,8 @@ final class RavenLinksView: NSView {
 
     private var mapGroups: [FleetRef: CALayer] = [:]
     private var listShown: [RavenLink] = []
+    private var listMaskedFrames: [CGRect] = []
+    private let cardMask = CAShapeLayer()
 
     override var isFlipped: Bool {
         true
@@ -158,6 +188,34 @@ final class RavenLinksView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        cardMask.fillRule = .evenOdd
+        cardMask.fillColor = NSColor.black.cgColor
+        layer?.mask = cardMask
+    }
+
+    override func layout() {
+        super.layout()
+        let listFrames = listMaskedFrames
+        listMaskedFrames = []
+        passBeneath(listFrames)
+    }
+
+    /// Cut the links away where these cards are, so they run beneath them.
+    func passBeneath(_ listFrames: [CGRect]) {
+        guard listFrames != listMaskedFrames || cardMask.frame != bounds else {
+            return
+        }
+        listMaskedFrames = listFrames
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        cardMask.frame = bounds
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        for frame in listFrames {
+            path.addRoundedRect(in: frame, cornerWidth: Self.cardCornerRadius, cornerHeight: Self.cardCornerRadius)
+        }
+        cardMask.path = path
+        CATransaction.commit()
     }
 
     @available(*, unavailable)
@@ -205,7 +263,8 @@ final class RavenLinksView: NSView {
         let now = CACurrentMediaTime()
         let swayTime = (now - Self.epoch).truncatingRemainder(dividingBy: Self.swayPeriod)
         let phase = Double(abs(link.ref.id.hashValue % 1000)) / 1000 * .pi * 2
-        let age = link.touchedAt.map { Date.now.timeIntervalSince($0) } ?? .infinity
+        let age = link.touch.map { Date.now.timeIntervalSince($0.at) } ?? .infinity
+        let isFromResource = link.touch?.isFromResource == true
         let isTouched = age < RavenLinks.touchLifetime
         let sway = isTouched ? Self.touchedSway + Self.heldSway : Self.heldSway
         let echo = Self.shape(ink: ink, opacity: 0.18, width: 1)
@@ -226,16 +285,13 @@ final class RavenLinksView: NSView {
             light.add(climb, forKey: "climb")
             group.addSublayer(light)
         }
-        group.addSublayer(Self.dot(at: link.start, radius: 2.5, ink: ink, opacity: 0.5))
-        let endDot = Self.dot(at: link.end, radius: 3, ink: ink, opacity: 0.7)
-        let pulse = CABasicAnimation(keyPath: "transform.scale")
-        pulse.fromValue = 1
-        pulse.toValue = 1.5
-        pulse.duration = 0.8
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        endDot.add(pulse, forKey: "pulse")
-        group.addSublayer(endDot)
+        group.addSublayer(Self.dot(at: isFromResource ? link.end : link.start, radius: 2.5, ink: ink, opacity: 0.6))
+        let head = CAShapeLayer()
+        head.fillColor = ink
+        head.strokeColor = nil
+        head.opacity = 0.85
+        Self.sway(head, through: Self.headPaths(link, sway: sway, phase: phase, isAtStart: isFromResource), swayTime: swayTime)
+        group.addSublayer(head)
         group.opacity = link.isHeld && !isTouched ? Self.heldStrength : 1
         if isTouched {
             group.add(fadeAnimation(age: age, isHeld: link.isHeld), forKey: "fade")
@@ -256,6 +312,33 @@ final class RavenLinksView: NSView {
                 control1: CGPoint(x: link.start.x + sway * CGFloat(sin(wave)), y: link.start.y - rise * 0.45),
                 control2: CGPoint(x: link.end.x + sway * CGFloat(sin(wave - 1.4)), y: link.end.y + rise * 0.4)
             )
+            return path
+        }
+    }
+
+    /// The arrowhead's path at the same frames as the line's, its tip on the end the link reaches and
+    /// pointing along the line as it sways there: Raven's end for what reached Raven, else the resource's.
+    private static func headPaths(_ link: RavenLink, sway: CGFloat, phase: Double, isAtStart: Bool) -> [CGPath] {
+        let rise = link.start.y - link.end.y
+        return (0...swayFrames).map { frame -> CGPath in
+            let wave = Double(frame) / Double(swayFrames) * .pi * 2 + phase
+            let tip: CGPoint
+            let control: CGPoint
+            if isAtStart {
+                tip = link.start
+                control = CGPoint(x: link.start.x + sway * CGFloat(sin(wave)), y: link.start.y - rise * 0.45)
+            } else {
+                tip = link.end
+                control = CGPoint(x: link.end.x + sway * CGFloat(sin(wave - 1.4)), y: link.end.y + rise * 0.4)
+            }
+            let length = max(hypot(tip.x - control.x, tip.y - control.y), 1)
+            let along = CGPoint(x: (tip.x - control.x) / length, y: (tip.y - control.y) / length)
+            let base = CGPoint(x: tip.x - along.x * arrowLength, y: tip.y - along.y * arrowLength)
+            let path = CGMutablePath()
+            path.move(to: tip)
+            path.addLine(to: CGPoint(x: base.x - along.y * arrowHalfWidth, y: base.y + along.x * arrowHalfWidth))
+            path.addLine(to: CGPoint(x: base.x + along.y * arrowHalfWidth, y: base.y - along.x * arrowHalfWidth))
+            path.closeSubpath()
             return path
         }
     }

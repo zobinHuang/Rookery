@@ -463,6 +463,7 @@ struct RookmasterBoard: View {
                 .strokeBorder(StageColors.separator, lineWidth: 1)
         }
         .opacity(isDimmed ? 0.32 : 1)
+        .background(StageColors.content, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .scaleEffect(hoveredRef == ref ? 1.02 : 1)
         .anchorPreference(key: CardAnchorsKey.self, value: .bounds) { anchor in
             var mapAnchors = [ref: anchor]
@@ -649,6 +650,7 @@ struct RookmasterBoard: View {
                 )
         }
         .opacity(isDimmed ? 0.32 : 1)
+        .background(StageColors.content, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .scaleEffect(hoveredRef == ref ? 1.02 : 1)
         .anchorPreference(key: CardAnchorsKey.self, value: .bounds) { [ref: $0] }
         .contentShape(Rectangle())

@@ -133,6 +133,45 @@ class LinkTest(unittest.TestCase):
         self.assertEqual(list_delivered[1]["options"], {"choice": "once"})
         self.assertEqual({interrupt.id, approval.id}, {delivery["id"] for delivery in list_delivered})
 
+    def test_a_playbook_reaches_the_agents_rook_with_what_to_say_once_loaded(self) -> None:
+        person = ResourceRef("person", "user")
+        playbook = self.server.catalog.create("playbook", {"id": "review", "name": "Review", "skills": []})
+        with self.assertRaises(ValidationError):
+            self.server.link.send_to_agent(person, self.TEST_AGENT, "", kind="playbook")
+        loaded = self.server.link.send_to_agent(person, self.TEST_AGENT, "", kind="playbook", map_options={"playbook": playbook.id})
+        told = self.server.link.send_to_agent(
+            person,
+            self.TEST_AGENT,
+            "review the diff again",
+            kind="playbook",
+            map_options={"playbook": playbook.id},
+        )
+        rook = self.open_link({"role": "rook", "rook": "studio"})
+        list_delivered = [self.receive(rook, "deliver")["delivery"] for _ in range(2)]
+        map_by_id = {delivery["id"]: delivery for delivery in list_delivered}
+        self.assertEqual(map_by_id[loaded.id]["kind"], "playbook")
+        self.assertEqual(map_by_id[loaded.id]["options"], {"playbook": playbook.id})
+        self.assertEqual(map_by_id[loaded.id]["text"], "")
+        self.assertEqual(map_by_id[told.id]["text"], "review the diff again")
+        self.assertEqual(map_by_id[told.id]["options"]["playbook"], playbook.id)
+        self.assertTrue(map_by_id[told.id]["options"]["thread"].startswith("t-"))
+
+    def test_an_agent_loads_a_playbook_only_into_a_teammate(self) -> None:
+        self.server.events.record([{
+            "actor": {"kind": "agent", "id": "s-2"},
+            "verb": "started",
+            "detail": {"name": "studio/web", "rook_name": "studio"},
+        }])
+        playbook = self.server.catalog.create("playbook", {"id": "review", "name": "Review", "skills": []})
+        sender = ResourceRef("agent", "s-2")
+        with self.assertRaises(ValidationError):
+            self.server.link.send_to_agent(sender, self.TEST_AGENT, "", kind="playbook", map_options={"playbook": playbook.id})
+        self.server.catalog.create("team", {"id": "web", "name": "Web"})
+        self.server.roster.join("web", self.TEST_AGENT, "the api", None)
+        self.server.roster.join("web", "s-2", "the pages", None)
+        delivery = self.server.link.send_to_agent(sender, self.TEST_AGENT, "", kind="playbook", map_options={"playbook": playbook.id})
+        self.assertEqual(delivery.kind, "playbook")
+
     def test_an_approval_needs_a_choice_and_an_unknown_kind_is_refused(self) -> None:
         person = ResourceRef("person", "user")
         with self.assertRaises(ValidationError):

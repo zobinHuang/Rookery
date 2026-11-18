@@ -141,7 +141,7 @@ class LinkHub:
             sender: the person or agent sending it
             agent_id: the agent
             text: what to tell it, for a prompt
-            kind: `prompt`, `interrupt` or `approve`
+            kind: `prompt`, `interrupt`, `approve` or `playbook`
             map_options: the kind's options
 
         Returns:

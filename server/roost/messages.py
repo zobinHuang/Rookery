@@ -12,14 +12,16 @@ from roost.teams import TeamLimits, TeamRoster
 @dataclass
 class Delivery:
     """Something on its way to an agent through its rook: text to type, from a person or another agent; an
-    interrupt; an answer to the agent's approval prompt; or, for a rook rather than an agent, a new session
-    to start."""
+    interrupt; an answer to the agent's approval prompt; a playbook to load in place of the one it follows,
+    with text to type once it is loaded if any; or, for a rook rather than an agent, a new session to
+    start."""
 
     KIND_PROMPT = "prompt"
     KIND_INTERRUPT = "interrupt"
     KIND_APPROVE = "approve"
     KIND_SPAWN = "spawn"
-    SET_AGENT_KINDS = frozenset({KIND_PROMPT, KIND_INTERRUPT, KIND_APPROVE})
+    KIND_PLAYBOOK = "playbook"
+    SET_AGENT_KINDS = frozenset({KIND_PROMPT, KIND_INTERRUPT, KIND_APPROVE, KIND_PLAYBOOK})
     APPROVE_ONCE = "once"
     APPROVE_DENY = "deny"
     SET_APPROVE_CHOICES = frozenset({APPROVE_ONCE, APPROVE_DENY})
@@ -118,22 +120,24 @@ class DeliveryStore:
             sender: the person or agent sending it
             agent_id: the agent it is for
             text: what to tell the agent, for a prompt
-            kind: `prompt`, `interrupt` or `approve`
+            kind: `prompt`, `interrupt`, `approve` or `playbook`
             map_options: for `approve`, the `choice`: `once` or `deny`; for `prompt`, the `thread` it
-                answers, and `no_reply` when the sender wants no answer
+                answers, and `no_reply` when the sender wants no answer; for `playbook`, the `playbook` to
+                load, and as for a prompt when it carries text
 
         Returns:
             the delivery, pending, or held when the sender went past its team's limits
 
         Raises:
             ValidationError: if the kind, the text or the options are unusable, the agent has ended or runs
-                under no rook, or an agent sends to one it shares no team with
-            NotFoundError: if there is no such agent
+                under no rook, or an agent sends a prompt or a playbook to one it shares no team with
+            NotFoundError: if there is no such agent or playbook
         """
         map_options = dict(map_options or {})
         if kind not in Delivery.SET_AGENT_KINDS:
-            raise ValidationError(f"an agent takes a prompt, an interrupt or an approval, not {kind!r}")
-        if kind == Delivery.KIND_PROMPT:
+            raise ValidationError(f"an agent takes a prompt, an interrupt, an approval or a playbook, not {kind!r}")
+        is_typed = kind == Delivery.KIND_PROMPT or (kind == Delivery.KIND_PLAYBOOK and bool(text.strip()))
+        if is_typed:
             self._check_text(text)
         elif kind == Delivery.KIND_APPROVE and map_options.get("choice") not in Delivery.SET_APPROVE_CHOICES:
             raise ValidationError("an approval needs a choice: once or deny")
@@ -144,16 +148,26 @@ class DeliveryStore:
         rook_name = self._rook_of(agent)
         if not rook_name:
             raise ValidationError(f"agent {agent.name} runs under no rook, so nothing can reach it")
+        map_playbook: dict[str, object] = {}
+        if kind == Delivery.KIND_PLAYBOOK:
+            playbook_id = str(map_options.get("playbook") or "")
+            if not playbook_id:
+                raise ValidationError("a playbook delivery names the playbook to load")
+            map_playbook["playbook"] = self._resources.get(ResourceRef.of(ResourceKinds.PLAYBOOK.name, playbook_id)).id
+            self._teams_between(sender, agent_ref.id)
         held_reason = ""
-        if kind == Delivery.KIND_PROMPT:
+        if is_typed:
             list_teams = self._teams_between(sender, agent_ref.id)
             map_options = self._prompt_options(map_options, sender, None)
             held_reason = self._held_reason(sender, str(map_options["thread"]), int(map_options["hop"]), list_teams)
+        elif kind == Delivery.KIND_PLAYBOOK:
+            map_options = {}
+        map_options.update(map_playbook)
         return self._hold(
             sender=sender,
             agent_id=agent_ref.id,
             rook_name=rook_name,
-            text=text if kind == Delivery.KIND_PROMPT else "",
+            text=text if is_typed else "",
             kind=kind,
             map_options=map_options,
             held_reason=held_reason,

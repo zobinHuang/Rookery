@@ -15,6 +15,11 @@ struct TodayCalendarView: View {
     let onOpenSettings: () -> Void
 
     @State private var shownEvent: CalendarEventSummary?
+    /// The slot being dragged out on the hours, and the one a new event is being written for.
+    @State private var draggedSlot: EventSlot?
+    @State private var newSlot: EventSlot?
+    @State private var listWritableCalendars: [CalendarSummary] = []
+    @State private var defaultCalendarId: String?
 
     private var isToday: Bool {
         Calendar.current.isDateInToday(personal.day)
@@ -54,9 +59,32 @@ struct TodayCalendarView: View {
                 .padding(10)
                 .id(shownEvent.id)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if let newSlot {
+                NewEventCard(
+                    slot: newSlot,
+                    listCalendars: listWritableCalendars,
+                    defaultCalendarId: defaultCalendarId,
+                    onAdd: { calendarId, title, start, end, location in
+                        try await personal.addEvent(calendarId: calendarId, title: title, startsAt: start, endsAt: end, location: location)
+                    },
+                    onClose: {
+                        withAnimation(Self.detailAnimation) {
+                            self.newSlot = nil
+                        }
+                    }
+                )
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(10)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .task {
+                    listWritableCalendars = (try? await personal.writableCalendars()) ?? []
+                    defaultCalendarId = await personal.defaultCalendarId()
+                }
             }
         }
         .animation(Self.detailAnimation, value: shownEvent?.id)
+        .animation(Self.detailAnimation, value: newSlot)
     }
 
     private var dayHeader: some View {
@@ -128,6 +156,11 @@ struct TodayCalendarView: View {
                     hourGrid
                     GeometryReader { proxy in
                         let laneArea = proxy.size.width - Self.hourLabelWidth - 6
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .frame(width: max(laneArea, 0))
+                            .offset(x: Self.hourLabelWidth)
+                            .gesture(slotGesture)
                         ForEach(listTimed, id: \.id) { event in
                             let placement = mapPlacements[event.id] ?? CalendarPlacement(eventId: event.id, lane: 0, laneCount: 1)
                             let laneWidth = laneArea / CGFloat(placement.laneCount)
@@ -137,6 +170,11 @@ struct TodayCalendarView: View {
                                 .onTapGesture {
                                     shownEvent = event
                                 }
+                        }
+                        if let slot = draggedSlot ?? newSlot {
+                            EventSlotBlock(slot: slot)
+                                .frame(width: max(laneArea - 2, 10), height: max(offset(of: slot.end) - offset(of: slot.start) - 1, Self.minimumEventHeight))
+                                .offset(x: Self.hourLabelWidth, y: offset(of: slot.start))
                         }
                         if isToday {
                             nowLine(width: proxy.size.width)
@@ -154,6 +192,20 @@ struct TodayCalendarView: View {
                 scrollToFocus(reader)
             }
         }
+    }
+
+    /// Dragging on the hours where no event is: a slot follows the drag by quarter hours, and letting go
+    /// opens a new event for it.
+    private var slotGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                draggedSlot = EventSlot.dragged(from: value.startLocation.y, to: value.location.y, on: personal.day, hourHeight: Self.hourHeight)
+            }
+            .onEnded { value in
+                draggedSlot = nil
+                shownEvent = nil
+                newSlot = EventSlot.dragged(from: value.startLocation.y, to: value.location.y, on: personal.day, hourHeight: Self.hourHeight)
+            }
     }
 
     private var hourGrid: some View {

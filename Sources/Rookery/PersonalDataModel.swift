@@ -152,6 +152,26 @@ final class PersonalDataModel {
         Task { await readCalendar() }
     }
 
+    /// The calendars a new event may go on.
+    ///
+    /// - Throws: when the calendars cannot be read
+    func writableCalendars() async throws -> [CalendarSummary] {
+        try await service.allowedCalendars().filter(\.isWritable)
+    }
+
+    /// The calendar the user chose for new events, if any.
+    func defaultCalendarId() async -> String? {
+        await service.defaultCalendarId()
+    }
+
+    /// Add an event and read the day again.
+    ///
+    /// - Throws: when the calendar refuses it
+    func addEvent(calendarId: String, title: String, startsAt: Date, endsAt: Date, location: String) async throws {
+        _ = try await service.addEvent(calendarId: calendarId, title: title, startsAt: startsAt, endsAt: endsAt, isAllDay: false, location: location)
+        await readCalendar()
+    }
+
     func refreshAccess() async {
         let read = await service.access()
         AccountColor.know(read.listMailAccounts.compactMap(\.listAddresses.first))

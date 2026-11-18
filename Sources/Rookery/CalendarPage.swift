@@ -45,6 +45,9 @@ struct CalendarPage: View {
     /// The event being dragged to a new time, and how far it has moved.
     @State private var draggedEventId: String?
     @State private var dragTranslation = CGSize.zero
+    /// The slot being dragged out on a day's hours, and the one a new event is being written for.
+    @State private var draggedSlot: EventSlot?
+    @State private var newSlot: EventSlot?
 
     private var service: any MailSource {
         fleetModel.mailSource
@@ -125,9 +128,28 @@ struct CalendarPage: View {
                     .padding(.top, 70)
                     .padding(.trailing, 20)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if let newSlot {
+                NewEventCard(
+                    slot: newSlot,
+                    listCalendars: listCalendars.filter(\.isWritable),
+                    defaultCalendarId: defaultCalendarId,
+                    onAdd: { calendarId, title, start, end, location in
+                        _ = try await service.addEvent(calendarId: calendarId, title: title, startsAt: start, endsAt: end, isAllDay: false, location: location)
+                        await load()
+                    },
+                    onClose: {
+                        self.newSlot = nil
+                    }
+                )
+                .frame(width: Self.eventCardWidth)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 70)
+                .padding(.trailing, 20)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.88), value: shownEvent?.id)
+        .animation(.spring(response: 0.32, dampingFraction: 0.88), value: newSlot)
         .animation(.spring(response: 0.28, dampingFraction: 0.9), value: isAdding)
         .confirmationDialog("Remove \(eventToRemove?.title ?? "")?", isPresented: Binding(get: { eventToRemove != nil }, set: { if !$0 { eventToRemove = nil } }), titleVisibility: .visible) {
             Button("Remove", role: .destructive) {
@@ -325,6 +347,14 @@ struct CalendarPage: View {
                             .frame(maxHeight: Self.hourHeight, alignment: .top)
                     }
                 }
+                .contentShape(Rectangle())
+                .gesture(slotGesture(on: day))
+                if let slot = draggedSlot ?? newSlot, slot.start >= day, slot.start < end {
+                    EventSlotBlock(slot: slot)
+                        .frame(width: max(proxy.size.width - 6, 8), height: max(Self.offset(of: slot.end, in: day) - Self.offset(of: slot.start, in: day) - 1, 18))
+                        .offset(x: 2, y: Self.offset(of: slot.start, in: day))
+                        .zIndex(2)
+                }
                 ForEach(listTimed, id: \.id) { event in
                     let placement = mapPlacements[event.id] ?? CalendarPlacement(eventId: event.id, lane: 0, laneCount: 1)
                     let laneWidth = (proxy.size.width - 4) / CGFloat(placement.laneCount)
@@ -368,6 +398,20 @@ struct CalendarPage: View {
                 .fill(StageColors.gridLine)
                 .frame(width: 1)
         }
+    }
+
+    /// Dragging on a day's hours where no event is: a slot follows the drag by quarter hours, and letting go
+    /// opens a new event for it.
+    private func slotGesture(on day: Date) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                draggedSlot = EventSlot.dragged(from: value.startLocation.y, to: value.location.y, on: day, hourHeight: Self.hourHeight)
+            }
+            .onEnded { value in
+                draggedSlot = nil
+                shownEvent = nil
+                newSlot = EventSlot.dragged(from: value.startLocation.y, to: value.location.y, on: day, hourHeight: Self.hourHeight)
+            }
     }
 
     /// Dragging an event on the hours, on a calendar that takes changes: up and down by quarter hours, and

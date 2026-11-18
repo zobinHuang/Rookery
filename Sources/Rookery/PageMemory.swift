@@ -129,6 +129,10 @@ private struct RememberedScrollPosition: ViewModifier {
     private static let bottomSlack: CGFloat = 24
     /// How long a burst of arriving content is gathered before the end is brought into view.
     private static let followDelay: Duration = .milliseconds(150)
+    /// When the end is brought into view again after a jump to it, as a lazy stack lays out the rows it
+    /// reaches only after the jump and leaves them blank until then.
+    private static let listSettleDelays: [Duration] = [.milliseconds(80), .milliseconds(300)]
+    private static let endButtonSize: CGFloat = 30
 
     let key: String
     let memory: PageMemory
@@ -148,6 +152,8 @@ private struct RememberedScrollPosition: ViewModifier {
     @State private var isUserScrolling = false
     /// The scroll to the end waiting for a burst of content to finish arriving.
     @State private var followTask: Task<Void, Never>?
+    /// The scrolls that settle the area at its end once the rows a jump reached are laid out.
+    @State private var settleTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
         content
@@ -181,11 +187,73 @@ private struct RememberedScrollPosition: ViewModifier {
                 followEnd()
             }
             .onChange(of: jumpToken) {
-                isAtEnd = true
-                withAnimation(.easeOut(duration: 0.25)) {
-                    position.scrollTo(edge: .bottom)
+                jumpToEnd()
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if followsEnd, isRestored, !isAtEnd {
+                    endButton
+                        .padding(.trailing, 18)
+                        .padding(.bottom, 14)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isAtEnd)
+            .onDisappear {
+                followTask?.cancel()
+                settleTask?.cancel()
+            }
+    }
+
+    /// The way back to the end, shown while the user has scrolled away from it.
+    private var endButton: some View {
+        Button {
+            jumpToEnd()
+        } label: {
+            RookeryIconView(.chevronDown)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(StageColors.primaryText)
+                .frame(width: Self.endButtonSize, height: Self.endButtonSize)
+                .background {
+                    Circle()
+                        .fill(StageColors.window)
+                        .overlay {
+                            Circle()
+                                .fill(StageColors.card)
+                        }
+                }
+                .overlay {
+                    Circle()
+                        .strokeBorder(StageColors.separator)
+                }
+                .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Scroll to the latest")
+    }
+
+    /// Bring the end into view wherever the area was, and stay there.
+    private func jumpToEnd() {
+        isAtEnd = true
+        withAnimation(.easeOut(duration: 0.25)) {
+            position.scrollTo(edge: .bottom)
+        }
+        settleAtEnd()
+    }
+
+    /// Bring the end into view again once the rows a jump reached are laid out, unless the user has
+    /// scrolled away meanwhile.
+    private func settleAtEnd() {
+        settleTask?.cancel()
+        settleTask = Task { @MainActor in
+            for delay in Self.listSettleDelays {
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, isAtEnd, !isUserScrolling else {
+                    return
+                }
+                position.scrollTo(edge: .bottom)
+            }
+        }
     }
 
     /// Keep to the end as content arrives, once for a burst of it: lines streaming in a few at a time
@@ -199,6 +267,7 @@ private struct RememberedScrollPosition: ViewModifier {
             followTask = nil
             if isAtEnd {
                 position.scrollTo(edge: .bottom)
+                settleAtEnd()
             }
         }
     }
@@ -212,6 +281,7 @@ private struct RememberedScrollPosition: ViewModifier {
         guard let saved = memory.mapScrollOffsets[key] else {
             if followsEnd {
                 position.scrollTo(edge: .bottom)
+                settleAtEnd()
             }
             return
         }
@@ -219,6 +289,7 @@ private struct RememberedScrollPosition: ViewModifier {
             isAtEnd = saved.y < Self.bottomSlack
             guard !isAtEnd else {
                 position.scrollTo(edge: .bottom)
+                settleAtEnd()
                 return
             }
             position.scrollTo(y: max(0, geometry.contentSize.height - geometry.containerSize.height - saved.y))

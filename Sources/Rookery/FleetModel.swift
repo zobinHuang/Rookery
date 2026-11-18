@@ -530,34 +530,20 @@ final class FleetModel {
         }
         graph = fetchedGraph
         fleet = fetchedFleet
+        if listFetched.contains(where: { $0.kind == AgentFleet.teamKind }) {
+            syncTeams()
+        }
     }
 
-    /// Read resources from roost side by side; one gone or unreadable is left out.
+    /// Read resources from roost one after another; one gone or unreadable is left out.
     private static func fetch(_ setRefs: Set<FleetRef>, from client: RoostClient) async -> [FleetResource] {
-        let listResults = await withTaskGroup(of: (FleetRef, Result<FleetResource, any Error>).self) { group in
-            for ref in setRefs {
-                group.addTask {
-                    do {
-                        return (ref, .success(try await client.resource(ref)))
-                    } catch {
-                        return (ref, .failure(error))
-                    }
-                }
-            }
-            var listResults: [(FleetRef, Result<FleetResource, any Error>)] = []
-            for await result in group {
-                listResults.append(result)
-            }
-            return listResults
-        }
         var listFetched: [FleetResource] = []
-        for (ref, result) in listResults {
-            switch result {
-            case .success(let resource):
-                listFetched.append(resource)
-            case .failure(RoostError.rejected(status: 404, _)):
+        for ref in setRefs {
+            do {
+                listFetched.append(try await client.resource(ref))
+            } catch RoostError.rejected(status: 404, _) {
                 continue
-            case .failure(let error):
+            } catch {
                 logger.error("cannot read \(ref.kind) \(ref.id): \(describe(error), privacy: .public)")
             }
         }

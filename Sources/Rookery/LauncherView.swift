@@ -210,16 +210,16 @@ struct LauncherView: View {
 
     /// The keys a conversation's box leaves to the launcher: Escape closes it, and Delete on an empty box
     /// leaves the conversation.
-    private func takeConversationKey(_ keyPress: KeyPress) -> KeyPress.Result {
-        switch keyPress.key {
+    private func takeConversationKey(_ key: ComposerKey) -> Bool {
+        switch key {
         case .escape:
             controller.hide()
-            return .handled
-        case .delete where model.query.isEmpty && model.targetConversationId != nil:
+            return true
+        case .deleteBackward where model.query.isEmpty && model.targetConversationId != nil:
             controller.dropTarget()
-            return .handled
+            return true
         default:
-            return .ignored
+            return false
         }
     }
 

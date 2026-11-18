@@ -10,6 +10,8 @@ struct AgentComposer: View {
     private static let buttonSize: CGFloat = 26
     private static let closedHeight: CGFloat = 26
     private static let openMinHeight: CGFloat = 64
+    /// The tallest the open box grows before it scrolls, about ten lines.
+    private static let openMaxHeight: CGFloat = 170
     private static let closedCornerRadius: CGFloat = 19
     private static let openCornerRadius: CGFloat = 14
 
@@ -22,13 +24,15 @@ struct AgentComposer: View {
     /// Stops what is running; when given, the button stops while busy rather than waiting.
     var onStop: (() -> Void)?
     let onSend: () -> Void
-    /// Takes a key press before the box does; `.handled` keeps it from the box.
-    var onKey: ((KeyPress) -> KeyPress.Result)?
+    /// Takes a key before the box does; true keeps it from the box.
+    var onKey: ((ComposerKey) -> Bool)?
     var isFocused: FocusState<Bool>.Binding
 
     @Namespace private var namespace
     /// Whether the box closed after sending while keeping the focus, until the user writes again.
     @State private var isResting = false
+    /// The height the field's text needs, as it reports it.
+    @State private var contentHeight: CGFloat = 0
 
     private var isEmpty: Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -85,34 +89,45 @@ struct AgentComposer: View {
         }
     }
 
+    /// One line of the field's text, as tall as the closed box shows it.
+    private var lineHeight: CGFloat {
+        max(contentHeight, ceil(fontSize * 1.25))
+    }
+
     private var field: some View {
-        TextField(placeholder, text: $text, axis: .vertical)
-            .textFieldStyle(.plain)
-            .font(.system(size: fontSize))
-            .lineLimit(isOpen ? 3...10 : 1...1)
-            .frame(minHeight: isOpen ? Self.openMinHeight : Self.closedHeight, alignment: isOpen ? .topLeading : .leading)
-            .focused(isFocused)
-            .disabled(!isEnabled)
-            .onKeyPress(phases: .down) { keyPress in
-                guard !Self.isComposing else {
-                    return .ignored
-                }
-                if Self.insertsNewline(keyPress) {
-                    Self.insertNewline()
-                    return .handled
-                }
-                if let onKey, onKey(keyPress) == .handled {
-                    return .handled
-                }
-                guard keyPress.key == .return else {
-                    return .ignored
-                }
-                if !isEmpty, !isBusy {
-                    onSend()
-                    isResting = true
-                }
-                return .handled
-            }
+        let minHeight = isOpen ? Self.openMinHeight : Self.closedHeight
+        let maxHeight = isOpen ? Self.openMaxHeight : Self.closedHeight
+        return ComposerField(
+            text: $text,
+            placeholder: placeholder,
+            fontSize: fontSize,
+            isEnabled: isEnabled,
+            isFocused: isFocused,
+            contentHeight: $contentHeight,
+            maxHeight: maxHeight,
+            onKey: take
+        )
+        .frame(
+            minHeight: isOpen ? minHeight : lineHeight,
+            maxHeight: isOpen ? min(max(contentHeight, minHeight), maxHeight) : lineHeight,
+            alignment: .topLeading
+        )
+        .frame(height: isOpen ? nil : Self.closedHeight, alignment: .center)
+    }
+
+    /// A key the field offers: the caller's first, then Send.
+    private func take(_ key: ComposerKey) -> Bool {
+        if let onKey, onKey(key) {
+            return true
+        }
+        guard key == .send else {
+            return false
+        }
+        if !isEmpty, !isBusy {
+            onSend()
+            isResting = true
+        }
+        return true
     }
 
     /// Whether an input method is composing in the focused field, as Pinyin does before its candidate is

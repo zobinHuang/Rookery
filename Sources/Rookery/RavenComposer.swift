@@ -25,7 +25,7 @@ struct RavenComposer: View {
     let onSend: (RavenRequest) -> Void
     var isFocused: FocusState<Bool>.Binding
     /// Takes a key the suggestions do not, before the box does, as the launcher's Escape.
-    var onKey: ((KeyPress) -> KeyPress.Result)?
+    var onKey: ((ComposerKey) -> Bool)?
 
     @State private var listMentions: [FleetRef] = []
     /// The address chosen for each person named, by the person's id.
@@ -218,41 +218,41 @@ struct RavenComposer: View {
     }
 
     /// The keys that work the suggestions while they show; the rest go to the caller first.
-    private func takeKey(_ keyPress: KeyPress) -> KeyPress.Result {
+    private func takeKey(_ key: ComposerKey) -> Bool {
         let isShowing = choosingPerson != nil || !listSuggestions.isEmpty
-        switch keyPress.key {
-        case .upArrow where isShowing:
+        switch key {
+        case .up where isShowing:
             return moveHighlight(by: -1)
-        case .downArrow where isShowing:
+        case .down where isShowing:
             return moveHighlight(by: 1)
-        case .tab where isShowing, .return where isShowing:
+        case .tab where isShowing, .send where isShowing:
             return pickHighlighted()
         case .escape where choosingPerson != nil:
             chooseAddress(nil)
-            return .handled
+            return true
         default:
-            return onKey?(keyPress) ?? .ignored
+            return onKey?(key) ?? false
         }
     }
 
-    private func moveHighlight(by step: Int) -> KeyPress.Result {
+    private func moveHighlight(by step: Int) -> Bool {
         guard rowCount > 0 else {
-            return .ignored
+            return false
         }
         highlightedIndex = (highlightedIndex + step + rowCount) % rowCount
-        return .handled
+        return true
     }
 
-    private func pickHighlighted() -> KeyPress.Result {
+    private func pickHighlighted() -> Bool {
         if let choosingPerson {
             chooseAddress(highlightedIndex == 0 ? nil : choosingPerson.listAddresses[highlightedIndex - 1])
-            return .handled
+            return true
         }
         guard listSuggestions.indices.contains(highlightedIndex) else {
-            return .ignored
+            return false
         }
         pick(listSuggestions[highlightedIndex])
-        return .handled
+        return true
     }
 
     private func pick(_ target: MentionTarget) {

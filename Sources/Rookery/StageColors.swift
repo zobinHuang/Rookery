@@ -195,16 +195,19 @@ enum StageColors {
     /// solid in the high-contrast ones, where even the quietest text must read clearly.
     static let primaryText = StageTextStyle(
         level: .primary,
+        systemColor: .labelColor,
         highContrastLight: .black,
         highContrastDark: .white
     )
     static let secondaryText = StageTextStyle(
         level: .secondary,
+        systemColor: .secondaryLabelColor,
         highContrastLight: NSColor(white: 0, alpha: 0.82),
         highContrastDark: NSColor(white: 1, alpha: 0.85)
     )
     static let tertiaryText = StageTextStyle(
         level: .tertiary,
+        systemColor: .tertiaryLabelColor,
         highContrastLight: NSColor(white: 0, alpha: 0.66),
         highContrastDark: NSColor(white: 1, alpha: 0.7)
     )
@@ -284,8 +287,19 @@ struct StageColor: ShapeStyle {
 /// the high-contrast ones.
 struct StageTextStyle: ShapeStyle {
     let level: HierarchicalShapeStyle
+    /// The system's color for the level, for AppKit text that cannot take the style.
+    let systemColor: NSColor
     let highContrastLight: NSColor
     let highContrastDark: NSColor
+
+    /// The level's color in a theme, for AppKit text.
+    func color(in theme: Theme) -> NSColor {
+        switch theme {
+        case .light, .dark: systemColor
+        case .highContrastLight: highContrastLight
+        case .highContrastDark: highContrastDark
+        }
+    }
 
     /// The level's style in the theme of the view it fills.
     func resolve(in environment: EnvironmentValues) -> AnyShapeStyle {

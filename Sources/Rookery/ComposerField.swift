@@ -75,7 +75,12 @@ struct ComposerField: NSViewRepresentable {
         }
     }
 
+    /// Bring the text view in line with the field, unless an input method is composing in it: what it
+    /// composes is in the view but not yet in the text, and setting either would throw it away.
     private func apply(to textView: ComposerTextView, theme: Theme, coordinator: Coordinator) {
+        guard !textView.hasMarkedText() else {
+            return
+        }
         let font = NSFont.systemFont(ofSize: fontSize)
         let ink = StageColors.primaryText.color(in: theme)
         if textView.font != font || textView.textColor != ink {
@@ -84,10 +89,16 @@ struct ComposerField: NSViewRepresentable {
             textView.insertionPointColor = ink
             textView.typingAttributes = [.font: font, .foregroundColor: ink]
         }
-        textView.placeholderColor = StageColors.tertiaryText.color(in: theme)
-        textView.placeholder = placeholder
-        textView.isEditable = isEnabled
-        textView.isSelectable = isEnabled
+        let placeholderColor = StageColors.tertiaryText.color(in: theme)
+        if textView.placeholderColor != placeholderColor || textView.placeholder != placeholder {
+            textView.placeholderColor = placeholderColor
+            textView.placeholder = placeholder
+            textView.needsDisplay = true
+        }
+        if textView.isEditable != isEnabled {
+            textView.isEditable = isEnabled
+            textView.isSelectable = isEnabled
+        }
         if textView.string != text {
             textView.string = text
             textView.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))

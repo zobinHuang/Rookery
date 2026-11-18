@@ -32,9 +32,10 @@ public enum MailQuote {
     /// How many lines an attribution may be wrapped over, found from the line it ends on.
     private static let attributionLineReach = 3
 
-    /// A reply as it is sent, as Outlook writes one: the reply's own text, then a header naming who sent
-    /// the message it answers, when, to whom and under what subject, then that message whole as it was,
-    /// its trailing spaces and runs of blank lines tidied, its own history below it in the same way.
+    /// A reply as it is sent: the reply's own text, then, quoted with `>` so mail clients fold it as the
+    /// earlier mail, a header as Outlook writes one naming who sent the message it answers, when, to whom
+    /// and under what subject, then that message whole as it was, its trailing spaces and runs of blank
+    /// lines tidied, its own quoted history a level deeper.
     ///
     /// - Parameters:
     ///   - original: the message answered
@@ -69,7 +70,10 @@ public enum MailQuote {
             listLines.append(trimmed)
         }
         let own = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(own)\n\n\(listHeader.joined(separator: "\n"))\n\n\(listLines.joined(separator: "\n"))\n"
+        let listQuoted = (listHeader + [""] + listLines).map { line in
+            line.isEmpty || line.hasPrefix(quotedLinePrefix) ? quotedLinePrefix + line : "\(quotedLinePrefix) \(line)"
+        }
+        return "\(own)\n\n\(listQuoted.joined(separator: "\n"))\n"
     }
 
     /// A plain-text message as runs of lines at each depth of quoting, their `>` marks and the space after

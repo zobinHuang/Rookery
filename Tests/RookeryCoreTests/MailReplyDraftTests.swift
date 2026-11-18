@@ -42,9 +42,9 @@ struct MailQuoteReplyTests {
         )
     }
 
-    @Test func aReplyCarriesTheMessageItAnswersUnderAnOutlookHeaderAsItWas() {
+    @Test func aReplyQuotesTheMessageItAnswersUnderAnOutlookHeaderItsHistoryALevelDeeper() {
         let reply = MailQuote.reply(
-            to: Self.original(text: "Dear Zhuobin,  \n\n\n\nThank you.", listCc: [MailAddress(address: "linefong@nus.edu.sg", name: "Loo Line Fong")]),
+            to: Self.original(text: "Dear Zhuobin,  \n\n\n\nThank you.\n\n> Earlier ask", listCc: [MailAddress(address: "linefong@nus.edu.sg", name: "Loo Line Fong")]),
             body: "Dear Junjie,\n\nThanks!\n",
             timeZone: TimeZone(identifier: "Asia/Singapore") ?? .current
         )
@@ -53,15 +53,17 @@ struct MailQuoteReplyTests {
 
             Thanks!
 
-            From: Tan Jun Jie <junjie.tan@nus.edu.sg>
-            Sent: Tuesday, 3 November 2026 6:00 pm
-            To: Huang Zhuobin <zhuobin@u.nus.edu>
-            Cc: Loo Line Fong <linefong@nus.edu.sg>
-            Subject: RE: Enquiry on Leave of Absence
-
-            Dear Zhuobin,
-
-            Thank you.
+            > From: Tan Jun Jie <junjie.tan@nus.edu.sg>
+            > Sent: Tuesday, 3 November 2026 6:00 pm
+            > To: Huang Zhuobin <zhuobin@u.nus.edu>
+            > Cc: Loo Line Fong <linefong@nus.edu.sg>
+            > Subject: RE: Enquiry on Leave of Absence
+            >
+            > Dear Zhuobin,
+            >
+            > Thank you.
+            >
+            >> Earlier ask
 
             """)
     }

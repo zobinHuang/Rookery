@@ -65,13 +65,14 @@ struct BoardEdge: Identifiable, Equatable {
     }
 }
 
-/// The Rookmaster board: one column per kind, agents leftmost, each column's cards ordered by when they
-/// were last used, so whatever moved last rises; edges draw what acted on what. A subagent folds into its
+/// The Rookmaster board: one column per kind, teams leftmost with a line to each of their agents beside
+/// them, each other column's cards ordered by when they were last used, so whatever moved last rises;
+/// edges draw what acted on what. A subagent folds into its
 /// session's card. Locking freezes the order; the filters narrow it down; hovering or selecting a card
 /// brings forward it, its neighbours and the edges between them.
 struct RookmasterBoard: View {
-    /// The heading over the agents in no team, which no team's id can be.
-    private static let unassignedHeadingId = "~unassigned"
+    /// The verb of the line from a team to each of its agents.
+    private static let memberVerb = "member"
     private static let cardWidth: CGFloat = 210
     private static let columnSpacing: CGFloat = 60
     private static let columnLimit = 150
@@ -97,8 +98,10 @@ struct RookmasterBoard: View {
         fleetModel.graph
     }
 
+    /// The kinds shown, teams first, beside the agents they hold.
     private var listShownKinds: [FleetKind] {
-        listKinds.filter { !memory.setBoardHiddenKinds.contains($0.name) }
+        let listShown = listKinds.filter { !memory.setBoardHiddenKinds.contains($0.name) }
+        return listShown.filter { $0.name == AgentFleet.teamKind } + listShown.filter { $0.name != AgentFleet.teamKind }
     }
 
     var body: some View {
@@ -364,10 +367,7 @@ struct RookmasterBoard: View {
                     .frame(width: Self.cardWidth, alignment: .leading)
                     .padding(.leading, 4)
             }
-            ForEach(Array(listResources.enumerated()), id: \.element.id) { index, resource in
-                if kind.name == AgentFleet.agentKind, let headingId = teamHeadingId(at: index, in: listResources) {
-                    teamHeader(headingId)
-                }
+            ForEach(listResources, id: \.id) { resource in
                 card(resource, setFocus: setFocus, now: now)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
@@ -530,6 +530,10 @@ struct RookmasterBoard: View {
         if let agent {
             return agent.state.title
         }
+        if resource.kind == AgentFleet.teamKind {
+            let memberCount = fleetModel.teams.listTeams.first { $0.id == resource.id }?.listAgentIds.count ?? 0
+            return memberCount == 1 ? "1 agent" : "\(memberCount) agents"
+        }
         let relationCount = graph.listRelations(touching: FleetRef(kind: resource.kind, id: resource.id)).count
         if let description = resource.mapAttributes["description"]?.stringValue {
             return description
@@ -635,13 +639,24 @@ struct RookmasterBoard: View {
                 if !trimmedQuery.isEmpty && !"\(resource.displayName) \(resource.name) \(resource.id)".lowercased().contains(trimmedQuery) {
                     return false
                 }
-                if let cutoff, let used = FleetTimestamp.date(from: resource.lastUsedAt), used < cutoff {
+                if
+                    kind.name != AgentFleet.teamKind,
+                    let cutoff,
+                    let used = FleetTimestamp.date(from: resource.lastUsedAt),
+                    used < cutoff
+                {
                     return false
                 }
                 return true
             }
             if kind.name == AgentFleet.agentKind {
                 listResources = byTeam(listResources)
+            } else if kind.name == AgentFleet.teamKind {
+                let mapTeamIndices = Dictionary(
+                    fleetModel.teams.listTeams.enumerated().map { ($1.id, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                listResources.sort { (mapTeamIndices[$0.id] ?? Int.max) < (mapTeamIndices[$1.id] ?? Int.max) }
             }
             if memory.isBoardLocked, let listFrozen = memory.mapBoardFrozenOrder[kind.name] {
                 let mapRanks = Dictionary(listFrozen.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
@@ -682,40 +697,6 @@ struct RookmasterBoard: View {
         }.map(\.element)
     }
 
-    /// The team heading above the agent at an index, by the team's id, when it starts a team's run, or
-    /// the unassigned ones after the teams; nil within a run, or when there are no teams.
-    private func teamHeadingId(at index: Int, in listAgents: [FleetResource]) -> String? {
-        let teams = fleetModel.teams
-        guard !teams.listTeams.isEmpty, listAgents.indices.contains(index) else {
-            return nil
-        }
-        let teamId = teams.teamId(of: listAgents[index].id)
-        if index > 0, teams.teamId(of: listAgents[index - 1].id) == teamId {
-            return nil
-        }
-        return teamId ?? Self.unassignedHeadingId
-    }
-
-    /// A team's heading over its agents, which Raven's links reach for the team.
-    private func teamHeader(_ headingId: String) -> some View {
-        let title = headingId == Self.unassignedHeadingId
-            ? "Unassigned"
-            : fleetModel.teams.listTeams.first { $0.id == headingId }?.title ?? ""
-        return HStack(spacing: 6) {
-            FittingText(title, size: 11, weight: .semibold)
-                .foregroundStyle(StageColors.secondaryText)
-                .layoutPriority(1)
-            Rectangle()
-                .fill(StageColors.separator)
-                .frame(height: 1)
-        }
-        .padding(.leading, 4)
-        .padding(.top, 6)
-        .anchorPreference(key: CardAnchorsKey.self, value: .bounds) { anchor in
-            headingId == Self.unassignedHeadingId ? [:] : [FleetRef(kind: AgentFleet.teamKind, id: headingId): anchor]
-        }
-    }
-
     /// The edges between shown cards, a subagent's drawn from its session.
     private func edges(among mapColumns: [String: [FleetResource]]) -> [BoardEdge] {
         let setShown = Set(mapColumns.values.flatMap { $0.map { FleetRef(kind: $0.kind, id: $0.id) } })
@@ -735,6 +716,20 @@ struct RookmasterBoard: View {
                 known.lastAt = max(known.lastAt, relation.lastAt)
                 mapEdges[edge.id] = known
             } else {
+                mapEdges[edge.id] = edge
+            }
+        }
+        for team in fleetModel.teams.listTeams {
+            let teamRef = FleetRef(kind: AgentFleet.teamKind, id: team.id)
+            guard setShown.contains(teamRef) else {
+                continue
+            }
+            for agentId in team.listAgentIds {
+                let agentRef = FleetRef(kind: AgentFleet.agentKind, id: agentId)
+                guard setShown.contains(agentRef) else {
+                    continue
+                }
+                let edge = BoardEdge(source: teamRef, target: agentRef, listVerbs: [Self.memberVerb], count: 1, lastAt: "")
                 mapEdges[edge.id] = edge
             }
         }

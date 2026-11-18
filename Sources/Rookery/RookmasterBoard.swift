@@ -76,6 +76,11 @@ struct RookmasterBoard: View {
     /// The kind of the card a repository's skills fold into.
     private static let repoKind = "skill-repo"
     private static let skillKind = "skill"
+    private static let playbookKind = "playbook"
+    /// The verb of an agent following a playbook.
+    private static let followsVerb = "follows"
+    /// What an agent does with a skill that, for a skill its playbook brings, the playbook's lines say.
+    private static let setPlaybookSkillVerbs: Set<String> = ["mounts", "uses"]
     /// The fewest skills of one repository that fold into a card of their own.
     private static let repoFoldCount = 2
     private static let repoRailInset: CGFloat = 14
@@ -847,7 +852,8 @@ struct RookmasterBoard: View {
     }
 
     /// The edges between shown cards, a subagent's drawn from its session and a folded repository's
-    /// skills' from its card.
+    /// skills' from its card. An agent mounting or using a skill of a playbook it follows draws no edge of
+    /// its own: its line to the playbook and the playbook's to the skill say so already.
     private func edges(among mapColumns: [String: [FleetResource]]) -> [BoardEdge] {
         var setShown = Set(mapColumns.values.flatMap { $0.map { FleetRef(kind: $0.kind, id: $0.id) } })
         var mapFolded: [FleetRef: FleetRef] = [:]
@@ -858,8 +864,24 @@ struct RookmasterBoard: View {
                 mapFolded[FleetRef(kind: resource.kind, id: resource.id)] = repoRef
             }
         }
+        let mapPlaybookSkills = graph.mapRelations.values.reduce(into: [FleetRef: Set<FleetRef>]()) { map, relation in
+            if relation.source.kind == Self.playbookKind, relation.target.kind == Self.skillKind {
+                map[relation.source, default: []].insert(relation.target)
+            }
+        }
+        let mapPlaybookMounts = graph.mapRelations.values.reduce(into: [FleetRef: Set<FleetRef>]()) { map, relation in
+            if relation.verb == Self.followsVerb, relation.target.kind == Self.playbookKind {
+                map[shownRef(of: relation.source, among: setShown), default: []].formUnion(mapPlaybookSkills[relation.target] ?? [])
+            }
+        }
         var mapEdges: [String: BoardEdge] = [:]
         for relation in graph.mapRelations.values {
+            if
+                Self.setPlaybookSkillVerbs.contains(relation.verb),
+                mapPlaybookMounts[shownRef(of: relation.source, among: setShown)]?.contains(relation.target) == true
+            {
+                continue
+            }
             let source = mapFolded[relation.source] ?? shownRef(of: relation.source, among: setShown)
             let target = mapFolded[relation.target] ?? shownRef(of: relation.target, among: setShown)
             guard source != target, setShown.contains(source), setShown.contains(target) else {

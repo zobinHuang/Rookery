@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import RookeryCore
 
 /// A failure to script Mail.
@@ -88,8 +88,10 @@ public enum MailScripting {
 }
 
 /// A mail written in Rookery handed to Mail: opened in a compose window for the user to finish there, or
-/// sent when the user presses Send in Rookery, the draft Mail keeps of a scripted message then let go. A reply is made with Mail's own reply to the message it
-/// answers, so it stays in its thread; its quoted text is replaced by what the user wrote.
+/// sent when the user presses Send in Rookery, the draft Mail keeps of a scripted message then let go.
+/// A reply is made with Mail's own reply to the message it answers, so it stays in its thread. Mail's
+/// scripting sets only plain text, so formatted mail is pasted into the compose window's body through its
+/// own Select All and Paste, the clipboard put back after.
 @MainActor
 public enum MailDrafts {
     /// Write a mail in Mail, from an account, with its recipients, subject and text filled in, then open it
@@ -148,6 +150,120 @@ public enum MailDrafts {
             end tell
             """
         _ = try MailScripting.run(source)
+    }
+
+    /// How long the compose window has to appear, and how often it is looked for.
+    private static let windowWait: Duration = .seconds(6)
+    private static let windowPoll: Duration = .milliseconds(100)
+    /// How long Mail takes to lay out a compose window's body, and to take in a paste, before the next step.
+    private static let bodySettle: Duration = .milliseconds(400)
+    /// How deep in a compose window its body's web area is looked for.
+    private static let bodySearchDepth = 8
+    private static let mailBundleId = "com.apple.mail"
+    /// The role of the web view a compose window writes its body in.
+    private static let bodyRole = "AXWebArea"
+
+    /// Write formatted mail in Mail, from an account, with its recipients, subject and HTML filled in, then
+    /// leave it open or send it.
+    ///
+    /// - Parameters:
+    ///   - sender: the address to send from
+    ///   - replyingTo: the `Message-ID` of the message it answers, found in the inboxes; nil, or not found,
+    ///     for a new message
+    ///   - listTo: the recipients
+    ///   - listCc: the copied recipients
+    ///   - subject: the subject
+    ///   - html: the whole body, as HTML
+    ///   - isSending: whether Mail sends it once written, rather than leaving it to the user
+    /// - Throws: `MailScriptingError`, or `AccessibilityError` when Mail's window cannot be reached
+    public static func composeFormatted(
+        sender: String,
+        replyingTo messageId: String?,
+        listTo: [String],
+        listCc: [String],
+        subject: String,
+        html: String,
+        isSending: Bool
+    ) async throws {
+        let recipients = listTo.map { "make new to recipient at end of to recipients with properties {address:\(quoted($0))}" }
+            + listCc.map { "make new cc recipient at end of cc recipients with properties {address:\(quoted($0))}" }
+        let outgoingId = try MailScripting.run("""
+            tell application "Mail"
+                set theOriginals to {}
+                if \(quoted(messageId ?? "")) is not "" then set theOriginals to (every message of inbox whose message id is \(quoted(messageId ?? "")))
+                if (count of theOriginals) > 0 then
+                    set theMessage to reply (item 1 of theOriginals) opening window yes
+                else
+                    set theMessage to make new outgoing message with properties {visible:true}
+                end if
+                tell theMessage
+                    set sender to \(quoted(sender))
+                    set subject to \(quoted(subject))
+                    delete every to recipient
+                    delete every cc recipient
+                    \(recipients.joined(separator: "\n            "))
+                end tell
+                activate
+                return (id of theMessage) as text
+            end tell
+            """)
+        guard let mail = NSRunningApplication.runningApplications(withBundleIdentifier: mailBundleId).first else {
+            throw MailScriptingError.failed("Mail is not running")
+        }
+        let application = AccessibilityElement.application(processId: mail.processIdentifier)
+        var window: AccessibilityElement?
+        let deadline = ContinuousClock.now + windowWait
+        while ContinuousClock.now < deadline {
+            if let focused = try? application.focusedWindow(), (try? focused.title()) == subject {
+                window = focused
+                break
+            }
+            try await Task.sleep(for: windowPoll)
+        }
+        guard let window else {
+            throw MailScriptingError.failed("the compose window did not open")
+        }
+        try await Task.sleep(for: bodySettle)
+        guard
+            let body = try window.firstDescendant(role: bodyRole, depth: bodySearchDepth),
+            let selectAll = try application.menuCommand(key: "A"),
+            let paste = try application.menuCommand(key: "V")
+        else {
+            throw MailScriptingError.failed("the compose window's body or its Edit menu could not be found")
+        }
+        let pasteboard = NSPasteboard.general
+        let listKept = (pasteboard.pasteboardItems ?? []).map { item in
+            let kept = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    kept.setData(data, forType: type)
+                }
+            }
+            return kept
+        }
+        defer {
+            pasteboard.clearContents()
+            pasteboard.writeObjects(listKept)
+        }
+        pasteboard.clearContents()
+        pasteboard.setString(html, forType: .html)
+        try body.focus()
+        try selectAll.press()
+        try paste.press()
+        try await Task.sleep(for: bodySettle)
+        guard isSending else {
+            return
+        }
+        _ = try MailScripting.run("""
+            tell application "Mail"
+                set theStart to (current date) - 10
+                send (first outgoing message whose id is \(Int(outgoingId) ?? -1))
+                delay 2
+                repeat with theDraft in (every message of drafts mailbox whose subject is \(quoted(subject)) and date received ≥ theStart)
+                    delete theDraft
+                end repeat
+            end tell
+            """)
     }
 
     /// A string as an AppleScript literal.

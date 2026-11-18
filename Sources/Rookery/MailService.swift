@@ -347,8 +347,9 @@ actor MailService: MailSource {
 
     /// Open Mail's reply to a message, or the message itself when it is not in an inbox.
     /// Hand a mail written in Rookery to Mail, from an account Rookery may use, answering its message in
-    /// its thread when it is a reply, that message quoted under the user's text: opened for the user to
-    /// finish there, or sent.
+    /// its thread when it is a reply, that message quoted under the user's text as Outlook quotes it:
+    /// opened for the user to finish there, or sent. It goes formatted when Rookery may use Accessibility
+    /// to paste into Mail's window, else as plain text.
     ///
     /// - Parameters:
     ///   - draft: the mail as written
@@ -363,23 +364,35 @@ actor MailService: MailSource {
         guard !draft.listTo.isEmpty || draft.replyToMessageId != nil else {
             throw MailToolError.badArgument("the mail has no recipient")
         }
-        var header: String?
-        var body = draft.body
-        if let replyToMessageId = draft.replyToMessageId, let original = try await message(replyToMessageId) {
-            header = original.messageIdHeader
-            body = MailQuote.reply(to: original, body: draft.body)
+        var original: MailMessageDetail?
+        if let replyToMessageId = draft.replyToMessageId {
+            original = try await message(replyToMessageId)
         }
-        try await MainActor.run {
-            try MailDrafts.write(
-                sender: account,
-                replyingTo: header,
-                listTo: draft.listTo,
-                listCc: draft.listCc,
-                subject: draft.subject,
-                body: body,
-                isSending: isSending
-            )
+        let plain = original.map { MailQuote.reply(to: $0, body: draft.body) } ?? draft.body
+        guard AccessibilityPermission.isGranted else {
+            try await MainActor.run {
+                try MailDrafts.write(
+                    sender: account,
+                    replyingTo: original?.messageIdHeader,
+                    listTo: draft.listTo,
+                    listCc: draft.listCc,
+                    subject: draft.subject,
+                    body: plain,
+                    isSending: isSending
+                )
+            }
+            return
         }
+        let html = original.map { MailQuote.replyHTML(to: $0, body: draft.body) } ?? MailQuote.bodyHTML(draft.body)
+        try await MailDrafts.composeFormatted(
+            sender: account,
+            replyingTo: original?.messageIdHeader,
+            listTo: draft.listTo,
+            listCc: draft.listCc,
+            subject: draft.subject,
+            html: html,
+            isSending: isSending
+        )
     }
 
     func reply(to summary: MailMessageSummary) async throws {

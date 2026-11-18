@@ -530,6 +530,19 @@ final class RavenAgent {
         }
     }
 
+    /// Tie a conversation to the mail it is about, so the Mail page finds it beside that mail's thread.
+    func link(_ conversationId: String, toMail messageId: Int) {
+        conversations.link(conversationId, toMail: messageId)
+        saveIndex()
+    }
+
+    /// Take a proposed draft into the Mail page's editor, as the user, which settles the proposal.
+    func takeDraft(_ proposal: RavenProposal, in conversationId: String) {
+        mapProposalOutcomes[proposal.id] = "Moved into the reply"
+        conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
+        saveIndex()
+    }
+
     func rename(_ conversationId: String, to title: String) {
         conversations.rename(conversationId, to: title)
         saveIndex()

@@ -72,6 +72,14 @@ public enum JSONValue: Codable, Equatable, Sendable {
         return value
     }
 
+    /// The value as a list, or nil when it is not an array.
+    public var arrayValue: [JSONValue]? {
+        guard case .array(let listValues) = self else {
+            return nil
+        }
+        return listValues
+    }
+
     /// The value as a flag, or nil when it is not a boolean.
     public var boolValue: Bool? {
         guard case .bool(let value) = self else {

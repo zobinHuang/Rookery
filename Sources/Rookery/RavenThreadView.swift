@@ -8,10 +8,12 @@ struct RavenThreadView: View {
     let conversationId: String
     /// Changes when the user sends, to bring the end into view.
     var sendToken = 0
+    /// Takes a proposed draft into an editor beside the conversation, in place of opening it in Mail.
+    var onEditDraft: ((MailReplyDraft) -> Void)?
 
     var body: some View {
         LayoutIsland {
-            RavenThreadContent(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken)
+            RavenThreadContent(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken, onEditDraft: onEditDraft)
         }
     }
 }
@@ -29,6 +31,7 @@ private struct RavenThreadContent: View {
     let conversationId: String
     /// Changes with every request sent, to bring the conversation's end into view.
     var sendToken = 0
+    var onEditDraft: ((MailReplyDraft) -> Void)?
 
     @State private var setSendingIds: Set<String> = []
 
@@ -241,18 +244,28 @@ private struct RavenThreadContent: View {
                     }
                 }
                 .disabled(isSending)
-                Button {
-                    send(proposal, in: conversationId)
-                } label: {
-                    if isSending {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text(Self.verb(of: proposal))
+                if let onEditDraft, let draft = MailReplyDraft(proposal: proposal) {
+                    Button("Edit Reply") {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            raven.takeDraft(proposal, in: conversationId)
+                        }
+                        onEditDraft(draft)
                     }
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
+                } else {
+                    Button {
+                        send(proposal, in: conversationId)
+                    } label: {
+                        if isSending {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text(Self.verb(of: proposal))
+                        }
+                    }
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
+                    .disabled(isSending)
                 }
-                .buttonStyle(StageButtonStyle(kind: .prominent))
-                .disabled(isSending)
             }
             .controlSize(.small)
         }

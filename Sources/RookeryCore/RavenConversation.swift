@@ -23,6 +23,8 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     /// Where the title came from: nil for the first request, `generated` once Rookery wrote one from the
     /// conversation, `user` once the user named it.
     public var titleSource: String?
+    /// The mail the conversation is about, when it was opened from the Mail page beside a message.
+    public var mailMessageId: Int?
 
     public static let engineClaude = "claude"
     public static let engineCodex = "codex"
@@ -33,6 +35,7 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     private static let excerptLength = 600
 
     enum CodingKeys: String, CodingKey {
+        case mailMessageId
         case engine
         case codexThreadId
         case titleSource
@@ -79,6 +82,7 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         engine = try container.decodeIfPresent(String.self, forKey: .engine) ?? Self.engineClaude
         codexThreadId = try container.decodeIfPresent(String.self, forKey: .codexThreadId)
         titleSource = try container.decodeIfPresent(String.self, forKey: .titleSource)
+        mailMessageId = try container.decodeIfPresent(Int.self, forKey: .mailMessageId)
     }
 
     /// The request to a model for a conversation's title, from its first request and Raven's answer.
@@ -138,6 +142,22 @@ public struct RavenConversations: Codable, Equatable, Sendable {
     /// The conversation with an id, if there is one.
     public func conversation(_ conversationId: String) -> RavenConversation? {
         listConversations.first { $0.id == conversationId }
+    }
+
+    /// The latest conversation about any message of a mail thread, if there is one.
+    ///
+    /// - Parameter listMessageIds: the thread's messages
+    public func conversation(aboutMail listMessageIds: [Int]) -> RavenConversation? {
+        let setIds = Set(listMessageIds)
+        return listConversations.first { $0.mailMessageId.map(setIds.contains) ?? false }
+    }
+
+    /// Tie a conversation to the mail it is about.
+    public mutating func link(_ conversationId: String, toMail messageId: Int) {
+        guard let index = listConversations.firstIndex(where: { $0.id == conversationId }) else {
+            return
+        }
+        listConversations[index].mailMessageId = messageId
     }
 
     /// Open a conversation with its first request.

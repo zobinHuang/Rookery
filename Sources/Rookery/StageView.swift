@@ -934,9 +934,7 @@ struct StageView: View {
                 CalendarPage(fleetModel: fleetModel, onClose: actions.closePage)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .mail {
-                MailPage(fleetModel: fleetModel, onClose: actions.closePage) {
-                    actions.showPage(.rookmaster)
-                }
+                MailPage(fleetModel: fleetModel, onClose: actions.closePage)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .rookmaster {
                 RookmasterView(

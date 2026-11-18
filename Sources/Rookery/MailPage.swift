@@ -56,8 +56,6 @@ struct MailPage: View {
 
     let fleetModel: FleetModel
     let onClose: () -> Void
-    /// Shows the Rookmaster console, where Raven's conversations are.
-    let onShowRookmaster: () -> Void
 
     /// The widest the reader's conversation runs.
     private static let readerMaxWidth: CGFloat = 860
@@ -102,6 +100,16 @@ struct MailPage: View {
         fleetModel.pageMemory.selectedMailId
     }
 
+    private static let replyEditorId = "mail.reply"
+
+    /// Whether the mail being written answers a message of the thread shown.
+    private var isReplyInThread: Bool {
+        guard let replyToId = fleetModel.pageMemory.mailReplyDraft?.replyToMessageId else {
+            return false
+        }
+        return listThread.contains { $0.id == replyToId }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -120,7 +128,14 @@ struct MailPage: View {
                 ColumnDivider(columns: columns, column: .mailMessages)
                 reader
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let message = shownMessage, !columns.isHidden(.mailRaven) {
+                    ColumnDivider(columns: columns, column: .mailRaven, isTrailing: true)
+                    MailRavenPanel(fleetModel: fleetModel, message: message, listThreadIds: listThread.map(\.id))
+                        .frame(width: columns.width(of: .mailRaven))
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
+            .animation(.spring(response: 0.35, dampingFraction: 0.88), value: columns.isHidden(.mailRaven))
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .task(id: "\(place)\(searchText)") {
@@ -327,19 +342,37 @@ struct MailPage: View {
                 Rectangle()
                     .fill(StageColors.separator)
                     .frame(height: 1)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        threadHeader(message)
-                            .padding(.bottom, 18)
-                        ForEach(listThread, id: \.id) { summary in
-                            threadItem(summary)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            threadHeader(message)
+                                .padding(.bottom, 18)
+                            ForEach(listThread, id: \.id) { summary in
+                                threadItem(summary)
+                                    .padding(.bottom, 22)
+                            }
+                            if isReplyInThread {
+                                MailReplyEditor(fleetModel: fleetModel) {
+                                    act {}
+                                }
+                                .id(Self.replyEditorId)
                                 .padding(.bottom, 22)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 20)
+                        .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .onChange(of: fleetModel.pageMemory.mailReplyDraft?.replyToMessageId) { _, replyToId in
+                        guard replyToId != nil else {
+                            return
+                        }
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo(Self.replyEditorId, anchor: .bottom)
                         }
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 20)
-                    .frame(maxWidth: Self.readerMaxWidth, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .id(message.summary.id)
                 .opacity(isSwitching ? 0.55 : 1)
@@ -465,7 +498,14 @@ struct MailPage: View {
 
     private func toolbarButtons(_ message: MailMessageDetail, isTitled: Bool) -> some View {
         HStack(spacing: 8) {
-            toolbarButton("Reply in Mail", icon: .undo, isTitled: isTitled) {
+            toolbarButton("Reply", icon: .undo, isTitled: isTitled) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    if !isReplyInThread {
+                        fleetModel.pageMemory.mailReplyDraft = MailReplyDraft(replyingTo: message.summary)
+                    }
+                }
+            }
+            toolbarButton("Reply in Mail", icon: .release, isTitled: isTitled) {
                 act { try await service.reply(to: message.summary) }
             }
             toolbarButton(message.summary.isRead ? "Mark Unread" : "Mark Read", icon: .envelopeOpen, isTitled: isTitled) {
@@ -475,8 +515,8 @@ struct MailPage: View {
                 act { try await service.flag(message.summary, isFlagged: !message.summary.isFlagged) }
             }
             Spacer(minLength: 0)
-            toolbarButton("Draft with Raven", icon: .sparkles, isTitled: isTitled) {
-                askRaven(message)
+            toolbarButton(columns.isHidden(.mailRaven) ? "Ask Raven" : "Hide Raven", icon: .sparkles, isTitled: isTitled) {
+                columns.toggle(.mailRaven)
             }
             toolbarButton("Open in Mail", icon: .release, isTitled: isTitled) {
                 act { try await service.openInMail(message.summary) }
@@ -561,15 +601,6 @@ struct MailPage: View {
             await loadList()
             await loadMessage()
         }
-    }
-
-    /// Ask Raven, in a new conversation, to draft a reply to the message, and show the conversation.
-    private func askRaven(_ message: MailMessageDetail) {
-        let request = "Draft a reply to the message with id \(message.summary.id) in \(message.summary.account), from \(Self.people([message.summary.from])), subject \"\(message.summary.subject)\". Read it and its thread first, then propose the draft."
-        fleetModel.pageMemory.panelTab = .raven
-        fleetModel.pageMemory.isPanelExpanded = true
-        fleetModel.raven.ask(request, mentioning: [], in: nil)
-        onShowRookmaster()
     }
 }
 

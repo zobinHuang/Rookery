@@ -46,6 +46,10 @@ final class PageMemory {
     /// The roost address and token typed in the settings and not yet used; nil for the ones kept.
     var roostAddressDraft: String?
     var roostTokenDraft: String?
+    /// What the user is writing to Raven beside a mail, before sending it.
+    var mailRavenDraft = ""
+    /// The mail being written in the Mail page, as the user left it.
+    var mailReplyDraft: MailReplyDraft?
     /// The git host's token being added or replaced in the settings, as the user left it; kept while the
     /// app runs, never written down.
     var gitCredentialDraft: GitCredentialDraft?

@@ -13,6 +13,7 @@ final class PageColumns {
         case mailMessages
         case calendarList
         case ravenConversations
+        case mailRaven
 
         var defaultWidth: CGFloat {
             switch self {
@@ -20,6 +21,7 @@ final class PageColumns {
             case .mailMessages: 340
             case .calendarList: 210
             case .ravenConversations: 220
+            case .mailRaven: 360
             }
         }
 
@@ -29,16 +31,25 @@ final class PageColumns {
             case .mailMessages: 240...620
             case .calendarList: 150...360
             case .ravenConversations: 160...420
+            case .mailRaven: 280...600
             }
+        }
+
+        /// Whether the column starts hidden until the user shows it, as one that would crowd the page.
+        var isHiddenByDefault: Bool {
+            self == .mailRaven
         }
     }
 
     private static let widthsKey = "pageColumnWidths"
     private static let hiddenKey = "pageHiddenColumns"
+    private static let shownKey = "pageShownColumns"
 
     @ObservationIgnored private let defaults: UserDefaults
     private var mapWidths: [Column: CGFloat] = [:]
     private var setHiddenColumns: Set<Column> = []
+    /// The columns hidden by default that the user showed.
+    private var setShownColumns: Set<Column> = []
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -50,6 +61,8 @@ final class PageColumns {
         }
         let listHidden = defaults.stringArray(forKey: Self.hiddenKey) ?? []
         setHiddenColumns = Set(listHidden.compactMap(Column.init(rawValue:)))
+        let listShown = defaults.stringArray(forKey: Self.shownKey) ?? []
+        setShownColumns = Set(listShown.compactMap(Column.init(rawValue:)))
     }
 
     /// A column's width, as the user left it.
@@ -63,12 +76,18 @@ final class PageColumns {
     }
 
     func isHidden(_ column: Column) -> Bool {
-        setHiddenColumns.contains(column)
+        column.isHiddenByDefault ? !setShownColumns.contains(column) : setHiddenColumns.contains(column)
     }
 
-    /// Hide a sidebar column, or show it again.
+    /// Hide a column, or show it again.
     func toggle(_ column: Column) {
-        if setHiddenColumns.contains(column) {
+        if column.isHiddenByDefault {
+            if setShownColumns.contains(column) {
+                setShownColumns.remove(column)
+            } else {
+                setShownColumns.insert(column)
+            }
+        } else if setHiddenColumns.contains(column) {
             setHiddenColumns.remove(column)
         } else {
             setHiddenColumns.insert(column)
@@ -84,6 +103,7 @@ final class PageColumns {
         }
         defaults.set(mapStored, forKey: Self.widthsKey)
         defaults.set(setHiddenColumns.map(\.rawValue).sorted(), forKey: Self.hiddenKey)
+        defaults.set(setShownColumns.map(\.rawValue).sorted(), forKey: Self.shownKey)
     }
 }
 
@@ -94,6 +114,8 @@ struct ColumnDivider: View {
 
     let columns: PageColumns
     let column: PageColumns.Column
+    /// Whether the column is to the divider's right, so dragging left widens it.
+    var isTrailing = false
 
     @State private var startWidth: CGFloat?
     @State private var isHovered = false
@@ -122,7 +144,7 @@ struct ColumnDivider: View {
                             .onChanged { value in
                                 let start = startWidth ?? columns.width(of: column)
                                 startWidth = start
-                                columns.resize(column, to: start + value.translation.width)
+                                columns.resize(column, to: start + (isTrailing ? -1 : 1) * value.translation.width)
                             }
                             .onEnded { _ in
                                 startWidth = nil

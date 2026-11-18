@@ -87,37 +87,55 @@ public enum MailScripting {
     }
 }
 
-/// A draft opened in Mail for the user to read and send: never sent from here.
+/// A mail written in Rookery handed to Mail: opened in a compose window for the user to finish there, or
+/// sent when the user presses Send in Rookery. A reply is made with Mail's own reply to the message it
+/// answers, so it stays in its thread; its quoted text is replaced by what the user wrote.
 @MainActor
 public enum MailDrafts {
-    /// Open a new message in Mail, from an account, with its recipients, subject and text filled in.
+    /// Write a mail in Mail, from an account, with its recipients, subject and text filled in, then open it
+    /// or send it.
     ///
     /// - Parameters:
-    ///   - accountName: the account's name in Mail, which owns the sender address
     ///   - sender: the address to send from
+    ///   - replyingTo: the `Message-ID` of the message it answers, found in the inboxes; nil, or not found,
+    ///     for a new message
     ///   - listTo: the recipients
     ///   - listCc: the copied recipients
     ///   - subject: the subject
     ///   - body: the text
+    ///   - isSending: whether Mail sends it at once, rather than opening it for the user
     /// - Throws: `MailScriptingError`
-    public static func open(
-        accountName: String,
+    public static func write(
         sender: String,
+        replyingTo messageId: String?,
         listTo: [String],
         listCc: [String],
         subject: String,
-        body: String
+        body: String,
+        isSending: Bool
     ) throws {
         let recipients = listTo.map { "make new to recipient at end of to recipients with properties {address:\(quoted($0))}" }
             + listCc.map { "make new cc recipient at end of cc recipients with properties {address:\(quoted($0))}" }
+        let finish = isSending ? "send theMessage" : "set visible of theMessage to true\n    activate"
         let source = """
             tell application "Mail"
-                set theMessage to make new outgoing message with properties {subject:\(quoted(subject)), content:\(quoted(body)), visible:true}
+                set theMessage to missing value
+                set theOriginals to {}
+                if \(quoted(messageId ?? "")) is not "" then set theOriginals to (every message of inbox whose message id is \(quoted(messageId ?? "")))
+                if (count of theOriginals) > 0 then
+                    set theMessage to reply (item 1 of theOriginals) opening window no
+                else
+                    set theMessage to make new outgoing message with properties {visible:false}
+                end if
                 tell theMessage
                     set sender to \(quoted(sender))
+                    set subject to \(quoted(subject))
+                    set content to \(quoted(body))
+                    delete every to recipient
+                    delete every cc recipient
                     \(recipients.joined(separator: "\n            "))
                 end tell
-                activate
+                \(finish)
             end tell
             """
         _ = try MailScripting.run(source)

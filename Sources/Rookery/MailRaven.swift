@@ -77,7 +77,9 @@ struct MailRavenPanel: View {
                         raven.cancel(conversationId)
                     }
                 },
-                onSend: send,
+                onSend: { request in
+                    send(request.text, mentioning: request.listMentions, addresses: request.mapAddresses)
+                },
                 isFocused: $isFocused
             )
             .padding(12)
@@ -150,13 +152,13 @@ struct MailRavenPanel: View {
 
     /// Send a request in the thread's conversation, or open one with it, telling Raven which mail it is
     /// about and how the user finishes a reply.
-    private func send(_ text: String, mentioning listNamed: [FleetRef]) {
+    private func send(_ text: String, mentioning listNamed: [FleetRef], addresses mapAddresses: [String: String] = [:]) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
         }
         if let conversationId {
-            guard raven.ask(trimmed, mentioning: listNamed, in: conversationId) != nil else {
+            guard raven.ask(trimmed, mentioning: listNamed, addresses: mapAddresses, in: conversationId) != nil else {
                 return
             }
         } else {
@@ -169,7 +171,7 @@ struct MailRavenPanel: View {
                 Read it and its thread with the mail tools first. When I am happy with a reply, write it with propose_draft, \
                 reply_to \(summary.id); I will change it and send it myself in Rookery's Mail page.
                 """
-            guard let newId = raven.ask(request, mentioning: listNamed, in: nil, origin: .mail) else {
+            guard let newId = raven.ask(request, mentioning: listNamed, addresses: mapAddresses, in: nil, origin: .mail) else {
                 return
             }
             raven.link(newId, toMail: summary.id)

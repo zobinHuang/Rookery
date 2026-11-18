@@ -205,7 +205,13 @@ final class RavenAgent {
     ///   - conversationId: the conversation to continue, or nil to begin one
     /// - Returns: the conversation the request went to
     @discardableResult
-    func ask(_ request: String, mentioning listMentions: [FleetRef], in conversationId: String?, origin: RavenOrigin = .board) -> String? {
+    func ask(
+        _ request: String,
+        mentioning listMentions: [FleetRef],
+        addresses mapAddresses: [String: String] = [:],
+        in conversationId: String?,
+        origin: RavenOrigin = .board
+    ) -> String? {
         loadIfNeeded()
         guard let client = fleetModel.client(), !isRunning(conversationId) else {
             return nil
@@ -227,7 +233,7 @@ final class RavenAgent {
             openConversationId = sessionId
         }
         record(Self.requestLine(request, at: now), in: sessionId)
-        startTurn(request, mentioning: listMentions, in: sessionId, isFirstTurn: isFirstTurn, client: client)
+        startTurn(request, mentioning: listMentions, addresses: mapAddresses, in: sessionId, isFirstTurn: isFirstTurn, client: client)
         return sessionId
     }
 
@@ -235,6 +241,7 @@ final class RavenAgent {
     private func startTurn(
         _ request: String,
         mentioning listMentions: [FleetRef],
+        addresses mapAddresses: [String: String] = [:],
         in sessionId: String,
         isFirstTurn: Bool,
         client: RoostClient
@@ -244,6 +251,7 @@ final class RavenAgent {
             request,
             listMentions: listMentions,
             listPeople: fleetModel.people.book.people(mentionedIn: request),
+            mapAddresses: mapAddresses,
             graph: fleetModel.graph,
             agentId: sessionId,
             listDecisions: decisionLines(in: sessionId),
@@ -897,6 +905,7 @@ final class RavenAgent {
         _ request: String,
         listMentions: [FleetRef],
         listPeople: [Person] = [],
+        mapAddresses: [String: String] = [:],
         graph: ResourceGraph,
         agentId: String,
         listDecisions: [String],
@@ -924,8 +933,14 @@ final class RavenAgent {
             listLines.append("")
             listLines.append("The request names these people, by their mention; write to them and invite them at these addresses:")
             for person in listPeople {
-                let addresses = person.listAddresses.isEmpty ? "no address known" : person.listAddresses.joined(separator: ", ")
-                listLines.append("- \(person.mentionToken) is \(person.name): \(addresses)")
+                if let chosen = mapAddresses[person.id] {
+                    let listOthers = person.listAddresses.filter { $0 != chosen }
+                    let others = listOthers.isEmpty ? "" : " (their other addresses: \(listOthers.joined(separator: ", ")))"
+                    listLines.append("- \(person.mentionToken) is \(person.name): the user chose \(chosen); use that address\(others)")
+                } else {
+                    let addresses = person.listAddresses.isEmpty ? "no address known" : person.listAddresses.joined(separator: ", ")
+                    listLines.append("- \(person.mentionToken) is \(person.name): \(addresses)")
+                }
             }
         }
         if !listTeams.isEmpty {

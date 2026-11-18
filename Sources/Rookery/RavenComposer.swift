@@ -1,10 +1,19 @@
 import RookeryCore
 import SwiftUI
 
+/// A request as the box hands it to Raven: the words, the resources they name, and for each person named
+/// the address the user chose for them, by the person's id; a person with none chosen goes with all of
+/// theirs.
+struct RavenRequest {
+    let text: String
+    let listMentions: [FleetRef]
+    let mapAddresses: [String: String]
+}
+
 /// The box to ask Raven in, wherever Raven is asked: plain words, people and roost's resources named with
-/// @ and chosen from suggestions floating over the box, the arrows, Tab and Return working them; the
-/// people named shown over the box with their marks. Sending hands over the request and the resources it
-/// still names.
+/// @ and chosen from suggestions floating over the box, the arrows, Tab and Return working them. Choosing
+/// a person with several addresses turns the suggestions into their addresses, to pick one or go with
+/// none; the people named show over the box with their marks and the address chosen.
 struct RavenComposer: View {
     let fleetModel: FleetModel
     @Binding var text: String
@@ -12,15 +21,29 @@ struct RavenComposer: View {
     let isEnabled: Bool
     let isBusy: Bool
     let onStop: () -> Void
-    /// Sends the request, with the resources it names.
-    let onSend: (String, [FleetRef]) -> Void
+    /// Sends the request.
+    let onSend: (RavenRequest) -> Void
     var isFocused: FocusState<Bool>.Binding
+    /// Takes a key the suggestions do not, before the box does, as the launcher's Escape.
+    var onKey: ((KeyPress) -> KeyPress.Result)?
 
     @State private var listMentions: [FleetRef] = []
+    /// The address chosen for each person named, by the person's id.
+    @State private var mapAddresses: [String: String] = [:]
+    /// The person whose address is being chosen, the suggestions their addresses meanwhile.
+    @State private var choosingPerson: Person?
+    /// A person just picked, with the text picking them left, whose address is chosen once the box shows it.
+    @State private var pickedPerson: Person?
+    @State private var pickedText: String?
     @State private var highlightedIndex = 0
 
     private var listSuggestions: [MentionTarget] {
         fleetModel.mentionTargets(in: text)
+    }
+
+    /// How many rows the suggestions show: a person's addresses and None, or the mention targets.
+    private var rowCount: Int {
+        choosingPerson.map { $0.listAddresses.count + 1 } ?? listSuggestions.count
     }
 
     var body: some View {
@@ -28,7 +51,12 @@ struct RavenComposer: View {
             Color.clear
                 .frame(height: 0)
                 .overlay(alignment: .bottomLeading) {
-                    if !listSuggestions.isEmpty {
+                    if let choosingPerson {
+                        addressList(of: choosingPerson)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 4)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                    } else if !listSuggestions.isEmpty {
                         suggestions
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.bottom, 4)
@@ -36,6 +64,7 @@ struct RavenComposer: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.15), value: listSuggestions.map(\.id))
+                .animation(.easeOut(duration: 0.15), value: choosingPerson?.id)
             let listNamedPeople = fleetModel.people.book.people(mentionedIn: text)
             if !listNamedPeople.isEmpty {
                 FlowRow(spacing: 5) {
@@ -44,6 +73,11 @@ struct RavenComposer: View {
                             PersonMark(person: person, size: 16)
                             Text(person.name)
                                 .font(.system(size: 11, weight: .semibold))
+                            if let address = mapAddresses[person.id] {
+                                Text(address)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(StageColors.secondaryText)
+                            }
                         }
                         .padding(.leading, 2)
                         .padding(.trailing, 8)
@@ -53,7 +87,7 @@ struct RavenComposer: View {
                             Capsule()
                                 .strokeBorder(StageColors.segmentGrooveBorder)
                         }
-                        .help(person.listAddresses.joined(separator: ", "))
+                        .help(mapAddresses[person.id] ?? person.listAddresses.joined(separator: ", "))
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -66,57 +100,85 @@ struct RavenComposer: View {
                 fontSize: 12,
                 onStop: onStop,
                 onSend: send,
-                onKey: takeSuggestionKey,
+                onKey: takeKey,
                 isFocused: isFocused
             )
-            .onChange(of: text) {
+            .onChange(of: text) { _, newText in
                 highlightedIndex = 0
+                choosingPerson = newText == pickedText ? pickedPerson : nil
+                pickedPerson = nil
+                pickedText = nil
             }
         }
     }
 
     private var suggestions: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        listBox {
             ForEach(Array(listSuggestions.enumerated()), id: \.element.id) { index, target in
-                Button {
+                row(isHighlighted: index == highlightedIndex) {
                     pick(target)
-                } label: {
-                    HStack(spacing: 8) {
-                        switch target {
-                        case .person(let person):
-                            PersonMark(person: person, size: 18)
-                                .frame(width: 16)
-                            Text(person.name)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(person.listAddresses.first ?? "person")
-                                .opacity(0.6)
-                                .lineLimit(1)
-                        case .resource(let resource):
-                            RookeryIconView(RookeryIcon.kind(resource.kind))
-                                .frame(width: 16)
-                            Text(resource.displayName)
-                                .lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(resource.kind)
-                                .opacity(0.6)
-                        }
+                } content: {
+                    switch target {
+                    case .person(let person):
+                        PersonMark(person: person, size: 18)
+                            .frame(width: 16)
+                        Text(person.name)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(person.listAddresses.count > 1 ? "\(person.listAddresses.count) addresses" : person.listAddresses.first ?? "person")
+                            .opacity(0.6)
+                            .lineLimit(1)
+                    case .resource(let resource):
+                        RookeryIconView(RookeryIcon.kind(resource.kind))
+                            .frame(width: 16)
+                        Text(resource.displayName)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(resource.kind)
+                            .opacity(0.6)
                     }
-                    .font(.system(size: 12))
-                    .foregroundStyle(index == highlightedIndex ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background {
-                        if index == highlightedIndex {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(StageColors.selectedSegment)
-                                .strokeBorder(StageColors.contrastActiveBorder)
-                        }
-                    }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
             }
+        }
+    }
+
+    /// A person's addresses to choose from, None first.
+    private func addressList(of person: Person) -> some View {
+        listBox {
+            HStack(spacing: 6) {
+                PersonMark(person: person, size: 16)
+                Text("Which address for \(person.name)?")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(StageColors.secondaryText)
+            }
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
+            row(isHighlighted: highlightedIndex == 0) {
+                chooseAddress(nil)
+            } content: {
+                RookeryIconView(.mail)
+                    .frame(width: 16)
+                Text("Any of their addresses")
+                Spacer(minLength: 4)
+            }
+            ForEach(Array(person.listAddresses.enumerated()), id: \.offset) { index, address in
+                row(isHighlighted: highlightedIndex == index + 1) {
+                    chooseAddress(address)
+                } content: {
+                    Color.clear
+                        .frame(width: 16)
+                    Text(address)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                }
+            }
+        }
+    }
+
+    private func listBox<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            content()
         }
         .padding(4)
         .background {
@@ -134,31 +196,58 @@ struct RavenComposer: View {
         .shadow(color: .black.opacity(0.15), radius: 8, y: 2)
     }
 
-    /// The keys that work the suggestions while they show.
-    private func takeSuggestionKey(_ keyPress: KeyPress) -> KeyPress.Result {
+    private func row<Content: View>(isHighlighted: Bool, action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                content()
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(isHighlighted ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background {
+                if isHighlighted {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(StageColors.selectedSegment)
+                        .strokeBorder(StageColors.contrastActiveBorder)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The keys that work the suggestions while they show; the rest go to the caller first.
+    private func takeKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        let isShowing = choosingPerson != nil || !listSuggestions.isEmpty
         switch keyPress.key {
-        case .upArrow:
+        case .upArrow where isShowing:
             return moveHighlight(by: -1)
-        case .downArrow:
+        case .downArrow where isShowing:
             return moveHighlight(by: 1)
-        case .tab:
+        case .tab where isShowing, .return where isShowing:
             return pickHighlighted()
-        case .return where !listSuggestions.isEmpty:
-            return pickHighlighted()
+        case .escape where choosingPerson != nil:
+            chooseAddress(nil)
+            return .handled
         default:
-            return .ignored
+            return onKey?(keyPress) ?? .ignored
         }
     }
 
     private func moveHighlight(by step: Int) -> KeyPress.Result {
-        guard !listSuggestions.isEmpty else {
+        guard rowCount > 0 else {
             return .ignored
         }
-        highlightedIndex = (highlightedIndex + step + listSuggestions.count) % listSuggestions.count
+        highlightedIndex = (highlightedIndex + step + rowCount) % rowCount
         return .handled
     }
 
     private func pickHighlighted() -> KeyPress.Result {
+        if let choosingPerson {
+            chooseAddress(highlightedIndex == 0 ? nil : choosingPerson.listAddresses[highlightedIndex - 1])
+            return .handled
+        }
         guard listSuggestions.indices.contains(highlightedIndex) else {
             return .ignored
         }
@@ -169,7 +258,13 @@ struct RavenComposer: View {
     private func pick(_ target: MentionTarget) {
         switch target {
         case .person(let person):
-            text = Mentions.complete(text, with: person)
+            let completed = Mentions.complete(text, with: person)
+            mapAddresses[person.id] = nil
+            if person.listAddresses.count > 1 {
+                pickedPerson = person
+                pickedText = completed
+            }
+            text = completed
         case .resource(let resource):
             text = Mentions.complete(text, with: resource)
             listMentions.append(FleetRef(kind: resource.kind, id: resource.id))
@@ -177,7 +272,18 @@ struct RavenComposer: View {
         isFocused.wrappedValue = true
     }
 
-    /// Send the request with the resources it still names, and empty the box.
+    /// Settle the address of the person being chosen for: one of theirs, or nil for any.
+    private func chooseAddress(_ address: String?) {
+        if let person = choosingPerson {
+            mapAddresses[person.id] = address
+        }
+        choosingPerson = nil
+        highlightedIndex = 0
+        isFocused.wrappedValue = true
+    }
+
+    /// Send the request with the resources it still names and the addresses of the people it still names,
+    /// and forget them for the next.
     private func send() {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty, !isBusy else {
@@ -186,8 +292,10 @@ struct RavenComposer: View {
         let listNamed = listMentions.filter { ref in
             fleetModel.graph.resource(ref).map { request.contains(Mentions.token(for: $0)) } ?? false
         }
-        onSend(request, listNamed)
+        let setNamedPeople = Set(fleetModel.people.book.people(mentionedIn: request).map(\.id))
+        onSend(RavenRequest(text: request, listMentions: listNamed, mapAddresses: mapAddresses.filter { setNamedPeople.contains($0.key) }))
         listMentions = []
+        mapAddresses = [:]
         isFocused.wrappedValue = true
     }
 }

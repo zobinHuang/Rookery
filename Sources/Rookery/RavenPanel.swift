@@ -255,12 +255,12 @@ struct RavenPanel: View {
         }
     }
 
-    private func send(_ request: String, mentioning listNamed: [FleetRef]) {
+    private func send(_ request: RavenRequest) {
         guard !raven.isRunning(openId) else {
             return
         }
         withAnimation(.easeOut(duration: 0.2)) {
-            _ = raven.ask(request, mentioning: listNamed, in: openId)
+            _ = raven.ask(request.text, mentioning: request.listMentions, addresses: request.mapAddresses, in: openId)
         }
         sendToken += 1
         draft = ""

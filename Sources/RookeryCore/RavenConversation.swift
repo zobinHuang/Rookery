@@ -32,6 +32,9 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public static let titleSourceUser = "user"
     /// The most characters a written title keeps.
     public static let writtenTitleLength = 48
+    /// The tags the model puts the title it writes between.
+    private static let titleOpenTag = "<title>"
+    private static let titleCloseTag = "</title>"
     private static let excerptLength = 600
 
     enum CodingKeys: String, CodingKey {
@@ -89,8 +92,8 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public static func titlePrompt(request: String, answer: String) -> String {
         """
         Write a title for this conversation between a user and their assistant, as a chat app lists it: \
-        3 to 7 words naming what it is about, in the language the user wrote in, no quotes, no period, \
-        nothing else.
+        3 to 7 words naming what it is about, in the language the user wrote in, no quotes, no period. \
+        Answer with the title alone inside <title></title>, and nothing else: no thinking, no explanation.
 
         The user: \(request.prefix(excerptLength))
 
@@ -101,7 +104,15 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     /// A title as a model wrote it, kept to its first line, quotes and a trailing period taken off and
     /// cut to fit; nil when nothing is left.
     public static func writtenTitle(of answer: String) -> String? {
-        let firstLine = answer
+        var tagged: String?
+        if let open = answer.range(of: titleOpenTag), let close = answer.range(of: titleCloseTag, range: open.upperBound..<answer.endIndex) {
+            tagged = String(answer[open.upperBound..<close.lowerBound])
+        }
+        let lastLine = answer
+            .split(whereSeparator: \.isNewline)
+            .last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map(String.init) ?? ""
+        let firstLine = (tagged ?? lastLine)
             .split(whereSeparator: \.isNewline)
             .first
             .map(String.init) ?? ""

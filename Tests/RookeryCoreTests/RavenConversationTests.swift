@@ -19,7 +19,9 @@ struct RavenConversationTests {
     }
 
     @Test func aModelsTitleIsKeptToALineWithoutQuotes() {
-        #expect(RavenConversation.writtenTitle(of: "\"明天的日程安排\"\nmore") == "明天的日程安排")
+        #expect(RavenConversation.writtenTitle(of: "<title>\"明天的日程安排\"</title>\nmore") == "明天的日程安排")
+        #expect(RavenConversation.writtenTitle(of: "Thinking about the title, 3-7 words in Chinese\n\n<title>论文作者认领</title>") == "论文作者认领")
+        #expect(RavenConversation.writtenTitle(of: "Thinking about the title, 3-7 words in Chinese\n\n论文作者认领") == "论文作者认领")
         #expect(RavenConversation.writtenTitle(of: "Title: Q4 plan review.") == "Q4 plan review")
         #expect(RavenConversation.writtenTitle(of: "  \n") == nil)
     }

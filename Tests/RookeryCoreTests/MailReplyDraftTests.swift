@@ -25,3 +25,18 @@ struct MailReplyDraftTests {
         #expect(MailReplyDraft.addresses(in: "a@x.com, b@y.com; ,") == ["a@x.com", "b@y.com"])
     }
 }
+
+struct MailQuoteReplyTests {
+    @Test func aReplyCarriesTheMessageItAnswersQuotedUnderItsOwnText() {
+        let sentAt = Date(timeIntervalSince1970: 1_795_000_000)
+        let reply = MailQuote.reply(
+            to: "Hi Zhuobin,\n\nThe paper is up.\n> earlier line",
+            from: MailAddress(address: "x@ust.hk", name: "Xudong Liao"),
+            sentAt: sentAt,
+            body: "Thanks!\n",
+            timeZone: TimeZone(identifier: "UTC") ?? .current
+        )
+        #expect(reply.hasPrefix("Thanks!\n\nOn "))
+        #expect(reply.contains("Xudong Liao <x@ust.hk> wrote:\n\n> Hi Zhuobin,\n> \n> The paper is up.\n>> earlier line"))
+    }
+}

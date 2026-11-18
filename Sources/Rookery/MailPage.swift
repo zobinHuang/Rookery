@@ -102,6 +102,17 @@ struct MailPage: View {
 
     private static let replyEditorId = "mail.reply"
 
+    /// Who wrote the message the mail being written answers, by name if they gave one.
+    private var quotedSender: String? {
+        guard
+            let replyToId = fleetModel.pageMemory.mailReplyDraft?.replyToMessageId,
+            let original = listThread.first(where: { $0.id == replyToId })
+        else {
+            return nil
+        }
+        return original.from.name.isEmpty ? original.from.address : original.from.name
+    }
+
     /// Whether the mail being written answers a message of the thread shown.
     private var isReplyInThread: Bool {
         guard let replyToId = fleetModel.pageMemory.mailReplyDraft?.replyToMessageId else {
@@ -352,7 +363,7 @@ struct MailPage: View {
                                     .padding(.bottom, 22)
                             }
                             if isReplyInThread {
-                                MailReplyEditor(fleetModel: fleetModel) {
+                                MailReplyEditor(fleetModel: fleetModel, quotedSender: quotedSender) {
                                     act {}
                                 }
                                 .id(Self.replyEditorId)

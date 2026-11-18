@@ -20,6 +20,32 @@ public enum MailQuote {
     /// How many lines an attribution may be wrapped over, found from the line it ends on.
     private static let attributionLineReach = 3
 
+    /// A reply as it is sent: the reply's own text, then a line naming who wrote what it answers and when,
+    /// then that message whole, each line marked as quoted, its own quotes one level deeper, so the one
+    /// it goes to reads it in its thread as any mail client writes it.
+    ///
+    /// - Parameters:
+    ///   - body: what the reply says
+    ///   - original: the text of the message answered
+    ///   - sender: who wrote that message
+    ///   - sentAt: when it was sent
+    ///   - timeZone: the zone its time is written in
+    /// - Returns: the text to send
+    public static func reply(to original: String, from sender: MailAddress, sentAt: Date, body: String, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "EEE, MMM d, yyyy 'at' h:mm a"
+        let who = sender.name.isEmpty ? sender.address : "\(sender.name) <\(sender.address)>"
+        let quoted = original
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+            .map { line in line.hasPrefix(quotedLinePrefix) ? quotedLinePrefix + line : quotedLinePrefix + " " + line }
+            .joined(separator: "\n")
+        let own = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(own)\n\nOn \(formatter.string(from: sentAt)), \(who) wrote:\n\n\(quoted)\n"
+    }
+
     /// A plain-text message without the earlier mail it quotes: cut at the first line that opens a
     /// quote, or at a run of `>` lines that runs to the end.
     ///

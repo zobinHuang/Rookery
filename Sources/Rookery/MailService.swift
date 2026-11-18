@@ -347,7 +347,8 @@ actor MailService: MailSource {
 
     /// Open Mail's reply to a message, or the message itself when it is not in an inbox.
     /// Hand a mail written in Rookery to Mail, from an account Rookery may use, answering its message in
-    /// its thread when it is a reply: opened for the user to finish there, or sent.
+    /// its thread when it is a reply, that message quoted under the user's text: opened for the user to
+    /// finish there, or sent.
     ///
     /// - Parameters:
     ///   - draft: the mail as written
@@ -363,8 +364,10 @@ actor MailService: MailSource {
             throw MailToolError.badArgument("the mail has no recipient")
         }
         var header: String?
-        if let replyToMessageId = draft.replyToMessageId {
-            header = try await message(replyToMessageId)?.messageIdHeader
+        var body = draft.body
+        if let replyToMessageId = draft.replyToMessageId, let original = try await message(replyToMessageId) {
+            header = original.messageIdHeader
+            body = MailQuote.reply(to: original.text, from: original.summary.from, sentAt: original.summary.sentAt, body: draft.body)
         }
         try await MainActor.run {
             try MailDrafts.write(
@@ -373,7 +376,7 @@ actor MailService: MailSource {
                 listTo: draft.listTo,
                 listCc: draft.listCc,
                 subject: draft.subject,
-                body: draft.body,
+                body: body,
                 isSending: isSending
             )
         }

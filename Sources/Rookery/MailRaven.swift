@@ -135,6 +135,8 @@ struct MailRavenPanel: View {
 /// finish there. It lives in the page's memory, so it survives leaving the page.
 struct MailReplyEditor: View {
     let fleetModel: FleetModel
+    /// Who wrote the message the reply answers, quoted under its text as it is sent.
+    let quotedSender: String?
     let onSent: () -> Void
 
     @State private var toLine = ""
@@ -187,6 +189,11 @@ struct MailReplyEditor: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(StageColors.separator)
                     }
+                if let quotedSender {
+                    RookeryLabel("\(quotedSender)'s message is quoted under your text when it goes", icon: .bubble, spacing: 5)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(StageColors.tertiaryText)
+                }
                 if let problem {
                     RookeryLabel(problem, icon: .warning)
                         .font(.system(size: 11.5))

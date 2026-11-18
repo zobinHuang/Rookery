@@ -151,7 +151,8 @@ private struct RavenThreadContent: View {
                 memory: fleetModel.pageMemory,
                 hasTranscript: true,
                 sendToken: sendToken,
-                isWorking: raven.isRunning(conversationId)
+                isWorking: raven.isRunning(conversationId),
+                replierName: "Raven"
             ) {}
             status(of: conversationId)
             proposals(in: conversationId)

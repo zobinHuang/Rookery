@@ -25,6 +25,9 @@ struct TranscriptView: View {
     var sendToken = 0
     /// Whether the agent is working on the latest prompt, shown at the end.
     var isWorking = false
+    /// Who answers in this conversation, named over each run of its replies, as Raven among the rooks
+    /// that message it; nil where only the agent answers.
+    var replierName: String?
     /// Read the conversation from its start, when the page began at its last stretch.
     let onLoadEarlier: () -> Void
 
@@ -44,6 +47,7 @@ struct TranscriptView: View {
 
     var body: some View {
         let listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
+        let setRunStartIds = Self.runStartIds(in: listBlocks)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if reader.startOffset > 0 {
@@ -67,7 +71,8 @@ struct TranscriptView: View {
                         }
                         blockView(
                             block,
-                            hasTail: Self.isLastOfRun(block, before: next) && !(next == nil && !listOutgoing.isEmpty && Self.isPrompt(block))
+                            hasTail: Self.isLastOfRun(block, before: next) && !(next == nil && !listOutgoing.isEmpty && Self.isPrompt(block)),
+                            isRunStart: setRunStartIds.contains(block.id)
                         )
                     }
                     .modifier(ArrivalEffect(
@@ -116,23 +121,28 @@ struct TranscriptView: View {
     // MARK: - Blocks
 
     @ViewBuilder
-    private func blockView(_ block: TranscriptBlock, hasTail: Bool) -> some View {
+    private func blockView(_ block: TranscriptBlock, hasTail: Bool, isRunStart: Bool) -> some View {
         switch block {
         case .entry(let entry):
-            entryView(entry, hasTail: hasTail)
+            entryView(entry, hasTail: hasTail, isRunStart: isRunStart)
         case .tools(let listEntries):
             toolRun(listEntries, blockId: block.id)
         }
     }
 
     @ViewBuilder
-    private func entryView(_ entry: TranscriptEntry, hasTail: Bool) -> some View {
+    private func entryView(_ entry: TranscriptEntry, hasTail: Bool, isRunStart: Bool) -> some View {
         switch entry.role {
         case .user:
             prompt(entry, hasTail: hasTail)
         case .assistant:
-            MessageBubble(isTrailing: false, hasTail: hasTail) {
-                MarkdownText(text: entry.text)
+            VStack(alignment: .leading, spacing: 3) {
+                if let replierName, isRunStart {
+                    SpeakerHeading(name: replierName, isRaven: true, detail: nil, timestamp: nil)
+                }
+                MessageBubble(isTrailing: false, hasTail: hasTail) {
+                    MarkdownText(text: entry.text)
+                }
             }
             .help(entry.timestamp.map(Self.time(of:)) ?? "")
         case .command(let command):
@@ -157,24 +167,19 @@ struct TranscriptView: View {
             toolRun([entry], blockId: entry.id)
         case .message(let sender):
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 5) {
-                    RookeryIconView(.bubble)
-                    Text(sender)
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                    if let timestamp = entry.timestamp {
-                        Text(Self.time(of: timestamp))
-                            .font(.system(size: 10))
-                            .foregroundStyle(StageColors.tertiaryText)
-                    }
+                if isRunStart {
+                    SpeakerHeading(
+                        name: sender,
+                        isRaven: false,
+                        detail: "through rook",
+                        timestamp: entry.timestamp.map(Self.time(of:))
+                    )
                 }
-                .foregroundStyle(StageColors.secondaryText)
-                .padding(.leading, 12)
-                MessageBubble(isTrailing: false, hasTail: hasTail) {
+                MessageBubble(isTrailing: false, hasTail: hasTail, tint: SpeakerHeading.rookTint) {
                     MarkdownText(text: entry.text)
                 }
             }
-            .help("Sent through rook")
+            .help("\(sender), through rook")
         }
     }
 
@@ -465,10 +470,37 @@ struct TranscriptView: View {
         return false
     }
 
+    /// The blocks that begin a run from one speaker: a reply after the user or a rook spoke, the agent's
+    /// tools in between not counting, and a rook's message after anyone but the same sender.
+    private static func runStartIds(in listBlocks: [TranscriptBlock]) -> Set<Int> {
+        var setStartIds: Set<Int> = []
+        var lastSpeaker: TranscriptEntry.Role?
+        for block in listBlocks {
+            guard case .entry(let entry) = block else {
+                continue
+            }
+            switch entry.role {
+            case .user, .assistant, .message:
+                if lastSpeaker != entry.role {
+                    setStartIds.insert(block.id)
+                }
+                lastSpeaker = entry.role
+            case .command, .compaction:
+                lastSpeaker = nil
+            case .tool:
+                break
+            }
+        }
+        return setStartIds
+    }
+
     /// Whether a message ends a run of messages from the same side, which draws its bubble's tail.
     private static func isLastOfRun(_ block: TranscriptBlock, before next: TranscriptBlock?) -> Bool {
         guard let next else {
             return true
+        }
+        if case .entry(let entry) = block, case .message = entry.role, case .entry(let nextEntry) = next {
+            return nextEntry.role != entry.role
         }
         return isPrompt(block) ? !isPrompt(next) : !isReply(next)
     }
@@ -715,6 +747,8 @@ struct MessageBubble<Content: View>: View {
     let isTrailing: Bool
     let hasTail: Bool
     var isFailed = false
+    /// A colour the bubble is washed in, telling a speaker apart from the agent, as a rook's message.
+    var tint: Color?
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -729,7 +763,7 @@ struct MessageBubble<Content: View>: View {
                     .fill(fill)
                     .overlay {
                         MessageBubbleShape(isTrailing: isTrailing, hasTail: hasTail)
-                            .stroke(isTrailing ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.agentBubbleBorder), lineWidth: 1)
+                            .stroke(border, lineWidth: 1)
                     }
             }
             .containerRelativeFrame(.horizontal, alignment: isTrailing ? .trailing : .leading) { width, _ in
@@ -746,9 +780,22 @@ struct MessageBubble<Content: View>: View {
             }
     }
 
+    private var border: AnyShapeStyle {
+        if isTrailing {
+            return AnyShapeStyle(Color.clear)
+        }
+        if let tint {
+            return AnyShapeStyle(tint.opacity(0.45))
+        }
+        return AnyShapeStyle(StageColors.agentBubbleBorder)
+    }
+
     private var fill: AnyShapeStyle {
         if isFailed {
             return AnyShapeStyle(Color.red.opacity(0.75))
+        }
+        if let tint, !isTrailing {
+            return AnyShapeStyle(tint.opacity(0.14))
         }
         return isTrailing ? AnyShapeStyle(StageColors.userBubble) : AnyShapeStyle(StageColors.agentBubble)
     }
@@ -820,6 +867,54 @@ struct ArrivalEffect: ViewModifier {
                     isShown = true
                 }
             }
+    }
+}
+
+/// Who speaks a run of left-hand messages in a conversation with several speakers: a still of Raven or of a
+/// rook's crow, the name, and for a rook how its message came and when.
+struct SpeakerHeading: View {
+    /// The wash of a rook's messages and the colour of its name, the crows' gold.
+    static let rookTint = RookmasterStyle.tint(of: AgentFleet.agentKind)
+    private static let avatarSize: CGFloat = 18
+
+    let name: String
+    let isRaven: Bool
+    let detail: String?
+    let timestamp: String?
+
+    var body: some View {
+        HStack(spacing: 5) {
+            avatar
+            Text(name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isRaven ? AnyShapeStyle(StageColors.primaryText) : AnyShapeStyle(Self.rookTint))
+                .lineLimit(1)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(StageColors.secondaryText)
+            }
+            if let timestamp {
+                Text(timestamp)
+                    .font(.system(size: 10))
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+        }
+        .padding(.leading, 8)
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        let animation = isRaven ? RavenArt.animation(isWorking: false) : CrowArt.animation(for: .idle)
+        if let still = animation?.framesForScale(2).first {
+            Image(decorative: still, scale: 2)
+                .interpolation(.none)
+                .resizable()
+                .frame(width: Self.avatarSize, height: Self.avatarSize)
+        } else {
+            RookeryIconView(.agent)
+                .frame(width: Self.avatarSize, height: Self.avatarSize)
+        }
     }
 }
 

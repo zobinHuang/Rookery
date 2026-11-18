@@ -66,7 +66,7 @@ final class LauncherController {
     private static let useBoost = 12
     private static let useBoostLimit = 120
     private static let usesKey = "launcherUses"
-    static let panelSize = CGSize(width: 680, height: 600)
+    static let panelSize = CGSize(width: 820, height: 800)
     /// How far below the top of the screen the launcher's box sits, as a share of the screen's height.
     private static let topShare: CGFloat = 0.2
     /// How long the blur behind the launcher takes to come and go.
@@ -158,7 +158,7 @@ final class LauncherController {
         if let visible = screen?.visibleFrame {
             panel.setFrameOrigin(CGPoint(
                 x: visible.midX - Self.panelSize.width / 2,
-                y: visible.maxY - visible.height * Self.topShare - Self.panelSize.height
+                y: max(visible.minY, visible.maxY - visible.height * Self.topShare - Self.panelSize.height)
             ))
         }
         if let screen {

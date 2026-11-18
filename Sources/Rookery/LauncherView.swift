@@ -9,8 +9,12 @@ import SwiftUI
 struct LauncherView: View {
     private static let appearAnimation = Animation.spring(response: 0.26, dampingFraction: 0.86)
     private static let width: CGFloat = 640
+    /// The launcher's width while it holds a conversation with Raven, as a chat window.
+    private static let conversationWidth: CGFloat = 760
     private static let rowsMaxHeight: CGFloat = 400
-    private static let conversationHeight: CGFloat = 430
+    private static let conversationHeight: CGFloat = 540
+    /// How far above the bottom the suggestions float over a conversation's box.
+    private static let composerMentionInset: CGFloat = 70
     private static let iconSize: CGFloat = 28
     private static let cornerRadius: CGFloat = 20
     private static let fieldHeight: CGFloat = 58
@@ -34,29 +38,19 @@ struct LauncherView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            field
-            if let problem = model.problem {
-                RookeryLabel(problem, icon: .warning)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.orange)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 10)
-                    .transition(.opacity)
-            }
             if let conversationId = model.shownConversationId {
-                separator
-                RavenThreadView(fleetModel: controller.fleetModel, conversationId: conversationId, sendToken: model.sendToken)
-                    .id(conversationId)
-                    .frame(height: Self.conversationHeight)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else if !model.listItems.isEmpty {
-                separator
-                rows
-                    .transition(.opacity)
+                conversation(conversationId)
+            } else {
+                field
+                problemLabel
+                if !model.listItems.isEmpty {
+                    separator
+                    rows
+                        .transition(.opacity)
+                }
             }
         }
-        .frame(width: Self.width)
+        .frame(width: model.shownConversationId == nil ? Self.width : Self.conversationWidth)
         .background(StageColors.window, in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay {
@@ -64,12 +58,19 @@ struct LauncherView: View {
                 .strokeBorder(StageColors.segmentGrooveBorder)
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
-        .overlay(alignment: .topLeading) {
+        .overlay(alignment: model.shownConversationId == nil ? .topLeading : .bottomLeading) {
             if !model.listMentionTargets.isEmpty {
-                mentionList
-                    .padding(.leading, Self.mentionInset)
-                    .padding(.top, Self.fieldHeight - 4)
-                    .transition(.opacity.combined(with: .offset(y: -4)))
+                if model.shownConversationId == nil {
+                    mentionList
+                        .padding(.leading, Self.mentionInset)
+                        .padding(.top, Self.fieldHeight - 4)
+                        .transition(.opacity.combined(with: .offset(y: -4)))
+                } else {
+                    mentionList
+                        .padding(.leading, 20)
+                        .padding(.bottom, Self.composerMentionInset)
+                        .transition(.opacity.combined(with: .offset(y: 4)))
+                }
             }
         }
         .animation(.easeOut(duration: 0.15), value: model.listMentionTargets.map(\.id))
@@ -88,11 +89,80 @@ struct LauncherView: View {
                 isFieldFocused = true
             }
         }
+        .onChange(of: model.shownConversationId) {
+            isFieldFocused = true
+        }
         .onChange(of: model.query) {
             controller.updateMentions()
             if model.shownConversationId == nil {
                 controller.search()
             }
+        }
+    }
+
+    // MARK: - A conversation with Raven
+
+    /// A conversation as a chat window: Raven and the conversation's actions on top, what was said in the
+    /// middle, and the box to write in at the bottom.
+    private func conversation(_ conversationId: String) -> some View {
+        let raven = controller.fleetModel.raven
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                RavenView(isWorking: raven.isRunning(conversationId))
+                Text("Raven")
+                    .font(.system(size: 14, weight: .bold))
+                Spacer(minLength: 0)
+                Button("New") {
+                    controller.startNewConversation()
+                }
+                .controlSize(.small)
+                .help("Begin a new conversation with Raven")
+                Button {
+                    controller.openInRookmaster()
+                } label: {
+                    RookeryIconView(.expand)
+                }
+                .controlSize(.small)
+                .help("Open this conversation in Rookmaster")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            separator
+            RavenThreadView(fleetModel: controller.fleetModel, conversationId: conversationId, sendToken: model.sendToken)
+                .id(conversationId)
+                .frame(height: Self.conversationHeight)
+                .transition(.opacity)
+            problemLabel
+                .padding(.top, model.problem == nil ? 0 : 8)
+            AgentComposer(
+                text: Bindable(model).query,
+                placeholder: "Ask a follow-up…",
+                isBusy: raven.isRunning(conversationId),
+                fontSize: 13,
+                onStop: {
+                    raven.cancel(conversationId)
+                },
+                onSend: {
+                    controller.choose()
+                },
+                onKey: take,
+                isFocused: $isFieldFocused
+            )
+            .padding(12)
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+    }
+
+    @ViewBuilder
+    private var problemLabel: some View {
+        if let problem = model.problem {
+            RookeryLabel(problem, icon: .warning)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 10)
+                .transition(.opacity)
         }
     }
 
@@ -125,30 +195,14 @@ struct LauncherView: View {
                 .lineLimit(1...6)
                 .focused($isFieldFocused)
                 .onKeyPress(phases: .down, action: take)
-            if model.shownConversationId != nil {
-                Button("New") {
-                    controller.startNewConversation()
-                }
-                .controlSize(.small)
-                .help("Begin a new conversation with Raven")
-                Button {
-                    controller.openInRookmaster()
-                } label: {
-                    RookeryIconView(.expand)
-                }
-                .controlSize(.small)
-                .help("Open this conversation in Rookmaster")
-            }
         }
         .padding(.horizontal, 18)
-        .frame(height: Self.fieldHeight)
+        .padding(.vertical, 14)
+        .frame(minHeight: Self.fieldHeight)
         .animation(Self.appearAnimation, value: model.targetConversationId)
     }
 
     private var placeholder: String {
-        if model.shownConversationId != nil {
-            return "Ask a follow-up…"
-        }
         if model.targetConversationId != nil {
             return "Ask in this conversation…"
         }

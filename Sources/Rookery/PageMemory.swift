@@ -27,6 +27,9 @@ final class PageMemory {
     var boardSelectedRef: FleetRef?
     /// The agent whose subagents the board lays out in a column beside the agents, if any.
     var boardSubagentsOf: String?
+    /// The repositories whose skills the board lays out one by one, by repository address; the others
+    /// fold their skills into one card.
+    var setBoardOpenRepos: Set<String> = []
     /// The folded runs of tool calls the user opened in each agent's conversation, by agent.
     var mapOpenTranscriptBlocks: [String: Set<Int>] = [:]
     /// Each kind list's search, by kind.

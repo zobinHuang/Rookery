@@ -66,13 +66,19 @@ struct BoardEdge: Identifiable, Equatable {
 }
 
 /// The Rookmaster board: one column per kind, teams leftmost with a line to each of their agents beside
-/// them, each other column's cards ordered by when they were last used, so whatever moved last rises;
+/// them, then the playbooks they follow and the skills those use, each other column's cards ordered by when they were last used, so whatever moved last rises;
 /// edges draw what acted on what. A subagent folds into its
 /// session's card. Locking freezes the order; the filters narrow it down; hovering or selecting a card
 /// brings forward it, its neighbours and the edges between them.
 struct RookmasterBoard: View {
     /// The verb of the line from a team to each of its agents.
     private static let memberVerb = "member"
+    /// The kind of the card a repository's skills fold into.
+    private static let repoKind = "skill-repo"
+    private static let skillKind = "skill"
+    /// The fewest skills of one repository that fold into a card of their own.
+    private static let repoFoldCount = 2
+    private static let repoRailInset: CGFloat = 14
     private static let cardWidth: CGFloat = 210
     private static let columnSpacing: CGFloat = 60
     private static let columnLimit = 150
@@ -98,10 +104,15 @@ struct RookmasterBoard: View {
         fleetModel.graph
     }
 
-    /// The kinds shown, teams first, beside the agents they hold.
+    /// The kinds that lead the board, in the order the work flows: teams, the agents they hold, the
+    /// playbooks the agents follow and the skills the playbooks use.
+    private static let listLeadingKinds = [AgentFleet.teamKind, AgentFleet.agentKind, "playbook", skillKind]
+
+    /// The kinds shown, those leading the board first, then the others in roost's order.
     private var listShownKinds: [FleetKind] {
         let listShown = listKinds.filter { !memory.setBoardHiddenKinds.contains($0.name) }
-        return listShown.filter { $0.name == AgentFleet.teamKind } + listShown.filter { $0.name != AgentFleet.teamKind }
+        let listLeading = Self.listLeadingKinds.compactMap { name in listShown.first { $0.name == name } }
+        return listLeading + listShown.filter { !Self.listLeadingKinds.contains($0.name) }
     }
 
     var body: some View {
@@ -367,12 +378,150 @@ struct RookmasterBoard: View {
                     .frame(width: Self.cardWidth, alignment: .leading)
                     .padding(.leading, 4)
             }
-            ForEach(listResources, id: \.id) { resource in
+            if kind.name == Self.skillKind {
+                skillRows(listResources, setFocus: setFocus, now: now)
+            } else {
+                ForEach(listResources, id: \.id) { resource in
+                    card(resource, setFocus: setFocus, now: now)
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                }
+            }
+        }
+        .frame(width: Self.cardWidth, alignment: .topLeading)
+    }
+
+    /// The skills column: a repository holding several of them as one card, its skills under it on a rail
+    /// once opened, and the others one by one, in the order the first of each was last used.
+    @ViewBuilder
+    private func skillRows(_ listSkills: [FleetResource], setFocus: Set<FleetRef>?, now: Date) -> some View {
+        let mapGroups = repoGroups(of: listSkills)
+        ForEach(skillRowIds(listSkills, groups: mapGroups), id: \.self) { rowId in
+            if let listMembers = mapGroups[rowId] {
+                VStack(alignment: .leading, spacing: 8) {
+                    repoCard(rowId, listMembers: listMembers, setFocus: setFocus, now: now)
+                    if memory.setBoardOpenRepos.contains(rowId) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(listMembers, id: \.id) { resource in
+                                card(resource, setFocus: setFocus, now: now, width: Self.cardWidth - Self.repoRailInset)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                        }
+                        .padding(.leading, Self.repoRailInset)
+                        .overlay(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(RookmasterStyle.tint(of: Self.skillKind).opacity(0.35))
+                                .frame(width: 2)
+                                .padding(.leading, 5)
+                                .padding(.vertical, 4)
+                        }
+                    }
+                }
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+            } else if let resource = listSkills.first(where: { $0.id == rowId }) {
                 card(resource, setFocus: setFocus, now: now)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
             }
         }
-        .frame(width: Self.cardWidth, alignment: .topLeading)
+    }
+
+    /// A repository's card: its name, how many skills it holds and when one was last used; clicking opens
+    /// or folds its skills. Folded, it stands for each of them, so lines to them come to it.
+    private func repoCard(_ repoUrl: String, listMembers: [FleetResource], setFocus: Set<FleetRef>?, now: Date) -> some View {
+        let ref = FleetRef(kind: Self.repoKind, id: repoUrl)
+        let isOpen = memory.setBoardOpenRepos.contains(repoUrl)
+        let isDimmed = setFocus.map { !$0.contains(ref) } ?? false
+        let lastUsedAt = listMembers.map(\.lastUsedAt).max() ?? ""
+        return HStack(spacing: 8) {
+            RookeryIconView(.folder)
+                .foregroundStyle(RookmasterStyle.tint(of: Self.skillKind))
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 1) {
+                FittingText(Self.repoTitle(of: repoUrl), size: 12, weight: .semibold)
+                Text("\(listMembers.count) skills")
+                    .font(.system(size: 10))
+                    .foregroundStyle(StageColors.secondaryText)
+            }
+            Spacer(minLength: 0)
+            Text(RookmasterStyle.age(of: lastUsedAt, now: now))
+                .font(.system(size: 10).monospacedDigit())
+                .foregroundStyle(StageColors.tertiaryText)
+            RookeryIconView(.chevronRight)
+                .foregroundStyle(StageColors.tertiaryText)
+                .rotationEffect(.degrees(isOpen ? 90 : 0))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(width: Self.cardWidth)
+        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(StageColors.separator, lineWidth: 1)
+        }
+        .opacity(isDimmed ? 0.32 : 1)
+        .scaleEffect(hoveredRef == ref ? 1.02 : 1)
+        .anchorPreference(key: CardAnchorsKey.self, value: .bounds) { anchor in
+            var mapAnchors = [ref: anchor]
+            if !isOpen {
+                for resource in listMembers {
+                    mapAnchors[FleetRef(kind: resource.kind, id: resource.id)] = anchor
+                }
+            }
+            return mapAnchors
+        }
+        .contentShape(Rectangle())
+        .onHover { isInside in
+            withAnimation(.easeOut(duration: 0.15)) {
+                if isInside {
+                    hoveredRef = ref
+                } else if hoveredRef == ref {
+                    hoveredRef = nil
+                }
+            }
+        }
+        .onTapGesture {
+            withAnimation(Self.reorderAnimation) {
+                if isOpen {
+                    memory.setBoardOpenRepos.remove(repoUrl)
+                } else {
+                    memory.setBoardOpenRepos.insert(repoUrl)
+                }
+            }
+        }
+        .help("\(repoUrl)\nClick to \(isOpen ? "fold its skills into this card" : "show its skills one by one")")
+    }
+
+    /// The skills of each repository holding enough of them to fold, by the repository's address.
+    private func repoGroups(of listSkills: [FleetResource]) -> [String: [FleetResource]] {
+        Dictionary(grouping: listSkills.filter { Self.repoUrl(of: $0) != nil }) { Self.repoUrl(of: $0) ?? "" }
+            .filter { $0.value.count >= Self.repoFoldCount }
+    }
+
+    /// The rows of the skills column, each a repository's address or a skill's id, where the first of
+    /// them stands.
+    private func skillRowIds(_ listSkills: [FleetResource], groups mapGroups: [String: [FleetResource]]) -> [String] {
+        var listRowIds: [String] = []
+        var setSeen: Set<String> = []
+        for resource in listSkills {
+            let rowId = Self.repoUrl(of: resource).flatMap { mapGroups[$0] == nil ? nil : $0 } ?? resource.id
+            if setSeen.insert(rowId).inserted {
+                listRowIds.append(rowId)
+            }
+        }
+        return listRowIds
+    }
+
+    private static func repoUrl(of resource: FleetResource) -> String? {
+        guard let repoUrl = resource.mapAttributes["repo_url"]?.stringValue, !repoUrl.isEmpty else {
+            return nil
+        }
+        return repoUrl
+    }
+
+    /// A repository as `owner/repo`, its host and scheme left off.
+    private static func repoTitle(of repoUrl: String) -> String {
+        let path = URL(string: repoUrl)?.path ?? repoUrl
+        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).replacingOccurrences(of: ".git", with: "")
+        return trimmed.isEmpty ? repoUrl : trimmed
     }
 
     /// A column's count: those shown, and of how many when the filters leave some agents out.
@@ -451,7 +600,7 @@ struct RookmasterBoard: View {
         .help(isOpen ? "Fold the subagents away" : "Show the subagents beside the agents")
     }
 
-    private func card(_ resource: FleetResource, setFocus: Set<FleetRef>?, now: Date) -> some View {
+    private func card(_ resource: FleetResource, setFocus: Set<FleetRef>?, now: Date, width: CGFloat = cardWidth) -> some View {
         let ref = FleetRef(kind: resource.kind, id: resource.id)
         let isSelected = memory.boardSelectedRef == ref
         let isDimmed = setFocus.map { !$0.contains(ref) } ?? false
@@ -485,7 +634,7 @@ struct RookmasterBoard: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .frame(width: Self.cardWidth)
+        .frame(width: width)
         .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -697,13 +846,22 @@ struct RookmasterBoard: View {
         }.map(\.element)
     }
 
-    /// The edges between shown cards, a subagent's drawn from its session.
+    /// The edges between shown cards, a subagent's drawn from its session and a folded repository's
+    /// skills' from its card.
     private func edges(among mapColumns: [String: [FleetResource]]) -> [BoardEdge] {
-        let setShown = Set(mapColumns.values.flatMap { $0.map { FleetRef(kind: $0.kind, id: $0.id) } })
+        var setShown = Set(mapColumns.values.flatMap { $0.map { FleetRef(kind: $0.kind, id: $0.id) } })
+        var mapFolded: [FleetRef: FleetRef] = [:]
+        for (repoUrl, listMembers) in repoGroups(of: mapColumns[Self.skillKind] ?? []) where !memory.setBoardOpenRepos.contains(repoUrl) {
+            let repoRef = FleetRef(kind: Self.repoKind, id: repoUrl)
+            setShown.insert(repoRef)
+            for resource in listMembers {
+                mapFolded[FleetRef(kind: resource.kind, id: resource.id)] = repoRef
+            }
+        }
         var mapEdges: [String: BoardEdge] = [:]
         for relation in graph.mapRelations.values {
-            let source = shownRef(of: relation.source, among: setShown)
-            let target = shownRef(of: relation.target, among: setShown)
+            let source = mapFolded[relation.source] ?? shownRef(of: relation.source, among: setShown)
+            let target = mapFolded[relation.target] ?? shownRef(of: relation.target, among: setShown)
             guard source != target, setShown.contains(source), setShown.contains(target) else {
                 continue
             }

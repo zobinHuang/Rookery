@@ -99,6 +99,7 @@ struct TranscriptView: View {
                         ))
                 }
             }
+            .scrollTargetLayout()
             .animation(.spring(response: 0.38, dampingFraction: 0.78), value: listOutgoing)
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isWorking)
             .padding(.horizontal, 24)

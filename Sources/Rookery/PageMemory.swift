@@ -37,6 +37,9 @@ final class PageMemory {
     /// How far each scroll area was scrolled, by the area's key: from the top, or for an area that
     /// follows its end, how far above its bottom.
     @ObservationIgnored var mapScrollOffsets: [String: CGPoint] = [:]
+    /// The row at the top of each area that follows its end, by the area's key, while the user has
+    /// scrolled it away from the end; rows of a lazy stack it has not laid out have no height to count by.
+    @ObservationIgnored var mapScrollAnchors: [String: Int] = [:]
     /// What is typed to Raven in the Rookmaster console and not yet sent.
     var ravenDraft = ""
     /// The section of the settings shown.
@@ -165,14 +168,20 @@ private struct RememberedScrollPosition: ViewModifier {
                     restoreIfReady()
                     return
                 }
+                guard followsEnd else {
+                    memory.mapScrollOffsets[key] = geometry.contentOffset
+                    return
+                }
+                guard isUserScrolling else {
+                    return
+                }
                 let fromBottom = geometry.contentSize.height - geometry.containerSize.height - geometry.contentOffset.y
                 let isNowAtEnd = fromBottom < Self.bottomSlack
-                if isUserScrolling, isAtEnd != isNowAtEnd {
+                if isAtEnd != isNowAtEnd {
                     isAtEnd = isNowAtEnd
                 }
-                memory.mapScrollOffsets[key] = followsEnd
-                    ? CGPoint(x: 0, y: max(0, fromBottom))
-                    : geometry.contentOffset
+                memory.mapScrollOffsets[key] = CGPoint(x: 0, y: isNowAtEnd ? 0 : max(0, fromBottom))
+                memory.mapScrollAnchors[key] = isNowAtEnd ? nil : position.viewID(type: Int.self)
             }
             .onScrollPhaseChange { _, phase in
                 let isByUser = phase == .tracking || phase == .interacting || phase == .decelerating
@@ -188,6 +197,12 @@ private struct RememberedScrollPosition: ViewModifier {
             }
             .onChange(of: jumpToken) {
                 jumpToEnd()
+            }
+            .onChange(of: isAtEnd) { _, isNowAtEnd in
+                if isNowAtEnd, followsEnd {
+                    memory.mapScrollOffsets[key] = .zero
+                    memory.mapScrollAnchors[key] = nil
+                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if followsEnd, isRestored, !isAtEnd {
@@ -292,7 +307,11 @@ private struct RememberedScrollPosition: ViewModifier {
                 settleAtEnd()
                 return
             }
-            position.scrollTo(y: max(0, geometry.contentSize.height - geometry.containerSize.height - saved.y))
+            if let anchor = memory.mapScrollAnchors[key] {
+                position.scrollTo(id: anchor, anchor: .top)
+            } else {
+                position.scrollTo(y: max(0, geometry.contentSize.height - geometry.containerSize.height - saved.y))
+            }
         } else {
             position.scrollTo(point: saved)
         }

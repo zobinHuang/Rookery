@@ -142,6 +142,22 @@ public enum MailDrafts {
         _ = try MailScripting.run(source)
     }
 
+    /// Move drafts out of Mail's drafts mailbox into the trash.
+    ///
+    /// - Parameter listMessageIds: the drafts' `Message-ID`s
+    /// - Throws: `MailScriptingError`
+    public static func trash(_ listMessageIds: [String]) throws {
+        guard !listMessageIds.isEmpty else {
+            return
+        }
+        let listDeletes = listMessageIds.map { "delete (every message of drafts mailbox whose message id is \(quoted($0)))" }
+        _ = try MailScripting.run("""
+            tell application "Mail"
+                \(listDeletes.joined(separator: "\n        "))
+            end tell
+            """)
+    }
+
     /// A string as an AppleScript literal.
     static func quoted(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""

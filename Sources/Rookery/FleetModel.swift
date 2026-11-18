@@ -45,7 +45,7 @@ final class FleetModel {
     /// The hosts this Mac reaches over ssh, their workdirs, and the agents launched on them.
     @ObservationIgnored private(set) lazy var hosts = HostsModel(fleetModel: self)
     /// The Mac's mail and calendars, as Raven's tools reach them.
-    @ObservationIgnored let mailService = MailService()
+    @ObservationIgnored lazy var mailService = MailService(drafts: mailDrafts)
     /// Where the stage's calendar and mail come from: the Mac's own, or sample data set before the stage is
     /// first drawn offscreen.
     @ObservationIgnored lazy var mailSource: any MailSource = mailService

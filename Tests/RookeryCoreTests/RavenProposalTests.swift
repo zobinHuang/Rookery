@@ -108,3 +108,15 @@ struct CodexEventsTests {
         #expect(!reader.listEntries.isEmpty)
     }
 }
+
+struct DraftRemovalProposalTests {
+    @Test func aDraftRemovalIsAProposalOnMailThatNamesBothKindsOfDraft() throws {
+        #expect(MailTool.proposeDraftRemoval.isProposal)
+        #expect(!MailTool.listDrafts.isProposal)
+        let line = #"{"proposal":{"id":"p-1","action":"remove_drafts","agent_title":"2 drafts","payload":{"draft_ids":["d1"],"mail_ids":[42],"drafts":"A; B"}}}"#
+        let proposal = try #require(try JSONDecoder().decode([String: RavenProposal].self, from: Data(line.utf8))["proposal"])
+        #expect(proposal.action == .removeDrafts)
+        #expect(proposal.action.isOnMailOrCalendar)
+        #expect(proposal.mapPayload["mail_ids"]?.arrayValue?.first?.numberValue == 42)
+    }
+}

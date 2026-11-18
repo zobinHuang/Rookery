@@ -31,11 +31,13 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         case removeEvent = "remove_event"
         /// Open the event `payload` names in Calendar.
         case openEvent = "open_event"
+        /// Throw away the drafts `payload` names: Rookery's by id, Mail's by message id.
+        case removeDrafts = "remove_drafts"
 
         /// Whether the action is on the user's mail or calendars, which Rookery carries out itself.
         public var isOnMailOrCalendar: Bool {
             switch self {
-            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent: true
+            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts: true
             default: false
             }
         }

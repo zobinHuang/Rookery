@@ -52,6 +52,13 @@ final class MailDraftStore {
         saveSoon()
     }
 
+    func remove(_ listDraftIds: [String]) {
+        for draftId in listDraftIds {
+            box.remove(draftId)
+        }
+        saveSoon()
+    }
+
     private func saveSoon() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in

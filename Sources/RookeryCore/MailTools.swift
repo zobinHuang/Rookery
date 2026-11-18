@@ -14,6 +14,8 @@ public enum MailTool: String, CaseIterable, Sendable {
     case proposeEventChange = "propose_event_change"
     case proposeEventRemoval = "propose_event_removal"
     case proposeOpenEvent = "propose_open_event"
+    case listDrafts = "list_drafts"
+    case proposeDraftRemoval = "propose_draft_removal"
 
     /// Whether the tool only proposes, its result a proposal for the user.
     public var isProposal: Bool {
@@ -42,6 +44,10 @@ public enum MailTool: String, CaseIterable, Sendable {
             "Propose removing an event, this occurrence only for a recurring event, for the user to approve."
         case .proposeOpenEvent:
             "Propose opening an event in Calendar, where the user answers an invitation; invitations cannot be answered otherwise."
+        case .listDrafts:
+            "List the drafts in Rookery's drafts, where propose_draft puts them, newest first: each id, account, recipients, subject, the message it replies to and its opening. Mail's own drafts are found with search_mail, folder drafts."
+        case .proposeDraftRemoval:
+            "Propose throwing drafts away, for the user to approve: Rookery's drafts by their ids from list_drafts, and Mail's drafts by their message ids from search_mail in the drafts folder, which go to the trash."
         }
     }
 
@@ -107,6 +113,17 @@ public enum MailTool: String, CaseIterable, Sendable {
             ], required: ["event_id"])
         case .proposeEventRemoval, .proposeOpenEvent:
             Self.schema(["event_id": Self.text("The event's id, from list_events")], required: ["event_id"])
+        case .listDrafts:
+            Self.schema([:], required: [])
+        case .proposeDraftRemoval:
+            Self.schema([
+                "draft_ids": Self.list("Ids of Rookery's drafts, from list_drafts"),
+                "mail_ids": .object([
+                    "type": .string("array"),
+                    "items": .object(["type": .string("integer")]),
+                    "description": .string("Ids of messages in Mail's drafts folder, from search_mail"),
+                ]),
+            ], required: [])
         }
     }
 

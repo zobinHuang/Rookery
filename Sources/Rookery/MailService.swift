@@ -26,11 +26,21 @@ actor MailService: MailSource {
     private static let accountsLifetime: TimeInterval = 300
     private static let maximumEventSpan: TimeInterval = 4 * 366 * 24 * 3600
     private static let proposalIdBytes = 6
+    /// How much of a draft's text `list_drafts` shows.
+    private static let draftOpeningLength = 200
+    /// How many subjects a removal's card names before counting the rest.
+    private static let removalSubjectsShown = 6
     static let mailBundleId = "com.apple.mail"
     private static let proposalNote = "Proposed. The user decides in Raven; nothing was done. Do not do it another way."
 
     private var library: MailLibrary?
     private let calendars = CalendarLibrary()
+    /// Rookery's drafts, which Raven lists and may propose throwing away.
+    private let drafts: MailDraftStore
+
+    init(drafts: MailDraftStore) {
+        self.drafts = drafts
+    }
     private var listAccounts: [MailScriptAccount] = []
     private var accountsReadAt: Date?
     /// Reading the accounts again once they are old, while the old ones still serve.
@@ -68,7 +78,24 @@ actor MailService: MailSource {
             return try Self.json(library.thread(message.summary.conversationId, accounts: mapAccounts))
         case .listEvents:
             return try await Self.json(events(mapArguments))
-        case .proposeDraft, .proposeEvent, .proposeEventChange, .proposeEventRemoval, .proposeOpenEvent:
+        case .listDrafts:
+            let listDrafts = await drafts.listDrafts
+            return try Self.json(listDrafts.map { draft -> JSONValue in
+                var mapDraft: [String: JSONValue] = [
+                    "id": .string(draft.id),
+                    "account": .string(draft.account),
+                    "to": .array(draft.listTo.map(JSONValue.string)),
+                    "cc": .array(draft.listCc.map(JSONValue.string)),
+                    "subject": .string(draft.subject),
+                    "created": .string(draft.createdAt.formatted(.iso8601)),
+                    "opening": .string(String(draft.body.prefix(Self.draftOpeningLength))),
+                ]
+                if let replyToMessageId = draft.replyToMessageId {
+                    mapDraft["reply_to"] = .number(Double(replyToMessageId))
+                }
+                return .object(mapDraft)
+            })
+        case .proposeDraft, .proposeEvent, .proposeEventChange, .proposeEventRemoval, .proposeOpenEvent, .proposeDraftRemoval:
             return try await propose(tool, mapArguments)
         }
     }
@@ -152,6 +179,9 @@ actor MailService: MailSource {
             mapPayload["calendar"] = .string("\(event.calendar) (\(event.account))")
             mapPayload["was"] = .string("\(event.title), \(Self.formatter().string(from: event.startsAt))")
             title = event.title
+        case .proposeDraftRemoval:
+            action = .removeDrafts
+            title = try await checkDraftRemoval(&mapPayload)
         default:
             throw MailToolError.badArgument("\(tool.rawValue) is not a proposal")
         }
@@ -192,6 +222,37 @@ actor MailService: MailSource {
             throw MailToolError.badArgument("a new message needs a recipient")
         }
         return mapPayload["subject"]?.stringValue ?? "a message from \(account)"
+    }
+
+    /// Check that every draft named is one, and list their subjects for the proposal's card.
+    ///
+    /// - Returns: what the proposal's card calls them
+    private func checkDraftRemoval(_ mapPayload: inout [String: JSONValue]) async throws -> String {
+        let listDraftIds = Self.strings(mapPayload, "draft_ids")
+        let listMailIds = mapPayload["mail_ids"]?.arrayValue?.compactMap(\.numberValue).map { Int($0) } ?? []
+        guard !listDraftIds.isEmpty || !listMailIds.isEmpty else {
+            throw MailToolError.badArgument("name at least one draft")
+        }
+        let listKept = await drafts.listDrafts
+        var listSubjects: [String] = []
+        for draftId in listDraftIds {
+            guard let draft = listKept.first(where: { $0.id == draftId }) else {
+                throw MailToolError.badArgument("no draft \(draftId) in Rookery's drafts")
+            }
+            listSubjects.append(draft.subject.isEmpty ? "No subject" : draft.subject)
+        }
+        let mapAccounts = try await allowedAccountAddresses()
+        for mailId in listMailIds {
+            guard let message = try openLibrary().message(mailId, accounts: mapAccounts), message.summary.folder == .drafts else {
+                throw MailToolError.badArgument("no message \(mailId) in Mail's drafts")
+            }
+            listSubjects.append(message.summary.subject.isEmpty ? "No subject" : message.summary.subject)
+        }
+        let listShown = listSubjects.prefix(Self.removalSubjectsShown)
+        let rest = listSubjects.count - listShown.count
+        mapPayload["drafts"] = .string(listShown.joined(separator: "; ") + (rest > 0 ? "; and \(rest) more" : ""))
+        let count = listSubjects.count
+        return count == 1 ? "1 draft" : "\(count) drafts"
     }
 
     private func event(withId eventId: String) async throws -> CalendarEventSummary {
@@ -239,6 +300,21 @@ actor MailService: MailSource {
         case .removeEvent:
             try calendars.removeEvent(try Self.string(mapPayload, "event_id"))
             return "Removed the event"
+        case .removeDrafts:
+            let listDraftIds = Self.strings(mapPayload, "draft_ids")
+            let listMailIds = mapPayload["mail_ids"]?.arrayValue?.compactMap(\.numberValue).map { Int($0) } ?? []
+            var listHeaders: [String] = []
+            for mailId in listMailIds {
+                if let header = try await message(mailId)?.messageIdHeader, !header.isEmpty {
+                    listHeaders.append(header)
+                }
+            }
+            try await MainActor.run {
+                try MailDrafts.trash(listHeaders)
+            }
+            await drafts.remove(listDraftIds)
+            let count = listDraftIds.count + listHeaders.count
+            return count == 1 ? "Threw away 1 draft" : "Threw away \(count) drafts"
         case .openEvent:
             let eventId = try Self.string(mapPayload, "event_id")
             guard let url = URL(string: "ical://ekevent/\(eventId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventId)?method=show&options=more") else {

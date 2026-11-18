@@ -470,7 +470,7 @@ final class RavenAgent {
                     role: proposal.role,
                     listTeams: proposal.listTeams
                 ))
-            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent:
+            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
                 return
             case .join, .leave, .createTeam:
                 try await changeTeam(proposal, with: client)
@@ -500,7 +500,7 @@ final class RavenAgent {
                 mapBody["attributes"] = .object(["goal": .string(proposal.goal)])
             }
             _ = try await fleetModel.create(AgentFleet.teamKind, body: mapBody)
-        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent:
+        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
             return
         }
     }

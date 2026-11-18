@@ -354,7 +354,7 @@ private struct RavenThreadContent: View {
             listFacts.append("goal: \(proposal.goal)")
         }
         let mapPayload = proposal.mapPayload
-        for (key, label) in [("replying_to", "replying to"), ("was", "was"), ("subject", "subject"), ("start", "from"), ("end", "until"), ("location", "at")] {
+        for (key, label) in [("drafts", "drafts"), ("replying_to", "replying to"), ("was", "was"), ("subject", "subject"), ("start", "from"), ("end", "until"), ("location", "at")] {
             if let value = mapPayload[key]?.stringValue, !value.isEmpty {
                 listFacts.append("\(label): \(value)")
             }
@@ -382,6 +382,7 @@ private struct RavenThreadContent: View {
         case .draftMail: .send
         case .addEvent, .changeEvent, .openEvent: .clock
         case .removeEvent: .minus
+        case .removeDrafts: .draft
         }
     }
 
@@ -403,6 +404,7 @@ private struct RavenThreadContent: View {
         case .changeEvent: "Raven would change"
         case .removeEvent: "Raven would remove"
         case .openEvent: "Raven would open in Calendar"
+        case .removeDrafts: "Raven would throw away"
         }
     }
 
@@ -421,6 +423,7 @@ private struct RavenThreadContent: View {
         case .changeEvent: "Change Event"
         case .removeEvent: "Remove Event"
         case .openEvent: "Open"
+        case .removeDrafts: "Throw Away"
         }
     }
 
@@ -437,7 +440,7 @@ private struct RavenThreadContent: View {
         case .join: "Put \(proposal.agentTitle) in \(proposal.teamTitle ?? proposal.team ?? "")"
         case .leave: "Took \(proposal.agentTitle) out of \(proposal.teamTitle ?? proposal.team ?? "")"
         case .createTeam: "Made the team \(proposal.agentTitle)"
-        case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent:
+        case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
             "\(proposal.agentTitle)"
         }
     }

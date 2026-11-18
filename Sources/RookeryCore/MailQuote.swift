@@ -1,16 +1,5 @@
 import Foundation
 
-/// One line of the header a reply puts over the message it answers: its name, as `From`, and its value.
-public struct MailHeaderLine: Equatable, Sendable {
-    public let label: String
-    public let value: String
-
-    public init(label: String, value: String) {
-        self.label = label
-        self.value = value
-    }
-}
-
 /// A run of a plain-text message's lines at one depth of quoting: its own words at depth 0, the mail it
 /// quotes at 1, what that one quoted at 2, its `>` marks taken off.
 public struct QuotedPassage: Equatable, Sendable {
@@ -53,7 +42,24 @@ public enum MailQuote {
     ///   - timeZone: the zone its time is written in
     /// - Returns: the text to send
     public static func reply(to original: MailMessageDetail, body: String, timeZone: TimeZone = .current) -> String {
-        let listHeader = headerLines(of: original, timeZone: timeZone).map { "\($0.label): \($0.value)" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_GB")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "EEEE, d MMMM yyyy h:mm a"
+        let person: (MailAddress) -> String = { address in
+            address.name.isEmpty ? address.address : "\(address.name) <\(address.address)>"
+        }
+        var listHeader = [
+            "From: \(person(original.summary.from))",
+            "Sent: \(formatter.string(from: original.summary.sentAt))",
+        ]
+        if !original.listTo.isEmpty {
+            listHeader.append("To: \(original.listTo.map(person).joined(separator: "; "))")
+        }
+        if !original.listCc.isEmpty {
+            listHeader.append("Cc: \(original.listCc.map(person).joined(separator: "; "))")
+        }
+        listHeader.append("Subject: \(original.summary.subject)")
         var listLines: [String] = []
         for line in original.text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines) {
             let trimmed = line.replacing(/[ \t\u{00A0}]+$/, with: "")
@@ -64,80 +70,6 @@ public enum MailQuote {
         }
         let own = body.trimmingCharacters(in: .whitespacesAndNewlines)
         return "\(own)\n\n\(listHeader.joined(separator: "\n"))\n\n\(listLines.joined(separator: "\n"))\n"
-    }
-
-    /// A reply as it is sent in formatted mail, as Outlook writes one: the reply's own text, then under a
-    /// thin rule a header of who sent the message it answers, when, to whom and under what subject, its
-    /// names in bold, then that message as it was formatted, or its text when it had no HTML.
-    ///
-    /// - Parameters:
-    ///   - original: the message answered
-    ///   - body: what the reply says, as plain text
-    ///   - timeZone: the zone its time is written in
-    /// - Returns: the HTML to send
-    public static func replyHTML(to original: MailMessageDetail, body: String, timeZone: TimeZone = .current) -> String {
-        let header = headerLines(of: original, timeZone: timeZone)
-            .map { "<b>\(escapedHTML($0.label)):</b> \(escapedHTML($0.value))" }
-            .joined(separator: "<br>")
-        var quoted = escapedHTML(original.text.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "\n", with: "<br>")
-        if let open = original.html.range(of: "<body", options: .caseInsensitive),
-           let openEnd = original.html.range(of: ">", range: open.upperBound..<original.html.endIndex),
-           let close = original.html.range(of: "</body>", options: [.caseInsensitive, .backwards]),
-           openEnd.upperBound <= close.lowerBound
-        {
-            quoted = String(original.html[openEnd.upperBound..<close.lowerBound])
-        } else if !original.html.isEmpty {
-            quoted = original.html
-        }
-        quoted = quoted.replacing(/(?is)<script\b.*?<\/script>/, with: "")
-        return """
-            \(bodyHTML(body))
-            <div><br></div>
-            <div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0in 0in 0in">
-            <p style="margin:0; font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 13px;">\(header)</p>
-            </div>
-            <div><br></div>
-            <div>\(quoted)</div>
-            """
-    }
-
-    /// What the user wrote, as the formatted mail it opens: its lines kept, in the system's type.
-    ///
-    /// - Parameter body: the text as written
-    /// - Returns: the HTML of it
-    public static func bodyHTML(_ body: String) -> String {
-        let own = escapedHTML(body.trimmingCharacters(in: .whitespacesAndNewlines)).replacingOccurrences(of: "\n", with: "<br>")
-        return "<div style=\"font-family: -apple-system, Helvetica, Arial, sans-serif; font-size: 14px;\">\(own)</div>"
-    }
-
-    /// The header a reply puts over the message it answers, as Outlook names its parts.
-    private static func headerLines(of original: MailMessageDetail, timeZone: TimeZone) -> [MailHeaderLine] {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_GB")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "EEEE, d MMMM yyyy h:mm a"
-        let person: (MailAddress) -> String = { address in
-            address.name.isEmpty ? address.address : "\(address.name) <\(address.address)>"
-        }
-        var listLines = [
-            MailHeaderLine(label: "From", value: person(original.summary.from)),
-            MailHeaderLine(label: "Sent", value: formatter.string(from: original.summary.sentAt)),
-        ]
-        if !original.listTo.isEmpty {
-            listLines.append(MailHeaderLine(label: "To", value: original.listTo.map(person).joined(separator: "; ")))
-        }
-        if !original.listCc.isEmpty {
-            listLines.append(MailHeaderLine(label: "Cc", value: original.listCc.map(person).joined(separator: "; ")))
-        }
-        listLines.append(MailHeaderLine(label: "Subject", value: original.summary.subject))
-        return listLines
-    }
-
-    private static func escapedHTML(_ text: String) -> String {
-        text.replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     /// A plain-text message as runs of lines at each depth of quoting, their `>` marks and the space after

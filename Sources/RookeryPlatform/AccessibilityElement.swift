@@ -10,8 +10,6 @@ struct AccessibilityElement {
     /// The element identifiers probed when looking for windows `kAXWindowsAttribute` omits.
     static let remoteElementIdRange: Range<UInt64> = 0..<500_000
     private static let listWindowSubroles = [kAXStandardWindowSubrole, kAXDialogSubrole]
-    /// A menu item's modifiers when its shortcut is Command and the key alone.
-    private static let commandOnlyModifiers = 0
 
     let element: AXUIElement
 
@@ -103,80 +101,6 @@ struct AccessibilityElement {
 
     func title() throws -> String {
         try string(kAXTitleAttribute) ?? ""
-    }
-
-    /// The application's menu command bound to a key with Command alone, as Select All to A and Paste to
-    /// V, found by its key so it is found whatever language the menus are in; nil when no menu has it.
-    ///
-    /// - Parameter commandKey: the key, in upper case
-    func menuCommand(key commandKey: String) throws -> AccessibilityElement? {
-        guard let menuBar = try child(kAXMenuBarAttribute) else {
-            return nil
-        }
-        for barItem in try menuBar.children() {
-            for menu in try barItem.children() {
-                for item in try menu.children() {
-                    let key = try item.string(kAXMenuItemCmdCharAttribute)
-                    let modifiers = try item.copyAttribute(kAXMenuItemCmdModifiersAttribute) as? Int
-                    if key?.uppercased() == commandKey, modifiers == Self.commandOnlyModifiers {
-                        return item
-                    }
-                }
-            }
-        }
-        return nil
-    }
-
-    /// The first element under this one with a role, searched breadth first a few levels down.
-    ///
-    /// - Parameters:
-    ///   - role: the role, as `AXWebArea`
-    ///   - depth: how many levels down to look
-    func firstDescendant(role: String, depth: Int) throws -> AccessibilityElement? {
-        var listLevel = [self]
-        for _ in 0..<depth {
-            var listNext: [AccessibilityElement] = []
-            for element in listLevel {
-                for child in try element.children() {
-                    if try child.string(kAXRoleAttribute) == role {
-                        return child
-                    }
-                    listNext.append(child)
-                }
-            }
-            listLevel = listNext
-        }
-        return nil
-    }
-
-    /// Put the keyboard's focus in the element, as a text area.
-    func focus() throws {
-        try write(kAXFocusedAttribute, value: kCFBooleanTrue)
-    }
-
-    /// Do what the element does when clicked, as a menu item's command.
-    func press() throws {
-        try Self.check(AXUIElementPerformAction(element, kAXPressAction as CFString), operation: kAXPressAction)
-    }
-
-    private func children() throws -> [AccessibilityElement] {
-        guard let value = try copyAttribute(kAXChildrenAttribute) else {
-            return []
-        }
-        guard let listElements = value as? [AXUIElement] else {
-            throw AccessibilityError.unexpectedValueType(attribute: kAXChildrenAttribute)
-        }
-        return listElements.map { AccessibilityElement(element: $0) }
-    }
-
-    private func child(_ attribute: String) throws -> AccessibilityElement? {
-        guard let value = try copyAttribute(attribute) else {
-            return nil
-        }
-        guard CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            throw AccessibilityError.unexpectedValueType(attribute: attribute)
-        }
-        return AccessibilityElement(element: value as! AXUIElement)
     }
 
     func frame() throws -> CGRect {

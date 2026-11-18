@@ -84,28 +84,3 @@ struct MailQuotePassageTests {
         ])
     }
 }
-
-struct MailQuoteHTMLTests {
-    @Test func aFormattedReplyPutsTheMessageItAnswersUnderABoldOutlookHeaderAsFormatted() {
-        let original = MailMessageDetail(
-            summary: MailMessageSummary(
-                id: 9, account: "me@x.com", folder: .inbox, from: MailAddress(address: "r@b.com", name: "Rachel <HR>"),
-                subject: "Chat", sentAt: Date(timeIntervalSince1970: 0), receivedAt: Date(timeIntervalSince1970: 0),
-                isRead: true, isFlagged: false, snippet: "", conversationId: 1, attachmentCount: 0
-            ),
-            listTo: [MailAddress(address: "me@x.com", name: "Me")],
-            listCc: [],
-            text: "Hi",
-            listAttachments: [],
-            isPartial: false,
-            html: "<html><head><title>t</title></head><body class=x><p>Hi <b>there</b></p><script>alert(1)</script></body></html>"
-        )
-        let html = MailQuote.replyHTML(to: original, body: "Thanks & see you\nZ", timeZone: TimeZone(identifier: "UTC") ?? .current)
-        #expect(html.contains("Thanks &amp; see you<br>Z"))
-        #expect(html.contains("<b>From:</b> Rachel &lt;HR&gt; &lt;r@b.com&gt;"))
-        #expect(html.contains("border-top:solid #E1E1E1"))
-        #expect(html.contains("<p>Hi <b>there</b></p>"))
-        #expect(!html.contains("<script"))
-        #expect(!html.contains("<title>"))
-    }
-}

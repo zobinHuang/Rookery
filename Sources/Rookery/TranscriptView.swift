@@ -2,6 +2,30 @@ import AppKit
 import RookeryCore
 import SwiftUI
 
+/// A transcript's blocks and where each run of replies starts, worked out again only once the transcript
+/// has taken in more, as going through a long one takes a while and a view is drawn again often.
+@MainActor
+final class TranscriptLayout {
+    /// How many blocks a conversation lays out at first, and how many more each time more are asked for.
+    static let pageSize = 150
+
+    private var byteCount = -1
+    private var entryCount = -1
+    private(set) var listBlocks: [TranscriptBlock] = []
+    private(set) var setRunStartIds: Set<Int> = []
+
+    /// Work the blocks out again if the transcript changed since.
+    func update(for reader: TranscriptReader) {
+        guard reader.byteCount != byteCount || reader.listEntries.count != entryCount else {
+            return
+        }
+        byteCount = reader.byteCount
+        entryCount = reader.listEntries.count
+        listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
+        setRunStartIds = TranscriptView.runStartIds(in: listBlocks)
+    }
+}
+
 /// An agent's conversation as a person reads it: each prompt with when it was sent, the agent's answers
 /// with their headings and code set apart, every run of tool calls folded into one line that opens to show
 /// each call, the slash commands run, and where the harness compacted the conversation, its summary folded
@@ -40,24 +64,34 @@ struct TranscriptView: View {
     /// The last step shown when the conversation opened: the user's requests after it arrived while it was
     /// shown, and pop in as they come.
     @State private var firstShownBlockId = Int.max
+    @State private var layout = TranscriptLayout()
+    /// How many of the latest blocks are laid out; a long conversation shows its last stretch, and more
+    /// on asking, rather than thousands of rows at once.
+    @State private var shownBlockCount = TranscriptLayout.pageSize
 
     private var setOpenBlockIds: Set<Int> {
         memory.mapOpenTranscriptBlocks[agentId] ?? []
     }
 
     var body: some View {
-        let listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
-        let setRunStartIds = Self.runStartIds(in: listBlocks)
+        let _ = layout.update(for: reader)
+        let listBlocks = layout.listBlocks
+        let setRunStartIds = layout.setRunStartIds
+        let hiddenCount = max(0, listBlocks.count - shownBlockCount)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                if reader.startOffset > 0 {
+                if hiddenCount > 0 {
+                    showEarlierButton(hiddenCount: hiddenCount)
+                        .padding(.bottom, 14)
+                } else if reader.startOffset > 0 {
                     earlierButton
                         .padding(.bottom, 14)
                 }
                 if listBlocks.isEmpty {
                     empty
                 }
-                ForEach(Array(listBlocks.enumerated()), id: \.element.id) { index, block in
+                ForEach(Array(listBlocks[hiddenCount...].enumerated()), id: \.element.id) { shownIndex, block in
+                    let index = hiddenCount + shownIndex
                     let previous = index > 0 ? listBlocks[index - 1] : nil
                     let next = index + 1 < listBlocks.count ? listBlocks[index + 1] : nil
                     VStack(spacing: 0) {
@@ -107,7 +141,8 @@ struct TranscriptView: View {
             .textSelection(.enabled)
         }
         .onAppear {
-            firstShownBlockId = TranscriptBlock.blocks(of: reader.listEntries).last?.id ?? -1
+            layout.update(for: reader)
+            firstShownBlockId = layout.listBlocks.last?.id ?? -1
         }
         .modifier(RememberedScroll(
             key: "agent:\(agentId)",
@@ -366,6 +401,23 @@ struct TranscriptView: View {
         .padding(.leading, 20)
     }
 
+    /// The way to the blocks laid out before the last stretch, a page more at a time.
+    private func showEarlierButton(hiddenCount: Int) -> some View {
+        Button {
+            shownBlockCount += TranscriptLayout.pageSize
+        } label: {
+            RookeryLabel(
+                "Show \(min(hiddenCount, TranscriptLayout.pageSize)) earlier of \(hiddenCount)",
+                icon: .arrowUp
+            )
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 4)
+    }
+
     private var earlierButton: some View {
         Button(action: onLoadEarlier) {
             RookeryLabel("Read the whole conversation, from \(Self.megabytes(reader.startOffset)) earlier", icon: .arrowUp)
@@ -473,7 +525,7 @@ struct TranscriptView: View {
 
     /// The blocks that begin a run from one speaker: a reply after the user or a rook spoke, the agent's
     /// tools in between not counting, and a rook's message after anyone but the same sender.
-    private static func runStartIds(in listBlocks: [TranscriptBlock]) -> Set<Int> {
+    static func runStartIds(in listBlocks: [TranscriptBlock]) -> Set<Int> {
         var setStartIds: Set<Int> = []
         var lastSpeaker: TranscriptEntry.Role?
         for block in listBlocks {

@@ -4,7 +4,8 @@ import ImageIO
 import RookeryCore
 import UniformTypeIdentifiers
 
-/// Writes Rookery's app icon as an iconset, and a preview of the wordmark, from `BrandMark`: the pair of
+/// Writes Rookery's app icon as an iconset, and the README's wordmark for light and dark pages, from
+/// `BrandMark`: the pair of
 /// eyes over the trajectory, white on a black rounded square lit faintly from above, on the margins macOS
 /// gives an icon. Usage: rookery-brand <output directory> <font file>
 
@@ -92,16 +93,17 @@ do {
             try write(context, to: iconset.appending(path: name))
         }
     }
-    let font = try BrandMark.font(at: fontURL, size: 120)
+    let font = try BrandMark.font(at: fontURL, size: 96)
     let bounds = BrandMark.wordmarkBounds(font: font)
-    let margin: CGFloat = 60
-    if let context = bitmap(width: Int(bounds.width + margin * 2), height: Int(bounds.height + margin * 2)) {
-        context.setFillColor(CGColor(gray: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    let margin: CGFloat = 8
+    for (name, ink) in [("rookery-logo.png", CGColor(gray: 0.06, alpha: 1)), ("rookery-logo-dark.png", white)] {
+        guard let context = bitmap(width: Int(bounds.width + margin * 2), height: Int(bounds.height + margin * 2)) else {
+            continue
+        }
         context.translateBy(x: 0, y: CGFloat(context.height))
         context.scaleBy(x: 1, y: -1)
-        BrandMark.drawWordmark(in: context, x: margin - bounds.minX, baseline: margin - bounds.minY, font: font, ink: black)
-        try write(context, to: outputDirectory.appending(path: "wordmark.png"))
+        BrandMark.drawWordmark(in: context, x: margin - bounds.minX, baseline: margin - bounds.minY, font: font, ink: ink)
+        try write(context, to: outputDirectory.appending(path: name))
     }
 } catch {
     FileHandle.standardError.write(Data("rookery-brand: \(error)\n".utf8))

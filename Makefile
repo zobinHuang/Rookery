@@ -32,6 +32,7 @@ icon:
 	swift build --product rookery-brand
 	.build/debug/rookery-brand .build Resources/Fonts/Michroma-Regular.ttf
 	iconutil -c icns .build/AppIcon.iconset -o Resources/AppIcon.icns
+	cp .build/rookery-logo.png .build/rookery-logo-dark.png docs/images/
 
 test:
 	swift test $(TEST_FLAGS)

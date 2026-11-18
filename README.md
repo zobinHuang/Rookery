@@ -1,4 +1,4 @@
-# <img src="docs/images/rookery-logo.png" alt="Rookery" width="258">
+# <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/rookery-logo-dark.png"><img src="docs/images/rookery-logo.png" alt="Rookery" width="300"></picture>
 
 Rookery watches over your code agents. `rook` runs them in tmux on each of your machines and reports what each is doing; `roost`, a server, gathers their sessions, skills, playbooks and memories; and Rookery, a macOS app, shows every agent as a crow you can read, prompt and organize, beside a stage for your windows.
 

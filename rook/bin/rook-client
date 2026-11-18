@@ -1046,6 +1046,12 @@ class ResourceCommands:
         transcript_parser = commands.add_parser("transcript", help="read an agent session's conversation")
         transcript_parser.add_argument("session_id")
         transcript_parser.add_argument("--last", type=int, default=200, help="only the last N steps")
+        skill_file_parser = commands.add_parser(
+            "skill-file",
+            help="read a skill's SKILL.md, or another of its files, as roost reaches its repository",
+        )
+        skill_file_parser.add_argument("source", help="a registered skill's id, or a skill's address")
+        skill_file_parser.add_argument("--file", default="SKILL.md", help="the file inside the skill's directory")
         events_parser = commands.add_parser("events", help="list recent events")
         events_parser.add_argument("--after", type=int)
         events_parser.add_argument("--limit", type=int, default=50)
@@ -1091,6 +1097,11 @@ class ResourceCommands:
             raw = connection.request_bytes("GET", f"/v1/sessions/{args.session_id}/transcript")
             for line in TranscriptLines.readable(raw)[-args.last:]:
                 print(line)
+        elif args.action == "skill-file":
+            query = urllib.parse.urlencode({"source": args.source, "file": args.file})
+            map_read = connection.request("GET", f"/v1/skills/read?{query}")
+            print(f"# {map_read['source']} at {str(map_read['commit'])[:12]}: {map_read['path']}")
+            sys.stdout.write(str(map_read["text"]))
         elif args.action == "events":
             query = f"?after={args.after}&limit={args.limit}" if args.after is not None else f"?limit={args.limit}"
             cls._print_json(connection.request("GET", f"/v1/events{query}")["events"])

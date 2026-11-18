@@ -219,6 +219,16 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
 
+        if list_segments == ["skills", "read"] and method == "GET":
+            self._respond_json(
+                HTTPStatus.OK,
+                skills.read_file(
+                    self._query_text(map_query, "source") or "",
+                    self._query_text(map_query, "file") or "",
+                ),
+            )
+            return
+
         if len(list_segments) == 2:
             skill_id = list_segments[1]
             if method == "GET":

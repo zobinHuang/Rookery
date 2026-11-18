@@ -330,6 +330,10 @@ A prompt belongs to a `thread`, made for it unless it names the one it answers; 
 
 A spawn's `options` may also name the `launch` id the new session names as it starts (one is made otherwise, and returned), the `playbook` and further `skills` to install first, the `role` it takes, and the `teams` it joins as `[{"team": "<id>", "duty": "..."}]`. When an agent starts with `launch` in its `started` event's detail, it takes that role, unless it has one, and joins those teams. `GET /v1/launches/<launch id>/resolve` answers with what the session installs, as a playbook's resolution: the playbook's, with the further skills at their latest version, or the skills alone under an empty `id`. A message from an agent carries its `sender_title` in its options.
 
+## Reading a skill's files
+
+`GET /v1/skills/read?source=<id or address>&file=SKILL.md` reads one file of a skill, registered (by id) or not (by its address, as registering takes it), at the commit its ref points to now, fetching the commit's tree and that one file, with the token registered for the repository's host: `{"source", "commit", "path", "text"}`, the text cut to 200,000 characters. `file` is a path inside the skill's directory and defaults to SKILL.md; `400` with git's own words when the repository or the file cannot be read.
+
 ## Git credentials
 
 Tokens for git hosting services, by host, so roost and the rooks reach private repositories without anyone setting git up on the machines. roost reads a private repository's refs with the token for its host when the repository is reached over `https`; a rook installing a skill from one asks for the same token and hands it to git alike. git takes the token through a helper set on its command line that reads it from git's environment, so it never shows in a process listing; a repository reached over ssh uses the machine's own keys. Tokens live in the server's database, which only the server's user may read, and no route lists one whole: a listing shows each by its last four characters, and only `match`, which a rook calls as it fetches, returns a token, the one for the repository's host.

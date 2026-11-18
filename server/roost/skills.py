@@ -1,5 +1,6 @@
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -276,6 +277,8 @@ class GitRefResolver:
 
     RESOLVER_TIMEOUT_SECONDS = 30
     RESOLVER_HEAD_PREFIX = "ref: "
+    RESOLVER_FILE_MAX_CHARS = 200_000
+    RESOLVER_REMOTE = "origin"
 
     def __init__(
         self,
@@ -341,6 +344,31 @@ class GitRefResolver:
                 return target.removeprefix("refs/heads/")
         raise ValidationError(f"{repo_url} reports no default branch")
 
+    def read_file(self, repo_url: str, commit: str, file_path: str) -> str:
+        """Read one file of a repository at a commit, with the token registered for its host, fetching
+        the commit's tree alone and that one file's contents.
+
+        Args:
+            repo_url: the repository
+            commit: the commit to read it at
+            file_path: the file's path inside the repository
+
+        Returns:
+            the file's text, cut to its first 200,000 characters
+
+        Raises:
+            ValidationError: if the repository cannot be reached or holds no such file
+        """
+        with tempfile.TemporaryDirectory(prefix="roost-read-") as work:
+            self._run(["init", "-q", work], repo_url)
+            self._run(["-C", work, "remote", "add", self.RESOLVER_REMOTE, repo_url], repo_url)
+            self._run(
+                ["-C", work, "fetch", "-q", "--depth", "1", "--filter=blob:none", self.RESOLVER_REMOTE, commit],
+                repo_url,
+            )
+            text = self._run_text(["-C", work, "show", f"FETCH_HEAD:{file_path}"], repo_url)
+        return text[: self.RESOLVER_FILE_MAX_CHARS]
+
     def list_refs(self, repo_url: str) -> dict[str, str]:
         """List every branch and tag a repository publishes.
 
@@ -376,6 +404,9 @@ class GitRefResolver:
         return map_refs
 
     def _run(self, list_arguments: list[str], repo_url: str) -> list[str]:
+        return [line for line in self._run_text(list_arguments, repo_url).splitlines() if line.strip()]
+
+    def _run_text(self, list_arguments: list[str], repo_url: str) -> str:
         list_options: list[str] = []
         map_environment = {
             "GIT_TERMINAL_PROMPT": "0",
@@ -409,7 +440,7 @@ class GitRefResolver:
             raise ValidationError(
                 f"git could not read the repository: {detail[-1] if detail else 'unknown error'}"
             )
-        return [line for line in completed.stdout.splitlines() if line.strip()]
+        return completed.stdout
 
 
 @dataclass
@@ -584,6 +615,38 @@ class SkillIndex:
             record.updated_at = GitRefResolver.now_timestamp()
             self._store.write(record_id, record.as_payload())
         return record
+
+    def read_file(self, source_or_id: str, file_name: str) -> dict[str, object]:
+        """Read a file of a skill, registered or not, as roost reaches its repository, with the token
+        registered for its host: what describes a skill in a private repository.
+
+        Args:
+            source_or_id: a registered skill's id, or a skill's address as `register` takes it
+            file_name: the file's path inside the skill's directory, SKILL.md for its description
+
+        Returns:
+            the source, the commit read, the file's path in the repository and its text
+
+        Raises:
+            ValidationError: if the address or the file name is unusable, or git cannot read the file
+        """
+        if RecordStore.RECORD_ID_PATTERN.match(source_or_id) and self._store.exists(source_or_id):
+            record = self.get(source_or_id)
+            source = SkillSource(repo_url=record.repo_url, skill_path=record.skill_path, ref=record.default_ref)
+        else:
+            source = SkillSource.parse(source_or_id)
+        file_name = file_name.strip() or "SKILL.md"
+        list_segments = file_name.split("/")
+        if any(segment in ("", ".", "..") for segment in list_segments):
+            raise ValidationError(f"unusable file name: {file_name!r}")
+        file_path = f"{source.skill_path}/{file_name}" if source.skill_path else file_name
+        version = self._resolver.resolve(source.repo_url, source.ref)
+        return {
+            "source": source.as_spec(),
+            "commit": version.commit,
+            "path": file_path,
+            "text": self._resolver.read_file(source.repo_url, version.commit, file_path),
+        }
 
     def get(self, record_id: str) -> SkillRecord:
         """Read one indexed skill.

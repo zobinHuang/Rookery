@@ -137,3 +137,50 @@ class GitCredentialRoutesTest(unittest.TestCase):
         self.assertEqual(status, 200)
         status, map_body = self.request("GET", "/v1/credentials")
         self.assertEqual(map_body["credentials"], [])
+
+
+class PrivateSkillReadTest(unittest.TestCase):
+    """Reading a skill's SKILL.md from a repository only a token opens: roost fetches the commit's tree
+    and that one file, handing git the token registered for the repository's host."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.upstream = self.root / "upstream"
+        map_env = {"PATH": os.environ["PATH"], "HOME": str(self.root), "GIT_CONFIG_NOSYSTEM": "1"}
+        subprocess.run(["git", "init", "-q", "-b", "main", str(self.upstream)], check=True, env=map_env)
+        skill_dir = self.upstream / "skills" / "pdf"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: pdf\ndescription: Read PDFs.\n---\n")
+        subprocess.run(["git", "-C", str(self.upstream), "add", "."], check=True, env=map_env)
+        subprocess.run(
+            ["git", "-C", str(self.upstream), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "skill"],
+            check=True,
+            env=map_env,
+        )
+        subprocess.run(["git", "-C", str(self.upstream), "config", "uploadpack.allowFilter", "true"], check=True, env=map_env)
+        subprocess.run(["git", "-C", str(self.upstream), "config", "uploadpack.allowAnySHA1InWant", "true"], check=True, env=map_env)
+
+    def test_the_resolver_reads_one_file_at_a_commit(self) -> None:
+        resolver = GitRefResolver()
+        repo_url = f"file://{self.upstream}"
+        commit = resolver.resolve(repo_url, "main").commit
+        self.assertIn("description: Read PDFs.", resolver.read_file(repo_url, commit, "skills/pdf/SKILL.md"))
+        with self.assertRaises(ValidationError):
+            resolver.read_file(repo_url, commit, "skills/pdf/MISSING.md")
+
+    def test_the_index_reads_a_file_in_the_skill_directory_and_refuses_one_outside(self) -> None:
+        database = Database(self.root / "data")
+        self.addCleanup(database.close)
+        from roost.resources import ResourceStore
+        from roost.skills import SkillIndex, SkillVersion
+        resolver = mock.Mock(spec=GitRefResolver)
+        resolver.resolve.return_value = SkillVersion(ref="main", commit="abc1234", resolved_at="")
+        resolver.read_file.return_value = "---\nname: pdf\n---\n"
+        index = SkillIndex(ResourceStore(database), resolver)
+        map_read = index.read_file("https://github.com/org/private/tree/main/skills/pdf", "")
+        self.assertEqual((map_read["path"], map_read["commit"]), ("skills/pdf/SKILL.md", "abc1234"))
+        resolver.read_file.assert_called_with("https://github.com/org/private", "abc1234", "skills/pdf/SKILL.md")
+        with self.assertRaises(ValidationError):
+            index.read_file("org/private@skills/pdf", "../secret")

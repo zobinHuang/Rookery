@@ -62,6 +62,9 @@ struct MailPage: View {
     /// The widest the reader's conversation runs.
     private static let readerMaxWidth: CGFloat = 860
     /// How many rows and messages stand in for a list or a conversation still on its way.
+    /// The folders whose messages a conversation leaves out, as drafts thrown away while replying, unless
+    /// the one chosen is among them.
+    private static let setHiddenThreadFolders: Set<MailFolder> = [.trash, .junk, .drafts]
     private static let skeletonRowCount = 8
     /// The least reader width that names the toolbar's buttons rather than showing their icons alone.
     private static let titledToolbarWidth: CGFloat = 620
@@ -533,7 +536,8 @@ struct MailPage: View {
             }
             if let detail {
                 mapDetails[selectedId] = detail
-                listThread = listFound.contains(where: { $0.id == selectedId }) ? listFound.reversed() : [detail.summary]
+                let listShown = listFound.filter { $0.id == selectedId || !Self.setHiddenThreadFolders.contains($0.folder) }
+                listThread = listShown.contains(where: { $0.id == selectedId }) ? listShown.reversed() : [detail.summary]
             } else {
                 listThread = []
             }
@@ -596,17 +600,23 @@ struct MailMessageCard: View {
     @State private var isQuoteShown = false
     @Environment(\.people) private var people
 
+    /// The person who wrote it, as the user set them down: anyone else always has a mark, from their
+    /// person or their address; the user has one only once they set themselves down.
+    private var writer: Person? {
+        people?.person(withAddress: summary.from.address)
+    }
+
+    private var hasMark: Bool {
+        !isMine || writer != nil
+    }
+
     var body: some View {
         let edgeAnchor: UnitPoint = isMine ? .trailing : .leading
+        let markRoom = hasMark ? Self.markSize + Self.markSpacing : 0
         VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
             HStack(alignment: .top, spacing: Self.markSpacing) {
                 if !isMine {
-                    PersonMark(
-                        person: people?.person(withAddress: summary.from.address),
-                        fallbackName: summary.from.name,
-                        fallbackAddress: summary.from.address,
-                        size: Self.markSize
-                    )
+                    mark
                 }
                 VStack(alignment: isMine ? .trailing : .leading, spacing: 6) {
                     Button(action: onToggle) {
@@ -617,12 +627,14 @@ struct MailMessageCard: View {
                     bubble
                 }
                 .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+                if isMine, hasMark {
+                    mark
+                }
             }
             if isOpen, let detail {
                 footer(detail)
-                    .fixedSize(horizontal: isMine, vertical: false)
-                    .padding(isMine ? .trailing : .leading, isMine ? 6 : Self.markSize + Self.markSpacing)
-                    .frame(maxWidth: .infinity, alignment: isMine ? .trailing : .leading)
+                    .padding(isMine ? .trailing : .leading, markRoom)
+                    .padding(isMine ? .leading : .trailing, Self.farSideRoom)
                     .transition(.opacity)
             }
         }
@@ -634,6 +646,15 @@ struct MailMessageCard: View {
                 .opacity(phase.isIdentity ? 1 : 0.6)
                 .offset(y: phase.value * 8)
         }
+    }
+
+    private var mark: some View {
+        PersonMark(
+            person: writer,
+            fallbackName: summary.from.name,
+            fallbackAddress: summary.from.address,
+            size: Self.markSize
+        )
     }
 
     /// Who wrote it and when, and while open to whom.
@@ -781,7 +802,7 @@ struct MailMessageCard: View {
     private func footer(_ detail: MailMessageDetail) -> some View {
         let hasQuote = isQuoteTrimmed || (detail.html.isEmpty && MailQuote.trimmed(detail.text) != nil)
         if hasQuote || !detail.listAttachments.isEmpty {
-            FlowRow(spacing: 6) {
+            FlowRow(spacing: 6, isTrailing: isMine) {
                 if hasQuote {
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) {

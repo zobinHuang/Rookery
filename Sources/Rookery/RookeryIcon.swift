@@ -246,15 +246,6 @@ enum RookeryIconArt {
         mapImages[icon] = image
         return image
     }
-
-    /// The menu bar's mark: the crow's head as a one-color template, which the menu bar tints.
-    static func menuBarImage() -> NSImage {
-        guard let image = image(.agent).copy() as? NSImage else {
-            return NSImage()
-        }
-        image.isTemplate = true
-        return image
-    }
 }
 
 /// One of Rookery's icons. The crow's are its pixel art, never smoothed. The rest are drawn at the screen's

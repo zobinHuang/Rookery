@@ -17,8 +17,8 @@ How to build, test and install Rookery, and how to check each part works without
 | `make app` | Builds an optimized release and assembles a signed `.build/Rookery.app` (with `rookery-chrome-host` inside). A debug build runs the audio processing and the views several times slower, which shows as heat. |
 | `make install` | `make app`, quits the running Rookery, waits for it to exit, copies to `/Applications` and opens it. |
 | `make chrome-extension` | `npm ci`, `tsc --noEmit`, bundles into `extensions/chrome/dist`. During work, `cd extensions/chrome && npm run build` is enough. |
-| `make icon` | Regenerates `Resources/AppIcon.icns` from `scripts/make-icon.swift`. |
-| `cd branding && npm run build:logo` | Renders the pixel crow logo from its model in `branding/src`: `branding/dist/preview.html` with every layout and every agent state animated, and the sidebar's animated logo: `Resources/SidebarLogo.png` and `@2x`, its frames side by side, and `SidebarLogo.json`, how they play. Run it after changing the logo; the app's build only copies them. |
+| `make icon` | Regenerates `Resources/AppIcon.icns` with `rookery-brand`, which draws the mark from `BrandMark` in `RookeryCore`. |
+| `cd branding && npm run build:logo` | Renders the pixel crows from their model in `branding/src` into `branding/dist/preview.html`, every agent state animated. The logo itself is drawn by `BrandMark` in `RookeryCore`. |
 
 `make install` restarts the user's Rookery: managed windows go back to their places and come back onto the stage, audio taps restart, sidebar videos drop. Mention it when the user is in the middle of something.
 

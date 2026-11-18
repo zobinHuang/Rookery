@@ -29,8 +29,8 @@ install: app
 	open /Applications/Rookery.app
 
 icon:
-	swiftc -o .build/make-icon scripts/make-icon.swift
-	.build/make-icon .build
+	swift build --product rookery-brand
+	.build/debug/rookery-brand .build Resources/Fonts/Michroma-Regular.ttf
 	iconutil -c icns .build/AppIcon.iconset -o Resources/AppIcon.icns
 
 test:

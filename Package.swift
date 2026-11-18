@@ -15,6 +15,7 @@ let package = Package(
         .executable(name: "rookeryctl", targets: ["rookeryctl"]),
         .executable(name: "rookery-chrome-host", targets: ["RookeryChromeHost"]),
         .executable(name: "rookery-mail", targets: ["RookeryMail"]),
+        .executable(name: "rookery-brand", targets: ["RookeryBrand"]),
     ],
     targets: [
         .target(
@@ -44,6 +45,11 @@ let package = Package(
         .executableTarget(
             name: "RookeryMail",
             dependencies: ["RookeryCore", "RookeryControl"],
+            swiftSettings: strictSettings
+        ),
+        .executableTarget(
+            name: "RookeryBrand",
+            dependencies: ["RookeryCore"],
             swiftSettings: strictSettings
         ),
         .executableTarget(

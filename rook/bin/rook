@@ -16,6 +16,8 @@ usage() {
   echo "  rook sessions               Show the upload connection and its backlog"
   echo "  rook resource <command>     Read and change roost's agents, skills, playbooks and memories"
   echo "  rook message <agent> <text> Send text to an agent, as the agent in this pane"
+  echo "  rook playbook <agent> <playbook> [text]"
+  echo "                              Load a playbook into an agent's project in place of its own"
   echo "  rook agent status|tail      See every agent's state, or what one did lately"
   echo "  rook team list|roster|send  This agent's teams, who is in one, a message to a whole team"
   echo "  rook me [role|focus <text>] Who this agent is to its teammates, and what it works on now"
@@ -124,7 +126,7 @@ case "$CMD" in
   sessions)
     exec "$HOME/.local/bin/rook-session" status
     ;;
-  resource|message|agent|team|me|inbox)
+  resource|message|playbook|agent|team|me|inbox)
     exec "$HOME/.local/bin/rook-client" "$CMD" "$@"
     ;;
   link)

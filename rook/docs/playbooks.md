@@ -24,6 +24,13 @@ Starting an agent in a rook pane offers you a playbook in a popup; `Ctrl+t` `p`
 raises the same picker, so you can change a pane's playbook with an agent already
 running in it. The agent is told on its next turn.
 
+The same works from anywhere roost reaches: `rook playbook <agent> <playbook> [text]`
+asks the agent's rook to load the playbook into the agent's project in place of the
+one its pane follows, then types the text, if any, as a prompt; inside an agent's
+pane it goes as that agent, which may do it only to a teammate. Raven proposes it
+(`rook-client propose playbook`) for the user to approve in Rookery. The load runs on
+the rook in the background, so fetching skills never holds up other deliveries.
+
 ## Where skills are installed
 
 Per project, never globally, because the agents disagree about where to look and

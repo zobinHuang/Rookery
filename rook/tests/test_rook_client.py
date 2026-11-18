@@ -423,6 +423,21 @@ class AgentCommandsTest(QueueAndSendTest):
             self.assertEqual(rook_client.main(["propose", "spawn", "studio", "--cwd", "/src/api"]), 1)
         self.assertIn("offline", stderr.getvalue())
 
+    def test_a_playbook_is_proposed_for_a_running_agent_and_sent_directly_by_a_person(self) -> None:
+        self.start_agent("busy", "working", "2026-11-16T10:00:00.000+00:00", {"title": "Payments"})
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "playbook", "busy", "review"]), 1)
+        self.assertIn("no such playbook", stderr.getvalue())
+        self.server.catalog.create("playbook", {"id": "review", "name": "Review", "skills": []})
+        output = self.run_client(["propose", "playbook", "busy", "review", "review", "the", "diff"])
+        proposal = json.loads(output.splitlines()[0])["proposal"]
+        self.assertEqual((proposal["action"], proposal["playbook"], proposal["text"]), ("playbook", "review", "review the diff"))
+        self.assertEqual(self.server.deliveries.list_recent(agent_id="busy", limit=10), [])
+        self.run_client(["playbook", "busy", "review", "--as-person"])
+        list_sent = self.server.deliveries.list_recent(agent_id="busy", limit=10)
+        self.assertEqual([(delivery.kind, delivery.map_options) for delivery in list_sent], [("playbook", {"playbook": "review"})])
+
     def test_an_ended_agent_takes_no_proposal(self) -> None:
         self.start_agent("gone", "ended", "2026-11-16T10:00:00.000+00:00")
         stderr = io.StringIO()

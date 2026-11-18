@@ -46,6 +46,9 @@ class RecordingTyper:
     def runs_program(self, agent_pane: object) -> bool:
         return self.is_pane_running
 
+    def current_path(self, agent_pane: object) -> str:
+        return "/src/api"
+
 
 class AgentInPaneTest(RookHomeTest):
     """A session started in a tmux pane, as its SessionStart hook records it."""
@@ -197,6 +200,55 @@ class DeliveryDeskTest(AgentInPaneTest):
         self.desk.process(accepts_prompts=True)
         self.assertEqual(self.typer.list_pressed, ["Escape"])
         self.assertIn("nothing to interrupt", self.outcome("d-22")["reason"])
+
+    def fake_playbook_tool(self, exit_code: int) -> Path:
+        """A rook-playbook that records its arguments and the tmux server it was pointed at."""
+        tool = self.home / ".local" / "bin" / "rook-playbook"
+        tool.parent.mkdir(parents=True, exist_ok=True)
+        record = self.home / "playbook-call.txt"
+        tool.write_text(
+            f'#!/bin/sh\nprintf "%s\\n" "$TMUX" "$@" > "{record}"\necho "no such playbook" >&2\nexit {exit_code}\n',
+            encoding="utf-8",
+        )
+        tool.chmod(0o755)
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return record
+
+    def process_until_finished(self, delivery_id: str) -> dict[str, object]:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            self.desk.process(accepts_prompts=True)
+            outcome = self.outcome(delivery_id)
+            if outcome["status"] != "waiting":
+                return outcome
+            time.sleep(0.05)
+        self.fail("the playbook never finished loading")
+
+    def test_a_playbook_loads_into_the_agents_pane_then_types_what_it_carries(self) -> None:
+        record = self.fake_playbook_tool(0)
+        self.start_session()
+        self.desk.accept(self.delivery("d-1", "", kind="playbook", options={"playbook": "review"}))
+        self.desk.accept(self.delivery("d-22", "review the diff again", kind="playbook", options={"playbook": "review"}))
+        self.desk.process(accepts_prompts=True)
+        self.assertIn("loading playbook review", self.outcome("d-1")["reason"])
+        self.assertEqual(self.process_until_finished("d-1")["status"], "delivered")
+        self.assertEqual(
+            record.read_text(encoding="utf-8").split("\n")[:11],
+            [f"{TMUX_SOCKET},0,0", "install", "review", "--agent", "claude", "--project", "/src/api", "--pane", "%1", "--quiet", ""],
+        )
+        self.assertEqual(self.process_until_finished("d-22")["status"], "delivered")
+        self.assertEqual(self.typer.list_typed, ["review the diff again"])
+
+    def test_a_playbook_that_cannot_load_fails_with_its_reason_and_types_nothing(self) -> None:
+        self.fake_playbook_tool(1)
+        self.start_session()
+        self.desk.accept(self.delivery("d-1", "go on", kind="playbook", options={"playbook": "nope"}))
+        outcome = self.process_until_finished("d-1")
+        self.assertEqual(outcome["status"], "failed")
+        self.assertIn("no such playbook", outcome["reason"])
+        self.assertEqual(self.typer.list_typed, [])
 
     def test_an_approval_answers_only_a_waiting_claude_code(self) -> None:
         self.start_session()

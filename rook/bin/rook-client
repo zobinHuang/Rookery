@@ -1276,6 +1276,13 @@ class ProposeCommands:
         message_parser = commands.add_parser("message", help="propose text to send an agent")
         message_parser.add_argument("agent", help="the agent's id")
         message_parser.add_argument("text", nargs="+")
+        playbook_parser = commands.add_parser(
+            "playbook",
+            help="propose loading a playbook into an agent's project in place of the one it follows",
+        )
+        playbook_parser.add_argument("agent", help="the agent's id")
+        playbook_parser.add_argument("playbook", help="the playbook's id")
+        playbook_parser.add_argument("text", nargs="*", help="what to tell the agent once it is loaded")
         interrupt_parser = commands.add_parser("interrupt", help="propose stopping what an agent is doing")
         interrupt_parser.add_argument("agent")
         approve_parser = commands.add_parser("approve", help="propose answering an agent's approval prompt")
@@ -1379,10 +1386,14 @@ class ProposeCommands:
             proposal.update({
                 "agent": args.agent,
                 "agent_title": str(map_attributes.get("title") or agent.get("name") or args.agent),
-                "text": " ".join(args.text) if args.action == "message" else "",
+                "text": " ".join(args.text) if args.action in ("message", "playbook") else "",
             })
             if args.action == "approve":
                 proposal["choice"] = args.choice
+            if args.action == "playbook":
+                if not cls._exists(connection, "playbook", args.playbook):
+                    raise RookClientError(f"no such playbook: {args.playbook}")
+                proposal["playbook"] = args.playbook
         json.dump({"proposal": proposal}, sys.stdout, ensure_ascii=False)
         sys.stdout.write("\nProposed. The user decides in Rookery; nothing was done. Do not do it another way.\n")
         return 0
@@ -1483,6 +1494,43 @@ class MessageCommands:
             "to": args.agent,
             "text": " ".join(args.text),
             "options": TeamCommands.prompt_options(args),
+        }
+        session_id = None if args.as_person else AgentPane.session_here()
+        if session_id:
+            map_body["actor"] = {"kind": "agent", "id": session_id}
+        map_delivery = connection.request("POST", "/v1/messages", map_body)
+        TeamCommands.print_sent([map_delivery])
+        return 0
+
+
+class PlaybookCommands:
+    """`rook playbook`: load a playbook into another agent's project in place of the one it follows, as the
+    agent in this pane, or as a person outside one; the agent is told on its next turn, or at once by text
+    typed to it once the playbook is loaded."""
+
+    @staticmethod
+    def build_parser(parser: argparse.ArgumentParser) -> None:
+        """Add the playbook arguments to a parser."""
+        parser.add_argument("agent", help="the agent's id, its session id")
+        parser.add_argument("playbook", help="the playbook's id")
+        parser.add_argument("text", nargs="*", help="what to tell the agent once it is loaded")
+        parser.add_argument("--as-person", action="store_true", help="send as a person even inside an agent's pane")
+
+    @staticmethod
+    def run(args: argparse.Namespace, connection: Connection) -> int:
+        """Send the playbook and print the delivery's id.
+
+        Returns:
+            the process exit status
+
+        Raises:
+            RookClientError: if roost refuses it
+        """
+        map_body: dict[str, object] = {
+            "to": args.agent,
+            "kind": "playbook",
+            "text": " ".join(args.text),
+            "options": {"playbook": args.playbook},
         }
         session_id = None if args.as_person else AgentPane.session_here()
         if session_id:
@@ -2055,6 +2103,7 @@ def main(list_argv: list[str] | None = None) -> int:
     playbook_parser.add_argument("resolved_path")
     ResourceCommands.build_parser(commands.add_parser("resource"))
     MessageCommands.build_parser(commands.add_parser("message"))
+    PlaybookCommands.build_parser(commands.add_parser("playbook"))
     AgentCommands.build_parser(commands.add_parser("agent"))
     ProposeCommands.build_parser(commands.add_parser("propose"))
     TeamCommands.build_parser(commands.add_parser("team"))
@@ -2083,6 +2132,8 @@ def main(list_argv: list[str] | None = None) -> int:
     try:
         if args.command == "message":
             return MessageCommands.run(args, connection)
+        if args.command == "playbook":
+            return PlaybookCommands.run(args, connection)
         if args.command == "agent":
             return AgentCommands.run(args, connection)
         if args.command == "propose":

@@ -164,6 +164,12 @@ roost keeps an index of skills, never their files: an entry records which git
 repository a skill lives in, which path inside it, and which commits its refs
 have pointed at. A client fetches the files itself from the repository.
 
+An agent reports a skill it used by name. When a registered skill answers to
+that name (its own name, or the last part of its path, a plugin's `namespace:`
+prefix aside), the use lands on it; otherwise roost keeps the skill as
+discovered. Registering a skill folds any discovered skill that answers to it
+into it, edges and all, and a starting server folds those already there.
+
 | | |
 |---|---|
 | `GET /v1/skills` | the index, filtered by `q` (name, description or id) and `repo` |
@@ -210,6 +216,11 @@ registered as a skill no agent would load.
 A playbook is a named set of skills, drawn from as many repositories as you like,
 plus the standing instructions that go with them. It too is an index: it stores
 pins, not files.
+
+A playbook depends on each skill it pins: creating or changing one draws a
+`depends_on` edge to every pinned skill roost manages, logged as an event, and
+takes away the edges to skills it no longer pins. A starting server draws the
+edges of playbooks that have none.
 
 | | |
 |---|---|

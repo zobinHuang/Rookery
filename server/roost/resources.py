@@ -358,6 +358,60 @@ class ResourceStore:
                 (ref.kind, ref.id, ref.kind, ref.id),
             )
 
+    def merge_into(self, duplicate: ResourceRef, kept: ResourceRef, connection: sqlite3.Connection) -> None:
+        """Fold a duplicate of a resource into the one kept: every relation touching the duplicate is moved
+        onto the kept one, repeats on one edge counted together, and the duplicate is removed.
+
+        Args:
+            duplicate: the resource folded away
+            kept: the resource it is folded into
+            connection: the transaction the fold is made in
+        """
+        list_rows = connection.execute(
+            """
+            SELECT * FROM relations
+            WHERE (source_kind = ? AND source_id = ?) OR (target_kind = ? AND target_id = ?)
+            """,
+            (duplicate.kind, duplicate.id, duplicate.kind, duplicate.id),
+        ).fetchall()
+        for row in list_rows:
+            source = kept if (row["source_kind"], row["source_id"]) == (duplicate.kind, duplicate.id) else ResourceRef(kind=row["source_kind"], id=row["source_id"])
+            target = kept if (row["target_kind"], row["target_id"]) == (duplicate.kind, duplicate.id) else ResourceRef(kind=row["target_kind"], id=row["target_id"])
+            if source == target:
+                continue
+            connection.execute(
+                """
+                INSERT INTO relations (source_kind, source_id, verb, target_kind, target_id, first_at, last_at, count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (source_kind, source_id, verb, target_kind, target_id) DO UPDATE SET
+                    first_at = MIN(first_at, excluded.first_at), last_at = MAX(last_at, excluded.last_at),
+                    count = count + excluded.count
+                """,
+                (source.kind, source.id, row["verb"], target.kind, target.id, row["first_at"], row["last_at"], row["count"]),
+            )
+        connection.execute(
+            "DELETE FROM relations WHERE (source_kind = ? AND source_id = ?) OR (target_kind = ? AND target_id = ?)",
+            (duplicate.kind, duplicate.id, duplicate.kind, duplicate.id),
+        )
+        connection.execute(
+            "UPDATE resources SET last_used_at = MAX(last_used_at, (SELECT last_used_at FROM resources WHERE kind = ? AND id = ?)) WHERE kind = ? AND id = ?",
+            (duplicate.kind, duplicate.id, kept.kind, kept.id),
+        )
+        connection.execute("DELETE FROM resources WHERE kind = ? AND id = ?", (duplicate.kind, duplicate.id))
+
+    def unrelate(self, source: ResourceRef, verb: str, connection: sqlite3.Connection) -> None:
+        """Forget every edge of one verb leaving a resource, for edges rebuilt from what it now holds.
+
+        Args:
+            source: the resource the edges leave
+            verb: their verb
+            connection: the transaction they are forgotten in
+        """
+        connection.execute(
+            "DELETE FROM relations WHERE source_kind = ? AND source_id = ? AND verb = ?",
+            (source.kind, source.id, verb),
+        )
+
     def query(self, query: ResourceQuery) -> list[Resource]:
         """Select resources, filtered and ordered.
 

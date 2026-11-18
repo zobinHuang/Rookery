@@ -44,6 +44,7 @@ class ResourceCatalog:
             ref = ResourceRef(kind=kind, id=self._skills.register(map_body).id)
         elif kind == ResourceKinds.PLAYBOOK.name:
             ref = ResourceRef(kind=kind, id=self._playbooks.create(map_body).id)
+            self.link_playbook(ref.id, is_logged=True)
         else:
             ResourceKinds.get(kind)
             name = self._name_of(map_body)
@@ -80,6 +81,7 @@ class ResourceCatalog:
             self._skills.update(resource_id, map_body)
         elif kind == ResourceKinds.PLAYBOOK.name:
             self._playbooks.update(resource_id, map_body)
+            self.link_playbook(resource_id, is_logged=True)
         else:
             with self._resources.database.transaction() as connection:
                 resource = self._resources.get(ref)
@@ -111,6 +113,39 @@ class ResourceCatalog:
         else:
             self._resources.delete(ref)
         self._events.record_change(actor, EventVerbs.DELETED, ref)
+
+    def link_playbook(self, playbook_id: str, is_logged: bool) -> None:
+        """Draw a playbook's edges to the skills it pins, as they stand now: one `depends_on` edge to each
+        pinned skill roost manages, the edges to skills it no longer pins taken away.
+
+        Args:
+            playbook_id: the playbook
+            is_logged: whether the new edges are logged as events, as a change through the API is, so
+                watchers see them at once; a server drawing them as it starts draws them quietly
+        """
+        record = self._playbooks.get(playbook_id)
+        playbook = ResourceRef(kind=ResourceKinds.PLAYBOOK.name, id=record.id)
+        list_skills = [
+            ResourceRef(kind=ResourceKinds.SKILL.name, id=pin.skill_id)
+            for pin in record.list_pins
+            if self._resources.exists(ResourceRef(kind=ResourceKinds.SKILL.name, id=pin.skill_id))
+        ]
+        at = ResourceStore.now_timestamp()
+        with self._resources.database.transaction() as connection:
+            self._resources.unrelate(playbook, EventVerbs.DEPENDS_ON, connection)
+            if not is_logged:
+                for skill in list_skills:
+                    self._resources.relate(playbook, EventVerbs.DEPENDS_ON, skill, at, connection)
+        if is_logged and list_skills:
+            self._events.record([
+                {"actor": playbook.as_payload(), "verb": EventVerbs.DEPENDS_ON, "object": skill.as_payload()}
+                for skill in list_skills
+            ])
+
+    def link_every_playbook(self) -> None:
+        """Draw every playbook's edges to its skills quietly, as a server starts."""
+        for record in self._playbooks.query(limit=PlaybookIndex.INDEX_QUERY_MAX_LIMIT):
+            self.link_playbook(record.id, is_logged=False)
 
     def _name_of(self, map_body: dict[str, object]) -> str:
         name = str(map_body.get("name") or "").strip()

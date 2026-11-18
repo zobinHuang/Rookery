@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from roost.errors import ValidationError
 from roost.records import RecordStore
 from roost.resources import Resource, ResourceKinds, ResourceRef, ResourceStore
+from roost.skills import SkillRecord
 
 
 class AgentStates:
@@ -448,6 +449,11 @@ class EventLog:
 
     @staticmethod
     def _id_by_name(kind: str, name: str, connection: sqlite3.Connection) -> str | None:
+        if kind == ResourceKinds.SKILL.name:
+            for row in connection.execute("SELECT id, name, attributes FROM resources WHERE kind = ? ORDER BY last_used_at DESC", (kind,)):
+                map_attributes = json.loads(row["attributes"] or "{}")
+                if not map_attributes.get("discovered") and SkillRecord.answers_to(name, str(row["name"]), str(map_attributes.get("skill_path") or "")):
+                    return str(row["id"])
         row = connection.execute(
             "SELECT id FROM resources WHERE kind = ? AND name = ? ORDER BY last_used_at DESC LIMIT 1",
             (kind, name),

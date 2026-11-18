@@ -297,10 +297,9 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
                 )
                 return
             if method == "POST":
-                self._respond_json(
-                    HTTPStatus.CREATED,
-                    playbooks.create(self._read_json_body()).as_payload(),
-                )
+                record = playbooks.create(self._read_json_body())
+                self.server.catalog.link_playbook(record.id, is_logged=True)
+                self._respond_json(HTTPStatus.CREATED, record.as_payload())
                 return
 
         if len(list_segments) == 2:
@@ -309,10 +308,9 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
                 self._respond_json(HTTPStatus.OK, playbooks.get(playbook_id).as_payload())
                 return
             if method == "PATCH":
-                self._respond_json(
-                    HTTPStatus.OK,
-                    playbooks.update(playbook_id, self._read_json_body()).as_payload(),
-                )
+                record = playbooks.update(playbook_id, self._read_json_body())
+                self.server.catalog.link_playbook(record.id, is_logged=True)
+                self._respond_json(HTTPStatus.OK, record.as_payload())
                 return
             if method == "DELETE":
                 self._read_body()
@@ -834,6 +832,8 @@ class RoostServer(ThreadingHTTPServer):
         self.events.add_listener(self.deliveries.bind_launches)
         self.link = LinkHub(config, self.resources, self.events, self.deliveries)
         self._name_untitled_agents()
+        self.skills.fold_discovered()
+        self.catalog.link_every_playbook()
         self.stream_slots = threading.BoundedSemaphore(self.SERVER_STREAMS_MAX)
         self.is_stopping = False
         super().__init__(

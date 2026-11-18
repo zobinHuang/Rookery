@@ -273,6 +273,7 @@ class PlaybookIndex:
 
     INDEX_KIND = "playbook"
     INDEX_QUERY_DEFAULT_LIMIT = 200
+    INDEX_QUERY_MAX_LIMIT = 100_000
 
     def __init__(self, resources: ResourceStore, skills: SkillIndex) -> None:
         self._store = RecordStore(resources, self.INDEX_KIND)

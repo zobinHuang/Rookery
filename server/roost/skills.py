@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 import tempfile
@@ -8,7 +9,7 @@ from urllib.parse import urlsplit
 from roost.credentials import GitCredentialStore
 from roost.errors import NotFoundError, ValidationError
 from roost.records import RecordStore
-from roost.resources import ResourceStore
+from roost.resources import ResourceRef, ResourceStore
 
 
 @dataclass
@@ -459,6 +460,27 @@ class SkillRecord:
     updated_at: str = ""
 
     SKILL_VERSION_HISTORY_MAX = 100
+    SKILL_NAMESPACE_SEPARATOR = ":"
+
+    @classmethod
+    def answers_to(cls, used_name: str, name: str, skill_path: str) -> bool:
+        """Whether a skill an agent used by name is this registered one: the name an agent's harness gives
+        it, a plugin's namespace taken off, matches its registered name or the last part of its path in
+        the repository, case and spelling aside.
+
+        Args:
+            used_name: the name the agent used
+            name: the registered skill's name
+            skill_path: its path in the repository
+
+        Returns:
+            True when they are the same skill
+        """
+        wanted = RecordStore.slugify(used_name.rsplit(cls.SKILL_NAMESPACE_SEPARATOR, 1)[-1], fallback="")
+        if not wanted:
+            return False
+        list_names = [name, skill_path.rsplit("/", 1)[-1]]
+        return any(RecordStore.slugify(candidate, fallback="") == wanted for candidate in list_names if candidate)
 
     def latest_version(self) -> SkillVersion | None:
         """Read the most recently resolved version of this skill.
@@ -562,6 +584,7 @@ class SkillIndex:
     INDEX_QUERY_DEFAULT_LIMIT = 200
 
     def __init__(self, resources: ResourceStore, resolver: GitRefResolver | None = None) -> None:
+        self._resources = resources
         self._store = RecordStore(resources, self.INDEX_KIND)
         self._resolver = resolver or GitRefResolver()
 
@@ -614,7 +637,47 @@ class SkillIndex:
             )
             record.updated_at = GitRefResolver.now_timestamp()
             self._store.write(record_id, record.as_payload())
+        self.fold_discovered([record])
         return record
+
+    def fold_discovered(self, list_records: list[SkillRecord] | None = None) -> int:
+        """Fold the skills agents were seen using by name, before anyone registered them, into the
+        registered skills they are, so an agent's use and a playbook's pin meet on one skill.
+
+        Args:
+            list_records: the registered skills to fold into; None for every one
+
+        Returns:
+            how many discovered skills were folded away
+        """
+        if list_records is None:
+            list_records = [SkillRecord.from_payload(map_record) for map_record in self._store.list_all()]
+        folded = 0
+        with self._resources.database.transaction() as connection:
+            list_discovered = [
+                (str(row["id"]), str(row["name"]))
+                for row in connection.execute("SELECT id, name, attributes FROM resources WHERE kind = ?", (self.INDEX_KIND,))
+                if json.loads(row["attributes"] or "{}").get("discovered")
+            ]
+            for discovered_id, discovered_name in list_discovered:
+                record = next(
+                    (
+                        candidate
+                        for candidate in list_records
+                        if candidate.id != discovered_id
+                        and SkillRecord.answers_to(discovered_name or discovered_id, candidate.name, candidate.skill_path)
+                    ),
+                    None,
+                )
+                if record is None:
+                    continue
+                self._resources.merge_into(
+                    ResourceRef(kind=self.INDEX_KIND, id=discovered_id),
+                    ResourceRef(kind=self.INDEX_KIND, id=record.id),
+                    connection,
+                )
+                folded += 1
+        return folded
 
     def read_file(self, source_or_id: str, file_name: str) -> dict[str, object]:
         """Read a file of a skill, registered or not, as roost reaches its repository, with the token

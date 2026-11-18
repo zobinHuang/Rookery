@@ -119,9 +119,10 @@ struct LauncherView: View {
                 .help("Asking in this conversation; ⌫ on an empty box to leave it")
                 .transition(.scale(scale: 0.8, anchor: .leading).combined(with: .opacity))
             }
-            TextField(placeholder, text: Bindable(model).query)
+            TextField(placeholder, text: Bindable(model).query, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 19, weight: .regular))
+                .lineLimit(1...6)
                 .focused($isFieldFocused)
                 .onKeyPress(phases: .down, action: take)
             if model.shownConversationId != nil {
@@ -160,11 +161,16 @@ struct LauncherView: View {
             .frame(height: 1)
     }
 
-    /// The box's keys: the arrows move among the rows, Return chooses and ⌘Return asks Raven, Escape
-    /// closes, and Delete on an empty box leaves the conversation chosen; none while an input method composes.
+    /// The box's keys: the arrows move among the rows, Return chooses and ⌘Return asks Raven, ⇧Return or
+    /// ⌃J start a new line, Escape closes, and Delete on an empty box leaves the conversation chosen; none
+    /// while an input method composes.
     private func take(_ keyPress: KeyPress) -> KeyPress.Result {
         guard !AgentComposer.isComposing else {
             return .ignored
+        }
+        if AgentComposer.insertsNewline(keyPress) {
+            AgentComposer.insertNewline()
+            return .handled
         }
         if !model.listMentionTargets.isEmpty {
             switch keyPress.key {

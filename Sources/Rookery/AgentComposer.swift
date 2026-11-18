@@ -97,10 +97,14 @@ struct AgentComposer: View {
                 guard !Self.isComposing else {
                     return .ignored
                 }
+                if Self.insertsNewline(keyPress) {
+                    Self.insertNewline()
+                    return .handled
+                }
                 if let onKey, onKey(keyPress) == .handled {
                     return .handled
                 }
-                guard keyPress.key == .return, !keyPress.modifiers.contains(.shift) else {
+                guard keyPress.key == .return else {
                     return .ignored
                 }
                 if !isEmpty, !isBusy {
@@ -116,6 +120,22 @@ struct AgentComposer: View {
     /// works the suggestions.
     static var isComposing: Bool {
         (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
+    }
+
+    /// Whether a key starts a new line in a box where Return sends: ⇧Return, or ⌃J as terminals have it.
+    static func insertsNewline(_ keyPress: KeyPress) -> Bool {
+        if keyPress.key == .return {
+            return keyPress.modifiers.contains(.shift)
+        }
+        return keyPress.modifiers.contains(.control) && (keyPress.key.character == "j" || keyPress.key.character == "\n")
+    }
+
+    /// Start a new line at the caret of the focused box, in place of what is selected.
+    static func insertNewline() {
+        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
+            return
+        }
+        textView.insertText("\n", replacementRange: textView.selectedRange())
     }
 
     @ViewBuilder

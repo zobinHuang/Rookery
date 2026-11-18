@@ -1,5 +1,17 @@
 import Foundation
 
+/// A run of a plain-text message's lines at one depth of quoting: its own words at depth 0, the mail it
+/// quotes at 1, what that one quoted at 2, its `>` marks taken off.
+public struct QuotedPassage: Equatable, Sendable {
+    public let depth: Int
+    public let text: String
+
+    public init(depth: Int, text: String) {
+        self.depth = depth
+        self.text = text
+    }
+}
+
 /// The earlier mail a reply carries below its own text: where it starts, so a conversation shows each
 /// message's own words once, in its own card, and the quoted history only when asked.
 public enum MailQuote {
@@ -37,13 +49,64 @@ public enum MailQuote {
         formatter.timeZone = timeZone
         formatter.dateFormat = "EEE, MMM d, yyyy 'at' h:mm a"
         let who = sender.name.isEmpty ? sender.address : "\(sender.name) <\(sender.address)>"
-        let quoted = original
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: .newlines)
-            .map { line in line.hasPrefix(quotedLinePrefix) ? quotedLinePrefix + line : quotedLinePrefix + " " + line }
-            .joined(separator: "\n")
+        var listLines: [String] = []
+        for line in original.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines) {
+            let trimmed = line.replacing(/[ \t\u{00A0}]+$/, with: "")
+            let isBlank = trimmed.allSatisfy { $0 == ">" || $0 == " " }
+            if isBlank, let last = listLines.last, last.allSatisfy({ $0 == ">" || $0 == " " }) {
+                continue
+            }
+            if isBlank {
+                listLines.append(quotedLinePrefix + trimmed.filter { $0 == ">" })
+            } else {
+                listLines.append(trimmed.hasPrefix(quotedLinePrefix) ? quotedLinePrefix + trimmed : quotedLinePrefix + " " + trimmed)
+            }
+        }
+        let quoted = listLines.joined(separator: "\n")
         let own = body.trimmingCharacters(in: .whitespacesAndNewlines)
         return "\(own)\n\nOn \(formatter.string(from: sentAt)), \(who) wrote:\n\n\(quoted)\n"
+    }
+
+    /// A plain-text message as runs of lines at each depth of quoting, their `>` marks and the space after
+    /// them taken off, so quoted mail can be drawn as quoted rather than shown with its marks.
+    ///
+    /// - Parameter text: the message's text
+    /// - Returns: its passages in order, each run of blank quoted lines kept as one
+    public static func passages(of text: String) -> [QuotedPassage] {
+        var listPassages: [QuotedPassage] = []
+        var depth = 0
+        var listRun: [String] = []
+        let flush = {
+            let joined = listRun.joined(separator: "\n").trimmingCharacters(in: .newlines)
+            if !joined.isEmpty {
+                listPassages.append(QuotedPassage(depth: depth, text: joined))
+            }
+            listRun = []
+        }
+        for line in text.components(separatedBy: .newlines) {
+            var rest = Substring(line)
+            var lineDepth = 0
+            while true {
+                let unspaced = rest.drop { $0 == " " }
+                guard unspaced.hasPrefix(quotedLinePrefix) else {
+                    break
+                }
+                rest = unspaced.dropFirst()
+                lineDepth += 1
+            }
+            if lineDepth > 0, rest.hasPrefix(" ") {
+                rest = rest.dropFirst()
+            }
+            if lineDepth != depth {
+                flush()
+                depth = lineDepth
+            }
+            if !(rest.trimmingCharacters(in: .whitespaces).isEmpty && listRun.last?.isEmpty == true) {
+                listRun.append(rest.trimmingCharacters(in: .whitespaces).isEmpty ? "" : String(rest))
+            }
+        }
+        flush()
+        return listPassages
     }
 
     /// A plain-text message without the earlier mail it quotes: cut at the first line that opens a

@@ -37,6 +37,29 @@ struct MailQuoteReplyTests {
             timeZone: TimeZone(identifier: "UTC") ?? .current
         )
         #expect(reply.hasPrefix("Thanks!\n\nOn "))
-        #expect(reply.contains("Xudong Liao <x@ust.hk> wrote:\n\n> Hi Zhuobin,\n> \n> The paper is up.\n>> earlier line"))
+        #expect(reply.contains("Xudong Liao <x@ust.hk> wrote:\n\n> Hi Zhuobin,\n>\n> The paper is up.\n>> earlier line"))
+    }
+}
+
+struct MailQuotePassageTests {
+    @Test func quotedLinesBecomePassagesByDepthTheirMarksTakenOff() {
+        let listPassages = MailQuote.passages(of: "Sounds good.\n\n> Can you check?\n>\n>> Earlier ask\nDone.")
+        #expect(listPassages == [
+            QuotedPassage(depth: 0, text: "Sounds good."),
+            QuotedPassage(depth: 1, text: "Can you check?"),
+            QuotedPassage(depth: 2, text: "Earlier ask"),
+            QuotedPassage(depth: 0, text: "Done."),
+        ])
+    }
+
+    @Test func aRepliesQuoteKeepsOneBlankLineInARunAndNoTrailingSpaces() {
+        let reply = MailQuote.reply(
+            to: "Hi,\n\n\n   \n\nLine two  \n> old",
+            from: MailAddress(address: "r@x.com", name: ""),
+            sentAt: Date(timeIntervalSince1970: 0),
+            body: "Thanks",
+            timeZone: TimeZone(identifier: "UTC") ?? .current
+        )
+        #expect(reply.hasSuffix("wrote:\n\n> Hi,\n>\n> Line two\n>> old\n"))
     }
 }

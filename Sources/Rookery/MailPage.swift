@@ -770,26 +770,47 @@ struct MailMessageCard: View {
             .padding(isMine ? .leading : .trailing, farSideRoom)
     }
 
-    /// Plain text in a bubble of the conversation's colors: the user's in the theme turned over.
+    /// Plain text in a bubble of the conversation's colors: the user's in the theme turned over; the mail
+    /// it quotes drawn as quoted, under a bar for each level, its `>` marks taken off.
     private func textBubble(_ text: String, lineLimit: Int?) -> some View {
-        Text(text)
-            .font(.system(size: 13))
-            .lineSpacing(2.5)
-            .lineLimit(lineLimit)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .foregroundStyle(isMine ? AnyShapeStyle(StageColors.userBubbleText) : AnyShapeStyle(StageColors.primaryText))
-            .padding(.horizontal, 13)
-            .padding(.vertical, 8)
-            .background {
-                MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
-                    .fill(isMine ? AnyShapeStyle(StageColors.userBubble) : AnyShapeStyle(StageColors.agentBubble))
-                    .overlay {
-                        MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
-                            .stroke(isMine ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.agentBubbleBorder), lineWidth: 1)
+        let listPassages = MailQuote.passages(of: text)
+        let ink = isMine ? AnyShapeStyle(StageColors.userBubbleText) : AnyShapeStyle(StageColors.primaryText)
+        return VStack(alignment: .leading, spacing: 8) {
+            if lineLimit != nil || listPassages.allSatisfy({ $0.depth == 0 }) {
+                Text(listPassages.map(\.text).joined(separator: "\n"))
+                    .lineLimit(lineLimit)
+            } else {
+                ForEach(Array(listPassages.enumerated()), id: \.offset) { _, passage in
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(0..<passage.depth, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(ink)
+                                .opacity(0.3)
+                                .frame(width: 2)
+                        }
+                        Text(passage.text)
+                            .opacity(passage.depth == 0 ? 1 : 0.72)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .padding(isMine ? .leading : .trailing, Self.farSideRoom)
+        }
+        .font(.system(size: 13))
+        .lineSpacing(2.5)
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .foregroundStyle(ink)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 8)
+        .background {
+            MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
+                .fill(isMine ? AnyShapeStyle(StageColors.userBubble) : AnyShapeStyle(StageColors.agentBubble))
+                .overlay {
+                    MessageBubbleShape(isTrailing: isMine, hasTail: true, isTailOnTop: true)
+                        .stroke(isMine ? AnyShapeStyle(StageColor.clear) : AnyShapeStyle(StageColors.agentBubbleBorder), lineWidth: 1)
+                }
+        }
+        .padding(isMine ? .leading : .trailing, Self.farSideRoom)
     }
 
     /// Formatted text on its own white page, shaped as a bubble; its outline sweeps until the page is laid

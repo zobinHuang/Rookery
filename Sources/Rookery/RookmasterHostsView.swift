@@ -476,6 +476,9 @@ private struct HostDetail: View {
                     .foregroundStyle(StageColors.secondaryText)
                     .textSelection(.enabled)
                 FlowRow(spacing: 5) {
+                    if workdir.isParent {
+                        InfoTag("a new directory per agent")
+                    }
                     InfoTag(workdir.harness == Workdir.harnessCodex ? "Codex" : "Claude Code")
                     if let playbookId = workdir.playbookId {
                         InfoTag(fleetModel.graph.resource(FleetRef(kind: "playbook", id: playbookId))?.displayName ?? playbookId, tint: .purple)
@@ -569,6 +572,18 @@ private struct WorkdirEditor: View {
             EditorSection(title: "Name") {
                 EditorField(text: $workdir.name, placeholder: Workdir.defaultName(of: workdir.path).isEmpty ? "G-Watch" : Workdir.defaultName(of: workdir.path))
             }
+            Toggle(isOn: $workdir.isParent) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("A parent directory")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Each agent started here gets a new directory of its own inside, named <MMDD-name>, which its rook makes as it starts.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(StageColors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
             LaunchOptionsEditor(fleetModel: fleetModel, workdir: $workdir)
             HStack {
                 Spacer()

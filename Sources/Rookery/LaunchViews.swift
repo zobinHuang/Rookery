@@ -311,6 +311,8 @@ struct LaunchForm: View {
     @State private var target = ""
     @State private var workdirChoice = LaunchForm.otherDirectory
     @State private var draft = Workdir(name: "", path: "")
+    /// The name of the new directory an agent started in a parent workdir gets.
+    @State private var newDirectoryName = ""
     @State private var prompt = ""
     @State private var isBrowsing = false
 
@@ -356,7 +358,22 @@ struct LaunchForm: View {
         guard draft.path.hasPrefix("/") else {
             return "Choose a directory, an absolute path on the host."
         }
+        if draft.isParent, newDirectoryName.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "Name the new directory the agent gets in \(draft.name)."
+        }
         return nil
+    }
+
+    /// The directory the agent starts in: the workdir's own, or for a parent the new one inside it.
+    private var startDirectory: String {
+        guard draft.isParent else {
+            return draft.path
+        }
+        return draft.directory(
+            forAgentNamed: newDirectoryName,
+            on: .now,
+            taken: rookName.map(hosts.takenDirectories(on:)) ?? []
+        )
     }
 
     var body: some View {
@@ -450,6 +467,17 @@ struct LaunchForm: View {
                             choose(workdirChoice)
                         }
                     }
+                    if draft.isParent, workdirChoice != Self.otherDirectory {
+                        EditorField(text: $newDirectoryName, placeholder: "glm53flash")
+                        RookeryLabel(
+                            newDirectoryName.trimmingCharacters(in: .whitespaces).isEmpty
+                                ? "A new directory \(draft.path.hasSuffix("/") ? draft.path : draft.path + "/")<MMDD-name>, made as the agent starts"
+                                : startDirectory,
+                            icon: .folder
+                        )
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(StageColors.secondaryText)
+                    }
                     if workdirChoice == Self.otherDirectory {
                         HStack(spacing: 8) {
                             EditorField(text: $draft.path, placeholder: "/home/you/project")
@@ -517,7 +545,7 @@ struct LaunchForm: View {
         }
         let request = LaunchRequest(
             rookName: rookName,
-            cwd: draft.path,
+            cwd: startDirectory,
             harness: draft.harness,
             prompt: prompt,
             playbookId: draft.playbookId,
@@ -525,7 +553,9 @@ struct LaunchForm: View {
             role: draft.role,
             listTeams: draft.listTeams
         )
-        let name = draft.name.isEmpty ? Workdir.defaultName(of: draft.path) : draft.name
+        let name = draft.isParent
+            ? Workdir.defaultName(of: startDirectory)
+            : draft.name.isEmpty ? Workdir.defaultName(of: draft.path) : draft.name
         hosts.launch(request, title: "\(name) on \(alias ?? rookName)")
         close()
     }

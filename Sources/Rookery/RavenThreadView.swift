@@ -237,7 +237,10 @@ private struct RavenThreadContent: View {
     private func proposals(in conversationId: String) -> some View {
         let listProposals = (raven.mapProposals[conversationId] ?? []).filter { $0.action != .draftMail }
         let mapDecisions = raven.conversations.conversation(conversationId)?.mapDecisions ?? [:]
-        let listPending = listProposals.filter { mapDecisions[$0.id] == nil }
+        let listWaiting = listProposals.filter { mapDecisions[$0.id] == nil }
+        let listPending = listWaiting.enumerated().filter { index, proposal in
+            !listWaiting[(index + 1)...].contains { RavenAgent.isTwinSpawn($0, of: proposal) }
+        }.map(\.element)
         let listDecided = listProposals.filter { proposal in
             mapDecisions[proposal.id].map { shownUntil(of: $0) > now } ?? false
         }.suffix(Self.shownDecidedLimit)
@@ -415,7 +418,7 @@ private struct RavenThreadContent: View {
                 Spacer(minLength: 0)
             }
             .font(.system(size: 12))
-            if proposal.action == .spawn, let cwd = proposal.cwd {
+            if proposal.action == .spawn || proposal.action == .addWorkdir, let cwd = proposal.cwd {
                 RookeryLabel(cwd, icon: .folder)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(StageColors.secondaryText)
@@ -510,6 +513,9 @@ private struct RavenThreadContent: View {
     /// teams; a member's duty; a team's goal.
     private static func facts(of proposal: RavenProposal) -> [String] {
         var listFacts: [String] = []
+        if proposal.action == .addWorkdir, proposal.isParent {
+            listFacts.append("each agent gets <MMDD-name> inside")
+        }
         if let playbookId = proposal.playbookId, proposal.action != .loadPlaybook {
             listFacts.append("playbook \(playbookId)")
         }
@@ -555,6 +561,7 @@ private struct RavenThreadContent: View {
         case .removeEvent: .minus
         case .removeDrafts: .draft
         case .loadPlaybook: .playbook
+        case .addWorkdir: .folder
         }
     }
 
@@ -578,6 +585,7 @@ private struct RavenThreadContent: View {
         case .openEvent: "Raven would open in Calendar"
         case .removeDrafts: "Raven would throw away"
         case .loadPlaybook: "Raven would load playbook \(proposal.playbookId ?? "") into"
+        case .addWorkdir: proposal.isParent ? "Raven would add a parent workdir" : "Raven would add a workdir"
         }
     }
 
@@ -598,6 +606,7 @@ private struct RavenThreadContent: View {
         case .openEvent: "Open"
         case .removeDrafts: "Throw Away"
         case .loadPlaybook: "Load Playbook"
+        case .addWorkdir: "Add Workdir"
         }
     }
 
@@ -615,7 +624,7 @@ private struct RavenThreadContent: View {
         case .leave: "Took \(proposal.agentTitle) out of \(proposal.teamTitle ?? proposal.team ?? "")"
         case .createTeam: "Made the team \(proposal.agentTitle)"
         case .loadPlaybook: "Loading playbook \(proposal.playbookId ?? "") into \(proposal.agentTitle)"
-        case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
+        case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts, .addWorkdir:
             "\(proposal.agentTitle)"
         }
     }

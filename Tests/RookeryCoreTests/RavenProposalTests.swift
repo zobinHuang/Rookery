@@ -120,3 +120,25 @@ struct DraftRemovalProposalTests {
         #expect(proposal.mapPayload["mail_ids"]?.arrayValue?.first?.numberValue == 42)
     }
 }
+
+struct ParentWorkdirTests {
+    @Test func aParentGivesEachAgentADatedDirectoryOfItsOwnAvoidingThoseTaken() throws {
+        let parent = Workdir(name: "projects", path: "/mnt/projects/", isParent: true)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let day = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 19, hour: 12)))
+        #expect(parent.directory(forAgentNamed: "GLM 5.3 Flash", on: day) == "/mnt/projects/1119-glm-5.3-flash")
+        #expect(parent.directory(forAgentNamed: "glm", on: day, taken: ["/mnt/projects/1119-glm"]) == "/mnt/projects/1119-glm-2")
+        let old = try JSONDecoder().decode(Workdir.self, from: Data(#"{"id":"w","name":"api","path":"/src/api","harness":"claude"}"#.utf8))
+        #expect(!old.isParent)
+        #expect(old.listSkillIds.isEmpty)
+    }
+
+    @Test func aWorkdirProposalCarriesItsHostAndWhetherItIsAParent() throws {
+        let line = #"{"proposal":{"id":"p-w","action":"add_workdir","host":"b300","cwd":"/mnt/projects/","is_parent":true,"agent_title":"projects on b300","text":""}}"#
+        let proposal = try #require(try JSONDecoder().decode([String: RavenProposal].self, from: Data(line.utf8))["proposal"])
+        #expect(proposal.action == .addWorkdir)
+        #expect(proposal.host == "b300")
+        #expect(proposal.isParent)
+    }
+}

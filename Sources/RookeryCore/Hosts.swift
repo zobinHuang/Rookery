@@ -174,6 +174,9 @@ public struct Workdir: Codable, Equatable, Identifiable, Sendable {
     public var listSkillIds: [String]
     public var role: String
     public var listTeams: [LaunchTeam]
+    /// Whether it is a parent rather than the directory itself: each agent started in it gets a new
+    /// directory of its own, `<path>/<MMDD-name>`, which its rook creates as the agent starts.
+    public var isParent: Bool
 
     public init(
         id: String = UUID().uuidString,
@@ -183,7 +186,8 @@ public struct Workdir: Codable, Equatable, Identifiable, Sendable {
         playbookId: String? = nil,
         listSkillIds: [String] = [],
         role: String = "",
-        listTeams: [LaunchTeam] = []
+        listTeams: [LaunchTeam] = [],
+        isParent: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -193,6 +197,49 @@ public struct Workdir: Codable, Equatable, Identifiable, Sendable {
         self.listSkillIds = listSkillIds
         self.role = role
         self.listTeams = listTeams
+        self.isParent = isParent
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        path = try container.decode(String.self, forKey: .path)
+        harness = try container.decode(String.self, forKey: .harness)
+        playbookId = try container.decodeIfPresent(String.self, forKey: .playbookId)
+        listSkillIds = try container.decodeIfPresent([String].self, forKey: .listSkillIds) ?? []
+        role = try container.decodeIfPresent(String.self, forKey: .role) ?? ""
+        listTeams = try container.decodeIfPresent([LaunchTeam].self, forKey: .listTeams) ?? []
+        isParent = try container.decodeIfPresent(Bool.self, forKey: .isParent) ?? false
+    }
+
+    /// The directory a new agent of a name gets in a parent workdir: `<path>/<MMDD-name>`, the name in
+    /// lowercase with dashes for spaces, `-2`, `-3` and on added while a directory taken has it.
+    ///
+    /// - Parameters:
+    ///   - agentName: what the agent is called
+    ///   - date: the day it starts, which the directory is dated by
+    ///   - setTaken: the directories already in use
+    /// - Returns: the absolute directory
+    public func directory(forAgentNamed agentName: String, on date: Date, taken setTaken: Set<String> = []) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let parts = calendar.dateComponents([.month, .day], from: date)
+        let day = String(format: "%02d%02d", parts.month ?? 1, parts.day ?? 1)
+        let slug = agentName
+            .lowercased()
+            .split(whereSeparator: { $0.isWhitespace || $0 == "/" })
+            .joined(separator: "-")
+            .filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
+        let base = path.hasSuffix("/") ? String(path.dropLast()) : path
+        let first = "\(base)/\(day)-\(slug.isEmpty ? "agent" : slug)"
+        var candidate = first
+        var count = 2
+        while setTaken.contains(candidate) {
+            candidate = "\(first)-\(count)"
+            count += 1
+        }
+        return candidate
     }
 
     /// The directory's last component, a name for it until the user gives one.

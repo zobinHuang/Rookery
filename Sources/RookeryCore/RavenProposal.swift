@@ -36,6 +36,8 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         /// Load `playbookId` into the agent's project in place of the one it follows, then send it `text`
         /// if any.
         case loadPlaybook = "playbook"
+        /// Add a workdir at `cwd` to the user's host `host`, a parent when `isParent`.
+        case addWorkdir = "add_workdir"
 
         /// Whether the action is on the user's mail or calendars, which Rookery carries out itself.
         public var isOnMailOrCalendar: Bool {
@@ -76,6 +78,10 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
     public let goal: String
     /// For an action on mail or calendars, its details, as the tool that proposed it checked them.
     public let mapPayload: [String: JSONValue]
+    /// The ssh host a workdir is added to, by its alias.
+    public let host: String?
+    /// Whether the workdir added is a parent, each agent started in it given a directory of its own.
+    public let isParent: Bool
 
     enum CodingKeys: String, CodingKey {
         case mapPayload = "payload"
@@ -96,6 +102,8 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         case rook
         case cwd
         case harness
+        case host
+        case isParent = "is_parent"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -121,6 +129,8 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         duty = try container.decodeIfPresent(String.self, forKey: .duty) ?? ""
         goal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
         mapPayload = try container.decodeIfPresent([String: JSONValue].self, forKey: .mapPayload) ?? [:]
+        host = try container.decodeIfPresent(String.self, forKey: .host)
+        isParent = try container.decodeIfPresent(Bool.self, forKey: .isParent) ?? false
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -134,6 +144,10 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(rook, forKey: .rook)
         try container.encodeIfPresent(cwd, forKey: .cwd)
         try container.encodeIfPresent(harness, forKey: .harness)
+        try container.encodeIfPresent(host, forKey: .host)
+        if isParent {
+            try container.encode(isParent, forKey: .isParent)
+        }
         try container.encodeIfPresent(playbookId, forKey: .playbookId)
         try container.encode(listSkillIds, forKey: .listSkillIds)
         try container.encode(role, forKey: .role)
@@ -152,6 +166,18 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
     ///
     /// - Parameter line: one JSON line, as the stream-json output and the transcript hold it
     public static func proposals(in line: Data) -> [RavenProposal] {
+        guard isToolResult(line) else {
+            return []
+        }
+        return parsedProposals(in: line)
+    }
+
+    /// Whether a JSON line of the output carries a command's result, where a proposal may be.
+    public static func isToolResult(_ line: Data) -> Bool {
+        line.range(of: Data(#""tool_result""#.utf8)) != nil
+    }
+
+    private static func parsedProposals(in line: Data) -> [RavenProposal] {
         guard
             let object = try? JSONDecoder().decode(JSONValue.self, from: line),
             object["type"]?.stringValue == "user",

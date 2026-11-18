@@ -107,6 +107,11 @@ final class HostsModel {
         saveBook()
     }
 
+    /// The directories the agents on a rook work in, which a new directory in a parent workdir avoids.
+    func takenDirectories(on rookName: String) -> Set<String> {
+        Set(fleetModel.fleet.mapAgents.values.filter { $0.rookName == rookName }.map(\.cwd))
+    }
+
     func put(_ workdir: Workdir, on alias: String) {
         book.put(workdir, on: alias)
         saveBook()

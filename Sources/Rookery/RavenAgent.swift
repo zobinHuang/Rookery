@@ -203,6 +203,7 @@ final class RavenAgent {
         mapLiveReaders[conversationId] = reader
         mapReaders[conversationId] = reader
         mapProposals[conversationId] = listProposals
+        takeKeptProposals(of: conversationId)
         Task { @MainActor [weak self] in
             self?.fileDrafts(listProposals, in: conversationId)
         }
@@ -478,6 +479,10 @@ final class RavenAgent {
     /// prompt, or start its new session.
     func approve(_ proposal: RavenProposal, in conversationId: String) async {
         mapProposalErrors[proposal.id] = nil
+        if proposal.action == .addWorkdir {
+            addWorkdir(proposal, in: conversationId)
+            return
+        }
         if proposal.action == .draftMail {
             fileDrafts([proposal], in: conversationId)
             return
@@ -516,7 +521,7 @@ final class RavenAgent {
                     role: proposal.role,
                     listTeams: proposal.listTeams
                 ))
-            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
+            case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts, .addWorkdir:
                 return
             case .join, .leave, .createTeam:
                 try await changeTeam(proposal, with: client)
@@ -526,6 +531,9 @@ final class RavenAgent {
             }
             mapDeliveries[delivery.id] = delivery
             conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .sent(deliveryId: delivery.id), decidedAt: .now))
+            if proposal.action == .spawn {
+                setAsideTwins(of: proposal, in: conversationId)
+            }
             saveIndex()
         } catch {
             mapProposalErrors[proposal.id] = FleetModel.describe(error)
@@ -546,9 +554,45 @@ final class RavenAgent {
                 mapBody["attributes"] = .object(["goal": .string(proposal.goal)])
             }
             _ = try await fleetModel.create(AgentFleet.teamKind, body: mapBody)
-        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts, .loadPlaybook:
+        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts, .loadPlaybook, .addWorkdir:
             return
         }
+    }
+
+    /// Add the workdir a proposal names to the user's host, as the hosts page would.
+    private func addWorkdir(_ proposal: RavenProposal, in conversationId: String) {
+        guard let alias = proposal.host, let path = proposal.cwd, path.hasPrefix("/") else {
+            mapProposalErrors[proposal.id] = "the proposal names no host or no absolute directory"
+            return
+        }
+        let name = proposal.mapPayload["name"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? Workdir.defaultName(of: path)
+        fleetModel.hosts.put(Workdir(
+            name: name,
+            path: path,
+            harness: proposal.harness ?? Workdir.harnessClaude,
+            isParent: proposal.isParent
+        ), on: alias)
+        mapProposalOutcomes[proposal.id] = "Added \(name) to \(alias)"
+        conversations.decide(proposal.id, in: conversationId, RavenDecision(outcome: .done, decidedAt: .now))
+        saveIndex()
+    }
+
+    /// Let go the proposals still waiting that would start one more session in the same directory on the
+    /// same rook as one just started.
+    private func setAsideTwins(of proposal: RavenProposal, in conversationId: String) {
+        let mapDecisions = conversations.conversation(conversationId)?.mapDecisions ?? [:]
+        for twin in mapProposals[conversationId] ?? []
+        where twin.id != proposal.id && mapDecisions[twin.id] == nil && Self.isTwinSpawn(twin, of: proposal) {
+            conversations.decide(twin.id, in: conversationId, RavenDecision(outcome: .rejected, decidedAt: .now))
+        }
+    }
+
+    /// Whether two proposals would each start a session in the same directory on the same rook.
+    static func isTwinSpawn(_ proposal: RavenProposal, of other: RavenProposal) -> Bool {
+        proposal.action == .spawn
+            && other.action == .spawn
+            && proposal.rook == other.rook
+            && proposal.cwd == other.cwd
     }
 
     func reject(_ proposal: RavenProposal, in conversationId: String) {
@@ -663,6 +707,7 @@ final class RavenAgent {
                 "XDG_STATE_HOME": workspace.appending(path: "state").path,
                 "ROOKERY_AGENT_ID": sessionId,
                 "ROOK_AGENT_ID": sessionId,
+                "ROOK_PROPOSALS_FILE": keptProposalsFile(of: sessionId).path,
                 "TMUX": nil,
                 "TMUX_PANE": nil,
             ],
@@ -670,6 +715,7 @@ final class RavenAgent {
             program: isCodex ? .codex : .claude
         ))
         var finalState = AgentState.done
+        try? FileManager.default.createDirectory(at: historyDirectory, withIntermediateDirectories: true)
         do {
             for try await line in agent.run() {
                 if isCodex {
@@ -678,6 +724,7 @@ final class RavenAgent {
                     take(line, into: sessionId)
                 }
             }
+            takeKeptProposals(of: sessionId)
             if Task.isCancelled {
                 finish(sessionId, .cancelled)
             } else if mapStatuses[sessionId] == .running {
@@ -817,13 +864,39 @@ final class RavenAgent {
         historyDirectory.appending(path: "\(conversationId).jsonl")
     }
 
+    /// Where `rook-client propose` keeps each of a conversation's proposals, besides printing it: the
+    /// card shows however Raven passes the command's output on, cut or filtered.
+    private func keptProposalsFile(of conversationId: String) -> URL {
+        historyDirectory.appending(path: "\(conversationId).proposals.jsonl")
+    }
+
+    /// Take into a conversation the proposals kept for it that its output did not carry.
+    private func takeKeptProposals(of conversationId: String) {
+        guard let data = try? Data(contentsOf: keptProposalsFile(of: conversationId)) else {
+            return
+        }
+        let setKnown = Set((mapProposals[conversationId] ?? []).map(\.id))
+        let listNew = data.split(separator: UInt8(ascii: "\n")).compactMap { line in
+            try? JSONDecoder().decode([String: RavenProposal].self, from: Data(line))["proposal"]
+        }.filter { !setKnown.contains($0.id) }
+        guard !listNew.isEmpty else {
+            return
+        }
+        mapProposals[conversationId, default: []].append(contentsOf: listNew)
+        fileDrafts(listNew, in: conversationId)
+    }
+
     /// Add a line to what was said in a conversation, on screen and in its history.
     private func record(_ line: Data, in conversationId: String) {
         var reader = reader(of: conversationId)
-        let listProposed = RavenProposal.proposals(in: line)
+        let setKnown = Set((mapProposals[conversationId] ?? []).map(\.id))
+        let listProposed = RavenProposal.proposals(in: line).filter { !setKnown.contains($0.id) }
         if !listProposed.isEmpty {
             mapProposals[conversationId, default: []].append(contentsOf: listProposed)
             fileDrafts(listProposed, in: conversationId)
+        }
+        if RavenProposal.isToolResult(line) {
+            takeKeptProposals(of: conversationId)
         }
         let terminated = line + Data("\n".utf8)
         reader.append(terminated)
@@ -931,6 +1004,7 @@ final class RavenAgent {
                     "skills": .array(workdir.listSkillIds.map(JSONValue.string)),
                     "role": .string(workdir.role),
                     "teams": .array(workdir.listTeams.map { .object(["team": .string($0.teamId), "duty": .string($0.duty)]) }),
+                    "is_parent": .bool(workdir.isParent),
                 ])
             }
             return .object([
@@ -1011,7 +1085,7 @@ final class RavenAgent {
             }
         }
         listLines.append("")
-        listLines.append("Your agent id is \(agentId); pass --as-agent \(agentId) on every change.")
+        listLines.append("Your agent id is \(agentId); pass --as-agent \(agentId) on every rook-client resource change.")
         return listLines.joined(separator: "\n")
     }
 

@@ -339,7 +339,7 @@ private struct RavenThreadContent: View {
     /// teams; a member's duty; a team's goal.
     private static func facts(of proposal: RavenProposal) -> [String] {
         var listFacts: [String] = []
-        if let playbookId = proposal.playbookId {
+        if let playbookId = proposal.playbookId, proposal.action != .loadPlaybook {
             listFacts.append("playbook \(playbookId)")
         }
         listFacts += proposal.listSkillIds.map { "skill \($0)" }
@@ -383,6 +383,7 @@ private struct RavenThreadContent: View {
         case .addEvent, .changeEvent, .openEvent: .clock
         case .removeEvent: .minus
         case .removeDrafts: .draft
+        case .loadPlaybook: .playbook
         }
     }
 
@@ -405,6 +406,7 @@ private struct RavenThreadContent: View {
         case .removeEvent: "Raven would remove"
         case .openEvent: "Raven would open in Calendar"
         case .removeDrafts: "Raven would throw away"
+        case .loadPlaybook: "Raven would load playbook \(proposal.playbookId ?? "") into"
         }
     }
 
@@ -424,6 +426,7 @@ private struct RavenThreadContent: View {
         case .removeEvent: "Remove Event"
         case .openEvent: "Open"
         case .removeDrafts: "Throw Away"
+        case .loadPlaybook: "Load Playbook"
         }
     }
 
@@ -440,6 +443,7 @@ private struct RavenThreadContent: View {
         case .join: "Put \(proposal.agentTitle) in \(proposal.teamTitle ?? proposal.team ?? "")"
         case .leave: "Took \(proposal.agentTitle) out of \(proposal.teamTitle ?? proposal.team ?? "")"
         case .createTeam: "Made the team \(proposal.agentTitle)"
+        case .loadPlaybook: "Loading playbook \(proposal.playbookId ?? "") into \(proposal.agentTitle)"
         case .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
             "\(proposal.agentTitle)"
         }

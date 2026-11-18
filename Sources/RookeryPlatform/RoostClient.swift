@@ -189,6 +189,16 @@ public final class RoostClient: Sendable {
         try await deliver(["to": agentId, "kind": "interrupt"])
     }
 
+    /// Ask an agent's rook to load a playbook into the agent's project in place of the one it follows.
+    ///
+    /// - Parameters:
+    ///   - playbookId: the playbook
+    ///   - agentId: the agent
+    ///   - text: what to tell the agent once it is loaded, or empty to let it learn on its next turn
+    public func loadPlaybook(_ playbookId: String, into agentId: String, text: String) async throws -> FleetDelivery {
+        try await deliver(["to": agentId, "kind": "playbook", "text": text, "options": ["playbook": playbookId]])
+    }
+
     /// Ask an agent's rook to answer the agent's approval prompt.
     ///
     /// - Parameter choice: `once`, allowing the one call, or `deny`

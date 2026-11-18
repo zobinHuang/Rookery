@@ -459,6 +459,8 @@ final class RavenAgent {
                 delivery = try await client.interrupt(proposal.agentId ?? "")
             case .approve:
                 delivery = try await client.approve(proposal.agentId ?? "", choice: proposal.choice ?? RavenProposal.approveDeny)
+            case .loadPlaybook:
+                delivery = try await client.loadPlaybook(proposal.playbookId ?? "", into: proposal.agentId ?? "", text: proposal.text)
             case .spawn:
                 delivery = try await client.launch(LaunchRequest(
                     rookName: proposal.rook ?? "",
@@ -500,7 +502,7 @@ final class RavenAgent {
                 mapBody["attributes"] = .object(["goal": .string(proposal.goal)])
             }
             _ = try await fleetModel.create(AgentFleet.teamKind, body: mapBody)
-        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts:
+        case .message, .interrupt, .approve, .spawn, .draftMail, .addEvent, .changeEvent, .removeEvent, .openEvent, .removeDrafts, .loadPlaybook:
             return
         }
     }

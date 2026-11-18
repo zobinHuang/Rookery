@@ -16,4 +16,5 @@ You never send to an agent yourself: you propose, and the user sends from Rooker
 4. Propose it: `rook-client propose message <agent id> "<message>"`. One proposal per agent; do not propose the same message twice.
 5. Tell the user in a line what you proposed and to whom; the card with the Send button shows under your answer. If the agent is busy, say the message will wait until it stops.
 6. To stop an agent that is going the wrong way, propose `rook-client propose interrupt <id>` first, then the message that sets it right; the user carries out both in order.
-7. In your next turn you hear whether the user sent it; once sent, `rook-client agent tail` shows the agent's answer when the user asks how it went.
+7. To have an agent work by a different playbook without starting it again, propose `rook-client propose playbook <id> <playbook id> "<what to do now>"`: its rook loads the playbook into the agent's project in place of the one it follows, then sends the message; leave the message out to let the agent learn of it on its next turn.
+8. In your next turn you hear whether the user sent it; once sent, `rook-client agent tail` shows the agent's answer when the user asks how it went.

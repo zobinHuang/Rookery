@@ -301,6 +301,7 @@ struct AgentDetailView: View {
         case "interrupt": "Interrupt"
         case "approve": "Answer to its approval"
         case "spawn": "New session"
+        case "playbook": delivery.text.isEmpty ? "Playbook" : "Playbook, then: \(delivery.text)"
         default: delivery.text
         }
     }

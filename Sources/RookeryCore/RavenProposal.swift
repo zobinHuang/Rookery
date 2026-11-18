@@ -33,6 +33,9 @@ public struct RavenProposal: Codable, Equatable, Identifiable, Sendable {
         case openEvent = "open_event"
         /// Throw away the drafts `payload` names: Rookery's by id, Mail's by message id.
         case removeDrafts = "remove_drafts"
+        /// Load `playbookId` into the agent's project in place of the one it follows, then send it `text`
+        /// if any.
+        case loadPlaybook = "playbook"
 
         /// Whether the action is on the user's mail or calendars, which Rookery carries out itself.
         public var isOnMailOrCalendar: Bool {

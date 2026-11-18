@@ -367,7 +367,7 @@ actor MailService: MailSource {
         var body = draft.body
         if let replyToMessageId = draft.replyToMessageId, let original = try await message(replyToMessageId) {
             header = original.messageIdHeader
-            body = MailQuote.reply(to: original.text, from: original.summary.from, sentAt: original.summary.sentAt, body: draft.body)
+            body = MailQuote.reply(to: original, body: draft.body)
         }
         try await MainActor.run {
             try MailDrafts.write(

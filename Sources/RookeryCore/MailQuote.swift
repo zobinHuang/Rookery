@@ -32,39 +32,44 @@ public enum MailQuote {
     /// How many lines an attribution may be wrapped over, found from the line it ends on.
     private static let attributionLineReach = 3
 
-    /// A reply as it is sent: the reply's own text, then a line naming who wrote what it answers and when,
-    /// then that message whole, each line marked as quoted, its own quotes one level deeper, so the one
-    /// it goes to reads it in its thread as any mail client writes it.
+    /// A reply as it is sent, as Outlook writes one: the reply's own text, then a header naming who sent
+    /// the message it answers, when, to whom and under what subject, then that message whole as it was,
+    /// its trailing spaces and runs of blank lines tidied, its own history below it in the same way.
     ///
     /// - Parameters:
+    ///   - original: the message answered
     ///   - body: what the reply says
-    ///   - original: the text of the message answered
-    ///   - sender: who wrote that message
-    ///   - sentAt: when it was sent
     ///   - timeZone: the zone its time is written in
     /// - Returns: the text to send
-    public static func reply(to original: String, from sender: MailAddress, sentAt: Date, body: String, timeZone: TimeZone = .current) -> String {
+    public static func reply(to original: MailMessageDetail, body: String, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.locale = Locale(identifier: "en_GB")
         formatter.timeZone = timeZone
-        formatter.dateFormat = "EEE, MMM d, yyyy 'at' h:mm a"
-        let who = sender.name.isEmpty ? sender.address : "\(sender.name) <\(sender.address)>"
+        formatter.dateFormat = "EEEE, d MMMM yyyy h:mm a"
+        let person: (MailAddress) -> String = { address in
+            address.name.isEmpty ? address.address : "\(address.name) <\(address.address)>"
+        }
+        var listHeader = [
+            "From: \(person(original.summary.from))",
+            "Sent: \(formatter.string(from: original.summary.sentAt))",
+        ]
+        if !original.listTo.isEmpty {
+            listHeader.append("To: \(original.listTo.map(person).joined(separator: "; "))")
+        }
+        if !original.listCc.isEmpty {
+            listHeader.append("Cc: \(original.listCc.map(person).joined(separator: "; "))")
+        }
+        listHeader.append("Subject: \(original.summary.subject)")
         var listLines: [String] = []
-        for line in original.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines) {
+        for line in original.text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines) {
             let trimmed = line.replacing(/[ \t\u{00A0}]+$/, with: "")
-            let isBlank = trimmed.allSatisfy { $0 == ">" || $0 == " " }
-            if isBlank, let last = listLines.last, last.allSatisfy({ $0 == ">" || $0 == " " }) {
+            if trimmed.isEmpty, listLines.last?.isEmpty == true {
                 continue
             }
-            if isBlank {
-                listLines.append(quotedLinePrefix + trimmed.filter { $0 == ">" })
-            } else {
-                listLines.append(trimmed.hasPrefix(quotedLinePrefix) ? quotedLinePrefix + trimmed : quotedLinePrefix + " " + trimmed)
-            }
+            listLines.append(trimmed)
         }
-        let quoted = listLines.joined(separator: "\n")
         let own = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "\(own)\n\nOn \(formatter.string(from: sentAt)), \(who) wrote:\n\n\(quoted)\n"
+        return "\(own)\n\n\(listHeader.joined(separator: "\n"))\n\n\(listLines.joined(separator: "\n"))\n"
     }
 
     /// A plain-text message as runs of lines at each depth of quoting, their `>` marks and the space after

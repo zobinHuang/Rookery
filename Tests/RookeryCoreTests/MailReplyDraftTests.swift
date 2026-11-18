@@ -27,17 +27,49 @@ struct MailReplyDraftTests {
 }
 
 struct MailQuoteReplyTests {
-    @Test func aReplyCarriesTheMessageItAnswersQuotedUnderItsOwnText() {
-        let sentAt = Date(timeIntervalSince1970: 1_795_000_000)
-        let reply = MailQuote.reply(
-            to: "Hi Zhuobin,\n\nThe paper is up.\n> earlier line",
-            from: MailAddress(address: "x@ust.hk", name: "Xudong Liao"),
-            sentAt: sentAt,
-            body: "Thanks!\n",
-            timeZone: TimeZone(identifier: "UTC") ?? .current
+    private static func original(text: String, listCc: [MailAddress]) -> MailMessageDetail {
+        MailMessageDetail(
+            summary: MailMessageSummary(
+                id: 9, account: "zhuobin@u.nus.edu", folder: .inbox, from: MailAddress(address: "junjie.tan@nus.edu.sg", name: "Tan Jun Jie"),
+                subject: "RE: Enquiry on Leave of Absence", sentAt: Date(timeIntervalSince1970: 1_793_700_000), receivedAt: Date(timeIntervalSince1970: 1_793_700_000),
+                isRead: true, isFlagged: false, snippet: "", conversationId: 1, attachmentCount: 0
+            ),
+            listTo: [MailAddress(address: "zhuobin@u.nus.edu", name: "Huang Zhuobin")],
+            listCc: listCc,
+            text: text,
+            listAttachments: [],
+            isPartial: false
         )
-        #expect(reply.hasPrefix("Thanks!\n\nOn "))
-        #expect(reply.contains("Xudong Liao <x@ust.hk> wrote:\n\n> Hi Zhuobin,\n>\n> The paper is up.\n>> earlier line"))
+    }
+
+    @Test func aReplyCarriesTheMessageItAnswersUnderAnOutlookHeaderAsItWas() {
+        let reply = MailQuote.reply(
+            to: Self.original(text: "Dear Zhuobin,  \n\n\n\nThank you.", listCc: [MailAddress(address: "linefong@nus.edu.sg", name: "Loo Line Fong")]),
+            body: "Dear Junjie,\n\nThanks!\n",
+            timeZone: TimeZone(identifier: "Asia/Singapore") ?? .current
+        )
+        #expect(reply == """
+            Dear Junjie,
+
+            Thanks!
+
+            From: Tan Jun Jie <junjie.tan@nus.edu.sg>
+            Sent: Tuesday, 3 November 2026 6:00 pm
+            To: Huang Zhuobin <zhuobin@u.nus.edu>
+            Cc: Loo Line Fong <linefong@nus.edu.sg>
+            Subject: RE: Enquiry on Leave of Absence
+
+            Dear Zhuobin,
+
+            Thank you.
+
+            """)
+    }
+
+    @Test func aReplyToAMessageCopiedToNoOneLeavesTheCcLineOut() {
+        let reply = MailQuote.reply(to: Self.original(text: "Hi", listCc: []), body: "Ok")
+        #expect(!reply.contains("Cc:"))
+        #expect(MailQuote.trimmed(reply) == "Ok")
     }
 }
 
@@ -50,16 +82,5 @@ struct MailQuotePassageTests {
             QuotedPassage(depth: 2, text: "Earlier ask"),
             QuotedPassage(depth: 0, text: "Done."),
         ])
-    }
-
-    @Test func aRepliesQuoteKeepsOneBlankLineInARunAndNoTrailingSpaces() {
-        let reply = MailQuote.reply(
-            to: "Hi,\n\n\n   \n\nLine two  \n> old",
-            from: MailAddress(address: "r@x.com", name: ""),
-            sentAt: Date(timeIntervalSince1970: 0),
-            body: "Thanks",
-            timeZone: TimeZone(identifier: "UTC") ?? .current
-        )
-        #expect(reply.hasSuffix("wrote:\n\n> Hi,\n>\n> Line two\n>> old\n"))
     }
 }

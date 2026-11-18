@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// A slim horizontal slider drawn for the mixer: a groove filled from its rest value to the current one,
@@ -131,63 +132,189 @@ struct EqualizerBandSlider: View {
     }
 }
 
-/// A stereo meter reading its levels itself, so a new level redraws only it and not the strip around it.
-struct LiveStereoMeter: View {
+/// The meters on screen, drawn again each time levels are read, outside SwiftUI: levels change thirty times
+/// a second, and as SwiftUI state they laid out and drew the whole stage window each time.
+@MainActor
+final class MeterTicker {
+    private let setMeterViews = NSHashTable<StereoMeterView>.weakObjects()
+
+    func add(_ view: StereoMeterView) {
+        setMeterViews.add(view)
+    }
+
+    /// Draw every meter shown with its latest levels.
+    func tick() {
+        for view in setMeterViews.allObjects {
+            view.refresh()
+        }
+    }
+}
+
+/// Where the environment keeps the mixer's meter ticker, for the meters deep in its strips.
+private struct MeterTickerKey: EnvironmentKey {
+    static let defaultValue: MeterTicker? = nil
+}
+
+extension EnvironmentValues {
+    /// The ticker that draws the meters again, set at the root of the mixer.
+    var meterTicker: MeterTicker? {
+        get { self[MeterTickerKey.self] }
+        set { self[MeterTickerKey.self] = newValue }
+    }
+}
+
+/// A stereo meter that reads its levels itself whenever the mixer's ticker says they changed, drawn in
+/// layers of its own, so a new level never touches the views around it.
+struct LiveStereoMeter: NSViewRepresentable {
     let readLevels: () -> MixerLevels
 
-    var body: some View {
-        StereoMeter(levels: readLevels())
+    func makeNSView(context: Context) -> StereoMeterView {
+        let view = StereoMeterView()
+        context.environment.meterTicker?.add(view)
+        return view
+    }
+
+    func updateNSView(_ view: StereoMeterView, context: Context) {
+        view.readLevels = readLevels
+        view.grooveColor = StageColors.groove.color(in: context.environment.stageTheme)
+        view.refresh()
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: StereoMeterView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? StereoMeterView.defaultWidth, height: StereoMeterView.height)
     }
 }
 
 /// Two thin bars, left channel over right, lit green through amber to red as the sound gets louder.
-struct StereoMeter: View {
+final class StereoMeterView: NSView {
     private static let barHeight: CGFloat = 3
+    private static let barSpacing: CGFloat = 2
+    static let height = barHeight * 2 + barSpacing
+    static let defaultWidth: CGFloat = 30
     /// The quietest level shown, in decibels; anything quieter leaves the bar empty.
     private static let floorDecibels: Float = -54
+    private static let stepDuration: CFTimeInterval = 1.0 / 30
 
-    let levels: MixerLevels
-
-    var body: some View {
-        VStack(spacing: 2) {
-            bar(level: levels.left)
-            bar(level: levels.right)
-        }
-        .animation(.linear(duration: 1 / 30), value: levels)
-    }
-
-    private func bar(level: Float) -> some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(StageColors.groove)
-                Capsule()
-                    .fill(LinearGradient(
-                        stops: [
-                            .init(color: .green, location: 0),
-                            .init(color: .green, location: 0.65),
-                            .init(color: .yellow, location: 0.85),
-                            .init(color: .red, location: 1),
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ))
-                    .mask(alignment: .leading) {
-                        Capsule()
-                            .frame(width: proxy.size.width * share(of: level))
-                    }
+    var readLevels: () -> MixerLevels = { MixerLevels() }
+    var grooveColor = NSColor.quaternaryLabelColor {
+        didSet {
+            if grooveColor != oldValue {
+                applyColors()
             }
         }
-        .frame(height: Self.barHeight)
+    }
+
+    private var listGrooves: [CALayer] = []
+    private var listFills: [CAGradientLayer] = []
+    private var listMasks: [CALayer] = []
+    private var levels = MixerLevels()
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for _ in 0..<2 {
+            let groove = CALayer()
+            let fill = CAGradientLayer()
+            fill.startPoint = CGPoint(x: 0, y: 0.5)
+            fill.endPoint = CGPoint(x: 1, y: 0.5)
+            fill.locations = [0, 0.65, 0.85, 1]
+            let mask = CALayer()
+            mask.backgroundColor = NSColor.black.cgColor
+            mask.anchorPoint = .zero
+            fill.mask = mask
+            layer?.addSublayer(groove)
+            layer?.addSublayer(fill)
+            listGrooves.append(groove)
+            listFills.append(fill)
+            listMasks.append(mask)
+        }
+        applyColors()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for index in 0..<2 {
+            let frame = CGRect(
+                x: 0,
+                y: CGFloat(index) * (Self.barHeight + Self.barSpacing),
+                width: bounds.width,
+                height: Self.barHeight
+            )
+            listGrooves[index].frame = frame
+            listGrooves[index].cornerRadius = Self.barHeight / 2
+            listFills[index].frame = frame
+        }
+        placeMasks()
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyColors()
+    }
+
+    /// Read the levels and move the bars to them, while the meter can be seen.
+    func refresh() {
+        guard let window, window.occlusionState.contains(.visible), !isHiddenOrHasHiddenAncestor else {
+            return
+        }
+        show(readLevels())
+    }
+
+    /// Move the bars to levels, gliding there over one reading.
+    func show(_ newLevels: MixerLevels) {
+        guard newLevels != levels else {
+            return
+        }
+        levels = newLevels
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(Self.stepDuration)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+        placeMasks()
+        CATransaction.commit()
+    }
+
+    private func placeMasks() {
+        for (index, level) in [levels.left, levels.right].enumerated() {
+            let width = bounds.width * Self.share(of: level)
+            listMasks[index].frame = CGRect(
+                x: 0,
+                y: 0,
+                width: width,
+                height: Self.barHeight
+            )
+            listMasks[index].cornerRadius = min(Self.barHeight, width) / 2
+        }
+    }
+
+    private func applyColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let listStops = [NSColor.systemGreen, .systemGreen, .systemYellow, .systemRed].map(\.cgColor)
+            for index in 0..<2 {
+                listGrooves[index].backgroundColor = grooveColor.cgColor
+                listFills[index].colors = listStops
+            }
+        }
     }
 
     /// How much of the bar a level fills, on a decibel scale so quiet sound still shows.
-    private func share(of level: Float) -> CGFloat {
+    private static func share(of level: Float) -> CGFloat {
         guard level > 0 else {
             return 0
         }
         let decibels = 20 * log10(level)
-        return CGFloat(min(max((decibels - Self.floorDecibels) / -Self.floorDecibels, 0), 1))
+        return CGFloat(min(max((decibels - floorDecibels) / -floorDecibels, 0), 1))
     }
 }
 

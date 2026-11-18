@@ -44,8 +44,15 @@ final class BrowserTabMixer {
     private var mapSettings: [BrowserTabKey: MixerTrackSettings] = [:]
     /// The tabs worth a strip: those playing or taken over, in the order their browsers list them.
     private(set) var listTabs: [MixerBrowserTab] = []
-    /// How loud each processed tab is now, for its meter.
-    private(set) var mapLevels: [BrowserTabKey: MixerLevels] = [:]
+    /// How loud each processed tab is now, for its meter; the meters read it when told by `onLevels`, not
+    /// through observation.
+    @ObservationIgnored private(set) var mapLevels: [BrowserTabKey: MixerLevels] = [:] {
+        didSet {
+            onLevels?()
+        }
+    }
+    /// Tells the meters the levels changed.
+    @ObservationIgnored var onLevels: (() -> Void)?
     /// How many browsers have the extension connected.
     private(set) var sessionCount = 0
     /// The tabs' videos shown in the sidebar.

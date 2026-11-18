@@ -16,6 +16,7 @@ struct MixerView: View {
 
     var body: some View {
         content
+            .environment(\.meterTicker, mixer.meterTicker)
             .onAppear(perform: mixer.beginShowingMeters)
             .onDisappear(perform: mixer.endShowingMeters)
     }

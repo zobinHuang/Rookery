@@ -31,11 +31,17 @@ final class MixerController {
     private(set) var isRunning = false
     /// The applications that can be mixed: those connected to the audio system, and those taken over.
     private(set) var listTracks: [MixerTrackStatus] = []
-    /// How loud each captured track is now, for its meter, by bundle id.
-    private(set) var mapLevels: [String: MixerLevels] = [:]
+    /// How loud each captured track is now, for its meter, by bundle id; the meters read it when the ticker
+    /// tells them, not through observation.
+    @ObservationIgnored private(set) var mapLevels: [String: MixerLevels] = [:]
+    /// Draws the meters on screen again whenever levels are read.
+    @ObservationIgnored let meterTicker = MeterTicker()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        browserTabs.onLevels = { [meterTicker] in
+            meterTicker.tick()
+        }
         mapSettings = defaults.data(forKey: Self.settingsKey)
             .flatMap { try? JSONDecoder().decode([String: MixerTrackSettings].self, from: $0) } ?? [:]
     }
@@ -128,6 +134,7 @@ final class MixerController {
             meterTimer = nil
             if !mapLevels.isEmpty {
                 mapLevels = [:]
+                meterTicker.tick()
             }
         }
     }
@@ -144,6 +151,7 @@ final class MixerController {
         }
         if mapLevels != self.mapLevels {
             self.mapLevels = mapLevels
+            meterTicker.tick()
         }
     }
 

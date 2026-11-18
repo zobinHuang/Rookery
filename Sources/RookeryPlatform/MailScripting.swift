@@ -88,7 +88,7 @@ public enum MailScripting {
 }
 
 /// A mail written in Rookery handed to Mail: opened in a compose window for the user to finish there, or
-/// sent when the user presses Send in Rookery. A reply is made with Mail's own reply to the message it
+/// sent when the user presses Send in Rookery, the draft Mail keeps of a scripted message then let go. A reply is made with Mail's own reply to the message it
 /// answers, so it stays in its thread; its quoted text is replaced by what the user wrote.
 @MainActor
 public enum MailDrafts {
@@ -116,9 +116,18 @@ public enum MailDrafts {
     ) throws {
         let recipients = listTo.map { "make new to recipient at end of to recipients with properties {address:\(quoted($0))}" }
             + listCc.map { "make new cc recipient at end of cc recipients with properties {address:\(quoted($0))}" }
-        let finish = isSending ? "send theMessage" : "set visible of theMessage to true\n    activate"
+        let finish = isSending
+            ? """
+            send theMessage
+                delay 2
+                repeat with theDraft in (every message of drafts mailbox whose subject is \(quoted(subject)) and date received ≥ theStart)
+                    delete theDraft
+                end repeat
+            """
+            : "set visible of theMessage to true\n    activate"
         let source = """
             tell application "Mail"
+                set theStart to (current date) - 5
                 set theMessage to missing value
                 set theOriginals to {}
                 if \(quoted(messageId ?? "")) is not "" then set theOriginals to (every message of inbox whose message id is \(quoted(messageId ?? "")))

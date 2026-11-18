@@ -109,63 +109,6 @@ struct EditorActions: View {
     }
 }
 
-/// The relations touching a resource, each a click away from its other end.
-struct RelationsList: View {
-    /// The most relations listed, the latest; the board shows them all.
-    private static let shownLimit = 20
-
-    let fleetModel: FleetModel
-    let ref: FleetRef
-    let onOpen: (FleetRef) -> Void
-
-    var body: some View {
-        let listRelations = fleetModel.graph.listRelations(touching: ref).sorted { $0.lastAt > $1.lastAt }
-        EditorSection(title: "Relations") {
-            if listRelations.isEmpty {
-                Text("None yet")
-                    .font(.system(size: 12))
-                    .foregroundStyle(StageColors.tertiaryText)
-            }
-            ForEach(listRelations.prefix(Self.shownLimit)) { relation in
-                row(relation)
-            }
-            if listRelations.count > Self.shownLimit {
-                Text("\(listRelations.count - Self.shownLimit) earlier, on the board")
-                    .font(.system(size: 11))
-                    .foregroundStyle(StageColors.tertiaryText)
-            }
-        }
-    }
-
-    private func row(_ relation: FleetRelation) -> some View {
-        let other = relation.source == ref ? relation.target : relation.source
-        return Button {
-            onOpen(other)
-        } label: {
-            HStack(spacing: 6) {
-                RookeryIconView(relation.source == ref ? .arrowRight : .arrowLeft)
-                    .foregroundStyle(StageColors.tertiaryText)
-                Text(relation.verb)
-                    .foregroundStyle(RookmasterStyle.tint(ofVerb: relation.verb))
-                RookeryIconView(RookeryIcon.kind(other.kind))
-                FittingText(fleetModel.graph.name(of: other), size: 12)
-                Spacer(minLength: 0)
-                Text("\(relation.count)×")
-                    .monospacedDigit()
-                    .foregroundStyle(StageColors.tertiaryText)
-                Text(RookmasterStyle.age(of: relation.lastAt, now: .now))
-                    .foregroundStyle(StageColors.tertiaryText)
-            }
-            .font(.system(size: 12))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 /// What an editor needs to do its work on roost and report how it went.
 @MainActor
 struct EditorWork {
@@ -241,7 +184,6 @@ struct SkillEditor: View {
                     EditorTextArea(text: $descriptionDraft, placeholder: "Review a pull request for security issues before merging.", minHeight: 70)
                 }
                 pinnedBy
-                RelationsList(fleetModel: fleetModel, ref: ref, onOpen: onOpen)
                 if let error {
                     RookeryLabel(error, icon: .warning)
                         .font(.system(size: 12))
@@ -465,7 +407,6 @@ struct PlaybookEditor: View {
                     )
                 }
                 skills
-                RelationsList(fleetModel: fleetModel, ref: ref, onOpen: onOpen)
                 if let error {
                     RookeryLabel(error, icon: .warning)
                         .font(.system(size: 12))
@@ -619,7 +560,6 @@ struct MemoryEditor: View {
                         .foregroundStyle(StageColors.tertiaryText)
                         .textSelection(.enabled)
                 }
-                RelationsList(fleetModel: fleetModel, ref: ref, onOpen: onOpen)
                 if let error {
                     RookeryLabel(error, icon: .warning)
                         .font(.system(size: 12))

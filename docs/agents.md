@@ -40,6 +40,7 @@ The console over everything roost manages, opened from the top of the Agents sid
   - playbooks are created, edited and deleted: what they are for, their steps, and the skills they load. A step names a skill it uses with `@`; saving pins every skill the steps name (`PlaybookSteps` in `RookeryCore`), beside those added by hand;
   - memories are created, edited and deleted: their name, project and text;
   - agents are read-only, and any other kind is edited as a name and an attributes object.
+  - no editor lists a resource's relations: the board draws them, and listing a busy agent's hundreds of them made opening it stall.
 - **Log** (`RookmasterLog`): the latest hundred events, newest at the bottom, following as they are logged, with a filter; it folds to its title bar.
 
 ## Hosts and new agents

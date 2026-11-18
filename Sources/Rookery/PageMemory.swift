@@ -136,6 +136,10 @@ private struct RememberedScrollPosition: ViewModifier {
     /// reaches only after the jump and leaves them blank until then.
     private static let listSettleDelays: [Duration] = [.milliseconds(80), .milliseconds(300)]
     private static let endButtonSize: CGFloat = 30
+    /// How much of a row must show for it to count as shown, the top one kept as where the user was.
+    private static let rowVisibleShare: Double = 0.3
+    /// When a jump back to a row is checked, and given up for the end if it left the area at its top.
+    private static let anchorCheckDelay: Duration = .milliseconds(120)
 
     let key: String
     let memory: PageMemory
@@ -181,7 +185,10 @@ private struct RememberedScrollPosition: ViewModifier {
                     isAtEnd = isNowAtEnd
                 }
                 memory.mapScrollOffsets[key] = CGPoint(x: 0, y: isNowAtEnd ? 0 : max(0, fromBottom))
-                memory.mapScrollAnchors[key] = isNowAtEnd ? nil : position.viewID(type: Int.self)
+                memory.mapScrollAnchors[key] = isNowAtEnd ? nil : latest.topRowId
+            }
+            .onScrollTargetVisibilityChange(idType: Int.self, threshold: Self.rowVisibleShare) { listVisibleIds in
+                latest.topRowId = listVisibleIds.min()
             }
             .onScrollPhaseChange { _, phase in
                 let isByUser = phase == .tracking || phase == .interacting || phase == .decelerating
@@ -289,7 +296,7 @@ private struct RememberedScrollPosition: ViewModifier {
 
     /// Put the area back where it was left, once its content is in.
     private func restoreIfReady() {
-        guard !isRestored, isReady, let geometry = latest.geometry else {
+        guard !isRestored, isReady, latest.geometry != nil else {
             return
         }
         isRestored = true
@@ -307,10 +314,23 @@ private struct RememberedScrollPosition: ViewModifier {
                 settleAtEnd()
                 return
             }
-            if let anchor = memory.mapScrollAnchors[key] {
-                position.scrollTo(id: anchor, anchor: .top)
-            } else {
-                position.scrollTo(y: max(0, geometry.contentSize.height - geometry.containerSize.height - saved.y))
+            guard let anchor = memory.mapScrollAnchors[key] else {
+                isAtEnd = true
+                position.scrollTo(edge: .bottom)
+                settleAtEnd()
+                return
+            }
+            position.scrollTo(id: anchor, anchor: .top)
+            settleTask?.cancel()
+            settleTask = Task { @MainActor in
+                try? await Task.sleep(for: Self.anchorCheckDelay)
+                guard !Task.isCancelled, !isUserScrolling, let geometry = latest.geometry else {
+                    return
+                }
+                let isStuckAtTop = geometry.contentOffset.y <= 1 && geometry.contentSize.height > geometry.containerSize.height + Self.bottomSlack
+                if isStuckAtTop || latest.topRowId == nil {
+                    jumpToEnd()
+                }
             }
         } else {
             position.scrollTo(point: saved)
@@ -322,5 +342,7 @@ private struct RememberedScrollPosition: ViewModifier {
 @available(macOS 15, *)
 final class LatestScrollGeometry {
     var geometry: ScrollGeometry?
+    /// The row at the top of what shows, of an area whose rows are scroll targets.
+    var topRowId: Int?
 }
 

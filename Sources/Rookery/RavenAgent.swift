@@ -177,14 +177,14 @@ final class RavenAgent {
         setLoadingHistories.insert(conversationId)
         defer { setLoadingHistories.remove(conversationId) }
         let url = historyFile(of: conversationId)
-        let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
-        async let reader = Task.detached(priority: .userInitiated) { Self.reader(from: data) }.value
-        async let listProposals = Task.detached(priority: .userInitiated) { Self.proposals(in: data) }.value
-        let (loaded, listLoaded) = await (reader, listProposals)
+        let history = await Task.detached(priority: .userInitiated) {
+            let data = try? Data(contentsOf: url)
+            return RavenHistory(reader: Self.reader(from: data), listProposals: Self.proposals(in: data))
+        }.value
         guard mapLiveReaders[conversationId] == nil else {
             return
         }
-        take(loaded, proposals: listLoaded, for: conversationId)
+        take(history.reader, proposals: history.listProposals, for: conversationId)
     }
 
     /// Whether a conversation's history is read and shows.
@@ -1104,3 +1104,10 @@ final class RavenAgent {
         return FleetModel.describe(error)
     }
 }
+
+/// A conversation's history as read from its file: what was said, and what Raven proposed in it.
+struct RavenHistory: Sendable {
+    let reader: TranscriptReader
+    let listProposals: [RavenProposal]
+}
+

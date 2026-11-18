@@ -162,15 +162,21 @@ private struct RavenThreadContent: View {
             if let conversation = raven.conversations.conversation(conversationId) {
                 header(conversation)
             }
-            TranscriptView(
-                reader: raven.shownReader(of: conversationId),
-                agentId: conversationId,
-                memory: fleetModel.pageMemory,
-                hasTranscript: true,
-                sendToken: sendToken,
-                isWorking: raven.isRunning(conversationId),
-                replierName: "Raven"
-            ) {}
+            if raven.isHistoryLoaded(conversationId) {
+                TranscriptView(
+                    reader: raven.shownReader(of: conversationId),
+                    agentId: conversationId,
+                    memory: fleetModel.pageMemory,
+                    hasTranscript: true,
+                    sendToken: sendToken,
+                    isWorking: raven.isRunning(conversationId),
+                    replierName: "Raven"
+                ) {}
+                .transition(.opacity)
+            } else {
+                loadingTranscript
+                    .transition(.opacity)
+            }
             status(of: conversationId)
             proposals(in: conversationId)
         }
@@ -178,6 +184,10 @@ private struct RavenThreadContent: View {
             proxy.size.height
         } action: { height in
             threadHeight = height
+        }
+        .animation(.easeOut(duration: 0.2), value: raven.isHistoryLoaded(conversationId))
+        .task(id: conversationId) {
+            await raven.loadHistory(of: conversationId)
         }
         .task(id: conversationId) {
             while !Task.isCancelled {
@@ -190,6 +200,33 @@ private struct RavenThreadContent: View {
             }
         }
     }
+
+    /// The conversation's shape while its history is read: a few bubbles, the user's on the right and
+    /// Raven's on the left.
+    private var loadingTranscript: some View {
+        VStack(spacing: 14) {
+            ForEach(Self.listLoadingWidths.indices, id: \.self) { index in
+                let isTrailing = index.isMultiple(of: 2)
+                HStack {
+                    if isTrailing {
+                        Spacer(minLength: 0)
+                    }
+                    SkeletonBlock(width: Self.listLoadingWidths[index], height: Self.listLoadingHeights[index], cornerRadius: 14)
+                    if !isTrailing {
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The stand-in bubbles' sizes, the user's and Raven's in turn.
+    private static let listLoadingWidths: [CGFloat] = [220, 320, 160, 280]
+    private static let listLoadingHeights: [CGFloat] = [34, 64, 34, 48]
 
     // MARK: - Proposals
 

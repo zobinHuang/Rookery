@@ -75,6 +75,8 @@ final class RavenAgent {
     private(set) var mapReaders: [String: TranscriptReader] = [:]
     /// What was said in each conversation up to the latest line, ahead of what is shown.
     @ObservationIgnored private var mapLiveReaders: [String: TranscriptReader] = [:]
+    /// The conversations whose history is being read for them to show.
+    @ObservationIgnored private var setLoadingHistories: Set<String> = []
     @ObservationIgnored private var setUnpublishedIds: Set<String> = []
     @ObservationIgnored private var publishTask: Task<Void, Never>?
     /// How the latest request of each conversation went, since launch.
@@ -154,31 +156,73 @@ final class RavenAgent {
         }
     }
 
-    /// What was said in a conversation, read from its history the first time it is asked for.
+    /// What was said in a conversation, read from its history the first time it is asked for, for a turn
+    /// about to add to it; the views read it off the main thread first, with `loadHistory(of:)`.
     func reader(of conversationId: String) -> TranscriptReader {
         if let reader = mapLiveReaders[conversationId] {
             return reader
         }
-        var reader = TranscriptReader()
-        if let data = try? Data(contentsOf: historyFile(of: conversationId)) {
-            reader.append(data)
-            let listProposals = data
-                .split(separator: UInt8(ascii: "\n"))
-                .flatMap { RavenProposal.proposals(in: Data($0)) }
-            mapProposals[conversationId] = listProposals
-            Task { @MainActor [weak self] in
-                self?.fileDrafts(listProposals, in: conversationId)
-            }
-        }
-        mapLiveReaders[conversationId] = reader
-        mapReaders[conversationId] = reader
+        let data = try? Data(contentsOf: historyFile(of: conversationId))
+        let reader = Self.reader(from: data)
+        take(reader, proposals: Self.proposals(in: data), for: conversationId)
         return reader
     }
 
+    /// Read a conversation's history off the main thread, once, for it to show: a long one takes its
+    /// time to read and to go through for proposals.
+    func loadHistory(of conversationId: String) async {
+        guard mapLiveReaders[conversationId] == nil, !setLoadingHistories.contains(conversationId) else {
+            return
+        }
+        setLoadingHistories.insert(conversationId)
+        defer { setLoadingHistories.remove(conversationId) }
+        let url = historyFile(of: conversationId)
+        let data = await Task.detached(priority: .userInitiated) { try? Data(contentsOf: url) }.value
+        async let reader = Task.detached(priority: .userInitiated) { Self.reader(from: data) }.value
+        async let listProposals = Task.detached(priority: .userInitiated) { Self.proposals(in: data) }.value
+        let (loaded, listLoaded) = await (reader, listProposals)
+        guard mapLiveReaders[conversationId] == nil else {
+            return
+        }
+        take(loaded, proposals: listLoaded, for: conversationId)
+    }
+
+    /// Whether a conversation's history is read and shows.
+    func isHistoryLoaded(_ conversationId: String) -> Bool {
+        mapReaders[conversationId] != nil
+    }
+
     /// What was said in a conversation as it is shown: brought up to date with what streams in at most a
-    /// few times a second, so an answer streaming in redraws the conversation in steps, not line by line.
+    /// few times a second, so an answer streaming in redraws the conversation in steps, not line by line;
+    /// empty until its history is read.
     func shownReader(of conversationId: String) -> TranscriptReader {
-        mapReaders[conversationId] ?? reader(of: conversationId)
+        mapReaders[conversationId] ?? TranscriptReader()
+    }
+
+    private func take(_ reader: TranscriptReader, proposals listProposals: [RavenProposal], for conversationId: String) {
+        mapLiveReaders[conversationId] = reader
+        mapReaders[conversationId] = reader
+        mapProposals[conversationId] = listProposals
+        Task { @MainActor [weak self] in
+            self?.fileDrafts(listProposals, in: conversationId)
+        }
+    }
+
+    nonisolated private static func reader(from data: Data?) -> TranscriptReader {
+        var reader = TranscriptReader()
+        if let data {
+            reader.append(data)
+        }
+        return reader
+    }
+
+    nonisolated private static func proposals(in data: Data?) -> [RavenProposal] {
+        guard let data else {
+            return []
+        }
+        return data
+            .split(separator: UInt8(ascii: "\n"))
+            .flatMap { RavenProposal.proposals(in: Data($0)) }
     }
 
     /// Show what streamed into conversations lately, once for every line that came in the meantime.
@@ -658,6 +702,7 @@ final class RavenAgent {
     /// Title a conversation from its first request and Raven's answer, as a chat app does, in place of the
     /// request's first line, and tell roost; `claude -p` writes no title of its own.
     private func writeTitle(of conversationId: String, client: RoostClient) async {
+        await loadHistory(of: conversationId)
         let listEntries = reader(of: conversationId).listEntries
         guard
             let conversation = conversations.conversation(conversationId),

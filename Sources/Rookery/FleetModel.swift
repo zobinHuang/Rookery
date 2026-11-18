@@ -29,6 +29,9 @@ final class FleetModel {
     )
     private static let firstRetryDelay: Duration = .seconds(2)
     private static let longestRetryDelay: Duration = .seconds(60)
+    /// How long the live link's events gather before they are applied together, so a burst, as a playbook
+    /// loading reports every skill it mounts, redraws the console once rather than once an event.
+    private static let eventBatchDelay: Duration = .milliseconds(250)
 
     private(set) var connection: FleetConnection = .notConfigured
     private(set) var fleet = AgentFleet()
@@ -64,6 +67,9 @@ final class FleetModel {
     @ObservationIgnored let ravenLinks = RavenLinks()
     @ObservationIgnored private let tokenStore: any SecretStore
     @ObservationIgnored private var runTask: Task<Void, Never>?
+    /// The live link's events not yet applied, and the task that applies them once they have gathered.
+    @ObservationIgnored private var listPendingEvents: [FleetEvent] = []
+    @ObservationIgnored private var eventBatchTask: Task<Void, Never>?
     private var cachedToken: String??
 
     init(preferences: Preferences, tokenStore: any SecretStore = FleetModel.tokenFile) {
@@ -447,6 +453,9 @@ final class FleetModel {
 
     /// Read the fleet afresh, then apply the live link's events until it drops.
     private func follow(_ client: RoostClient) async throws {
+        eventBatchTask?.cancel()
+        eventBatchTask = nil
+        listPendingEvents = []
         let health = try await client.health()
         serverVersion = health.version
         let listRecentEvents = try await client.latestEvents(limit: ResourceGraph.recentEventLimit)
@@ -469,30 +478,97 @@ final class FleetModel {
         syncTeams()
         connection = .online
         for try await event in client.events(after: lastSeq) {
-            var setRefetch = Set(graph.apply(event))
-            ravenLinks.take(event, graph: graph)
-            if case .refetch(let ref) = fleet.apply(event) {
-                setRefetch.insert(ref)
-            }
-            for ref in setRefetch {
-                await refetch(ref, from: client)
-            }
-            if event.object?.kind == AgentFleet.teamKind {
-                syncTeams()
+            listPendingEvents.append(event)
+            if eventBatchTask == nil {
+                eventBatchTask = Task { [weak self] in
+                    try? await Task.sleep(for: Self.eventBatchDelay)
+                    guard !Task.isCancelled else {
+                        return
+                    }
+                    await self?.applyPendingEvents(from: client)
+                }
             }
         }
         throw RoostError.unreachable("the live link closed")
     }
 
+    /// Apply the events gathered since the last batch in one go, then fetch again at once every resource
+    /// they leave only roost able to tell, so the views redraw once for the batch.
+    private func applyPendingEvents(from client: RoostClient) async {
+        eventBatchTask = nil
+        let listEvents = listPendingEvents
+        listPendingEvents = []
+        var nextGraph = graph
+        var nextFleet = fleet
+        var setRefetch: Set<FleetRef> = []
+        var isTeamChanged = false
+        for event in listEvents {
+            setRefetch.formUnion(nextGraph.apply(event))
+            ravenLinks.take(event, graph: nextGraph)
+            if case .refetch(let ref) = nextFleet.apply(event) {
+                setRefetch.insert(ref)
+            }
+            isTeamChanged = isTeamChanged || event.object?.kind == AgentFleet.teamKind
+        }
+        graph = nextGraph
+        fleet = nextFleet
+        if isTeamChanged {
+            syncTeams()
+        }
+        guard !setRefetch.isEmpty else {
+            return
+        }
+        let listFetched = await Self.fetch(setRefetch, from: client)
+        guard !Task.isCancelled else {
+            return
+        }
+        var fetchedGraph = graph
+        var fetchedFleet = fleet
+        for resource in listFetched {
+            fetchedFleet.put(resource)
+            fetchedGraph.put(resource)
+        }
+        graph = fetchedGraph
+        fleet = fetchedFleet
+    }
+
+    /// Read resources from roost side by side; one gone or unreadable is left out.
+    private static func fetch(_ setRefs: Set<FleetRef>, from client: RoostClient) async -> [FleetResource] {
+        let listResults = await withTaskGroup(of: (FleetRef, Result<FleetResource, any Error>).self) { group in
+            for ref in setRefs {
+                group.addTask {
+                    do {
+                        return (ref, .success(try await client.resource(ref)))
+                    } catch {
+                        return (ref, .failure(error))
+                    }
+                }
+            }
+            var listResults: [(FleetRef, Result<FleetResource, any Error>)] = []
+            for await result in group {
+                listResults.append(result)
+            }
+            return listResults
+        }
+        var listFetched: [FleetResource] = []
+        for (ref, result) in listResults {
+            switch result {
+            case .success(let resource):
+                listFetched.append(resource)
+            case .failure(RoostError.rejected(status: 404, _)):
+                continue
+            case .failure(let error):
+                logger.error("cannot read \(ref.kind) \(ref.id): \(describe(error), privacy: .public)")
+            }
+        }
+        return listFetched
+    }
+
+    /// Read one resource from roost again and put it in place.
     private func refetch(_ ref: FleetRef, from client: RoostClient) async {
-        do {
-            let resource = try await client.resource(ref)
+        for resource in await Self.fetch([ref], from: client) {
             fleet.put(resource)
             graph.put(resource)
-        } catch RoostError.rejected(status: 404, _) {
-            return
-        } catch {
-            Self.logger.error("cannot read \(ref.kind) \(ref.id): \(Self.describe(error), privacy: .public)")
         }
     }
 

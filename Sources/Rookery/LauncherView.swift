@@ -13,8 +13,6 @@ struct LauncherView: View {
     private static let conversationWidth: CGFloat = 760
     private static let rowsMaxHeight: CGFloat = 400
     private static let conversationHeight: CGFloat = 540
-    /// How far above the bottom the suggestions float over a conversation's box.
-    private static let composerMentionInset: CGFloat = 70
     private static let iconSize: CGFloat = 28
     private static let cornerRadius: CGFloat = 20
     private static let fieldHeight: CGFloat = 58
@@ -58,19 +56,12 @@ struct LauncherView: View {
                 .strokeBorder(StageColors.segmentGrooveBorder)
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
-        .overlay(alignment: model.shownConversationId == nil ? .topLeading : .bottomLeading) {
-            if !model.listMentionTargets.isEmpty {
-                if model.shownConversationId == nil {
-                    mentionList
-                        .padding(.leading, Self.mentionInset)
-                        .padding(.top, Self.fieldHeight - 4)
-                        .transition(.opacity.combined(with: .offset(y: -4)))
-                } else {
-                    mentionList
-                        .padding(.leading, 20)
-                        .padding(.bottom, Self.composerMentionInset)
-                        .transition(.opacity.combined(with: .offset(y: 4)))
-                }
+        .overlay(alignment: .topLeading) {
+            if model.shownConversationId == nil, !model.listMentionTargets.isEmpty {
+                mentionList
+                    .padding(.leading, Self.mentionInset)
+                    .padding(.top, Self.fieldHeight - 4)
+                    .transition(.opacity.combined(with: .offset(y: -4)))
             }
         }
         .animation(.easeOut(duration: 0.15), value: model.listMentionTargets.map(\.id))
@@ -94,8 +85,8 @@ struct LauncherView: View {
             isFieldFocused = true
         }
         .onChange(of: model.query) {
-            controller.updateMentions()
             if model.shownConversationId == nil {
+                controller.updateMentions()
                 controller.search()
             }
         }
@@ -135,19 +126,20 @@ struct LauncherView: View {
                 .transition(.opacity)
             problemLabel
                 .padding(.top, model.problem == nil ? 0 : 8)
-            AgentComposer(
+            RavenComposer(
+                fleetModel: controller.fleetModel,
                 text: Bindable(model).query,
                 placeholder: "Ask a follow-up…",
+                isEnabled: controller.fleetModel.client() != nil,
                 isBusy: raven.isRunning(conversationId),
-                fontSize: 13,
                 onStop: {
                     raven.cancel(conversationId)
                 },
-                onSend: {
-                    controller.choose()
+                onSend: { request in
+                    controller.ask(request)
                 },
-                onKey: take,
-                isFocused: $isFieldFocused
+                isFocused: $isFieldFocused,
+                onKey: takeConversationKey
             )
             .padding(12)
         }
@@ -214,6 +206,21 @@ struct LauncherView: View {
         Rectangle()
             .fill(StageColors.separator)
             .frame(height: 1)
+    }
+
+    /// The keys a conversation's box leaves to the launcher: Escape closes it, and Delete on an empty box
+    /// leaves the conversation.
+    private func takeConversationKey(_ keyPress: KeyPress) -> KeyPress.Result {
+        switch keyPress.key {
+        case .escape:
+            controller.hide()
+            return .handled
+        case .delete where model.query.isEmpty && model.targetConversationId != nil:
+            controller.dropTarget()
+            return .handled
+        default:
+            return .ignored
+        }
     }
 
     /// The box's keys: the arrows move among the rows, Return chooses and ⌘Return asks Raven, ⇧Return or

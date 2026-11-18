@@ -375,6 +375,15 @@ final class LauncherController {
 
     /// Ask Raven what is typed, in the conversation chosen or a new one, and show the conversation.
     private func ask(_ text: String) {
+        let listNamed = model.listMentionRefs.filter { ref in
+            fleetModel.graph.resource(ref).map { text.contains(Mentions.token(for: $0)) } ?? false
+        }
+        ask(RavenRequest(text: text, listMentions: listNamed, mapAddresses: [:]))
+    }
+
+    /// Ask Raven, in the conversation chosen or a new one, and show the conversation.
+    func ask(_ request: RavenRequest) {
+        let text = request.text
         guard !text.isEmpty else {
             return
         }
@@ -387,10 +396,13 @@ final class LauncherController {
             model.problem = "Raven is still answering in this conversation."
             return
         }
-        let listNamed = model.listMentionRefs.filter { ref in
-            fleetModel.graph.resource(ref).map { text.contains(Mentions.token(for: $0)) } ?? false
-        }
-        guard let conversationId = raven.ask(text, mentioning: listNamed, in: model.targetConversationId, origin: .launcher) else {
+        guard let conversationId = raven.ask(
+            text,
+            mentioning: request.listMentions,
+            addresses: request.mapAddresses,
+            in: model.targetConversationId,
+            origin: .launcher
+        ) else {
             model.problem = "Raven could not take the request."
             return
         }

@@ -1,11 +1,26 @@
 import RookeryCore
 import SwiftUI
 
+/// A conversation with Raven, laid out apart from the window: it grows a line at a time as Raven answers,
+/// and only it is laid out again each time.
+struct RavenThreadView: View {
+    let fleetModel: FleetModel
+    let conversationId: String
+    /// Changes when the user sends, to bring the end into view.
+    var sendToken = 0
+
+    var body: some View {
+        LayoutIsland {
+            RavenThreadContent(fleetModel: fleetModel, conversationId: conversationId, sendToken: sendToken)
+        }
+    }
+}
+
 /// One conversation with Raven as it reads anywhere it is shown, in the Rookmaster console and in the
 /// launcher: the conversation in message bubbles, how its latest request ended if it did not answer, and
 /// what Raven proposed, those waiting on the user with buttons to carry them out or not. While shown it
 /// follows what became of the proposals already sent.
-struct RavenThreadView: View {
+private struct RavenThreadContent: View {
     private static let deliveryPollInterval: Duration = .seconds(3)
     /// The most decided proposals shown above the box, the latest.
     private static let shownDecidedLimit = 3
@@ -131,7 +146,7 @@ struct RavenThreadView: View {
                 header(conversation)
             }
             TranscriptView(
-                reader: raven.reader(of: conversationId),
+                reader: raven.shownReader(of: conversationId),
                 agentId: conversationId,
                 memory: fleetModel.pageMemory,
                 hasTranscript: true,

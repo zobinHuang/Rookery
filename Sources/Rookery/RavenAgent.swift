@@ -33,6 +33,8 @@ final class RavenAgent {
     private static let titleClientWaits = 24
     /// How often the messages teammates sent Raven's conversations are read, while one is in a team.
     private static let inboxInterval: Duration = .seconds(4)
+    /// How often what streams into a conversation is shown.
+    private static let publishInterval: Duration = .milliseconds(200)
     /// What a conversation does in a team the user put it in.
     static let teamDuty = "Directs the team for the user, as Raven in Rookery: asks how things stand and passes on the user's decisions"
     private static let resourceFolder = "Raven"
@@ -67,8 +69,12 @@ final class RavenAgent {
     @ObservationIgnored private var mapWaitingMessages: [String: [String]] = [:]
     /// Why the last team change in a conversation failed, shown in its header.
     var mapTeamErrors: [String: String] = [:]
-    /// What was said in each conversation opened since launch, as read from its history.
+    /// What was said in each conversation opened since launch, as read from its history and as shown.
     private(set) var mapReaders: [String: TranscriptReader] = [:]
+    /// What was said in each conversation up to the latest line, ahead of what is shown.
+    @ObservationIgnored private var mapLiveReaders: [String: TranscriptReader] = [:]
+    @ObservationIgnored private var setUnpublishedIds: Set<String> = []
+    @ObservationIgnored private var publishTask: Task<Void, Never>?
     /// How the latest request of each conversation went, since launch.
     private(set) var mapStatuses: [String: RavenTurnStatus] = [:]
     /// The conversation the panel shows; nil for a new one, not begun yet.
@@ -148,7 +154,7 @@ final class RavenAgent {
 
     /// What was said in a conversation, read from its history the first time it is asked for.
     func reader(of conversationId: String) -> TranscriptReader {
-        if let reader = mapReaders[conversationId] {
+        if let reader = mapLiveReaders[conversationId] {
             return reader
         }
         var reader = TranscriptReader()
@@ -158,8 +164,35 @@ final class RavenAgent {
                 .split(separator: UInt8(ascii: "\n"))
                 .flatMap { RavenProposal.proposals(in: Data($0)) }
         }
+        mapLiveReaders[conversationId] = reader
         mapReaders[conversationId] = reader
         return reader
+    }
+
+    /// What was said in a conversation as it is shown: brought up to date with what streams in at most a
+    /// few times a second, so an answer streaming in redraws the conversation in steps, not line by line.
+    func shownReader(of conversationId: String) -> TranscriptReader {
+        mapReaders[conversationId] ?? reader(of: conversationId)
+    }
+
+    /// Show what streamed into conversations lately, once for every line that came in the meantime.
+    private func publishSoon(_ conversationId: String) {
+        setUnpublishedIds.insert(conversationId)
+        guard publishTask == nil else {
+            return
+        }
+        publishTask = Task { [weak self] in
+            try? await Task.sleep(for: Self.publishInterval)
+            self?.publish()
+        }
+    }
+
+    private func publish() {
+        publishTask = nil
+        for conversationId in setUnpublishedIds {
+            mapReaders[conversationId] = mapLiveReaders[conversationId]
+        }
+        setUnpublishedIds = []
     }
 
     /// Ask Raven something, in an open conversation or in a new one.
@@ -328,6 +361,7 @@ final class RavenAgent {
         cancel(conversationId)
         conversations.remove(conversationId)
         mapReaders[conversationId] = nil
+        mapLiveReaders[conversationId] = nil
         mapStatuses[conversationId] = nil
         try? FileManager.default.removeItem(at: historyFile(of: conversationId))
         if openConversationId == conversationId {
@@ -657,7 +691,8 @@ final class RavenAgent {
         }
         let terminated = line + Data("\n".utf8)
         reader.append(terminated)
-        mapReaders[conversationId] = reader
+        mapLiveReaders[conversationId] = reader
+        publishSoon(conversationId)
         do {
             try FileManager.default.createDirectory(at: historyDirectory, withIntermediateDirectories: true)
             let file = historyFile(of: conversationId)

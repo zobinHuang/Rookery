@@ -88,6 +88,15 @@ enum RightSidebarTab: String, CaseIterable {
         }
     }
 
+    /// The page of the content area the tab's button opens.
+    var page: StagePage {
+        switch self {
+        case .calendar: .calendar
+        case .mail: .mail
+        case .mixer: .mixer
+        }
+    }
+
     var symbol: RookeryIcon {
         switch self {
         case .calendar: .calendar
@@ -132,7 +141,6 @@ final class StageModel {
     /// The page shown before this one, which a back button returns to; nil when the page was opened over a
     /// window.
     var pageBefore: StagePage?
-    var rightSidebarTab = RightSidebarTab.calendar
     /// Whether the shown page's content is built: not while the windows it covers are still being set
     /// aside, when a light placeholder stands in so setting them aside is not held up.
     var isPageReady = true
@@ -181,9 +189,9 @@ final class StageModel {
         isSidebarCollapsed ? Self.collapsedSidebarWidth : Self.sidebarWidth
     }
 
-    /// The right sidebar's width as laid out now.
+    /// The right strip's width as laid out now: none while it is hidden.
     var rightSidebarWidth: CGFloat {
-        isRightSidebarCollapsed ? Self.collapsedRightSidebarWidth : Self.rightSidebarWidth
+        isRightSidebarCollapsed ? 0 : Self.collapsedRightSidebarWidth
     }
 
     /// The zone to light up, from a dragged window or a dragged tab.
@@ -214,10 +222,13 @@ enum StagePage: Hashable {
     case calendar
     /// Every account's mail, by folder, with a reader.
     case mail
+    /// Every application's and browser tab's sound, to set.
+    case mixer
 
     private static let rookmasterId = "page:rookmaster"
     private static let calendarId = "page:calendar"
     private static let mailId = "page:mail"
+    private static let mixerId = "page:mixer"
     private static let settingsId = "page:settings"
     private static let agentPrefix = "page:agent:"
 
@@ -229,6 +240,7 @@ enum StagePage: Hashable {
         case .agent(let agentId): Self.agentPrefix + agentId
         case .calendar: Self.calendarId
         case .mail: Self.mailId
+        case .mixer: Self.mixerId
         case .screenSaver: nil
         }
     }
@@ -243,6 +255,8 @@ enum StagePage: Hashable {
             self = .calendar
         } else if switcherId == Self.mailId {
             self = .mail
+        } else if switcherId == Self.mixerId {
+            self = .mixer
         } else if switcherId.hasPrefix(Self.agentPrefix) {
             self = .agent(String(switcherId.dropFirst(Self.agentPrefix.count)))
         } else {

@@ -26,10 +26,8 @@ protocol StageActions: AnyObject {
     /// Move a tab to just before another tab, or to the end with nil.
     func moveTab(_ windowId: WindowId, before targetWindowId: WindowId?)
     func toggleSidebar()
-    /// Show the right sidebar as a strip of icons, or whole.
+    /// Hide the right strip of icons, or show it again.
     func toggleRightSidebar()
-    /// Show a tab of the right sidebar, opening the sidebar if it is a strip.
-    func showRightSidebarTab(_ tab: RightSidebarTab)
     /// Switch between the light and the dark theme, keeping the contrast.
     func toggleTheme()
     /// Fill the display with the stage, or go back to its earlier frame.
@@ -183,14 +181,16 @@ struct StageView: View {
                     }
                     .padding(.bottom, isPageFullBleed ? 0 : StageModel.contentInset)
             }
-            RightSidebarView(
-                model: model,
-                preferences: preferences,
-                mixer: mixer,
-                fleetModel: fleetModel,
-                actions: actions
-            )
-            .frame(width: model.rightSidebarWidth)
+            if !model.isRightSidebarCollapsed {
+                RightSidebarView(
+                    model: model,
+                    mixer: mixer,
+                    fleetModel: fleetModel,
+                    actions: actions
+                )
+                .frame(width: model.rightSidebarWidth)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -223,6 +223,7 @@ struct StageView: View {
         case .settings: "Opening Settings"
         case .calendar: "Opening Calendar"
         case .mail: "Opening Mail"
+        case .mixer: "Opening Mixer"
         case .rookmaster: "Opening Rookmaster"
         case .agent: "Opening the agent"
         default: "Opening"
@@ -942,6 +943,9 @@ struct StageView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .mail {
                 MailPage(fleetModel: fleetModel, onClose: actions.closePage)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            } else if model.shownPage == .mixer {
+                MixerPage(mixer: mixer, preferences: preferences, onClose: actions.closePage)
                     .transition(.opacity.combined(with: .scale(scale: 0.98)))
             } else if model.shownPage == .rookmaster {
                 RookmasterView(

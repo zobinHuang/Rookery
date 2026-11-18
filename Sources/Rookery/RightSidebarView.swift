@@ -1,62 +1,34 @@
 import RookeryCore
 import SwiftUI
 
-/// The stage's right sidebar: the day's calendar, the unread mail, and the mixer, one tab each. Folds to a
-/// strip of the three icons, each with what it most needs to say: the next event's time, the unread count,
-/// whether the mixer holds any sound.
+/// The stage's right strip: a button for the calendar, the mail and the mixer, each opening its page in
+/// the content area and lit while it shows, with what it most needs to say: the next event's time, the
+/// unread count, whether the mixer holds any sound.
 struct RightSidebarView: View {
-    private static let tabAnimation = Animation.spring(response: 0.3, dampingFraction: 0.88)
-
     let model: StageModel
-    @Bindable var preferences: Preferences
     let mixer: MixerController
     let fleetModel: FleetModel
     let actions: StageActions
-
-    @Namespace private var tabNamespace
 
     private var personal: PersonalDataModel {
         fleetModel.personal
     }
 
     var body: some View {
-        Group {
-            if model.isRightSidebarCollapsed {
-                strip
-                    .transition(.opacity)
-            } else {
-                VStack(spacing: 0) {
-                    header
-                    Rectangle()
-                        .fill(StageColors.separator)
-                        .frame(height: 1)
-                    ZStack(alignment: .top) {
-                        switch model.rightSidebarTab {
-                        case .calendar:
-                            TodayCalendarView(personal: personal, onOpenPage: { actions.showPage(.calendar) }, onOpenSettings: { actions.showPage(.settings) })
-                                .transition(.opacity)
-                        case .mail:
-                            UnreadMailView(personal: personal, onOpenMessage: openMessage, onOpenPage: { actions.showPage(.mail) }, onOpenSettings: { actions.showPage(.settings) })
-                                .transition(.opacity)
-                        case .mixer:
-                            mixerTab
-                                .transition(.opacity)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .clipped()
-                }
-                .transition(.opacity)
+        VStack(spacing: 14) {
+            ForEach(RightSidebarTab.allCases, id: \.self) { tab in
+                button(tab)
             }
+            Spacer(minLength: 0)
         }
-        .frame(maxHeight: .infinity)
+        .padding(.top, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(StageColors.sidebar)
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(StageColors.separator)
                 .frame(width: 1)
         }
-        .animation(Self.tabAnimation, value: model.rightSidebarTab)
         .onAppear {
             if model.isVisible {
                 personal.begin()
@@ -71,110 +43,43 @@ struct RightSidebarView: View {
         }
     }
 
-    // MARK: - Header and strip
-
-    private var header: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 2) {
-                ForEach(RightSidebarTab.allCases, id: \.self) { tab in
-                    tabButton(tab)
-                }
-            }
-            .padding(3)
-            .background {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(StageColors.segmentGroove)
-                    .strokeBorder(StageColors.segmentGrooveBorder)
-            }
-            Spacer(minLength: 0)
-            Button(action: actions.toggleRightSidebar) {
-                RookeryIconView(.sidebarRight)
-                    .foregroundStyle(StageColors.secondaryText)
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.borderless)
-            .help("Fold the right sidebar")
-        }
-        .padding(.horizontal, 12)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-    }
-
-    private func tabButton(_ tab: RightSidebarTab) -> some View {
-        let isSelected = model.rightSidebarTab == tab
+    private func button(_ tab: RightSidebarTab) -> some View {
+        let isShown = model.shownPage == tab.page
         return Button {
-            withAnimation(Self.tabAnimation) {
-                actions.showRightSidebarTab(tab)
+            if isShown {
+                actions.closePage()
+            } else {
+                actions.showPage(tab.page)
             }
         } label: {
-            HStack(spacing: 4) {
+            VStack(spacing: 3) {
                 RookeryIconView(tab.symbol)
-                Text(tab.title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                if tab == .mail, personal.unreadTotal > 0 {
-                    Text(Self.count(personal.unreadTotal))
-                        .font(.system(size: 9.5, weight: .bold).monospacedDigit())
-                        .opacity(0.6)
-                }
-            }
-            .lineLimit(1)
-            .fixedSize()
-            .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(StageColors.selectedSegment)
-                        .matchedGeometryEffect(id: "rightTab", in: tabNamespace)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(tab.title)
-    }
-
-    /// The folded sidebar: a button that opens it, then each tab's icon with its badge.
-    private var strip: some View {
-        VStack(spacing: 14) {
-            Button(action: actions.toggleRightSidebar) {
-                RookeryIconView(.sidebarRight)
-                    .foregroundStyle(StageColors.secondaryText)
-                    .frame(width: 22, height: 22)
-            }
-            .buttonStyle(.borderless)
-            .help("Show the right sidebar")
-            .padding(.top, 14)
-            ForEach(RightSidebarTab.allCases, id: \.self) { tab in
-                Button {
-                    actions.showRightSidebarTab(tab)
-                } label: {
-                    VStack(spacing: 3) {
-                        RookeryIconView(tab.symbol)
-                            .foregroundStyle(StageColors.secondaryText)
-                            .frame(width: 30, height: 26)
-                            .overlay(alignment: .topTrailing) {
-                                badge(of: tab)
-                                    .offset(x: 6, y: -5)
-                            }
-                        if tab == .calendar, let next = personal.nextEvent, Calendar.current.isDateInToday(next.startsAt) {
-                            Text(next.startsAt.formatted(date: .omitted, time: .shortened))
-                                .font(.system(size: 9, weight: .semibold).monospacedDigit())
-                                .foregroundStyle(next.startsAt <= personal.now ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                    .foregroundStyle(isShown ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
+                    .frame(width: 30, height: 26)
+                    .background {
+                        if isShown {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(StageColors.selectedSegment)
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
+                    .overlay(alignment: .topTrailing) {
+                        badge(of: tab)
+                            .offset(x: 6, y: -5)
+                    }
+                if tab == .calendar, let next = personal.nextEvent, Calendar.current.isDateInToday(next.startsAt) {
+                    Text(next.startsAt.formatted(date: .omitted, time: .shortened))
+                        .font(.system(size: 9, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(next.startsAt <= personal.now ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
-                .buttonStyle(.plain)
-                .help(stripHelp(of: tab))
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.15), value: isShown)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
+        .help(stripHelp(of: tab))
     }
 
     @ViewBuilder
@@ -213,31 +118,6 @@ struct RightSidebarView: View {
         value < 1000 ? "\(value)" : "\(value / 1000)k"
     }
 
-    // MARK: - Tabs
-
-    @ViewBuilder
-    private var mixerTab: some View {
-        if preferences.isMixerEnabled {
-            ScrollView {
-                MixerView(mixer: mixer, isCollapsed: false)
-                    .padding(.vertical, 6)
-            }
-        } else {
-            SidebarNotice(
-                icon: .mixer,
-                title: "The mixer is off",
-                text: "Turn it on to set each app's and each browser tab's volume, balance and sound.",
-                actionTitle: "Turn On"
-            ) {
-                preferences.isMixerEnabled = true
-            }
-        }
-    }
-
-    private func openMessage(_ message: MailMessageSummary) {
-        fleetModel.pageMemory.selectedMailId = message.id
-        actions.open(.mail)
-    }
 }
 
 /// A short note filling a sidebar tab that has nothing to show yet, with a way forward.

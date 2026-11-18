@@ -947,32 +947,12 @@ final class RavenAgent {
             listLines.append("Since your last answer, the user decided on your proposals:")
             listLines.append(contentsOf: listDecisions)
         }
-        let listUnique = listMentions.reduce(into: [FleetRef]()) { list, ref in
-            if !list.contains(ref) {
-                list.append(ref)
-            }
-        }
-        if !listUnique.isEmpty {
-            listLines.append("")
-            listLines.append("The request names these resources:")
-            for ref in listUnique {
-                listLines.append("- \(ref.kind) \"\(graph.name(of: ref))\" (id \(ref.id))")
-            }
-        }
-        if !listPeople.isEmpty {
-            listLines.append("")
-            listLines.append("The request names these people, by their mention; write to them and invite them at these addresses:")
-            for person in listPeople {
-                if let chosen = mapAddresses[person.id] {
-                    let listOthers = person.listAddresses.filter { $0 != chosen }
-                    let others = listOthers.isEmpty ? "" : " (their other addresses: \(listOthers.joined(separator: ", ")))"
-                    listLines.append("- \(person.mentionToken) is \(person.name): the user chose \(chosen); use that address\(others)")
-                } else {
-                    let addresses = person.listAddresses.isEmpty ? "no address known" : person.listAddresses.joined(separator: ", ")
-                    listLines.append("- \(person.mentionToken) is \(person.name): \(addresses)")
-                }
-            }
-        }
+        listLines += RavenRequest.mentionLines(
+            listMentions: listMentions,
+            listPeople: listPeople,
+            mapAddresses: mapAddresses,
+            graph: graph
+        )
         if !listTeams.isEmpty {
             listLines.append("")
             listLines.append("The user put this conversation in these teams, to direct them for the user. Message their members yourself, without proposing: rook-client message <agent id> \"...\" to one, rook-client team send <team id> \"...\" to all; roost lets you reach only these teammates. Their answers come back to you here. Anyone outside them still takes a proposal.")

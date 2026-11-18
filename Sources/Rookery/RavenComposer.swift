@@ -8,6 +8,51 @@ struct RavenRequest {
     let text: String
     let listMentions: [FleetRef]
     let mapAddresses: [String: String]
+
+    /// What a request names, in lines a code agent reads under it: each resource by its kind, name and id,
+    /// and each person by their mention, with the address the user chose or every one of theirs.
+    ///
+    /// - Parameters:
+    ///   - listMentions: the resources named, a resource named twice listed once
+    ///   - listPeople: the people named
+    ///   - mapAddresses: the address chosen for each person, by the person's id
+    ///   - graph: roost's resources, which name them
+    /// - Returns: the lines, a blank line before each part; none when nothing is named
+    static func mentionLines(
+        listMentions: [FleetRef],
+        listPeople: [Person],
+        mapAddresses: [String: String],
+        graph: ResourceGraph
+    ) -> [String] {
+        var listLines: [String] = []
+        let listUnique = listMentions.reduce(into: [FleetRef]()) { list, ref in
+            if !list.contains(ref) {
+                list.append(ref)
+            }
+        }
+        if !listUnique.isEmpty {
+            listLines.append("")
+            listLines.append("The request names these resources:")
+            for ref in listUnique {
+                listLines.append("- \(ref.kind) \"\(graph.name(of: ref))\" (id \(ref.id))")
+            }
+        }
+        if !listPeople.isEmpty {
+            listLines.append("")
+            listLines.append("The request names these people, by their mention; write to them and invite them at these addresses:")
+            for person in listPeople {
+                if let chosen = mapAddresses[person.id] {
+                    let listOthers = person.listAddresses.filter { $0 != chosen }
+                    let others = listOthers.isEmpty ? "" : " (their other addresses: \(listOthers.joined(separator: ", ")))"
+                    listLines.append("- \(person.mentionToken) is \(person.name): the user chose \(chosen); use that address\(others)")
+                } else {
+                    let addresses = person.listAddresses.isEmpty ? "no address known" : person.listAddresses.joined(separator: ", ")
+                    listLines.append("- \(person.mentionToken) is \(person.name): \(addresses)")
+                }
+            }
+        }
+        return listLines
+    }
 }
 
 /// The box to ask Raven in, wherever Raven is asked: plain words, people and roost's resources named with
@@ -20,7 +65,9 @@ struct RavenComposer: View {
     let placeholder: String
     let isEnabled: Bool
     let isBusy: Bool
-    let onStop: () -> Void
+    var fontSize: CGFloat = 12
+    /// Stops the work under way, while busy; nil where nothing can be stopped.
+    var onStop: (() -> Void)?
     /// Sends the request.
     let onSend: (RavenRequest) -> Void
     var isFocused: FocusState<Bool>.Binding
@@ -97,7 +144,7 @@ struct RavenComposer: View {
                 placeholder: placeholder,
                 isEnabled: isEnabled,
                 isBusy: isBusy,
-                fontSize: 12,
+                fontSize: fontSize,
                 onStop: onStop,
                 onSend: send,
                 onKey: takeKey,

@@ -394,11 +394,13 @@ private struct TeamDetail: View {
                 ForEach(listMessages) { delivery in
                     messageRow(delivery)
                 }
-                AgentComposer(
+                RavenComposer(
+                    fleetModel: fleetModel,
                     text: $draft,
                     placeholder: "Message the whole team",
                     isEnabled: !listMemberIds.isEmpty,
                     isBusy: isSending,
+                    fontSize: 13,
                     onSend: send,
                     isFocused: $isComposerFocused
                 )
@@ -573,15 +575,23 @@ private struct TeamDetail: View {
         }
     }
 
-    private func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Send every member the user's words, with what they name written out under them.
+    private func send(_ request: RavenRequest) {
+        let text = request.text
         guard !text.isEmpty, let client = fleetModel.client() else {
             return
         }
+        let listNotes = RavenRequest.mentionLines(
+            listMentions: request.listMentions,
+            listPeople: fleetModel.people.book.people(mentionedIn: text),
+            mapAddresses: request.mapAddresses,
+            graph: fleetModel.graph
+        )
+        let message = ([text] + listNotes).joined(separator: "\n")
         isSending = true
         Task {
             do {
-                try await client.send(text, toTeam: team.id)
+                try await client.send(message, toTeam: team.id)
                 draft = ""
                 error = nil
                 await refreshMessages()

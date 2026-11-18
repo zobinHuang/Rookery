@@ -407,12 +407,16 @@ struct AgentDetailView: View {
                 .font(.system(size: 11))
                 .transition(.opacity)
             }
-            AgentComposer(
+            RavenComposer(
+                fleetModel: fleetModel,
                 text: $draft,
                 placeholder: isReachable ? "Message \(agent.displayName)" : composerHint(agent),
                 isEnabled: isReachable,
                 isBusy: isSending,
-                onSend: { send(to: agent) },
+                fontSize: 13,
+                onSend: { request in
+                    send(request, to: agent)
+                },
                 isFocused: $isComposerFocused
             )
         }
@@ -501,17 +505,26 @@ struct AgentDetailView: View {
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
-    private func send(to agent: FleetAgent) {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Send the agent the user's words, with what they name written out under them, as the agent reads
+    /// no mention by itself.
+    private func send(_ request: RavenRequest, to agent: FleetAgent) {
+        let text = request.text
         guard !text.isEmpty, !isSending else {
             return
         }
+        let listNotes = RavenRequest.mentionLines(
+            listMentions: request.listMentions,
+            listPeople: fleetModel.people.book.people(mentionedIn: text),
+            mapAddresses: request.mapAddresses,
+            graph: fleetModel.graph
+        )
+        let prompt = ([text] + listNotes).joined(separator: "\n")
         isSending = true
         sendError = nil
         isComposerFocused = true
         Task {
             do {
-                let delivery = try await fleetModel.send(text, to: agent.id)
+                let delivery = try await fleetModel.send(prompt, to: agent.id)
                 draft = ""
                 listDeliveries.insert(delivery, at: 0)
                 listOutgoing.append(OutgoingPrompt(

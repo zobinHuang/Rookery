@@ -76,6 +76,21 @@ struct RavenPanel: View {
                 Text("Raven")
                     .font(.system(size: 14, weight: .bold))
                 Spacer(minLength: 0)
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        fleetModel.pageMemory.isRavenListingAll.toggle()
+                    }
+                } label: {
+                    Text("All")
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .foregroundStyle(isListingAll ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.secondaryText))
+                        .background(isListingAll ? AnyShapeStyle(StageColors.selectedSegment) : AnyShapeStyle(Color.clear), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(isListingAll ? "List only the conversations started here" : "List the conversations started anywhere: here, in Mail and in the launcher")
                 ColumnToggle(columns: fleetModel.pageColumns, column: .ravenConversations, title: "Conversations")
             }
             .padding(.horizontal, 4)
@@ -107,15 +122,25 @@ struct RavenPanel: View {
             .buttonStyle(.plain)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(raven.conversations.listConversations) { conversation in
+                    ForEach(listListed) { conversation in
                         conversationRow(conversation)
                     }
                 }
-                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: raven.conversations.listConversations.map(\.id))
+                .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listListed.map(\.id))
             }
             .scrollIndicators(.never)
         }
         .padding(8)
+    }
+
+    private var isListingAll: Bool {
+        fleetModel.pageMemory.isRavenListingAll
+    }
+
+    /// The conversations listed: those started on the board, or with All every one, wherever started.
+    private var listListed: [RavenConversation] {
+        let listConversations = raven.conversations.listConversations
+        return isListingAll ? listConversations : listConversations.filter { $0.origin == .board }
     }
 
     private func conversationRow(_ conversation: RavenConversation) -> some View {
@@ -135,8 +160,15 @@ struct RavenPanel: View {
                             renamingId = nil
                         }
                 } else {
-                    FittingText(conversation.title, size: 12, weight: .semibold)
-                        .foregroundStyle(StageColors.primaryText)
+                    HStack(spacing: 5) {
+                        if conversation.origin != .board {
+                            RookeryIconView(conversation.origin == .mail ? .mail : .search)
+                                .foregroundStyle(StageColors.tertiaryText)
+                                .help(conversation.origin == .mail ? "Started in Mail" : "Started in the launcher")
+                        }
+                        FittingText(conversation.title, size: 12, weight: .semibold)
+                            .foregroundStyle(StageColors.primaryText)
+                    }
                 }
                 HStack(spacing: 5) {
                     if raven.isRunning(conversation.id) {

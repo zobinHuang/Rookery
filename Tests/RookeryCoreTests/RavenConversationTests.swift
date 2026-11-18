@@ -65,3 +65,14 @@ struct RavenConversationTests {
         #expect(decoded.conversation("a")?.costUSD == 0.25)
     }
 }
+
+struct RavenOriginTests {
+    @Test func aConversationKeptBeforeOriginsCountsAsTheBoardsOrMailsAndAThreadListsAllOfItsOwn() throws {
+        let json = #"{"listConversations":[{"id":"a","title":"t","createdAt":0,"lastAt":2,"turnCount":1,"costUSD":0},{"id":"b","title":"t","createdAt":0,"lastAt":1,"turnCount":1,"costUSD":0,"mailMessageId":5},{"id":"c","title":"t","createdAt":0,"lastAt":0,"turnCount":1,"costUSD":0,"mailMessageId":6,"origin":"mail"}]}"#
+        let conversations = try JSONDecoder().decode(RavenConversations.self, from: Data(json.utf8))
+        #expect(conversations.conversation("a")?.origin == .board)
+        #expect(conversations.conversation("b")?.origin == .mail)
+        #expect(conversations.conversations(aboutMail: [5, 6]).map(\.id) == ["b", "c"])
+    }
+}
+

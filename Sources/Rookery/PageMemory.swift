@@ -46,6 +46,11 @@ final class PageMemory {
     /// The roost address and token typed in the settings and not yet used; nil for the ones kept.
     var roostAddressDraft: String?
     var roostTokenDraft: String?
+    /// Which conversation the Mail page's Raven shows for each thread, by the thread's id: one of the
+    /// thread's, or the empty id for a new one; a thread not here shows its latest.
+    var mapMailRavenChoices: [Int: String] = [:]
+    /// Whether Rookmaster's Raven lists the conversations started anywhere, not only on the board.
+    var isRavenListingAll = false
     /// What the user is writing to Raven beside a mail, before sending it.
     var mailRavenDraft = ""
     /// The mail being written in the Mail page, as the user left it.

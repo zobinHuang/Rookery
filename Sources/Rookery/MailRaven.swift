@@ -1,8 +1,9 @@
 import RookeryCore
 import SwiftUI
 
-/// Raven beside the mail being read, in the Mail page's right column: one conversation per mail thread,
-/// kept with Raven's other conversations, whose first request carries which mail it is about. When the user
+/// Raven beside the mail being read, in the Mail page's right column: the thread's conversations, kept
+/// with Raven's other conversations, the latest shown unless the user picks another or starts a new one;
+/// a conversation's first request carries which mail it is about. When the user
 /// is happy with a reply Raven proposes it as a draft, which goes into the reply editor under the thread.
 struct MailRavenPanel: View {
     let fleetModel: FleetModel
@@ -17,8 +18,22 @@ struct MailRavenPanel: View {
         fleetModel.raven
     }
 
+    private var listThreadConversations: [RavenConversation] {
+        raven.conversations.conversations(aboutMail: listThreadIds)
+    }
+
+    private var threadKey: Int {
+        message.summary.conversationId
+    }
+
+    /// The conversation shown: the one picked for the thread, none when a new one was asked for, or else
+    /// the thread's latest.
     private var conversationId: String? {
-        raven.conversations.conversation(aboutMail: listThreadIds)?.id
+        let listConversations = listThreadConversations
+        if let choice = fleetModel.pageMemory.mapMailRavenChoices[threadKey] {
+            return listConversations.first { $0.id == choice }?.id
+        }
+        return listConversations.first?.id
     }
 
     var body: some View {
@@ -28,11 +43,13 @@ struct MailRavenPanel: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Raven")
                         .font(.system(size: 13, weight: .bold))
-                    Text(conversationId == nil ? "Ask about this mail" : "About this mail")
+                    Text(conversationId.flatMap { raven.conversations.conversation($0)?.title } ?? "New conversation about this mail")
                         .font(.system(size: 11))
                         .foregroundStyle(StageColors.secondaryText)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                conversationMenu
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -68,6 +85,40 @@ struct MailRavenPanel: View {
             .padding(12)
         }
         .background(StageColors.sidebar)
+    }
+
+    /// The thread's conversations to switch between, and a new one.
+    private var conversationMenu: some View {
+        Menu {
+            ForEach(listThreadConversations) { conversation in
+                Button {
+                    fleetModel.pageMemory.mapMailRavenChoices[threadKey] = conversation.id
+                } label: {
+                    if conversation.id == conversationId {
+                        Label(conversation.title, systemImage: "checkmark")
+                    } else {
+                        Text(conversation.title)
+                    }
+                }
+            }
+            if !listThreadConversations.isEmpty {
+                Divider()
+            }
+            Button("New Conversation") {
+                fleetModel.pageMemory.mapMailRavenChoices[threadKey] = ""
+                isFocused = true
+            }
+        } label: {
+            HStack(spacing: 4) {
+                RookeryIconView(.bubble)
+                Text("\(listThreadConversations.count)")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("This thread's conversations with Raven")
     }
 
     /// Where a thread with no conversation yet starts one: what Raven can do with it.
@@ -120,10 +171,11 @@ struct MailRavenPanel: View {
                 Read it and its thread with the mail tools first. When I am happy with a reply, write it with propose_draft, \
                 reply_to \(summary.id); I will change it and send it myself in Rookery's Mail page.
                 """
-            guard let newId = raven.ask(request, mentioning: [], in: nil) else {
+            guard let newId = raven.ask(request, mentioning: [], in: nil, origin: .mail) else {
                 return
             }
             raven.link(newId, toMail: summary.id)
+            fleetModel.pageMemory.mapMailRavenChoices[threadKey] = newId
         }
         fleetModel.pageMemory.mailRavenDraft = ""
         sendToken += 1

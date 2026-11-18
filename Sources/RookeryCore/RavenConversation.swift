@@ -1,5 +1,13 @@
 import Foundation
 
+/// Where a conversation with Raven was started, which decides where it is listed: the Rookmaster board
+/// lists its own, the Mail page those beside each thread, and the launcher's open from it.
+public enum RavenOrigin: String, Codable, CaseIterable, Sendable {
+    case board
+    case mail
+    case launcher
+}
+
 /// One conversation with Raven: a Claude Code session the user can come back to and continue, its id the
 /// session's, which is its agent's id on roost too.
 public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
@@ -25,6 +33,8 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public var titleSource: String?
     /// The mail the conversation is about, when it was opened from the Mail page beside a message.
     public var mailMessageId: Int?
+    /// Where it was started.
+    public var origin: RavenOrigin
 
     public static let engineClaude = "claude"
     public static let engineCodex = "codex"
@@ -38,6 +48,7 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     private static let excerptLength = 600
 
     enum CodingKeys: String, CodingKey {
+        case origin
         case mailMessageId
         case engine
         case codexThreadId
@@ -60,8 +71,10 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         costUSD: Double,
         mapDecisions: [String: RavenDecision] = [:],
         engine: String = RavenConversation.engineClaude,
-        codexThreadId: String? = nil
+        codexThreadId: String? = nil,
+        origin: RavenOrigin = .board
     ) {
+        self.origin = origin
         self.id = id
         self.title = title
         self.createdAt = createdAt
@@ -86,6 +99,7 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         codexThreadId = try container.decodeIfPresent(String.self, forKey: .codexThreadId)
         titleSource = try container.decodeIfPresent(String.self, forKey: .titleSource)
         mailMessageId = try container.decodeIfPresent(Int.self, forKey: .mailMessageId)
+        origin = try container.decodeIfPresent(RavenOrigin.self, forKey: .origin) ?? (mailMessageId == nil ? .board : .mail)
     }
 
     /// The request to a model for a conversation's title, from its first request and Raven's answer.
@@ -155,6 +169,14 @@ public struct RavenConversations: Codable, Equatable, Sendable {
         listConversations.first { $0.id == conversationId }
     }
 
+    /// Every conversation about any message of a mail thread, the latest first.
+    ///
+    /// - Parameter listMessageIds: the thread's messages
+    public func conversations(aboutMail listMessageIds: [Int]) -> [RavenConversation] {
+        let setIds = Set(listMessageIds)
+        return listConversations.filter { $0.mailMessageId.map(setIds.contains) ?? false }
+    }
+
     /// The latest conversation about any message of a mail thread, if there is one.
     ///
     /// - Parameter listMessageIds: the thread's messages
@@ -177,7 +199,13 @@ public struct RavenConversations: Codable, Equatable, Sendable {
     ///   - conversationId: the session id chosen for it
     ///   - request: the first request, which titles it
     ///   - date: when it was made
-    public mutating func open(_ conversationId: String, with request: String, at date: Date, engine: String = RavenConversation.engineClaude) {
+    public mutating func open(
+        _ conversationId: String,
+        with request: String,
+        at date: Date,
+        engine: String = RavenConversation.engineClaude,
+        origin: RavenOrigin = .board
+    ) {
         listConversations.removeAll { $0.id == conversationId }
         listConversations.insert(
             RavenConversation(
@@ -187,7 +215,8 @@ public struct RavenConversations: Codable, Equatable, Sendable {
                 lastAt: date,
                 turnCount: 1,
                 costUSD: 0,
-                engine: engine
+                engine: engine,
+                origin: origin
             ),
             at: 0
         )

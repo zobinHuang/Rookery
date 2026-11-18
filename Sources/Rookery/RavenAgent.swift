@@ -205,7 +205,7 @@ final class RavenAgent {
     ///   - conversationId: the conversation to continue, or nil to begin one
     /// - Returns: the conversation the request went to
     @discardableResult
-    func ask(_ request: String, mentioning listMentions: [FleetRef], in conversationId: String?) -> String? {
+    func ask(_ request: String, mentioning listMentions: [FleetRef], in conversationId: String?, origin: RavenOrigin = .board) -> String? {
         loadIfNeeded()
         guard let client = fleetModel.client(), !isRunning(conversationId) else {
             return nil
@@ -220,10 +220,12 @@ final class RavenAgent {
         } else {
             sessionId = UUID().uuidString.lowercased()
             isFirstTurn = true
-            conversations.open(sessionId, with: request, at: now, engine: fleetModel.ravenEngine)
+            conversations.open(sessionId, with: request, at: now, engine: fleetModel.ravenEngine, origin: origin)
         }
         saveIndex()
-        openConversationId = sessionId
+        if conversations.conversation(sessionId)?.origin == .board {
+            openConversationId = sessionId
+        }
         record(Self.requestLine(request, at: now), in: sessionId)
         startTurn(request, mentioning: listMentions, in: sessionId, isFirstTurn: isFirstTurn, client: client)
         return sessionId

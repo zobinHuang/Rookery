@@ -390,7 +390,7 @@ final class LauncherController {
         let listNamed = model.listMentionRefs.filter { ref in
             fleetModel.graph.resource(ref).map { text.contains(Mentions.token(for: $0)) } ?? false
         }
-        guard let conversationId = raven.ask(text, mentioning: listNamed, in: model.targetConversationId) else {
+        guard let conversationId = raven.ask(text, mentioning: listNamed, in: model.targetConversationId, origin: .launcher) else {
             model.problem = "Raven could not take the request."
             return
         }

@@ -33,14 +33,13 @@ struct RookmasterView: View {
         fleetModel.pageMemory
     }
 
-    /// The teams one of Raven's conversations directs, which its links reach while it is in them.
+    /// The teams the conversation open in Raven's panel directs, which its links reach while it is in
+    /// them.
     private var listDirectedTeams: [FleetRef] {
-        let graph = fleetModel.graph
-        return graph.listResources(of: AgentFleet.teamKind).filter { team in
-            AgentTeams.memberIds(of: team).contains { memberId in
-                graph.resource(FleetRef(kind: AgentFleet.agentKind, id: memberId))?.isRookeryOwn == true
-            }
-        }.map { FleetRef(kind: AgentFleet.teamKind, id: $0.id) }
+        guard let conversationId = fleetModel.raven.openConversationId else {
+            return []
+        }
+        return fleetModel.raven.teams(of: conversationId).map { FleetRef(kind: AgentFleet.teamKind, id: $0.id) }
     }
 
     private var listKinds: [FleetKind] {
@@ -80,7 +79,12 @@ struct RookmasterView: View {
         }
         .overlayPreferenceValue(CardAnchorsKey.self) { mapAnchors in
             if memory.rookmasterTab == .board {
-                RavenLinksOverlay(links: fleetModel.ravenLinks, listHeldRefs: listDirectedTeams, mapAnchors: mapAnchors)
+                RavenLinksOverlay(
+                    links: fleetModel.ravenLinks,
+                    conversationId: fleetModel.raven.openConversationId,
+                    listHeldRefs: listDirectedTeams,
+                    mapAnchors: mapAnchors
+                )
             }
         }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)

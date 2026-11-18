@@ -4,9 +4,11 @@ import Observation
 import RookeryCore
 import SwiftUI
 
-/// What Raven reaches on the Rookmaster board: the teams its conversations direct, held while they are in
-/// them, and what it touched a moment ago (an agent it messaged or heard from, a skill, playbook or
-/// memory it changed), each for a few seconds; drawn as lines swaying from Raven's tab to each.
+/// What Raven reaches on the Rookmaster board, for the conversation open in its panel: the teams it
+/// directs, held while it is in them, and what it touched a moment ago (an agent it messaged or heard
+/// from, a skill, playbook or memory it changed), each for a few seconds; drawn as lines swaying from
+/// Raven's tab to each. What each conversation touched is kept apart, so switching conversations switches
+/// the lines.
 @MainActor
 @Observable
 final class RavenLinks {
@@ -15,12 +17,13 @@ final class RavenLinks {
     /// Where Raven's own end of the links is on the board's anchors.
     static let ravenRef = FleetRef(kind: "raven", id: "panel")
 
-    private(set) var mapTouchedAt: [FleetRef: Date] = [:]
+    /// When each conversation touched each resource, by conversation.
+    private(set) var mapTouches: [String: [FleetRef: Date]] = [:]
     @ObservationIgnored private var pruneTask: Task<Void, Never>?
 
-    /// Note that Raven touched a resource now; the link goes once its lifetime is over.
-    func note(_ ref: FleetRef, at date: Date = .now) {
-        mapTouchedAt[ref] = date
+    /// Note that a conversation touched a resource now; the link goes once its lifetime is over.
+    func note(_ ref: FleetRef, by conversationId: String, at date: Date = .now) {
+        mapTouches[conversationId, default: [:]][ref] = date
         prune(now: date)
         pruneTask?.cancel()
         pruneTask = Task { [weak self] in
@@ -33,18 +36,20 @@ final class RavenLinks {
     }
 
     private func prune(now: Date) {
-        let mapLive = mapTouchedAt.filter { now.timeIntervalSince($0.value) < Self.touchLifetime }
-        if mapLive.count != mapTouchedAt.count {
-            mapTouchedAt = mapLive
+        let mapLive = mapTouches
+            .mapValues { $0.filter { now.timeIntervalSince($0.value) < Self.touchLifetime } }
+            .filter { !$0.value.isEmpty }
+        if mapLive != mapTouches {
+            mapTouches = mapLive
         }
     }
 
-    /// What Raven touched within the lifetime of a link, with when.
-    func listTouched(now: Date) -> [FleetRef] {
-        mapTouchedAt
-            .filter { now.timeIntervalSince($0.value) < Self.touchLifetime }
-            .map(\.key)
-            .sorted { $0.id < $1.id }
+    /// When a conversation last touched each resource, within the lifetime of a link.
+    func touches(by conversationId: String?, now: Date) -> [FleetRef: Date] {
+        guard let conversationId else {
+            return [:]
+        }
+        return (mapTouches[conversationId] ?? [:]).filter { now.timeIntervalSince($0.value) < Self.touchLifetime }
     }
 
     /// Note what an event from roost says Raven did: a change, a message or a mention of a resource, by
@@ -58,7 +63,7 @@ final class RavenLinks {
         else {
             return
         }
-        note(object)
+        note(object, by: actor.id)
     }
 }
 
@@ -68,6 +73,8 @@ final class RavenLinks {
 /// Core Animation sways and fades them, so a link costs the app nothing frame by frame.
 struct RavenLinksOverlay: View {
     let links: RavenLinks
+    /// The conversation open in Raven's panel, whose links are drawn; nil for none.
+    let conversationId: String?
     let listHeldRefs: [FleetRef]
     let mapAnchors: [FleetRef: Anchor<CGRect>]
 
@@ -85,7 +92,8 @@ struct RavenLinksOverlay: View {
         let ravenFrame = proxy[ravenAnchor]
         let start = CGPoint(x: ravenFrame.midX, y: ravenFrame.minY)
         var listLinks: [RavenLink] = []
-        for ref in Set(listHeldRefs).union(links.listTouched(now: .now)) {
+        let mapTouched = links.touches(by: conversationId, now: .now)
+        for ref in Set(listHeldRefs).union(mapTouched.keys) {
             guard let anchor = mapAnchors[ref] else {
                 continue
             }
@@ -95,7 +103,7 @@ struct RavenLinksOverlay: View {
                 start: start,
                 end: CGPoint(x: target.midX, y: target.maxY),
                 isHeld: listHeldRefs.contains(ref),
-                touchedAt: links.mapTouchedAt[ref]
+                touchedAt: mapTouched[ref]
             ))
         }
         return listLinks.sorted { $0.ref.id < $1.ref.id }
@@ -202,14 +210,14 @@ final class RavenLinksView: NSView {
         let sway = isTouched ? Self.touchedSway + Self.heldSway : Self.heldSway
         let echo = Self.shape(ink: ink, opacity: 0.18, width: 1)
         let line = Self.shape(ink: ink, opacity: 0.55, width: 1.6)
-        echo.add(swayAnimation(link, sway: sway * 0.6, phase: phase - 0.9, swayTime: swayTime), forKey: "sway")
-        line.add(swayAnimation(link, sway: sway, phase: phase, swayTime: swayTime), forKey: "sway")
+        Self.sway(echo, through: Self.swayPaths(link, sway: sway * 0.6, phase: phase - 0.9), swayTime: swayTime)
+        Self.sway(line, through: Self.swayPaths(link, sway: sway, phase: phase), swayTime: swayTime)
         group.addSublayer(echo)
         group.addSublayer(line)
         if isTouched {
             let light = Self.shape(ink: ink, opacity: 0.85, width: 2.6)
             light.lineDashPattern = Self.dashPattern
-            light.add(swayAnimation(link, sway: sway, phase: phase, swayTime: swayTime), forKey: "sway")
+            Self.sway(light, through: Self.swayPaths(link, sway: sway, phase: phase), swayTime: swayTime)
             let climb = CABasicAnimation(keyPath: "lineDashPhase")
             climb.fromValue = 0
             climb.toValue = -Self.dashPattern.reduce(0) { $0 + CGFloat($1.doubleValue) }
@@ -235,12 +243,12 @@ final class RavenLinksView: NSView {
         return group
     }
 
-    /// The line's sway: its path at frames around a loop, the middle swinging side to side on a wave
-    /// running up from Raven, continued from where every link's loop stands now.
-    private func swayAnimation(_ link: RavenLink, sway: CGFloat, phase: Double, swayTime: CFTimeInterval) -> CAKeyframeAnimation {
+    /// The line's path at frames around a loop, the middle swinging side to side on a wave running up
+    /// from Raven.
+    private static func swayPaths(_ link: RavenLink, sway: CGFloat, phase: Double) -> [CGPath] {
         let rise = link.start.y - link.end.y
-        let listPaths = (0...Self.swayFrames).map { frame -> CGPath in
-            let wave = Double(frame) / Double(Self.swayFrames) * .pi * 2 + phase
+        return (0...swayFrames).map { frame -> CGPath in
+            let wave = Double(frame) / Double(swayFrames) * .pi * 2 + phase
             let path = CGMutablePath()
             path.move(to: link.start)
             path.addCurve(
@@ -250,13 +258,6 @@ final class RavenLinksView: NSView {
             )
             return path
         }
-        let animation = CAKeyframeAnimation(keyPath: "path")
-        animation.values = listPaths
-        animation.duration = Self.swayPeriod
-        animation.repeatCount = .infinity
-        animation.timeOffset = swayTime
-        animation.calculationMode = .linear
-        return animation
     }
 
     /// A touch's fade: in at once, held, out over its last seconds, to the held link's strength when the
@@ -277,6 +278,19 @@ final class RavenLinksView: NSView {
         animation.fillMode = .forwards
         animation.isRemovedOnCompletion = false
         return animation
+    }
+
+    /// Give a line its sway through these paths, continued from where every link's loop stands now, and
+    /// the first of them as its own, so it shows where the sway does not run.
+    private static func sway(_ shape: CAShapeLayer, through listPaths: [CGPath], swayTime: CFTimeInterval) {
+        shape.path = listPaths.first
+        let animation = CAKeyframeAnimation(keyPath: "path")
+        animation.values = listPaths
+        animation.duration = swayPeriod
+        animation.repeatCount = .infinity
+        animation.timeOffset = swayTime
+        animation.calculationMode = .linear
+        shape.add(animation, forKey: "sway")
     }
 
     private static func shape(ink: CGColor, opacity: Float, width: CGFloat) -> CAShapeLayer {

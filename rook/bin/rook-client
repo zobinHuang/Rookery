@@ -1268,6 +1268,8 @@ class ProposeCommands:
     PROPOSE_APPROVAL_STATE = "needs_approval"
     PROPOSE_APPROVAL_CHOICES = ("once", "deny")
     PROPOSE_HARNESSES = ("claude", "codex")
+    """Where Rookery has each proposal kept, besides the command's output."""
+    PROPOSE_FILE_ENV = "ROOK_PROPOSALS_FILE"
 
     @staticmethod
     def build_parser(parser: argparse.ArgumentParser) -> None:
@@ -1313,6 +1315,18 @@ class ProposeCommands:
         team_parser.add_argument("team", help="its id: lowercase letters, digits and dashes")
         team_parser.add_argument("--name", required=True, help="its name")
         team_parser.add_argument("--goal", default="", help="what it works toward")
+        workdir_parser = commands.add_parser("workdir", help="propose adding a workdir to one of the user's hosts")
+        workdir_parser.add_argument("host", help="the host's alias, as rook-client host list names it")
+        workdir_parser.add_argument("path", help="the directory, an absolute path on the host")
+        workdir_parser.add_argument("--name", default="", help="what the workdir is called; its last path component by default")
+        workdir_parser.add_argument(
+            "--parent",
+            action="store_true",
+            help="a parent: each agent started in it gets a new directory of its own, <path>/<MMDD-name>",
+        )
+        workdir_parser.add_argument("--harness", choices=ProposeCommands.PROPOSE_HARNESSES, default="claude")
+        for subparser in commands.choices.values():
+            subparser.add_argument("--as-agent", help="accepted for symmetry; a proposal changes nothing, so it is logged as no one's")
 
     @classmethod
     def run(cls, args: argparse.Namespace, connection: Connection) -> int:
@@ -1324,7 +1338,7 @@ class ProposeCommands:
         Raises:
             RookClientError: if the agent or the rook cannot take it
         """
-        action = "create_team" if args.action == "create-team" else args.action
+        action = {"create-team": "create_team", "workdir": "add_workdir"}.get(args.action, args.action)
         proposal: dict[str, object] = {"id": "p-" + secrets.token_hex(cls.PROPOSE_ID_BYTES), "action": action}
         if args.action == "create-team":
             if not re.match(r"^[a-z0-9][a-z0-9-]{0,62}$", args.team):
@@ -1352,7 +1366,22 @@ class ProposeCommands:
                 "duty": getattr(args, "duty", ""),
                 "text": "",
             })
+        elif args.action == "workdir":
+            if not args.path.startswith("/"):
+                raise RookClientError("a workdir is an absolute path on its host")
+            map_host = HostCommands.host(args.host)
+            name = args.name.strip() or args.path.rstrip("/").rsplit("/", 1)[-1] or args.path
+            proposal.update({
+                "host": str(map_host.get("alias") or args.host),
+                "cwd": args.path,
+                "harness": args.harness,
+                "is_parent": bool(args.parent),
+                "agent_title": f"{name} on {map_host.get('alias') or args.host}",
+                "text": "",
+                "payload": {"name": name},
+            })
         elif args.action == "spawn":
+            args.rook = cls._rook_name(connection, args.rook)
             rook = connection.request("GET", f"/v1/resources/rook/{urllib.parse.quote(args.rook, safe='')}")
             if not (rook.get("attributes") or {}).get("online"):
                 raise RookClientError(f"rook {args.rook} is offline; it cannot start a session now")
@@ -1394,9 +1423,41 @@ class ProposeCommands:
                 if not cls._exists(connection, "playbook", args.playbook):
                     raise RookClientError(f"no such playbook: {args.playbook}")
                 proposal["playbook"] = args.playbook
-        json.dump({"proposal": proposal}, sys.stdout, ensure_ascii=False)
+        line = json.dumps({"proposal": proposal}, ensure_ascii=False)
+        cls._keep(line)
+        sys.stdout.write(line)
         sys.stdout.write("\nProposed. The user decides in Rookery; nothing was done. Do not do it another way.\n")
         return 0
+
+    @classmethod
+    def _keep(cls, line: str) -> None:
+        """Add the proposal to the file Rookery names for the conversation, so the card shows however the
+        command's output is passed on."""
+        path = os.environ.get(cls.PROPOSE_FILE_ENV) or ""
+        if not path:
+            return
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError as err:
+            sys.stderr.write(f"rook: cannot keep the proposal for Rookery: {err}\n")
+
+    @classmethod
+    def _rook_name(cls, connection: Connection, name: str) -> str:
+        """The rook a name means: a rook of that name, else the one whose machine goes by it."""
+        if cls._exists(connection, "rook", name):
+            return name
+        list_rooks = connection.request("GET", "/v1/resources?kind=rook&limit=200").get("resources") or []
+        list_matches = [
+            str(rook.get("id"))
+            for rook in list_rooks
+            if str(((rook.get("attributes") or {}).get("machine") or {}).get("hostname") or "").lower() == name.lower()
+        ]
+        if len(list_matches) == 1:
+            return list_matches[0]
+        if list_matches:
+            raise RookClientError(f"machine {name} runs several rooks: {', '.join(list_matches)}; name one")
+        raise RookClientError(f"no rook {name}, and no rook runs on a machine of that name")
 
     @staticmethod
     def _exists(connection: Connection, kind: str, resource_id: str) -> bool:
@@ -1431,6 +1492,26 @@ class HostCommands:
         list_parser.add_argument("--json", action="store_true")
 
     @classmethod
+    def host(cls, alias: str) -> dict[str, object]:
+        """One of the user's hosts, by its alias or its rook's name.
+
+        Raises:
+            RookClientError: if Rookery wrote no hosts here or none goes by the name
+        """
+        for map_host in cls._hosts().get("hosts") or []:
+            if alias in (map_host.get("alias"), map_host.get("rook")):
+                return map_host
+        raise RookClientError(f"no host {alias}; rook-client host list names them")
+
+    @classmethod
+    def _hosts(cls) -> dict[str, object]:
+        path = RookPaths.config_dir() / cls.HOSTS_FILE_NAME
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as err:
+            raise RookClientError(f"no hosts here; Rookery writes them for Raven ({err})") from err
+
+    @classmethod
     def run(cls, args: argparse.Namespace) -> int:
         """Print the hosts.
 
@@ -1440,11 +1521,7 @@ class HostCommands:
         Raises:
             RookClientError: if Rookery wrote no hosts here
         """
-        path = RookPaths.config_dir() / cls.HOSTS_FILE_NAME
-        try:
-            map_hosts = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as err:
-            raise RookClientError(f"no hosts here; Rookery writes them for Raven ({err})") from err
+        map_hosts = cls._hosts()
         if args.json:
             print(json.dumps(map_hosts, indent=2, ensure_ascii=False))
             return 0
@@ -1454,6 +1531,8 @@ class HostCommands:
             print(f"{map_host.get('alias')} ({map_host.get('address')}): {state}")
             for map_workdir in map_host.get("workdirs") or []:
                 list_parts = [f"  workdir {map_workdir.get('name')}: {map_workdir.get('path')}, {map_workdir.get('harness')}"]
+                if map_workdir.get("is_parent"):
+                    list_parts.append("a parent: start each agent in a new directory of its own, " + str(map_workdir.get("path")).rstrip("/") + "/<MMDD-name>, which its rook creates")
                 if map_workdir.get("playbook"):
                     list_parts.append(f"playbook {map_workdir['playbook']}")
                 if map_workdir.get("skills"):
@@ -1477,6 +1556,7 @@ class MessageCommands:
         parser.add_argument("agent", help="the agent's id, its session id")
         parser.add_argument("text", nargs="+")
         parser.add_argument("--as-person", action="store_true", help="send as a person even inside an agent's pane")
+        parser.add_argument("--as-agent", help="the agent sending it; the one in this pane, or ROOK_AGENT_ID, by default")
         parser.add_argument("--thread", help="the thread this answers, as the message you answer names it")
         parser.add_argument("--no-reply", action="store_true", help="tell the agent no answer is wanted")
 
@@ -1495,7 +1575,7 @@ class MessageCommands:
             "text": " ".join(args.text),
             "options": TeamCommands.prompt_options(args),
         }
-        session_id = None if args.as_person else AgentPane.session_here()
+        session_id = None if args.as_person else (args.as_agent or AgentPane.session_here())
         if session_id:
             map_body["actor"] = {"kind": "agent", "id": session_id}
         map_delivery = connection.request("POST", "/v1/messages", map_body)
@@ -1515,6 +1595,7 @@ class PlaybookCommands:
         parser.add_argument("playbook", help="the playbook's id")
         parser.add_argument("text", nargs="*", help="what to tell the agent once it is loaded")
         parser.add_argument("--as-person", action="store_true", help="send as a person even inside an agent's pane")
+        parser.add_argument("--as-agent", help="the agent sending it; the one in this pane, or ROOK_AGENT_ID, by default")
 
     @staticmethod
     def run(args: argparse.Namespace, connection: Connection) -> int:
@@ -1532,7 +1613,7 @@ class PlaybookCommands:
             "text": " ".join(args.text),
             "options": {"playbook": args.playbook},
         }
-        session_id = None if args.as_person else AgentPane.session_here()
+        session_id = None if args.as_person else (args.as_agent or AgentPane.session_here())
         if session_id:
             map_body["actor"] = {"kind": "agent", "id": session_id}
         map_delivery = connection.request("POST", "/v1/messages", map_body)
@@ -1559,6 +1640,7 @@ class TeamCommands:
         send_parser.add_argument("text", nargs="+")
         send_parser.add_argument("--thread", help="the thread this answers, as the message you answer names it")
         send_parser.add_argument("--no-reply", action="store_true", help="tell them no answer is wanted")
+        send_parser.add_argument("--as-agent", help="the member sending it; the one in this pane, or ROOK_AGENT_ID, by default")
 
     @classmethod
     def run(cls, args: argparse.Namespace, connection: Connection) -> int:
@@ -1570,7 +1652,7 @@ class TeamCommands:
         Raises:
             RookClientError: if roost refuses it
         """
-        session_id = AgentPane.session_here()
+        session_id = getattr(args, "as_agent", None) or AgentPane.session_here()
         if args.action == "send":
             map_body: dict[str, object] = {
                 "team": args.team,
@@ -1804,7 +1886,12 @@ class TeamBriefing:
                 if map_member.get("duty"):
                     list_lines.append(f"    duty here: {map_member['duty']}")
                 continue
-            list_parts.append(f"on {map_member.get('hostname') or map_member.get('rook_name') or '?'}")
+            rook_name = str(map_member.get("rook_name") or "")
+            hostname = str(map_member.get("hostname") or "")
+            where = rook_name or hostname or "?"
+            if rook_name and hostname and hostname != rook_name:
+                where += f" (host {hostname})"
+            list_parts.append(f"on rook {where}")
             list_parts.append(f"in {map_member.get('cwd') or '?'}")
             list_parts.append(f"[{map_member.get('state') or 'unknown'}]")
             list_lines.append(" ".join(list_parts))

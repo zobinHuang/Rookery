@@ -438,6 +438,38 @@ class AgentCommandsTest(QueueAndSendTest):
         list_sent = self.server.deliveries.list_recent(agent_id="busy", limit=10)
         self.assertEqual([(delivery.kind, delivery.map_options) for delivery in list_sent], [("playbook", {"playbook": "review"})])
 
+    def test_a_proposal_is_kept_for_rookery_however_its_output_is_passed_on(self) -> None:
+        self.start_agent("busy", "working", "2026-11-16T10:00:00.000+00:00", {"title": "Payments"})
+        kept = self.home / "proposals.jsonl"
+        with mock.patch.dict(os.environ, {"ROOK_PROPOSALS_FILE": str(kept)}):
+            self.run_client(["propose", "message", "busy", "run", "the", "tests", "--as-agent", "raven-1"])
+        list_kept = [json.loads(line)["proposal"] for line in kept.read_text().splitlines()]
+        self.assertEqual([(proposal["action"], proposal["text"]) for proposal in list_kept], [("message", "run the tests")])
+
+    def test_a_new_session_on_a_machine_named_by_its_host_name_goes_to_its_rook(self) -> None:
+        self.report([{"actor": {"kind": "rook", "id": "alibaba-b300-0"}, "verb": "connected", "detail": {"machine": {"hostname": "netpreme-0"}}}])
+        output = self.run_client(["propose", "spawn", "netpreme-0", "--cwd", "/src/api", "go"])
+        self.assertEqual(json.loads(output.splitlines()[0])["proposal"]["rook"], "alibaba-b300-0")
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "spawn", "nowhere", "--cwd", "/src/api"]), 1)
+        self.assertIn("no rook nowhere", stderr.getvalue())
+
+    def test_a_parent_workdir_is_proposed_for_a_host_rookery_knows(self) -> None:
+        (self.home / "config" / "rook" / "hosts.json").write_text(json.dumps({
+            "hosts": [{"alias": "b300", "address": "47.0.0.1", "rook": "alibaba-b300-0", "online": True, "workdirs": []}],
+        }))
+        output = self.run_client(["propose", "workdir", "alibaba-b300-0", "/mnt/projects/", "--parent"])
+        proposal = json.loads(output.splitlines()[0])["proposal"]
+        self.assertEqual(
+            (proposal["action"], proposal["host"], proposal["cwd"], proposal["is_parent"]),
+            ("add_workdir", "b300", "/mnt/projects/", True),
+        )
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "stderr", stderr):
+            self.assertEqual(rook_client.main(["propose", "workdir", "elsewhere", "/x"]), 1)
+        self.assertIn("no host elsewhere", stderr.getvalue())
+
     def test_an_ended_agent_takes_no_proposal(self) -> None:
         self.start_agent("gone", "ended", "2026-11-16T10:00:00.000+00:00")
         stderr = io.StringIO()
@@ -483,6 +515,11 @@ class TeamCommandsTest(QueueAndSendTest):
         self.assertIn("- you, agent a", context)
         self.assertIn("duty here: tests", context)
         self.assertIn("rook team send", context)
+
+    def test_a_teammate_is_placed_by_its_rook_with_its_machine_beside(self) -> None:
+        self.start_agent("b", "idle", "2026-11-17T10:00:00.000+00:00", {"title": "agent b", "machine": {"hostname": "netpreme-0"}})
+        output = self.run_client(["team", "roster", "api"])
+        self.assertIn("on rook studio (host netpreme-0)", output)
 
     def test_a_session_in_no_team_is_told_nothing(self) -> None:
         self.assertIsNone(self.hook_output({"session_id": "c", "hook_event_name": "SessionStart"}))

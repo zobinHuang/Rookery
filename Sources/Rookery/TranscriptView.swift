@@ -140,7 +140,7 @@ struct TranscriptView: View {
                 if let replierName, isRunStart {
                     SpeakerHeading(name: replierName, isRaven: true, detail: nil, timestamp: nil)
                 }
-                MessageBubble(isTrailing: false, hasTail: hasTail) {
+                MessageBubble(isTrailing: false, hasTail: hasTail, copiedText: entry.text) {
                     MarkdownText(text: entry.text)
                 }
             }
@@ -175,7 +175,7 @@ struct TranscriptView: View {
                         timestamp: entry.timestamp.map(Self.time(of:))
                     )
                 }
-                MessageBubble(isTrailing: false, hasTail: hasTail, tint: SpeakerHeading.rookTint) {
+                MessageBubble(isTrailing: false, hasTail: hasTail, tint: SpeakerHeading.rookTint, copiedText: entry.text) {
                     MarkdownText(text: entry.text)
                 }
             }
@@ -184,7 +184,7 @@ struct TranscriptView: View {
     }
 
     private func prompt(_ entry: TranscriptEntry, hasTail: Bool) -> some View {
-        MessageBubble(isTrailing: true, hasTail: hasTail) {
+        MessageBubble(isTrailing: true, hasTail: hasTail, copiedText: entry.text) {
             mentionText(entry.text)
                 .font(.system(size: 13))
                 .lineSpacing(2)
@@ -199,7 +199,7 @@ struct TranscriptView: View {
         let delivery = mapDeliveries[outgoing.id]
         let isFailed = delivery?.isFailed == true
         return VStack(alignment: .trailing, spacing: 4) {
-            MessageBubble(isTrailing: true, hasTail: hasTail, isFailed: isFailed) {
+            MessageBubble(isTrailing: true, hasTail: hasTail, isFailed: isFailed, copiedText: outgoing.text) {
                 mentionText(outgoing.text)
                     .font(.system(size: 13))
                     .lineSpacing(2)
@@ -749,12 +749,15 @@ struct MessageBubble<Content: View>: View {
     var isFailed = false
     /// A colour the bubble is washed in, telling a speaker apart from the agent, as a rook's message.
     var tint: Color?
+    /// What Copy in the bubble's menu puts on the clipboard, the message as it was written; nil for no menu.
+    var copiedText: String?
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         let widthShare = Self.widthShare
         let edgeAnchor: UnitPoint = isTrailing ? .trailing : .leading
         return content()
+            .textSelection(.enabled)
             .foregroundStyle(isTrailing ? AnyShapeStyle(StageColors.userBubbleText) : AnyShapeStyle(StageColors.primaryText))
             .padding(.horizontal, 13)
             .padding(.vertical, 8)
@@ -765,6 +768,14 @@ struct MessageBubble<Content: View>: View {
                         MessageBubbleShape(isTrailing: isTrailing, hasTail: hasTail)
                             .stroke(border, lineWidth: 1)
                     }
+            }
+            .contextMenu {
+                if let copiedText {
+                    Button("Copy Message") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(copiedText, forType: .string)
+                    }
+                }
             }
             .containerRelativeFrame(.horizontal, alignment: isTrailing ? .trailing : .leading) { width, _ in
                 width * widthShare

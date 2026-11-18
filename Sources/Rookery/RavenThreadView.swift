@@ -26,6 +26,10 @@ private struct RavenThreadContent: View {
     private static let deliveryPollInterval: Duration = .seconds(3)
     /// The most decided proposals shown above the box, the latest.
     private static let shownDecidedLimit = 3
+    /// How long a proposal carried out or turned down stays in its line, to show it went.
+    private static let decidedShownSeconds: TimeInterval = 20
+    /// How long a proposal that failed to reach its agent stays in its line, with why.
+    private static let failedShownSeconds: TimeInterval = 600
     /// The share of the conversation's height the proposals may take, scrolling past it.
     private static let proposalsHeightShare: CGFloat = 0.42
     /// The least height the proposals may take, however short the conversation.
@@ -38,6 +42,8 @@ private struct RavenThreadContent: View {
     var onOpenDraft: ((String) -> Void)?
 
     @State private var setSendingIds: Set<String> = []
+    /// The moment the decided lines were last weighed, moved on as each is due to go.
+    @State private var now = Date.now
     @State private var threadHeight: CGFloat = 0
     @State private var proposalsHeight: CGFloat = 0
     /// The proposal shown whole among several waiting, the rest in a line each.
@@ -188,13 +194,17 @@ private struct RavenThreadContent: View {
     // MARK: - Proposals
 
     /// What Raven proposed to do to agents in a conversation: those waiting on the user in full, with
-    /// buttons to carry them out or not, and the latest decided ones in a line each.
+    /// buttons to carry them out or not, and the latest decided ones in a line each while they are news:
+    /// one on its way until it arrives, one that failed for a while with why, the rest for a moment.
     @ViewBuilder
     private func proposals(in conversationId: String) -> some View {
         let listProposals = (raven.mapProposals[conversationId] ?? []).filter { $0.action != .draftMail }
         let mapDecisions = raven.conversations.conversation(conversationId)?.mapDecisions ?? [:]
         let listPending = listProposals.filter { mapDecisions[$0.id] == nil }
-        let listDecided = listProposals.filter { mapDecisions[$0.id] != nil }.suffix(Self.shownDecidedLimit)
+        let listDecided = listProposals.filter { proposal in
+            mapDecisions[proposal.id].map { shownUntil(of: $0) > now } ?? false
+        }.suffix(Self.shownDecidedLimit)
+        let nextGoneAt = listDecided.compactMap { mapDecisions[$0.id].map(shownUntil(of:)) }.min()
         let listDrafts = raven.drafts(of: conversationId)
         if !listPending.isEmpty || !listDecided.isEmpty || !listDrafts.isEmpty {
             let maxHeight = max(threadHeight * Self.proposalsHeightShare, Self.proposalsMinHeight)
@@ -232,7 +242,30 @@ private struct RavenThreadContent: View {
             .frame(height: min(proposalsHeight, maxHeight))
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listPending.map(\.id))
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: expandedProposalId)
+            .animation(.easeOut(duration: 0.3), value: listDecided.map(\.id))
+            .task(id: nextGoneAt) {
+                guard let nextGoneAt, nextGoneAt < .distantFuture else {
+                    return
+                }
+                try? await Task.sleep(for: .seconds(max(nextGoneAt.timeIntervalSinceNow, 0) + 0.1))
+                guard !Task.isCancelled else {
+                    return
+                }
+                now = .now
+            }
         }
+    }
+
+    /// Until when a decided proposal keeps its line: for good while it is on its way, a while once it
+    /// failed, a moment otherwise.
+    private func shownUntil(of decision: RavenDecision) -> Date {
+        guard case .sent(let deliveryId) = decision.outcome, let delivery = raven.mapDeliveries[deliveryId] else {
+            return decision.decidedAt + Self.decidedShownSeconds
+        }
+        if !delivery.isSettled {
+            return .distantFuture
+        }
+        return decision.decidedAt + (delivery.isFailed ? Self.failedShownSeconds : Self.decidedShownSeconds)
     }
 
     /// A proposal among several waiting, in a line: what Raven would do and to whom, its text's opening,

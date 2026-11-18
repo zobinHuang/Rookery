@@ -413,9 +413,16 @@ class DeliveryDesk:
         map_options = map_delivery.get("options") or {}
         cwd = str(map_options.get("cwd") or "")
         harness = str(map_options.get("harness") or "claude")
-        if not os.path.isdir(cwd):
-            self._finish(map_record, "failed", f"no such directory on this rook: {cwd}")
+        if not os.path.isabs(cwd):
+            self._finish(map_record, "failed", f"a new session needs an absolute directory, not {cwd!r}")
             return
+        is_created = not os.path.isdir(cwd)
+        if is_created:
+            try:
+                os.makedirs(cwd, exist_ok=True)
+            except OSError as err:
+                self._finish(map_record, "failed", f"cannot create {cwd} on this rook: {err.strerror or err}")
+                return
         prompt = str(map_delivery.get("text") or "")
         command = f"{harness} {shlex.quote(prompt)}" if prompt else harness
         launch_id = str(map_options.get("launch") or "")
@@ -428,7 +435,8 @@ class DeliveryDesk:
         except RookLinkError as err:
             self._finish(map_record, "failed", err.message)
             return
-        self._finish(map_record, "delivered", f"started {harness} in {cwd}, pane {pane}")
+        where = f"{cwd}, created for it" if is_created else cwd
+        self._finish(map_record, "delivered", f"started {harness} in {where}, pane {pane}")
 
     @classmethod
     def _install_command(cls, launch_id: str, harness: str, map_options: dict[str, object]) -> str:

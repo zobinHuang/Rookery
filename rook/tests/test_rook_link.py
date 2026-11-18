@@ -276,12 +276,17 @@ class DeliveryDeskTest(AgentInPaneTest):
     def test_a_new_session_opens_a_window_running_its_harness_with_the_prompt(self) -> None:
         directory = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, directory, True)
+        fresh = os.path.join(directory, "1119-glm", "work")
         self.desk.accept(self.delivery("d-1", "fix the flaky test", kind="spawn", options={"cwd": directory, "harness": "claude"}))
-        self.desk.accept(self.delivery("d-22", "", kind="spawn", options={"cwd": "/no/such/dir", "harness": "claude"}))
+        self.desk.accept(self.delivery("d-22", "", kind="spawn", options={"cwd": "/no-such-root-dir/x", "harness": "claude"}))
+        self.desk.accept(self.delivery("d-333", "", kind="spawn", options={"cwd": fresh, "harness": "claude"}))
         self.desk.process(accepts_prompts=True)
-        self.assertEqual(self.typer.list_opened, [(directory, "claude 'fix the flaky test'")])
+        self.assertEqual(self.typer.list_opened, [(directory, "claude 'fix the flaky test'"), (fresh, "claude")])
         self.assertEqual(self.outcome("d-1")["status"], "delivered")
         self.assertEqual(self.outcome("d-22")["status"], "failed")
+        self.assertIn("cannot create", self.outcome("d-22")["reason"])
+        self.assertTrue(os.path.isdir(fresh))
+        self.assertIn("created for it", self.outcome("d-333")["reason"])
 
     def test_a_launch_names_itself_and_installs_its_playbook_first(self) -> None:
         directory = tempfile.mkdtemp()

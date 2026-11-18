@@ -368,18 +368,21 @@ struct AgentDetailView: View {
 
     // MARK: - Conversation
 
+    /// The agent's conversation, laid out apart from the window, since it grows and scrolls on its own.
     private var conversation: some View {
-        TranscriptView(
-            reader: reader,
-            agentId: agentId,
-            memory: fleetModel.pageMemory,
-            hasTranscript: hasTranscript,
-            listOutgoing: listOutgoing,
-            mapDeliveries: Dictionary(listDeliveries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
-            sendToken: sendToken
-        ) {
-            fleetModel.transcripts.forget(agentId)
-            reader = TranscriptReader()
+        LayoutIsland {
+            TranscriptView(
+                reader: reader,
+                agentId: agentId,
+                memory: fleetModel.pageMemory,
+                hasTranscript: hasTranscript,
+                listOutgoing: listOutgoing,
+                mapDeliveries: Dictionary(listDeliveries.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                sendToken: sendToken
+            ) {
+                fleetModel.transcripts.forget(agentId)
+                reader = TranscriptReader()
+            }
         }
         .id(agentId)
     }

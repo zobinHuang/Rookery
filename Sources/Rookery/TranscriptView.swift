@@ -580,46 +580,89 @@ struct TranscriptView: View {
 /// An agent's answer with its block structure: headings set larger, code in a box of its own that scrolls
 /// sideways, prose with its inline marks and line breaks.
 struct MarkdownText: View {
+    /// How tall the gap between two paragraphs is, as a share of the text's size, drawn as a short line.
+    private static let paragraphGapShare: CGFloat = 0.45
+
     let text: String
     var fontSize: CGFloat = 13
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(MarkdownBlock.blocks(of: text).enumerated()), id: \.offset) { _, block in
-                blockView(block)
+            ForEach(Array(Self.groups(of: MarkdownBlock.blocks(of: text)).enumerated()), id: \.offset) { _, listGroup in
+                if case .code(let language, let code)? = listGroup.first {
+                    codeView(language: language, code: code)
+                } else {
+                    Text(prose(listGroup))
+                        .font(.system(size: fontSize))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownBlock) -> some View {
-        switch block {
-        case .paragraph(let paragraph):
-            Text(Self.inline(paragraph))
-                .font(.system(size: fontSize))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-        case .heading(let level, let heading):
-            Text(Self.inline(heading))
-                .font(.system(size: fontSize + (level <= 2 ? 3 : 1), weight: .semibold))
-                .padding(.top, 2)
-        case .code(let language, let code):
-            VStack(alignment: .leading, spacing: 4) {
-                if !language.isEmpty {
-                    Text(language)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(StageColors.tertiaryText)
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    Text(code)
-                        .font(.system(size: fontSize - 1, design: .monospaced))
-                        .fixedSize(horizontal: true, vertical: false)
-                }
+    /// The blocks in runs shown as one: each code block alone, the prose between them together, so a
+    /// selection runs across its paragraphs and headings.
+    private static func groups(of listBlocks: [MarkdownBlock]) -> [[MarkdownBlock]] {
+        var listGroups: [[MarkdownBlock]] = []
+        for block in listBlocks {
+            if case .code = block {
+                listGroups.append([block])
+            } else if let last = listGroups.last?.last, !Self.isCode(last) {
+                listGroups[listGroups.count - 1].append(block)
+            } else {
+                listGroups.append([block])
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
+        return listGroups
+    }
+
+    private static func isCode(_ block: MarkdownBlock) -> Bool {
+        if case .code = block {
+            return true
+        }
+        return false
+    }
+
+    /// A run of prose as one text: headings larger and bold, paragraphs apart by a short blank line.
+    private func prose(_ listGroup: [MarkdownBlock]) -> AttributedString {
+        var joined = AttributedString()
+        for (index, block) in listGroup.enumerated() {
+            if index > 0 {
+                var gap = AttributedString("\n\n")
+                gap.font = .system(size: fontSize * Self.paragraphGapShare)
+                joined += gap
+            }
+            switch block {
+            case .paragraph(let paragraph):
+                joined += Self.inline(paragraph)
+            case .heading(let level, let heading):
+                var title = Self.inline(heading)
+                title.font = .system(size: fontSize + (level <= 2 ? 3 : 1), weight: .semibold)
+                joined += title
+            case .code:
+                break
+            }
+        }
+        return joined
+    }
+
+    private func codeView(language: String, code: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !language.isEmpty {
+                Text(language)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                Text(code)
+                    .font(.system(size: fontSize - 1, design: .monospaced))
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     /// Prose with its inline marks, a list item's leading dash or star drawn as a bullet.

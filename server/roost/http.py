@@ -23,7 +23,8 @@ from roost.link import LinkHub
 from roost.messages import Delivery, DeliveryStore
 from roost.playbooks import PlaybookIndex
 from roost.resources import ResourceKinds, ResourceQuery, ResourceRef, ResourceStore
-from roost.skills import SkillIndex
+from roost.credentials import GitCredentialStore
+from roost.skills import GitRefResolver, SkillIndex, SkillSource
 from roost.store import SessionMeta, SessionQuery, SessionStore, TranscriptTitles
 from roost.teams import TeamRoster
 
@@ -122,6 +123,8 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
             self._route_messages(method, list_segments, map_query)
         elif collection == "teams":
             self._route_teams(method, list_segments, map_query)
+        elif collection == "credentials":
+            self._route_credentials(method, list_segments, map_query)
         elif collection == "launches" and len(list_segments) == 3 and list_segments[2] == "resolve" and method == "GET":
             map_options = self.server.deliveries.launch(list_segments[1]).map_options
             list_skills = map_options.get("skills")
@@ -398,6 +401,46 @@ class RoostRequestHandler(BaseHTTPRequestHandler):
         if list_segments == ["events", "stream"] and method == "GET":
             after = self._query_int(map_query, "after") if "after" in map_query else 0
             self._stream_events(after)
+            return
+        raise NotFoundError(self._no_such_route(method, list_segments))
+
+    def _route_credentials(
+        self,
+        method: str,
+        list_segments: list[str],
+        map_query: dict[str, list[str]],
+    ) -> None:
+        credentials = self.server.credentials
+        if list_segments == ["credentials"] and method == "GET":
+            self._respond_json(
+                HTTPStatus.OK,
+                {"credentials": [credential.as_listing() for credential in credentials.list_all()]},
+            )
+            return
+        if list_segments == ["credentials", "match"] and method == "GET":
+            credential = credentials.for_repo(self._query_text(map_query, "repo") or "")
+            if credential is None:
+                raise NotFoundError("no token is registered for that repository's host")
+            self._respond_json(HTTPStatus.OK, credential.as_secret())
+            return
+        if list_segments == ["credentials", "check"] and method == "POST":
+            map_body = self._read_json_body()
+            repo_url = SkillSource.parse(str(map_body.get("repo") or "")).repo_url
+            branch = GitRefResolver(credentials=credentials).default_branch(repo_url)
+            self._respond_json(HTTPStatus.OK, {"ok": True, "repo": repo_url, "default_branch": branch})
+            return
+        if len(list_segments) == 2 and method == "PUT":
+            map_body = self._read_json_body()
+            credential = credentials.put(
+                list_segments[1],
+                str(map_body.get("username") or ""),
+                str(map_body.get("token") or ""),
+            )
+            self._respond_json(HTTPStatus.OK, credential.as_listing())
+            return
+        if len(list_segments) == 2 and method == "DELETE":
+            credentials.remove(list_segments[1])
+            self._respond_json(HTTPStatus.OK, {"removed": GitCredentialStore.normal_host(list_segments[1])})
             return
         raise NotFoundError(self._no_such_route(method, list_segments))
 
@@ -771,7 +814,8 @@ class RoostServer(ThreadingHTTPServer):
         self.config = config
         self.store = store
         self.resources = resources or ResourceStore(Database(config.data_root))
-        self.skills = skills or SkillIndex(self.resources)
+        self.credentials = GitCredentialStore(self.resources.database)
+        self.skills = skills or SkillIndex(self.resources, GitRefResolver(credentials=self.credentials))
         self.playbooks = playbooks or PlaybookIndex(self.resources, self.skills)
         self.events = EventLog(self.resources, store.title_of)
         self.catalog = ResourceCatalog(self.resources, self.events, self.skills, self.playbooks)

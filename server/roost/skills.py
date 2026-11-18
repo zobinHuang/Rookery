@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
+from roost.credentials import GitCredentialStore
 from roost.errors import NotFoundError, ValidationError
 from roost.records import RecordStore
 from roost.resources import ResourceStore
@@ -276,8 +277,13 @@ class GitRefResolver:
     RESOLVER_TIMEOUT_SECONDS = 30
     RESOLVER_HEAD_PREFIX = "ref: "
 
-    def __init__(self, timeout_seconds: int = RESOLVER_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        timeout_seconds: int = RESOLVER_TIMEOUT_SECONDS,
+        credentials: GitCredentialStore | None = None,
+    ) -> None:
         self._timeout_seconds = timeout_seconds
+        self._credentials = credentials
 
     def resolve(self, repo_url: str, ref: str) -> SkillVersion:
         """Resolve a ref, or a commit written out in full, to a concrete commit.
@@ -329,7 +335,7 @@ class GitRefResolver:
         Raises:
             ValidationError: if the repository cannot be reached
         """
-        for line in self._run(["ls-remote", "--symref", repo_url, "HEAD"]):
+        for line in self._run(["ls-remote", "--symref", repo_url, "HEAD"], repo_url):
             if line.startswith(self.RESOLVER_HEAD_PREFIX):
                 target = line[len(self.RESOLVER_HEAD_PREFIX):].split()[0]
                 return target.removeprefix("refs/heads/")
@@ -363,27 +369,33 @@ class GitRefResolver:
         if ref:
             list_command.append(ref)
         map_refs: dict[str, str] = {}
-        for line in self._run(list_command):
+        for line in self._run(list_command, repo_url):
             list_fields = line.split("\t")
             if len(list_fields) == 2:
                 map_refs[list_fields[1]] = list_fields[0]
         return map_refs
 
-    def _run(self, list_arguments: list[str]) -> list[str]:
+    def _run(self, list_arguments: list[str], repo_url: str) -> list[str]:
+        list_options: list[str] = []
+        map_environment = {
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "",
+            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+            "HOME": str(Path.home()),
+        }
+        credential = self._credentials.for_repo(repo_url) if self._credentials else None
+        if credential:
+            list_options = GitCredentialStore.git_options()
+            map_environment.update(GitCredentialStore.git_environment(credential))
         try:
             completed = subprocess.run(
-                ["git", *list_arguments],
+                ["git", *list_options, *list_arguments],
                 capture_output=True,
                 text=True,
                 timeout=self._timeout_seconds,
                 # git must never stop to ask for credentials: a private
                 # repository has to fail rather than hang the request.
-                env={
-                    "GIT_TERMINAL_PROMPT": "0",
-                    "GIT_ASKPASS": "",
-                    "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
-                    "HOME": str(Path.home()),
-                },
+                env=map_environment,
                 check=False,
             )
         except FileNotFoundError as err:

@@ -74,6 +74,15 @@ class Database:
             detail TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS git_credentials (
+            host TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            token TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
     )
 
     DATABASE_COLUMN_ADDITIONS = (

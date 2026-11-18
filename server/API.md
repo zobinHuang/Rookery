@@ -330,6 +330,18 @@ A prompt belongs to a `thread`, made for it unless it names the one it answers; 
 
 A spawn's `options` may also name the `launch` id the new session names as it starts (one is made otherwise, and returned), the `playbook` and further `skills` to install first, the `role` it takes, and the `teams` it joins as `[{"team": "<id>", "duty": "..."}]`. When an agent starts with `launch` in its `started` event's detail, it takes that role, unless it has one, and joins those teams. `GET /v1/launches/<launch id>/resolve` answers with what the session installs, as a playbook's resolution: the playbook's, with the further skills at their latest version, or the skills alone under an empty `id`. A message from an agent carries its `sender_title` in its options.
 
+## Git credentials
+
+Tokens for git hosting services, by host, so roost and the rooks reach private repositories without anyone setting git up on the machines. roost reads a private repository's refs with the token for its host when the repository is reached over `https`; a rook installing a skill from one asks for the same token and hands it to git alike. git takes the token through a helper set on its command line that reads it from git's environment, so it never shows in a process listing; a repository reached over ssh uses the machine's own keys. Tokens live in the server's database, which only the server's user may read, and no route lists one whole: a listing shows each by its last four characters, and only `match`, which a rook calls as it fetches, returns a token, the one for the repository's host.
+
+| | |
+|---|---|
+| `GET /v1/credentials` | every host's credential: `host`, `username`, `token_hint` and `updated_at` |
+| `PUT /v1/credentials/<host>` | `{"token": "...", "username": "..."}` registers or replaces the token for a host, as `github.com` or `git.example.com:8443`; the user name defaults to `x-access-token` for GitHub and `oauth2` elsewhere, as GitLab's personal tokens take |
+| `DELETE /v1/credentials/<host>` | forgets a host's token |
+| `POST /v1/credentials/check` | `{"repo": "<skill source or git URL>"}` reads the repository with the token registered for its host and answers `{"ok": true, "default_branch": "main"}`, or `400` with git's own words |
+| `GET /v1/credentials/match?repo=<git URL>` | the whole credential for an `https` repository's host, `{"host", "username", "token"}`; `404` when its host has none or it is reached over ssh |
+
 ## Teams
 
 A team is a resource of kind `team`, made and changed through the resource routes: a `name`, and in `attributes` its `goal`, its `limits`, and its `members`, by agent id, each with its `duty` and when it `joined_at`. Members join and leave through their own routes, so a change to one never overwrites another. An agent may be in several teams. Each member is shown by its card: its id, name and `title`, its `role` (who it is, set on the agent resource) and `focus` (what it does now, with `focus_at`), its `state`, `rook_name`, `hostname`, `cwd`, `git_branch` and `harness`, with its `duty` in the team.

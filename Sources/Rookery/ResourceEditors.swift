@@ -111,6 +111,9 @@ struct EditorActions: View {
 
 /// The relations touching a resource, each a click away from its other end.
 struct RelationsList: View {
+    /// The most relations listed, the latest; the board shows them all.
+    private static let shownLimit = 20
+
     let fleetModel: FleetModel
     let ref: FleetRef
     let onOpen: (FleetRef) -> Void
@@ -123,8 +126,13 @@ struct RelationsList: View {
                     .font(.system(size: 12))
                     .foregroundStyle(StageColors.tertiaryText)
             }
-            ForEach(listRelations) { relation in
+            ForEach(listRelations.prefix(Self.shownLimit)) { relation in
                 row(relation)
+            }
+            if listRelations.count > Self.shownLimit {
+                Text("\(listRelations.count - Self.shownLimit) earlier, on the board")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
             }
         }
     }
@@ -750,7 +758,6 @@ struct AgentInspector: View {
                 FactCard(title: "Session") {
                     sessionFacts
                 }
-                RelationsList(fleetModel: fleetModel, ref: ref, onOpen: onOpen)
                 otherFacts
             }
             .padding(24)

@@ -322,6 +322,7 @@ struct SettingsView: View {
             SettingsRow(title: "Log Times", detail: "in Rookmaster's log") {
                 StageSegmentedControl(selection: $preferences.logClock, listOptions: LogClock.allCases, title: \.title)
             }
+            GitCredentialsSettings(fleetModel: fleetModel)
         }
         .onAppear {
         }
@@ -1430,6 +1431,249 @@ private struct PersonEditor: View {
                 }
             }
         }
+    }
+}
+
+/// The tokens roost keeps for git hosts, so roost and every rook reach the user's private skill
+/// repositories with no one setting git up on the machines: each host with its user name and the token's
+/// last characters, to replace or remove, and a form to add one and try it on a repository. A token goes
+/// only to roost; this Mac keeps none.
+private struct GitCredentialsSettings: View {
+    let fleetModel: FleetModel
+
+    @State private var listCredentials: [GitCredential] = []
+    @State private var problem: String?
+    /// The host whose token is being replaced, or the empty host while a new one is being added.
+    @State private var editingHost: String?
+    @State private var hostDraft = GitCredential.githubHost
+    @State private var tokenDraft = ""
+    @State private var usernameDraft = ""
+    @State private var repoDraft = ""
+    @State private var checkResult: String?
+    @State private var isChecking = false
+    @State private var isSaving = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Git Credentials")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Tokens for GitHub, GitLab and other git hosts, kept on roost, so roost and every rook install skills from your private repositories.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+            .modifier(SettingsSeparator())
+            if fleetModel.client() == nil {
+                SettingsRow(title: "Not connected", detail: "connect to roost above to keep tokens on it") {
+                    EmptyView()
+                }
+            } else {
+                ForEach(listCredentials) { credential in
+                    if editingHost == credential.host {
+                        editor
+                    } else {
+                        row(credential)
+                    }
+                }
+                if editingHost == "" {
+                    editor
+                } else {
+                    SettingsActionRow(title: "Add Token…", symbol: .plus) {
+                        open(host: "")
+                    }
+                }
+                if let problem {
+                    SettingsMessage(text: problem)
+                }
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.88), value: editingHost)
+        .task(id: fleetModel.connection == .online) {
+            await load()
+        }
+    }
+
+    private func row(_ credential: GitCredential) -> some View {
+        SettingsRow(title: credential.host, detail: "\(credential.username), token \(credential.tokenHint), \(Self.updatedText(credential.updatedAt))") {
+            HStack(spacing: 8) {
+                Button("Replace…") {
+                    open(host: credential.host, username: credential.username)
+                }
+                Button("Remove", role: .destructive) {
+                    remove(credential.host)
+                }
+            }
+        }
+    }
+
+    /// Adding a token, or replacing a host's: the host, the token, the user name if not the host's usual
+    /// one, and a repository to try it on.
+    private var editor: some View {
+        let isNew = editingHost == ""
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(isNew ? "New Token" : "Replace the Token for \(editingHost ?? "")")
+                .font(.system(size: 13, weight: .semibold))
+            if isNew {
+                field("Host") {
+                    TextField(GitCredential.githubHost, text: $hostDraft)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+            field("Token") {
+                SecureField("read-only token", text: $tokenDraft)
+                    .textFieldStyle(.roundedBorder)
+            }
+            field("User name") {
+                TextField(Self.usualUsername(of: isNew ? hostDraft : editingHost ?? ""), text: $usernameDraft)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Text("Give the token read access to the repositories' contents alone: on GitHub a fine-grained token with Contents read-only on the repositories it needs, on GitLab one with read_repository.")
+                .font(.system(size: 11))
+                .foregroundStyle(StageColors.tertiaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            field("Try it on") {
+                HStack(spacing: 8) {
+                    TextField("owner/repo or a repository's URL", text: $repoDraft)
+                        .textFieldStyle(.roundedBorder)
+                    Button(isChecking ? "Trying…" : "Try") {
+                        check()
+                    }
+                    .disabled(repoDraft.trimmingCharacters(in: .whitespaces).isEmpty || isChecking)
+                }
+            }
+            if let checkResult {
+                Text(checkResult)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Button("Cancel") {
+                    editingHost = nil
+                }
+                .keyboardShortcut(.cancelAction)
+                Button(isSaving ? "Saving…" : "Save", action: save)
+                    .buttonStyle(StageButtonStyle(kind: .prominent))
+                    .disabled(tokenDraft.trimmingCharacters(in: .whitespaces).isEmpty || hostDraft.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+            }
+        }
+        .padding(14)
+        .background(StageColors.hoveredRow.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.vertical, 10)
+        .modifier(SettingsSeparator())
+    }
+
+    private func field<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(StageColors.secondaryText)
+                .frame(width: 72, alignment: .leading)
+            control()
+        }
+    }
+
+    private func open(host: String, username: String = "") {
+        editingHost = host
+        hostDraft = host.isEmpty ? GitCredential.githubHost : host
+        tokenDraft = ""
+        usernameDraft = username == Self.usualUsername(of: hostDraft) ? "" : username
+        repoDraft = ""
+        checkResult = nil
+    }
+
+    private func load() async {
+        guard let client = fleetModel.client() else {
+            return
+        }
+        do {
+            listCredentials = try await client.gitCredentials()
+            problem = nil
+        } catch {
+            problem = FleetModel.describe(error)
+        }
+    }
+
+    /// Keep the token on roost, then try it on the repository given, if any.
+    private func save() {
+        guard let client = fleetModel.client() else {
+            return
+        }
+        isSaving = true
+        Task {
+            do {
+                _ = try await client.registerGitCredential(
+                    host: hostDraft.trimmingCharacters(in: .whitespaces),
+                    username: usernameDraft.trimmingCharacters(in: .whitespaces),
+                    token: tokenDraft.trimmingCharacters(in: .whitespaces)
+                )
+                tokenDraft = ""
+                editingHost = nil
+                problem = nil
+                await load()
+            } catch {
+                problem = FleetModel.describe(error)
+            }
+            isSaving = false
+        }
+    }
+
+    /// Try the token on a repository: kept on roost first, since roost reads the repository with the one it
+    /// keeps for its host.
+    private func check() {
+        guard let client = fleetModel.client() else {
+            return
+        }
+        isChecking = true
+        checkResult = nil
+        Task {
+            do {
+                if !tokenDraft.trimmingCharacters(in: .whitespaces).isEmpty {
+                    _ = try await client.registerGitCredential(
+                        host: hostDraft.trimmingCharacters(in: .whitespaces),
+                        username: usernameDraft.trimmingCharacters(in: .whitespaces),
+                        token: tokenDraft.trimmingCharacters(in: .whitespaces)
+                    )
+                    await load()
+                }
+                let branch = try await client.checkGitAccess(repo: repoDraft.trimmingCharacters(in: .whitespaces))
+                checkResult = "roost can read it; its default branch is \(branch)."
+            } catch {
+                checkResult = "roost cannot read it: \(FleetModel.describe(error))"
+            }
+            isChecking = false
+        }
+    }
+
+    private func remove(_ host: String) {
+        guard let client = fleetModel.client() else {
+            return
+        }
+        Task {
+            do {
+                try await client.removeGitCredential(host: host)
+                problem = nil
+                await load()
+            } catch {
+                problem = FleetModel.describe(error)
+            }
+        }
+    }
+
+    private static func usualUsername(of host: String) -> String {
+        host.trimmingCharacters(in: .whitespaces).lowercased() == GitCredential.githubHost ? "x-access-token" : "oauth2"
+    }
+
+    private static func updatedText(_ timestamp: String) -> String {
+        guard let date = FleetTimestamp.date(from: timestamp) else {
+            return "updated \(timestamp)"
+        }
+        return "updated \(date.formatted(.relative(presentation: .named)))"
     }
 }
 

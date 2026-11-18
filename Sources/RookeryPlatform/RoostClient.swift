@@ -252,6 +252,37 @@ public final class RoostClient: Sendable {
         return try decode(FleetDelivery.self, from: try await request("POST", path: "/v1/messages", body: body))
     }
 
+    /// The tokens registered for git hosts, each shown by its last characters.
+    public func gitCredentials() async throws -> [GitCredential] {
+        try decode(GitCredentialPage.self, from: try await request("GET", path: "/v1/credentials")).credentials
+    }
+
+    /// Register the token for a git host, or replace the one it has.
+    ///
+    /// - Parameters:
+    ///   - host: the host, as `github.com` or `git.example.com:8443`
+    ///   - username: the user name git gives with it, or empty for the host's usual one
+    ///   - token: the token
+    public func registerGitCredential(host: String, username: String, token: String) async throws -> GitCredential {
+        let body = try JSONEncoder().encode(["username": username, "token": token])
+        return try decode(GitCredential.self, from: try await request("PUT", path: "/v1/credentials/\(host)", body: body))
+    }
+
+    /// Forget the token for a git host.
+    public func removeGitCredential(host: String) async throws {
+        _ = try await request("DELETE", path: "/v1/credentials/\(host)")
+    }
+
+    /// Read a repository with the token registered for its host.
+    ///
+    /// - Parameter repo: a skill source or a git URL
+    /// - Returns: the repository's default branch
+    /// - Throws: `RoostError.rejected` with git's own words when it cannot be read
+    public func checkGitAccess(repo: String) async throws -> String {
+        let body = try JSONEncoder().encode(["repo": repo])
+        return try decode(GitAccessCheck.self, from: try await request("POST", path: "/v1/credentials/check", body: body)).defaultBranch
+    }
+
     /// The deliveries routed to a rook and not yet finished, oldest first, as Rookery reads those for its
     /// own agents.
     public func openDeliveries(forRook rookName: String) async throws -> [FleetDelivery] {
@@ -432,7 +463,21 @@ public final class RoostClient: Sendable {
         let relations: [FleetRelation]
     }
 
-    private struct DeliveryPage: Decodable {
+    /// roost's listing of git credentials.
+private struct GitCredentialPage: Decodable {
+    let credentials: [GitCredential]
+}
+
+/// What roost answers when a repository could be read.
+private struct GitAccessCheck: Decodable {
+    let defaultBranch: String
+
+    enum CodingKeys: String, CodingKey {
+        case defaultBranch = "default_branch"
+    }
+}
+
+private struct DeliveryPage: Decodable {
         let messages: [FleetDelivery]
     }
 

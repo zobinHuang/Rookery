@@ -1,3 +1,4 @@
+import AppKit
 import RookeryCore
 import SwiftUI
 
@@ -33,6 +34,10 @@ struct TranscriptView: View {
         FleetAgent.transcriptSessionId(of: agentId) != agentId
     }
 
+    /// The last step shown when the conversation opened: the user's requests after it arrived while it was
+    /// shown, and pop in as they come.
+    @State private var firstShownBlockId = Int.max
+
     private var setOpenBlockIds: Set<Int> {
         memory.mapOpenTranscriptBlocks[agentId] ?? []
     }
@@ -65,11 +70,11 @@ struct TranscriptView: View {
                             hasTail: Self.isLastOfRun(block, before: next) && !(next == nil && !listOutgoing.isEmpty && Self.isPrompt(block))
                         )
                     }
-                    .padding(.top, Self.spacing(between: previous, and: block))
-                    .transition(.asymmetric(
-                        insertion: .scale(scale: 0.85, anchor: Self.isPrompt(block) ? .bottomTrailing : .bottomLeading).combined(with: .opacity),
-                        removal: .opacity
+                    .modifier(ArrivalEffect(
+                        isNew: block.id > firstShownBlockId && Self.isPrompt(block),
+                        anchor: Self.isPrompt(block) ? .bottomTrailing : .bottomLeading
                     ))
+                    .padding(.top, Self.spacing(between: previous, and: block))
                 }
                 if isWorking {
                     MessageBubble(isTrailing: false, hasTail: true) {
@@ -90,11 +95,13 @@ struct TranscriptView: View {
                 }
             }
             .animation(.spring(response: 0.38, dampingFraction: 0.78), value: listOutgoing)
-            .animation(.spring(response: 0.38, dampingFraction: 0.78), value: listBlocks.count)
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isWorking)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
             .textSelection(.enabled)
+        }
+        .onAppear {
+            firstShownBlockId = TranscriptBlock.blocks(of: reader.listEntries).last?.id ?? -1
         }
         .modifier(RememberedScroll(
             key: "agent:\(agentId)",
@@ -591,33 +598,108 @@ struct MarkdownText: View {
     }
 }
 
-/// Three dots that rise in turn, while an answer is awaited.
-struct AwaitingDots: View {
-    private static let dotSize: CGFloat = 4
-    private static let period = 1.2
+/// Three dots rising one after another, as a conversation waits on an answer. Core Animation runs them,
+/// so waiting costs the app nothing frame by frame: a view redrawn every frame would lay the whole window
+/// out again each time.
+struct AwaitingDots: NSViewRepresentable {
+    func makeNSView(context: Context) -> AwaitingDotsView {
+        AwaitingDotsView()
+    }
 
-    var body: some View {
-        TimelineView(.animation) { context in
-            let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
-            HStack(spacing: 3) {
-                ForEach(0..<3, id: \.self) { index in
-                    Circle()
-                        .frame(width: Self.dotSize, height: Self.dotSize)
-                        .offset(y: Self.lift(phase: phase, index: index))
-                        .opacity(0.45 + 0.55 * Self.lift(phase: phase, index: index) / -2)
-                }
+    func updateNSView(_ view: AwaitingDotsView, context: Context) {}
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: AwaitingDotsView, context: Context) -> CGSize? {
+        AwaitingDotsView.size
+    }
+}
+
+/// The layers of `AwaitingDots`: three dots, each rising and brightening in its third of a loop.
+final class AwaitingDotsView: NSView {
+    static let size = CGSize(width: dotSize * 3 + spacing * 2, height: 8)
+    private static let dotSize: CGFloat = 4
+    private static let spacing: CGFloat = 3
+    private static let period: CFTimeInterval = 1.2
+    private static let rise: CGFloat = 2
+    private static let restingOpacity: Float = 0.45
+    private static let animationKey = "rise"
+    /// Each dot rises over the first sixth of the loop, falls over the next, then rests.
+    private static let keyTimes: [NSNumber] = [0, NSNumber(value: 1.0 / 6), NSNumber(value: 1.0 / 3), 1]
+
+    private var listDots: [CALayer] = []
+
+    override init(frame: NSRect) {
+        super.init(frame: CGRect(origin: frame.origin, size: Self.size))
+        wantsLayer = true
+        for index in 0..<3 {
+            let dot = CALayer()
+            dot.frame = CGRect(
+                x: CGFloat(index) * (Self.dotSize + Self.spacing),
+                y: (Self.size.height - Self.dotSize) / 2,
+                width: Self.dotSize,
+                height: Self.dotSize
+            )
+            dot.cornerRadius = Self.dotSize / 2
+            layer?.addSublayer(dot)
+            listDots.append(dot)
+        }
+        tint()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override var intrinsicContentSize: NSSize {
+        Self.size
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        play()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        tint()
+    }
+
+    private func tint() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let color = NSColor.secondaryLabelColor.cgColor
+            for dot in listDots {
+                dot.backgroundColor = color
             }
-            .frame(height: 8)
         }
     }
 
-    /// How far a dot rises at a point in the loop: up and back in its third of the loop.
-    private static func lift(phase: Double, index: Int) -> CGFloat {
-        let local = phase * 3 - Double(index)
-        guard local >= 0, local < 1 else {
-            return 0
+    /// Start each dot's loop, a third of a loop after the one before; none while off screen.
+    private func play() {
+        for (index, dot) in listDots.enumerated() {
+            dot.removeAnimation(forKey: Self.animationKey)
+            guard window != nil else {
+                continue
+            }
+            let position = CAKeyframeAnimation(keyPath: "position.y")
+            let base = dot.position.y
+            position.values = [base, base + Self.rise, base, base]
+            position.keyTimes = Self.keyTimes
+            let opacity = CAKeyframeAnimation(keyPath: "opacity")
+            opacity.values = [Self.restingOpacity, 1, Self.restingOpacity, Self.restingOpacity]
+            opacity.keyTimes = Self.keyTimes
+            let group = CAAnimationGroup()
+            group.animations = [position, opacity]
+            group.duration = Self.period
+            group.repeatCount = .infinity
+            group.beginTime = CACurrentMediaTime() + Self.period * Double(index) / 3
+            group.isRemovedOnCompletion = false
+            dot.opacity = Self.restingOpacity
+            dot.add(group, forKey: Self.animationKey)
         }
-        return -2 * CGFloat(sin(local * .pi))
     }
 }
 
@@ -713,3 +795,31 @@ struct MessageBubbleShape: Shape {
         return path
     }
 }
+
+/// A request of the user's that arrived while the conversation was shown popping in on its own, growing
+/// from its corner as it fades in, without moving the steps around it. An answer streaming in does not
+/// pop: a line arriving every moment would keep an animation running for as long as the answer, and the
+/// conversation laid out again on every frame of it.
+struct ArrivalEffect: ViewModifier {
+    private static let popAnimation = Animation.spring(response: 0.38, dampingFraction: 0.78)
+    private static let startScale: CGFloat = 0.85
+
+    let isNew: Bool
+    let anchor: UnitPoint
+
+    @State private var isShown = false
+
+    func body(content: Content) -> some View {
+        let isAtRest = isShown || !isNew
+        content
+            .scaleEffect(isAtRest ? 1 : Self.startScale, anchor: anchor)
+            .opacity(isAtRest ? 1 : 0)
+            .animation(Self.popAnimation, value: isShown)
+            .onAppear {
+                if isNew, !isShown {
+                    isShown = true
+                }
+            }
+    }
+}
+

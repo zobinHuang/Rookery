@@ -26,6 +26,10 @@ private struct RavenThreadContent: View {
     private static let deliveryPollInterval: Duration = .seconds(3)
     /// The most decided proposals shown above the box, the latest.
     private static let shownDecidedLimit = 3
+    /// The share of the conversation's height the proposals may take, scrolling past it.
+    private static let proposalsHeightShare: CGFloat = 0.42
+    /// The least height the proposals may take, however short the conversation.
+    private static let proposalsMinHeight: CGFloat = 120
 
     let fleetModel: FleetModel
     let conversationId: String
@@ -34,6 +38,10 @@ private struct RavenThreadContent: View {
     var onOpenDraft: ((String) -> Void)?
 
     @State private var setSendingIds: Set<String> = []
+    @State private var threadHeight: CGFloat = 0
+    @State private var proposalsHeight: CGFloat = 0
+    /// The proposal shown whole among several waiting, the rest in a line each.
+    @State private var expandedProposalId: String?
 
     private var raven: RavenAgent {
         fleetModel.raven
@@ -160,6 +168,11 @@ private struct RavenThreadContent: View {
             status(of: conversationId)
             proposals(in: conversationId)
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            threadHeight = height
+        }
         .task(id: conversationId) {
             while !Task.isCancelled {
                 await raven.refreshDeliveries(in: conversationId)
@@ -184,20 +197,108 @@ private struct RavenThreadContent: View {
         let listDecided = listProposals.filter { mapDecisions[$0.id] != nil }.suffix(Self.shownDecidedLimit)
         let listDrafts = raven.drafts(of: conversationId)
         if !listPending.isEmpty || !listDecided.isEmpty || !listDrafts.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                if !listDrafts.isEmpty {
-                    draftsLine(listDrafts)
+            let maxHeight = max(threadHeight * Self.proposalsHeightShare, Self.proposalsMinHeight)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    if listPending.count > 1 {
+                        Text("\(listPending.count) proposals waiting")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(StageColors.secondaryText)
+                            .padding(.horizontal, 4)
+                    }
+                    ForEach(listPending) { proposal in
+                        if listPending.count == 1 || expandedProposalId == proposal.id {
+                            proposalCard(proposal, in: conversationId)
+                        } else {
+                            proposalLine(proposal, in: conversationId)
+                        }
+                    }
+                    if !listDrafts.isEmpty {
+                        draftsLine(listDrafts)
+                    }
+                    ForEach(Array(listDecided.reversed())) { proposal in
+                        decidedLine(proposal, decision: mapDecisions[proposal.id])
+                    }
                 }
-                ForEach(Array(listDecided)) { proposal in
-                    decidedLine(proposal, decision: mapDecisions[proposal.id])
-                }
-                ForEach(listPending) { proposal in
-                    proposalCard(proposal, in: conversationId)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    proposalsHeight = height
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 6)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(proposalsHeight, maxHeight))
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listPending.map(\.id))
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: expandedProposalId)
+        }
+    }
+
+    /// A proposal among several waiting, in a line: what Raven would do and to whom, its text's opening,
+    /// and its buttons; a click on it shows it whole.
+    private func proposalLine(_ proposal: RavenProposal, in conversationId: String) -> some View {
+        let isSending = setSendingIds.contains(proposal.id)
+        return HStack(spacing: 8) {
+            Button {
+                expandedProposalId = proposal.id
+            } label: {
+                HStack(spacing: 6) {
+                    RookeryIconView(Self.icon(of: proposal))
+                        .foregroundStyle(proposal.action == .interrupt ? Color.orange : Color.accentColor)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
+                            Text(Self.lead(of: proposal))
+                                .foregroundStyle(StageColors.secondaryText)
+                                .lineLimit(1)
+                            Text(proposal.agentTitle)
+                                .fontWeight(.semibold)
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        }
+                        if let error = raven.mapProposalErrors[proposal.id] {
+                            RookeryLabel(error, icon: .warning)
+                                .foregroundStyle(.orange)
+                                .lineLimit(1)
+                        } else if !proposal.text.isEmpty {
+                            Text(proposal.text)
+                                .foregroundStyle(StageColors.tertiaryText)
+                                .lineLimit(1)
+                        }
+                    }
+                    .font(.system(size: 11.5))
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Show the whole proposal")
+            Button("Not Now") {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    raven.reject(proposal, in: conversationId)
+                }
+            }
+            .disabled(isSending)
+            Button {
+                send(proposal, in: conversationId)
+            } label: {
+                if isSending {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text(Self.verb(of: proposal))
+                }
+            }
+            .buttonStyle(StageButtonStyle(kind: .prominent))
+            .disabled(isSending)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.3))
         }
     }
 

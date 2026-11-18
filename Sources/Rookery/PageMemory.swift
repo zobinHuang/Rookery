@@ -95,6 +95,8 @@ struct RememberedScroll: ViewModifier {
 private struct RememberedScrollPosition: ViewModifier {
     /// How near the bottom still counts as being there.
     private static let bottomSlack: CGFloat = 24
+    /// How long a burst of arriving content is gathered before the end is brought into view.
+    private static let followDelay: Duration = .milliseconds(150)
 
     let key: String
     let memory: PageMemory
@@ -106,40 +108,45 @@ private struct RememberedScrollPosition: ViewModifier {
     @State private var position = ScrollPosition()
     @State private var isRestored = false
     @State private var isAtEnd = true
-    @State private var latestGeometry: ScrollGeometry?
-    /// Whether the area is being moved by Rookery rather than the user, which says nothing of where the
-    /// user wants to be.
-    @State private var isAnimatingScroll = false
+    /// The latest geometry, kept where changing it redraws nothing: it changes on every frame the area
+    /// scrolls and every time its content grows.
+    @State private var latest = LatestScrollGeometry()
+    /// Whether the user is moving the area, by dragging, the wheel or the glide after: only then does
+    /// where it stands say where they want to be, not when Rookery moves it or its content grows.
+    @State private var isUserScrolling = false
+    /// The scroll to the end waiting for a burst of content to finish arriving.
+    @State private var followTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
         content
             .scrollPosition($position)
             .defaultScrollAnchor(followsEnd ? .bottom : .topLeading, for: .initialOffset)
-            .defaultScrollAnchor(followsEnd && isAtEnd ? .bottom : .topLeading, for: .sizeChanges)
             .onScrollGeometryChange(for: ScrollGeometry.self, of: { $0 }) { _, geometry in
-                latestGeometry = geometry
+                latest.geometry = geometry
                 guard isRestored else {
                     restoreIfReady()
                     return
                 }
                 let fromBottom = geometry.contentSize.height - geometry.containerSize.height - geometry.contentOffset.y
-                if !isAnimatingScroll {
-                    isAtEnd = fromBottom < Self.bottomSlack
+                let isNowAtEnd = fromBottom < Self.bottomSlack
+                if isUserScrolling, isAtEnd != isNowAtEnd {
+                    isAtEnd = isNowAtEnd
                 }
                 memory.mapScrollOffsets[key] = followsEnd
                     ? CGPoint(x: 0, y: max(0, fromBottom))
                     : geometry.contentOffset
             }
             .onScrollPhaseChange { _, phase in
-                isAnimatingScroll = phase == .animating
+                let isByUser = phase == .tracking || phase == .interacting || phase == .decelerating
+                if isUserScrolling != isByUser {
+                    isUserScrolling = isByUser
+                }
             }
             .onChange(of: isReady) {
                 restoreIfReady()
             }
             .onChange(of: endToken) {
-                if followsEnd, isRestored, isAtEnd {
-                    position.scrollTo(edge: .bottom)
-                }
+                followEnd()
             }
             .onChange(of: jumpToken) {
                 isAtEnd = true
@@ -149,9 +156,24 @@ private struct RememberedScrollPosition: ViewModifier {
             }
     }
 
+    /// Keep to the end as content arrives, once for a burst of it: lines streaming in a few at a time
+    /// bring the end into view together rather than one scroll each.
+    private func followEnd() {
+        guard followsEnd, isRestored, isAtEnd, followTask == nil else {
+            return
+        }
+        followTask = Task { @MainActor in
+            try? await Task.sleep(for: Self.followDelay)
+            followTask = nil
+            if isAtEnd {
+                position.scrollTo(edge: .bottom)
+            }
+        }
+    }
+
     /// Put the area back where it was left, once its content is in.
     private func restoreIfReady() {
-        guard !isRestored, isReady, let geometry = latestGeometry else {
+        guard !isRestored, isReady, let geometry = latest.geometry else {
             return
         }
         isRestored = true
@@ -173,3 +195,10 @@ private struct RememberedScrollPosition: ViewModifier {
         }
     }
 }
+
+/// A scroll area's latest geometry, held by reference so writing it redraws nothing.
+@available(macOS 15, *)
+final class LatestScrollGeometry {
+    var geometry: ScrollGeometry?
+}
+

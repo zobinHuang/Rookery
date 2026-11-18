@@ -46,6 +46,14 @@ there is no one directory all of them scan.
 from a subdirectory is visible from anywhere in the project. Switching playbooks
 removes the previous set; a skill you put there by hand is never touched.
 
+Which playbook a pane follows, and whether its agent has been told, is kept in
+tmux pane options where tmux has them (3.0 and later). Older tmux has none, so
+there `rook-playbook` keeps them in a file per pane under
+`~/.local/state/rook/pane-options/`, named for the tmux server and the pane, and
+sweeps the files of servers no longer running; and the picker, a popup from tmux
+3.2, opens in a pane split off below instead. An install whose pane cannot keep
+the playbook fails rather than reporting it loaded.
+
 ## How the agent is told
 
 Claude Code and codex both inject a hook's `additionalContext` into the model at

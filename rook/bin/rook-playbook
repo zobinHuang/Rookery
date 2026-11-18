@@ -23,6 +23,8 @@ ROOK_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/rook"
 ROOK_CACHE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/rook/skills"
 ROOK_RESOLVED_DIR="$ROOK_STATE_DIR/playbooks"
 ROOK_INSTALLED_DIR="$ROOK_STATE_DIR/installed"
+ROOK_PANE_STATE_DIR="$ROOK_STATE_DIR/pane-options"
+ROOK_PICK_ROWS=18
 ROOK_LOG="$ROOK_STATE_DIR/playbook.log"
 ROOK_PANE_OPT='@rook-playbook-pane'
 ROOK_INJECTED_OPT='@rook-playbook-injected'
@@ -435,7 +437,7 @@ cmd_install() {
     done < "$_in_work/ready.tsv"
   done
 
-  bind_pane "$_in_pane" "$_in_id"
+  bind_pane "$_in_pane" "$_in_id" || die "cannot record playbook '$_in_id' on pane $_in_pane"
   log "installed $_in_id into $_in_project ($_in_fetched skills, $_in_failed failed)"
   trim_log
   if [ "$_in_quiet" -eq 0 ]; then
@@ -470,22 +472,95 @@ cmd_uninstall() {
   exit 0
 }
 
+# ─── what rook keeps about a pane ─────────────────────────────────────
+# Kept in a tmux pane option where tmux has them (3.0 and later), like the
+# agent state is: it dies with the pane, so there is never stale state to
+# clean up, and a pane that is not inside tmux simply has none. Older tmux
+# has no pane options, so there it goes in a file per pane and option,
+# named for the tmux server and the pane, so a pane id a later server
+# hands out again never reads an earlier pane's; the files of servers no
+# longer running are swept whenever one is written.
+has_pane_options() {
+  # has_pane_options <pane>
+  tmux show-options -p -t "$1" >/dev/null 2>&1
+}
+
+pane_state_file() {
+  # pane_state_file <pane> <option>
+  _sf_server="$(tmux display-message -p -t "$1" '#{pid}' 2>/dev/null)"
+  _sf_pane="$(tmux display-message -p -t "$1" '#{pane_id}' 2>/dev/null)"
+  [ -n "$_sf_server" ] && [ -n "$_sf_pane" ] || return 1
+  printf '%s/%s-%s.%s\n' "$ROOK_PANE_STATE_DIR" "$_sf_server" "${_sf_pane#%}" "${2#@}"
+}
+
+sweep_pane_states() {
+  for _sw_file in "$ROOK_PANE_STATE_DIR"/*; do
+    [ -f "$_sw_file" ] || continue
+    _sw_server="${_sw_file##*/}"
+    _sw_server="${_sw_server%%-*}"
+    kill -0 "$_sw_server" 2>/dev/null || rm -f "$_sw_file"
+  done
+}
+
+pane_get() {
+  # pane_get <pane> <option>
+  if has_pane_options "$1"; then
+    tmux display-message -p -t "$1" "#{$2}" 2>/dev/null
+    return 0
+  fi
+  _pg_file="$(pane_state_file "$1" "$2")" || return 0
+  [ -f "$_pg_file" ] && cat "$_pg_file"
+  return 0
+}
+
+pane_set() {
+  # pane_set <pane> <option> <value>; fails when it cannot be kept
+  if has_pane_options "$1"; then
+    tmux set-option -p -t "$1" "$2" "$3" 2>/dev/null
+    return
+  fi
+  _ps_file="$(pane_state_file "$1" "$2")" || return 1
+  mkdir -p "$ROOK_PANE_STATE_DIR" || return 1
+  sweep_pane_states
+  printf '%s' "$3" > "$_ps_file"
+}
+
+pane_unset() {
+  # pane_unset <pane> <option>
+  if has_pane_options "$1"; then
+    tmux set-option -p -t "$1" -u "$2" 2>/dev/null || true
+    return 0
+  fi
+  _pu_file="$(pane_state_file "$1" "$2")" || return 0
+  rm -f "$_pu_file"
+}
+
+# The picker goes in a popup over the pane where tmux has them (3.2 and
+# later), else in a pane split off below it, which closes as the picker
+# ends either way.
+open_picker() {
+  # open_picker <pane> <command>
+  if tmux list-commands 2>/dev/null | grep -q '^display-popup'; then
+    tmux display-popup -t "$1" -w 76 -h "$ROOK_PICK_ROWS" -E "$2" 2>>"$ROOK_LOG"
+  else
+    tmux split-window -v -l "$ROOK_PICK_ROWS" -t "$1" "$2" 2>>"$ROOK_LOG"
+  fi
+}
+
 # ─── which playbook a pane is on ──────────────────────────────────────
-# Kept in a tmux pane option, like the agent state is: it dies with the
-# pane, so there is never stale state to clean up, and a pane that is not
-# inside tmux simply has none.
 bind_pane() {
-  # bind_pane <pane> <playbook-id>
+  # bind_pane <pane> <playbook-id>; fails when the pane cannot keep it
   _bp_pane="${1:-${TMUX_PANE:-}}"
   [ -n "$_bp_pane" ] || return 0
-  tmux set-option -p -t "$_bp_pane" "$ROOK_PANE_OPT" "$2" 2>/dev/null || true
+  pane_set "$_bp_pane" "$ROOK_PANE_OPT" "$2" || return 1
+  [ "$(pane_get "$_bp_pane" "$ROOK_PANE_OPT")" = "$2" ]
 }
 
 unbind_pane() {
   _up_pane="${1:-${TMUX_PANE:-}}"
   [ -n "$_up_pane" ] || return 0
-  tmux set-option -p -t "$_up_pane" -u "$ROOK_PANE_OPT" 2>/dev/null || true
-  tmux set-option -p -t "$_up_pane" -u "$ROOK_INJECTED_OPT" 2>/dev/null || true
+  pane_unset "$_up_pane" "$ROOK_PANE_OPT"
+  pane_unset "$_up_pane" "$ROOK_INJECTED_OPT"
 }
 
 cmd_current() {
@@ -498,7 +573,7 @@ cmd_current() {
   done
   _cu_pane="${_cu_pane:-${TMUX_PANE:-}}"
   [ -n "$_cu_pane" ] || exit 0
-  tmux display-message -p -t "$_cu_pane" "#{$ROOK_PANE_OPT}" 2>/dev/null
+  pane_get "$_cu_pane" "$ROOK_PANE_OPT"
   exit 0
 }
 
@@ -585,8 +660,7 @@ cmd_pick_here() {
   [ -n "$_ph_project" ] ||
     _ph_project="$(tmux display-message -p -t "$_ph_pane" '#{pane_current_path}' 2>/dev/null)"
   [ -n "$_ph_project" ] || _ph_project="$PWD"
-  tmux display-popup -t "$_ph_pane" -w 76 -h 18 -E \
-    "$ROOK_SELF pick --pane '$_ph_pane' --project '$_ph_project'" 2>>"$ROOK_LOG"
+  open_picker "$_ph_pane" "$ROOK_SELF pick --pane '$_ph_pane' --project '$_ph_project'"
   exit 0
 }
 
@@ -652,7 +726,7 @@ cmd_pick() {
     # A pane that was offered the choice and declined must not be asked
     # again every turn, so the refusal is recorded like any other answer.
     [ -n "$_pk_pane" ] &&
-      tmux set-option -p -t "$_pk_pane" "$ROOK_PANE_OPT" "$ROOK_PICK_NONE" 2>/dev/null
+      pane_set "$_pk_pane" "$ROOK_PANE_OPT" "$ROOK_PICK_NONE"
     rm -rf "$_pk_work"
     exit 0
   fi
@@ -711,7 +785,7 @@ cmd_session_start() {
   [ -n "$_ss_project" ] || _ss_project="$PWD"
   _ss_project="$(project_root_of "$_ss_project")"
 
-  _ss_current="$(tmux display-message -p -t "$_ss_pane" "#{$ROOK_PANE_OPT}" 2>/dev/null)"
+  _ss_current="$(pane_get "$_ss_pane" "$ROOK_PANE_OPT")"
   if [ -z "$_ss_current" ]; then
     _ss_current="$(ask_pane "$_ss_pane" "$_ss_agent" "$_ss_project")"
   fi
@@ -720,7 +794,7 @@ cmd_session_start() {
   esac
   emit_context SessionStart "$_ss_current" "$_ss_agent" "$_ss_project" || exit 0
   report_playbook "$_ss_payload" "$_ss_current"
-  tmux set-option -p -t "$_ss_pane" "$ROOK_INJECTED_OPT" "$_ss_current" 2>/dev/null || true
+  pane_set "$_ss_pane" "$ROOK_INJECTED_OPT" "$_ss_current" || true
   exit 0
 }
 
@@ -736,7 +810,7 @@ ask_pane() {
   command -v tmux >/dev/null 2>&1 || return 0
   _ap_done="$(mktemp "${TMPDIR:-/tmp}/rook-pick-done.XXXXXX")" || return 0
   rm -f "$_ap_done"
-  if ! tmux display-popup -t "$_ap_pane" -w 76 -h 18 -E         "$ROOK_SELF pick --pane $_ap_pane --agent $_ap_agent --project '$_ap_project' --done $_ap_done"         2>>"$ROOK_LOG"; then
+  if ! open_picker "$_ap_pane" "$ROOK_SELF pick --pane $_ap_pane --agent $_ap_agent --project '$_ap_project' --done $_ap_done"; then
     log "could not show the playbook picker on $_ap_pane"
     rm -f "$_ap_done"
     return 0
@@ -747,7 +821,7 @@ ask_pane() {
     _ap_waited=$((_ap_waited + 1))
   done
   rm -f "$_ap_done"
-  tmux display-message -p -t "$_ap_pane" "#{$ROOK_PANE_OPT}" 2>/dev/null
+  pane_get "$_ap_pane" "$ROOK_PANE_OPT"
 }
 
 cmd_context() {
@@ -759,11 +833,11 @@ cmd_context() {
   _cx_pane="${TMUX_PANE:-}"
   [ -n "$_cx_pane" ] || exit 0
   reports_session "$_cx_agent" || exit 0
-  _cx_current="$(tmux display-message -p -t "$_cx_pane" "#{$ROOK_PANE_OPT}" 2>/dev/null)"
+  _cx_current="$(pane_get "$_cx_pane" "$ROOK_PANE_OPT")"
   case "$_cx_current" in
     ''|"$ROOK_PICK_NONE") exit 0 ;;
   esac
-  _cx_injected="$(tmux display-message -p -t "$_cx_pane" "#{$ROOK_INJECTED_OPT}" 2>/dev/null)"
+  _cx_injected="$(pane_get "$_cx_pane" "$ROOK_INJECTED_OPT")"
   # Already told this session about this playbook; repeating it every turn
   # would spend context on something it has not forgotten.
   [ "$_cx_current" = "$_cx_injected" ] && exit 0
@@ -772,7 +846,7 @@ cmd_context() {
   _cx_project="$(project_root_of "$_cx_project")"
   emit_context UserPromptSubmit "$_cx_current" "$_cx_agent" "$_cx_project" || exit 0
   report_playbook "$_cx_payload" "$_cx_current"
-  tmux set-option -p -t "$_cx_pane" "$ROOK_INJECTED_OPT" "$_cx_current" 2>/dev/null || true
+  pane_set "$_cx_pane" "$ROOK_INJECTED_OPT" "$_cx_current" || true
   exit 0
 }
 

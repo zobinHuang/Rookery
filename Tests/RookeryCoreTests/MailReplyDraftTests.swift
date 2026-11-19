@@ -26,55 +26,6 @@ struct MailReplyDraftTests {
     }
 }
 
-struct MailQuoteReplyTests {
-    private static func original(text: String, listCc: [MailAddress]) -> MailMessageDetail {
-        MailMessageDetail(
-            summary: MailMessageSummary(
-                id: 9, account: "zhuobin@u.nus.edu", folder: .inbox, from: MailAddress(address: "junjie.tan@nus.edu.sg", name: "Tan Jun Jie"),
-                subject: "RE: Enquiry on Leave of Absence", sentAt: Date(timeIntervalSince1970: 1_793_700_000), receivedAt: Date(timeIntervalSince1970: 1_793_700_000),
-                isRead: true, isFlagged: false, snippet: "", conversationId: 1, attachmentCount: 0
-            ),
-            listTo: [MailAddress(address: "zhuobin@u.nus.edu", name: "Huang Zhuobin")],
-            listCc: listCc,
-            text: text,
-            listAttachments: [],
-            isPartial: false
-        )
-    }
-
-    @Test func aReplyQuotesTheMessageItAnswersUnderAnOutlookHeaderItsHistoryALevelDeeper() {
-        let reply = MailQuote.reply(
-            to: Self.original(text: "Dear Zhuobin,  \n\n\n\nThank you.\n\n> Earlier ask", listCc: [MailAddress(address: "linefong@nus.edu.sg", name: "Loo Line Fong")]),
-            body: "Dear Junjie,\n\nThanks!\n",
-            timeZone: TimeZone(identifier: "Asia/Singapore") ?? .current
-        )
-        #expect(reply == """
-            Dear Junjie,
-
-            Thanks!
-
-            > From: Tan Jun Jie <junjie.tan@nus.edu.sg>
-            > Sent: Tuesday, 3 November 2026 6:00 pm
-            > To: Huang Zhuobin <zhuobin@u.nus.edu>
-            > Cc: Loo Line Fong <linefong@nus.edu.sg>
-            > Subject: RE: Enquiry on Leave of Absence
-            >
-            > Dear Zhuobin,
-            >
-            > Thank you.
-            >
-            >> Earlier ask
-
-            """)
-    }
-
-    @Test func aReplyToAMessageCopiedToNoOneLeavesTheCcLineOut() {
-        let reply = MailQuote.reply(to: Self.original(text: "Hi", listCc: []), body: "Ok")
-        #expect(!reply.contains("Cc:"))
-        #expect(MailQuote.trimmed(reply) == "Ok")
-    }
-}
-
 struct MailQuotePassageTests {
     @Test func quotedLinesBecomePassagesByDepthTheirMarksTakenOff() {
         let listPassages = MailQuote.passages(of: "Sounds good.\n\n> Can you check?\n>\n>> Earlier ask\nDone.")

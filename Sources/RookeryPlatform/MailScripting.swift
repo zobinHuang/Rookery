@@ -152,8 +152,13 @@ public enum MailScripting {
 
 /// A mail written in Rookery handed to Mail to send, without a window, when the user presses Send in
 /// Rookery; the draft Mail keeps of a scripted message then let go. A reply is made with Mail's own reply to
-/// the message it answers, so it stays in its thread; its quoted text is replaced by what the user wrote.
+/// the message it answers, so it stays in its thread and quotes that message as Mail quotes any reply. What
+/// the user wrote goes in as a signature made for the one message and removed after: Mail wraps text set as
+/// a message's content in a quote of its own, as it does a page shared to it, so every client would show
+/// the user's words as quoted, while a signature it places as written.
 public enum MailDrafts {
+    private static let bodySignaturePrefix = "Rookery Message "
+
     /// Send a mail through Mail, from an account, with its recipients, subject and text.
     ///
     /// - Parameters:
@@ -185,20 +190,29 @@ public enum MailDrafts {
                 end if
             """
         } ?? "set theMessage to make new outgoing message with properties {visible:false}"
+        let signatureName = quoted(bodySignaturePrefix + UUID().uuidString)
         let source = """
             tell application "Mail"
                 set theStart to (current date) - 5
-                \(start)
-                tell theMessage
-                    set sender to \(quoted(sender))
-                    set subject to \(quoted(subject))
-                    set content to \(quoted(body))
-                    delete every to recipient
-                    delete every cc recipient
-                    \(recipients.joined(separator: "\n            "))
-                end tell
-                send theMessage
+                set theBody to make new signature with properties {name:\(signatureName), content:\(quoted(body))}
+                try
+                    \(start)
+                    tell theMessage
+                        set sender to \(quoted(sender))
+                        set subject to \(quoted(subject))
+                        delete every to recipient
+                        delete every cc recipient
+                        \(recipients.joined(separator: "\n                "))
+                    end tell
+                    set message signature of theMessage to theBody
+                    delay 2
+                    send theMessage
+                on error theError number theNumber
+                    delete theBody
+                    error theError number theNumber
+                end try
                 delay 2
+                delete theBody
                 repeat with theDraft in (every message of drafts mailbox whose subject is \(quoted(subject)) and date received ≥ theStart)
                     delete theDraft
                 end repeat

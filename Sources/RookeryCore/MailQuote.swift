@@ -32,50 +32,6 @@ public enum MailQuote {
     /// How many lines an attribution may be wrapped over, found from the line it ends on.
     private static let attributionLineReach = 3
 
-    /// A reply as it is sent: the reply's own text, then, quoted with `>` so mail clients fold it as the
-    /// earlier mail, a header as Outlook writes one naming who sent the message it answers, when, to whom
-    /// and under what subject, then that message whole as it was, its trailing spaces and runs of blank
-    /// lines tidied, its own quoted history a level deeper.
-    ///
-    /// - Parameters:
-    ///   - original: the message answered
-    ///   - body: what the reply says
-    ///   - timeZone: the zone its time is written in
-    /// - Returns: the text to send
-    public static func reply(to original: MailMessageDetail, body: String, timeZone: TimeZone = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_GB")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "EEEE, d MMMM yyyy h:mm a"
-        let person: (MailAddress) -> String = { address in
-            address.name.isEmpty ? address.address : "\(address.name) <\(address.address)>"
-        }
-        var listHeader = [
-            "From: \(person(original.summary.from))",
-            "Sent: \(formatter.string(from: original.summary.sentAt))",
-        ]
-        if !original.listTo.isEmpty {
-            listHeader.append("To: \(original.listTo.map(person).joined(separator: "; "))")
-        }
-        if !original.listCc.isEmpty {
-            listHeader.append("Cc: \(original.listCc.map(person).joined(separator: "; "))")
-        }
-        listHeader.append("Subject: \(original.summary.subject)")
-        var listLines: [String] = []
-        for line in original.text.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: .newlines) {
-            let trimmed = line.replacing(/[ \t\u{00A0}]+$/, with: "")
-            if trimmed.isEmpty, listLines.last?.isEmpty == true {
-                continue
-            }
-            listLines.append(trimmed)
-        }
-        let own = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let listQuoted = (listHeader + [""] + listLines).map { line in
-            line.isEmpty || line.hasPrefix(quotedLinePrefix) ? quotedLinePrefix + line : "\(quotedLinePrefix) \(line)"
-        }
-        return "\(own)\n\n\(listQuoted.joined(separator: "\n"))\n"
-    }
-
     /// A plain-text message as runs of lines at each depth of quoting, their `>` marks and the space after
     /// them taken off, so quoted mail can be drawn as quoted rather than shown with its marks.
     ///

@@ -426,10 +426,8 @@ actor MailService: MailSource {
         }
         var account = draft.account.lowercased()
         var originalPlace: MailMessagePlace?
-        var body = draft.body
         if let replyToMessageId = draft.replyToMessageId, let original = try await message(replyToMessageId) {
             originalPlace = original.place
-            body = MailQuote.reply(to: original, body: draft.body)
             if account.isEmpty {
                 account = original.summary.account.lowercased()
             }
@@ -443,7 +441,7 @@ actor MailService: MailSource {
             listTo: draft.listTo,
             listCc: draft.listCc,
             subject: draft.subject,
-            body: body
+            body: draft.body
         )
     }
 

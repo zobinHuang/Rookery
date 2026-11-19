@@ -36,3 +36,26 @@ struct MailQuoteTests {
         #expect(MailQuote.trimmed("You said:\n> it works\nI agree, it does.") == nil)
     }
 }
+
+struct QuotedReplyTrimTests {
+    @Test func aReplyQuotingItsHistoryUnderAQuotedOutlookHeaderKeepsOnlyItsOwnWords() {
+        let text = """
+            Hi Asal,
+
+            Thanks for following up.
+
+            Best,
+            Zhuobin
+
+            > From: Asal Hamidova <asal@tryalma.ai>
+            > Sent: Tuesday, 17 November 2026 8:56 am
+            > To: zhuobin.huang@marscompute.ai
+            > Subject: Re: Alma
+            >
+            > Hi Zhuobin,
+            >
+            >> Earlier mail
+            """
+        #expect(MailQuote.trimmed(text) == "Hi Asal,\n\nThanks for following up.\n\nBest,\nZhuobin")
+    }
+}

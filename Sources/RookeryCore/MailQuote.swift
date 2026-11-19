@@ -25,8 +25,8 @@ public enum MailQuote {
         #"^\s*_{10,}\s*$"#,
     ]
     /// A header block of a quoted message, as Outlook writes it: `From:` and, within a few lines, `Sent:`.
-    private static let headerStartPattern = #"^\s*\*?(From|发件人)\s*[:：]"#
-    private static let headerFollowPattern = #"^\s*\*?(Sent|Date|发送时间|时间)\s*[:：]"#
+    private static let headerStartPattern = #"^[\s>]*\*?(From|发件人)\s*[:：]"#
+    private static let headerFollowPattern = #"^[\s>]*\*?(Sent|Date|发送时间|时间)\s*[:：]"#
     private static let headerReach = 4
     private static let quotedLinePrefix = ">"
     /// How many lines an attribution may be wrapped over, found from the line it ends on.

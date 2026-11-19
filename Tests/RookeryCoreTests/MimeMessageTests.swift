@@ -176,3 +176,11 @@ struct CalendarDayTests {
         #expect(mapPlacements["d"] == CalendarPlacement(eventId: "d", lane: 0, laneCount: 1))
     }
 }
+
+struct QuotedPrintableTests {
+    @Test func softBreaksGoEvenAtTheEndOrAfterTrailingSpaces() {
+        let raw = "Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nHello wor=\r\nld, caf=C3=A9 =  \r\nhere="
+        #expect(MimeMessage(data: Data(raw.utf8)).text == "Hello world, café here")
+    }
+}
+

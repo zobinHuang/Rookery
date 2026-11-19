@@ -288,12 +288,21 @@ struct MimePart {
         var index = data.startIndex
         while index < data.endIndex {
             let byte = data[index]
-            if byte == UInt8(ascii: "="), index + 1 < data.endIndex {
-                let next = data[index + 1]
+            if byte == UInt8(ascii: "=") {
+                var after = index + 1
+                while after < data.endIndex, data[after] == UInt8(ascii: " ") || data[after] == UInt8(ascii: "\t") {
+                    after += 1
+                }
+                if after == data.endIndex {
+                    break
+                }
+                let next = data[after]
                 if next == UInt8(ascii: "\r") || next == UInt8(ascii: "\n") {
-                    index += next == UInt8(ascii: "\r") && index + 2 < data.endIndex && data[index + 2] == UInt8(ascii: "\n") ? 3 : 2
+                    index = after + (next == UInt8(ascii: "\r") && after + 1 < data.endIndex && data[after + 1] == UInt8(ascii: "\n") ? 2 : 1)
                     continue
                 }
+            }
+            if byte == UInt8(ascii: "="), index + 1 < data.endIndex {
                 if index + 2 < data.endIndex, let value = UInt8(String(decoding: data[(index + 1)...(index + 2)], as: UTF8.self), radix: 16) {
                     output.append(value)
                     index += 3

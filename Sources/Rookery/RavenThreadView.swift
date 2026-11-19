@@ -69,18 +69,16 @@ private struct RavenThreadContent: View {
                         .foregroundStyle(StageColors.tertiaryText)
                 }
                 Spacer(minLength: 8)
-                RavenFolderMenu(raven: raven, conversation: conversation, isUnrestricted: fleetModel.isRavenLocalUnrestricted)
                 if conversation.turnCount > 0 {
                     joinMenu(conversation, listJoined: listJoined)
                 }
             }
-            if !listJoined.isEmpty {
-                FlowRow(spacing: 6) {
-                    ForEach(listJoined, id: \.id) { team in
-                        teamChip(team, in: conversation)
-                    }
+            FlowRow(spacing: 6) {
+                RavenFolderMenu(raven: raven, conversation: conversation, isUnrestricted: fleetModel.isRavenLocalUnrestricted)
+                ForEach(listJoined, id: \.id) { team in
+                    teamChip(team, in: conversation)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if let problem = raven.mapTeamErrors[conversation.id] {
                 RookeryLabel(problem, icon: .warning)

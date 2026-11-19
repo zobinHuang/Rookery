@@ -71,6 +71,20 @@ public struct CodexTranslation: Equatable, Sendable {
             return [toolResult(itemId, text: text, isError: isError)]
         case "command_execution":
             return [toolResult(itemId, text: item["aggregated_output"]?.stringValue ?? "", isError: (item["exit_code"]?.numberValue ?? 0) != 0)]
+        case "web_search":
+            let query = item["action"]?["query"]?.stringValue ?? item["query"]?.stringValue ?? ""
+            return query.isEmpty ? [] : [toolUse(itemId, name: "WebSearch", input: .object(["query": .string(query)]))]
+        case "file_change":
+            guard item["status"]?.stringValue != "failed", case .array(let listChanges) = item["changes"] else {
+                return []
+            }
+            return listChanges.enumerated().compactMap { index, change in
+                guard let path = change["path"]?.stringValue, change["kind"]?.stringValue != "delete" else {
+                    return nil
+                }
+                let name = change["kind"]?.stringValue == "add" ? "Write" : "Edit"
+                return toolUse("\(itemId)-\(index)", name: name, input: .object(["file_path": .string(path)]))
+            }
         default:
             return []
         }

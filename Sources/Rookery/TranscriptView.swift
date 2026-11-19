@@ -163,6 +163,8 @@ struct TranscriptView: View {
             entryView(entry, hasTail: hasTail, isRunStart: isRunStart)
         case .tools(let listEntries):
             toolRun(listEntries, blockId: block.id)
+        case .file(let entry):
+            TranscriptFileCard(entry: entry)
         }
     }
 
@@ -597,6 +599,8 @@ struct TranscriptView: View {
             entry.timestamp
         case .tools(let listEntries):
             listEntries.last?.timestamp
+        case .file(let entry):
+            entry.timestamp
         }
     }
 

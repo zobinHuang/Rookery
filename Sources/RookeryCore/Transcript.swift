@@ -22,12 +22,20 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
     public let role: Role
     public let text: String
     public let timestamp: Date?
+    /// The file a tool call wrote or changed, by its absolute path; nil for any other step.
+    public let filePath: String?
 
-    public init(id: Int, role: Role, text: String, timestamp: Date? = nil) {
+    /// The tools that write or change a file named by their input, which a conversation shows as the file.
+    public static let setFileTools: Set<String> = ["Write", "Edit", "MultiEdit", "NotebookEdit"]
+    /// The tools that create a file, as against change one already there.
+    public static let setCreatingTools: Set<String> = ["Write"]
+
+    public init(id: Int, role: Role, text: String, timestamp: Date? = nil, filePath: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.timestamp = timestamp
+        self.filePath = filePath
     }
 
     /// Whether the step is a tool call.
@@ -37,26 +45,35 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
         }
         return false
     }
+
+    /// Whether the step wrote or changed a file, which shows on its own rather than among the tool calls.
+    public var isFile: Bool {
+        filePath != nil
+    }
 }
 
 /// What the detail page lays out: a step on its own, or a run of tool calls folded into one.
 public enum TranscriptBlock: Equatable, Identifiable, Sendable {
     case entry(TranscriptEntry)
     case tools([TranscriptEntry])
+    /// A file a tool call wrote or changed.
+    case file(TranscriptEntry)
 
     public var id: Int {
         switch self {
         case .entry(let entry): entry.id
         case .tools(let listEntries): listEntries.first?.id ?? 0
+        case .file(let entry): entry.id
         }
     }
 
-    /// Steps as blocks: each run of consecutive tool calls becomes one block.
+    /// Steps as blocks: each run of consecutive tool calls becomes one block, a file written or changed one
+    /// of its own.
     public static func blocks(of listEntries: some Collection<TranscriptEntry>) -> [TranscriptBlock] {
         var listBlocks: [TranscriptBlock] = []
         var listRun: [TranscriptEntry] = []
         for entry in listEntries {
-            if entry.isTool {
+            if entry.isTool, !entry.isFile {
                 listRun.append(entry)
                 continue
             }
@@ -64,7 +81,7 @@ public enum TranscriptBlock: Equatable, Identifiable, Sendable {
                 listBlocks.append(.tools(listRun))
                 listRun = []
             }
-            listBlocks.append(.entry(entry))
+            listBlocks.append(entry.isFile ? .file(entry) : .entry(entry))
         }
         if !listRun.isEmpty {
             listBlocks.append(.tools(listRun))
@@ -198,7 +215,8 @@ public struct TranscriptReader: Sendable {
             case "text":
                 add(role, block["text"]?.stringValue ?? "", timestamp: timestamp)
             case "tool_use":
-                add(.tool(block["name"]?.stringValue ?? "Tool"), Self.summary(of: block["input"]), timestamp: timestamp)
+                let name = block["name"]?.stringValue ?? "Tool"
+                add(.tool(name), Self.summary(of: block["input"]), timestamp: timestamp, filePath: Self.filePath(ofTool: name, input: block["input"]))
             default:
                 break
             }
@@ -225,7 +243,7 @@ public struct TranscriptReader: Sendable {
     }
 
     /// Keep a step, unless it is empty or context the harness injected rather than words of the user's.
-    private mutating func add(_ role: TranscriptEntry.Role, _ text: String, timestamp: Date?) {
+    private mutating func add(_ role: TranscriptEntry.Role, _ text: String, timestamp: Date?, filePath: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch role {
         case .tool, .command, .compaction, .message:
@@ -248,7 +266,16 @@ public struct TranscriptReader: Sendable {
                 return
             }
         }
-        listEntries.append(TranscriptEntry(id: startOffset + listEntries.count, role: role, text: trimmed, timestamp: timestamp))
+        listEntries.append(TranscriptEntry(id: startOffset + listEntries.count, role: role, text: trimmed, timestamp: timestamp, filePath: filePath))
+    }
+
+    /// The absolute path of the file a tool call writes or changes, or nil when it is no such call.
+    static func filePath(ofTool name: String, input: JSONValue?) -> String? {
+        guard TranscriptEntry.setFileTools.contains(name) else {
+            return nil
+        }
+        let path = input?["file_path"]?.stringValue ?? input?["notebook_path"]?.stringValue ?? ""
+        return path.hasPrefix("/") ? path : nil
     }
 
     /// The slash command a user line ran, as `/compact args`, or nil when it is not one.

@@ -80,7 +80,8 @@ struct MailRavenPanel: View {
                 onSend: { request in
                     send(request.text, mentioning: request.listMentions, addresses: request.mapAddresses)
                 },
-                isFocused: $isFocused
+                isFocused: $isFocused,
+                mentionFolder: raven.folder(of: conversationId)
             )
             .padding(12)
         }

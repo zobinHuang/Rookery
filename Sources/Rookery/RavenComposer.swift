@@ -73,6 +73,8 @@ struct RavenComposer: View {
     var isFocused: FocusState<Bool>.Binding
     /// Takes a key the suggestions do not, before the box does, as the launcher's Escape.
     var onKey: ((ComposerKey) -> Bool)?
+    /// The folder a file or folder named with @ is found from; nil to offer none.
+    var mentionFolder: URL?
 
     @State private var listMentions: [FleetRef] = []
     /// The address chosen for each person named, by the person's id.
@@ -85,7 +87,7 @@ struct RavenComposer: View {
     @State private var highlightedIndex = 0
 
     private var listSuggestions: [MentionTarget] {
-        fleetModel.mentionTargets(in: text)
+        fleetModel.mentionTargets(in: text, folder: mentionFolder)
     }
 
     /// How many rows the suggestions show: a person's addresses and None, or the mention targets.
@@ -183,6 +185,8 @@ struct RavenComposer: View {
                         Spacer(minLength: 4)
                         Text(resource.kind)
                             .opacity(0.6)
+                    case .file(let file):
+                        MentionedFileLabel(file: file)
                     }
                 }
             }
@@ -315,6 +319,8 @@ struct RavenComposer: View {
         case .resource(let resource):
             text = Mentions.complete(text, with: resource)
             listMentions.append(FleetRef(kind: resource.kind, id: resource.id))
+        case .file(let file):
+            text = Mentions.complete(text, with: file)
         }
         isFocused.wrappedValue = true
     }

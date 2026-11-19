@@ -275,7 +275,7 @@ final class LauncherController {
     /// Move the chosen row up or down, wrapping around.
     /// Offer what the `@` being typed could name.
     func updateMentions() {
-        let listTargets = fleetModel.mentionTargets(in: model.query)
+        let listTargets = fleetModel.mentionTargets(in: model.query, folder: RavenLocalWork.defaultFolderURL)
         if listTargets.map(\.id) != model.listMentionTargets.map(\.id) {
             model.mentionIndex = 0
         }
@@ -298,6 +298,8 @@ final class LauncherController {
         case .resource(let resource):
             model.query = Mentions.complete(model.query, with: resource)
             model.listMentionRefs.append(FleetRef(kind: resource.kind, id: resource.id))
+        case .file(let file):
+            model.query = Mentions.complete(model.query, with: file)
         }
         updateMentions()
     }

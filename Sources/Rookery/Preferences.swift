@@ -112,6 +112,7 @@ final class Preferences {
     private static let roostAddressKey = "roostAddress"
     private static let logClockKey = "logClock"
     private static let ravenEngineKey = "ravenEngine"
+    private static let ravenLocalUnrestrictedKey = "isRavenLocalUnrestricted"
     /// Where Claude Code keeps its default account, which is set up for the user when present.
     private static let defaultClaudeDirectory = "~/.claude"
 
@@ -194,6 +195,14 @@ final class Preferences {
     var ravenEngine: String {
         didSet {
             defaults.set(ravenEngine, forKey: Self.ravenEngineKey)
+        }
+    }
+
+    /// Whether Raven works on this Mac, running commands and writing files, without asking first in any
+    /// conversation.
+    var isRavenLocalUnrestricted: Bool {
+        didSet {
+            defaults.set(isRavenLocalUnrestricted, forKey: Self.ravenLocalUnrestrictedKey)
         }
     }
 
@@ -328,6 +337,7 @@ final class Preferences {
         roostAddress = defaults.string(forKey: Self.roostAddressKey) ?? ""
         logClock = defaults.string(forKey: Self.logClockKey).flatMap(LogClock.init(rawValue:)) ?? .thisMac
         ravenEngine = defaults.string(forKey: Self.ravenEngineKey) ?? RavenConversation.engineClaude
+        isRavenLocalUnrestricted = defaults.bool(forKey: Self.ravenLocalUnrestrictedKey)
         screenSaverTextSize = (defaults.object(forKey: Self.screenSaverTextSizeKey) as? Double)
             .map { min(max($0, Self.screenSaverTextSizeRange.lowerBound), Self.screenSaverTextSizeRange.upperBound) }
             ?? Self.defaultScreenSaverTextSize

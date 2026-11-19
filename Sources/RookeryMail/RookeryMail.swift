@@ -13,6 +13,10 @@ enum RookeryMail {
     private static let methodNotFound = -32601
     private static let invalidParams = -32602
     private static let parseError = -32700
+    /// The tool Claude Code asks whether Raven may take an action on the user's Mac, passed to it as its
+    /// permission prompt tool.
+    static let approvalToolName = "approve_local_action"
+    private static let approvalToolDescription = "Rookery asks the user whether Raven may take this action on their Mac. Claude Code calls it itself; never call it."
 
     static func main() async {
         setvbuf(stdout, nil, _IOLBF, 0)
@@ -61,12 +65,13 @@ enum RookeryMail {
                         "openWorldHint": .bool(false),
                     ]),
                 ])
-            })])
+            } + [approvalTool])])
         case "tools/call":
             guard let name = request["params"]?["name"]?.stringValue else {
                 return .object(["jsonrpc": .string("2.0"), "id": requestId, "error": error(invalidParams, "a tool call needs a name")])
             }
-            result = await call(name, arguments: request["params"]?["arguments"] ?? .object([:]))
+            let arguments = request["params"]?["arguments"] ?? .object([:])
+            result = name == approvalToolName ? await approve(arguments) : await call(name, arguments: arguments)
         default:
             return .object(["jsonrpc": .string("2.0"), "id": requestId, "error": error(methodNotFound, "no method \(method)")])
         }
@@ -100,6 +105,48 @@ enum RookeryMail {
         return .object([
             "content": .array([.object(["type": .string("text"), "text": .string(text)])]),
             "isError": .bool(isError),
+        ])
+    }
+
+    private static var approvalTool: JSONValue {
+        .object([
+            "name": .string(approvalToolName),
+            "description": .string(approvalToolDescription),
+            "inputSchema": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "tool_name": .object(["type": .string("string")]),
+                    "input": .object(["type": .string("object")]),
+                    "tool_use_id": .object(["type": .string("string")]),
+                ]),
+                "required": .array([.string("tool_name"), .string("input")]),
+            ]),
+        ])
+    }
+
+    /// Ask the user, through Rookery, whether Raven may take an action, and answer as Claude Code reads a
+    /// permission prompt tool; an action Rookery cannot be asked about is turned down.
+    static func approve(_ arguments: JSONValue) async -> JSONValue {
+        let input = arguments["input"] ?? .object([:])
+        let request = RavenApprovalRequest(
+            id: arguments["tool_use_id"]?.stringValue ?? UUID().uuidString,
+            conversationId: ProcessInfo.processInfo.environment["ROOKERY_AGENT_ID"] ?? "",
+            toolName: arguments["tool_name"]?.stringValue ?? "",
+            inputJSON: String(decoding: (try? JSONEncoder().encode(input)) ?? Data(), as: UTF8.self)
+        )
+        var isAllowed = false
+        do {
+            let connection = try await ControlConnection.connect(to: ControlSocket.url)
+            defer { connection.cancel() }
+            try await connection.send(ControlRequest.ravenApproval(request))
+            if case .ravenApprovalResult(let isAllowedByUser) = try await connection.receive(ControlMessage.self) {
+                isAllowed = isAllowedByUser
+            }
+        } catch {
+            isAllowed = false
+        }
+        return .object([
+            "content": .array([.object(["type": .string("text"), "text": .string(request.decisionText(isAllowed: isAllowed))])]),
         ])
     }
 

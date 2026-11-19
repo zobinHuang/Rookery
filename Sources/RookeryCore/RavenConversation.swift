@@ -35,6 +35,10 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     public var mailMessageId: Int?
     /// Where it was started.
     public var origin: RavenOrigin
+    /// Whether Raven asks before working on this Mac in it, or may, or, on Codex, keeps to its sandbox.
+    public var localAccess: RavenLocalAccess
+    /// The folder the user chose for it to work in, by its absolute path; nil for the default.
+    public var folderPath: String?
 
     public static let engineClaude = "claude"
     public static let engineCodex = "codex"
@@ -48,6 +52,8 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
     private static let excerptLength = 600
 
     enum CodingKeys: String, CodingKey {
+        case localAccess
+        case folderPath
         case origin
         case mailMessageId
         case engine
@@ -75,6 +81,7 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         origin: RavenOrigin = .board
     ) {
         self.origin = origin
+        self.localAccess = .ask
         self.id = id
         self.title = title
         self.createdAt = createdAt
@@ -100,6 +107,13 @@ public struct RavenConversation: Codable, Equatable, Identifiable, Sendable {
         titleSource = try container.decodeIfPresent(String.self, forKey: .titleSource)
         mailMessageId = try container.decodeIfPresent(Int.self, forKey: .mailMessageId)
         origin = try container.decodeIfPresent(RavenOrigin.self, forKey: .origin) ?? (mailMessageId == nil ? .board : .mail)
+        localAccess = try container.decodeIfPresent(RavenLocalAccess.self, forKey: .localAccess) ?? .ask
+        folderPath = try container.decodeIfPresent(String.self, forKey: .folderPath)
+    }
+
+    /// The folder Raven works in in this conversation: the one the user chose, or the default.
+    public var folderURL: URL {
+        folderPath.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? RavenLocalWork.defaultFolderURL
     }
 
     /// The request to a model for a conversation's title, from its first request and Raven's answer.
@@ -239,6 +253,22 @@ public struct RavenConversations: Codable, Equatable, Sendable {
             return
         }
         listConversations[index].costUSD += costUSD
+    }
+
+    /// Change whether Raven asks before working on this Mac in a conversation.
+    public mutating func changeLocalAccess(to access: RavenLocalAccess, in conversationId: String) {
+        guard let index = listConversations.firstIndex(where: { $0.id == conversationId }) else {
+            return
+        }
+        listConversations[index].localAccess = access
+    }
+
+    /// Choose the folder Raven works in in a conversation, nil for the default.
+    public mutating func chooseFolder(_ path: String?, for conversationId: String) {
+        guard let index = listConversations.firstIndex(where: { $0.id == conversationId }) else {
+            return
+        }
+        listConversations[index].folderPath = path
     }
 
     /// Note the Codex thread a conversation's first turn opened.

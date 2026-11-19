@@ -166,6 +166,8 @@ enum Rookeryctl {
                 exit(withMessage: "rookeryctl: \(text)")
             }
             Swift.print(text)
+        case .ravenApprovalResult(let isAllowed):
+            Swift.print(isAllowed ? "allowed" : "declined")
         case .mailProbe(let report):
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

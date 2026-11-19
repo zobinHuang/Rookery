@@ -46,7 +46,8 @@ final class RavenAgent {
     private static let executableMode: Int = 0o755
     /// It reads and changes roost's resources and reads the agents, the teams and the user's hosts through
     /// rook-client, and only proposes what it would do to an agent or a team, which the user carries out; it
-    /// reads skills' own pages to describe them.
+    /// reads, searches and fetches from the web freely. Anything else on this Mac, a command or a file
+    /// written, asks the user through `approvalToolName` first.
     private static let listAllowedTools = [
         "Bash(rook-client resource:*)",
         "Bash(rook-client agent:*)",
@@ -60,7 +61,17 @@ final class RavenAgent {
         "mcp__\(mailServerName)",
         "Skill",
         "WebFetch",
+        "WebSearch",
+        "Read",
+        "Glob",
+        "Grep",
+        "TodoWrite",
+        "Task",
     ]
+    /// The `rookery-mail` tool Claude Code asks whether Raven may take an action on this Mac.
+    private static let approvalToolName = "approve_local_action"
+    /// How long, in milliseconds, Claude Code waits on a tool call: an approval waits on the user.
+    private static let toolTimeoutMilliseconds = "86400000"
 
     private(set) var conversations = RavenConversations()
     @ObservationIgnored private var titleTask: Task<Void, Never>?
@@ -91,6 +102,10 @@ final class RavenAgent {
     private(set) var mapProposalErrors: [String: String] = [:]
     /// What carrying out each proposal on mail or calendars did, in a line, by the proposal's id.
     private(set) var mapProposalOutcomes: [String: String] = [:]
+    /// The actions on this Mac each conversation waits on the user to allow, oldest first.
+    private(set) var mapApprovals: [String: [RavenApprovalRequest]] = [:]
+    /// Who waits on each approval, by the request's id.
+    @ObservationIgnored private var mapApprovalWaiters: [String: CheckedContinuation<Bool, Never>] = [:]
 
     @ObservationIgnored private unowned let fleetModel: FleetModel
     @ObservationIgnored private var mapTasks: [String: Task<Void, Never>] = [:]
@@ -307,7 +322,16 @@ final class RavenAgent {
             listTeams: teams(of: sessionId)
         )
         mapTasks[sessionId] = Task { [weak self] in
-            await self?.perform(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, client: client)
+            guard let self else {
+                return
+            }
+            let isCodex = conversations.conversation(sessionId)?.engine == RavenConversation.engineCodex
+            let isCodexLocal = isCodex ? await codexTurnAccess(in: sessionId) : false
+            guard !Task.isCancelled else {
+                finish(sessionId, .cancelled)
+                return
+            }
+            await perform(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, isCodexLocal: isCodexLocal, client: client)
         }
     }
 
@@ -451,9 +475,98 @@ final class RavenAgent {
         a line or two, what they said and what you did.
         """
 
-    /// Stop the request under way in a conversation.
+    /// Stop the request under way in a conversation; the actions it waits on are turned down.
     func cancel(_ conversationId: String) {
         mapTasks[conversationId]?.cancel()
+        for request in mapApprovals[conversationId] ?? [] {
+            answerApproval(request.id, in: conversationId, isAllowed: false)
+        }
+    }
+
+    // MARK: - Working on this Mac
+
+    /// Whether Raven may act on this Mac in a conversation without asking: the user allowed it in every
+    /// conversation or in this one.
+    func isLocalAllowed(in conversationId: String) -> Bool {
+        fleetModel.isRavenLocalUnrestricted || conversations.conversation(conversationId)?.localAccess == .allowed
+    }
+
+    /// Ask the user whether Raven may take an action on this Mac, and wait for their answer; an action
+    /// outside a request under way is turned down.
+    func askApproval(_ request: RavenApprovalRequest) async -> Bool {
+        guard isRunning(request.conversationId) else {
+            return false
+        }
+        if isLocalAllowed(in: request.conversationId) {
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            mapApprovalWaiters[request.id] = continuation
+            mapApprovals[request.conversationId, default: []].append(request)
+        }
+    }
+
+    /// Answer an action Raven asked to take: this one, every one in the conversation from now on, or none.
+    func decide(_ request: RavenApprovalRequest, _ choice: RavenApprovalChoice) {
+        let conversationId = request.conversationId
+        switch choice {
+        case .once:
+            answerApproval(request.id, in: conversationId, isAllowed: true)
+        case .conversation:
+            conversations.changeLocalAccess(to: .allowed, in: conversationId)
+            saveIndex()
+            for waiting in mapApprovals[conversationId] ?? [] {
+                answerApproval(waiting.id, in: conversationId, isAllowed: true)
+            }
+        case .deny:
+            if request.toolName == RavenApprovalRequest.codexTurnTool {
+                conversations.changeLocalAccess(to: .sandboxed, in: conversationId)
+                saveIndex()
+            }
+            answerApproval(request.id, in: conversationId, isAllowed: false)
+        }
+    }
+
+    /// Change whether Raven asks before working on this Mac in a conversation.
+    func changeLocalAccess(to access: RavenLocalAccess, in conversationId: String) {
+        conversations.changeLocalAccess(to: access, in: conversationId)
+        saveIndex()
+    }
+
+    /// The folder Raven works in in a conversation, or in a new one.
+    func folder(of conversationId: String?) -> URL {
+        conversationId.flatMap { conversations.conversation($0)?.folderURL } ?? RavenLocalWork.defaultFolderURL
+    }
+
+    /// Choose the folder Raven works in in a conversation, nil for the default.
+    func chooseFolder(_ folder: URL?, for conversationId: String) {
+        conversations.chooseFolder(folder?.path, for: conversationId)
+        saveIndex()
+    }
+
+    private func answerApproval(_ requestId: String, in conversationId: String, isAllowed: Bool) {
+        mapApprovals[conversationId]?.removeAll { $0.id == requestId }
+        if mapApprovals[conversationId]?.isEmpty == true {
+            mapApprovals[conversationId] = nil
+        }
+        mapApprovalWaiters.removeValue(forKey: requestId)?.resume(returning: isAllowed)
+    }
+
+    /// Whether a turn on Codex, which cannot ask action by action, may work on this Mac: allowed already,
+    /// kept to its sandbox, or asked of the user as a whole before it starts.
+    private func codexTurnAccess(in conversationId: String) async -> Bool {
+        if isLocalAllowed(in: conversationId) {
+            return true
+        }
+        guard conversations.conversation(conversationId)?.localAccess == .ask else {
+            return false
+        }
+        return await askApproval(RavenApprovalRequest(
+            id: UUID().uuidString,
+            conversationId: conversationId,
+            toolName: RavenApprovalRequest.codexTurnTool,
+            inputJSON: "{}"
+        ))
     }
 
     /// Forget a conversation and what was said in it; roost keeps its agent and what it changed.
@@ -683,10 +796,12 @@ final class RavenAgent {
 
     // MARK: - A request
 
-    private func perform(prompt: String, sessionId: String, isFirstTurn: Bool, client: RoostClient) async {
+    private func perform(prompt: String, sessionId: String, isFirstTurn: Bool, isCodexLocal: Bool, client: RoostClient) async {
         let workspace: URL
+        let folder = conversations.conversation(sessionId)?.folderURL ?? RavenLocalWork.defaultFolderURL
         do {
             workspace = try prepareWorkspace(endpoint: client.endpoint)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
             finish(sessionId, .failed("can't prepare the workspace: \(error.localizedDescription)"))
             return
@@ -698,8 +813,12 @@ final class RavenAgent {
         let isCodex = conversations.conversation(sessionId)?.engine == RavenConversation.engineCodex
         let agent = HeadlessAgent(launch: HeadlessAgent.Launch(
             arguments: isCodex
-                ? codexArguments(prompt: prompt, threadId: isFirstTurn ? nil : conversations.conversation(sessionId)?.codexThreadId)
-                : claudeArguments(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, workspace: workspace),
+                ? codexArguments(
+                    prompt: RavenLocalWork.folderPrompt(folder) + "\n\n" + prompt,
+                    threadId: isFirstTurn ? nil : conversations.conversation(sessionId)?.codexThreadId,
+                    isLocal: isCodexLocal
+                )
+                : claudeArguments(prompt: prompt, sessionId: sessionId, isFirstTurn: isFirstTurn, workspace: workspace, folder: folder),
             workingDirectory: workspace,
             mapEnvironment: [
                 "PATH": workspace.appending(path: "bin").path + ":" + (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"),
@@ -708,6 +827,7 @@ final class RavenAgent {
                 "ROOKERY_AGENT_ID": sessionId,
                 "ROOK_AGENT_ID": sessionId,
                 "ROOK_PROPOSALS_FILE": keptProposalsFile(of: sessionId).path,
+                "MCP_TOOL_TIMEOUT": Self.toolTimeoutMilliseconds,
                 "TMUX": nil,
                 "TMUX_PANE": nil,
             ],
@@ -817,29 +937,37 @@ final class RavenAgent {
         }
     }
 
-    private func claudeArguments(prompt: String, sessionId: String, isFirstTurn: Bool, workspace: URL) -> [String] {
+    /// Claude Code run on its own: the workspace's settings, its MCP servers alone, the conversation's
+    /// folder open to it and named in its instructions, and every action outside `listAllowedTools`
+    /// asked of the user through Rookery.
+    private func claudeArguments(prompt: String, sessionId: String, isFirstTurn: Bool, workspace: URL, folder: URL) -> [String] {
         ["-p", prompt] + (isFirstTurn ? ["--session-id", sessionId] : ["--resume", sessionId]) + [
             "--output-format", "stream-json",
             "--verbose",
             "--setting-sources", "project",
             "--mcp-config", workspace.appending(path: Self.mcpConfigName).path,
             "--strict-mcp-config",
+            "--permission-prompt-tool", "mcp__\(Self.mailServerName)__\(Self.approvalToolName)",
+            "--add-dir", folder.path,
+            "--append-system-prompt", RavenLocalWork.folderPrompt(folder),
             "--allowedTools",
         ] + Self.listAllowedTools
     }
 
-    /// Codex run on its own: none of the user's configuration, commands sandboxed to the workspace with the
-    /// network open for rook-client, nothing asked of anyone, and `rookery-mail` as its one MCP server; a
-    /// later turn resumes the conversation's thread.
-    private func codexArguments(prompt: String, threadId: String?) -> [String] {
+    /// Codex run on its own: none of the user's configuration, live web search, nothing asked of anyone,
+    /// and `rookery-mail` as its one MCP server; its commands sandboxed to the workspace with the network
+    /// open for rook-client, or free on this Mac in a turn the user allowed it; a later turn resumes the
+    /// conversation's thread.
+    private func codexArguments(prompt: String, threadId: String?, isLocal: Bool) -> [String] {
         var listOptions = [
             "--json",
             "--skip-git-repo-check",
             "--ignore-user-config",
-            "-c", "sandbox_mode=\"workspace-write\"",
+            "-c", isLocal ? "sandbox_mode=\"danger-full-access\"" : "sandbox_mode=\"workspace-write\"",
             "-c", "sandbox_workspace_write.network_access=true",
             "-c", "approval_policy=\"never\"",
             "-c", "shell_environment_policy.inherit=\"all\"",
+            "-c", "web_search=\"live\"",
         ]
         if let executable = Self.mailServerURL() {
             listOptions += ["-c", "mcp_servers.\(Self.mailServerName).command=\"\(executable.path)\""]

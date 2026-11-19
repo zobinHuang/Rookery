@@ -133,3 +133,26 @@ struct TranscriptFileCard: View {
     }
 }
 
+/// A file or folder offered for a mention: its icon, its name, and the folder it is in.
+struct MentionedFileLabel: View {
+    let file: MentionedFile
+    var iconSize: CGFloat = 16
+    var fontSize: CGFloat = 12
+
+    var body: some View {
+        Image(nsImage: NSWorkspace.shared.icon(forFile: file.path))
+            .resizable()
+            .interpolation(.high)
+            .frame(width: iconSize, height: iconSize)
+        Text(file.isFolder ? file.name + "/" : file.name)
+            .font(.system(size: fontSize, weight: .medium))
+            .lineLimit(1)
+            .truncationMode(.middle)
+        Spacer(minLength: 4)
+        Text(TranscriptFileCard.shownFolder(of: URL(fileURLWithPath: file.path)))
+            .font(.system(size: fontSize - 1))
+            .lineLimit(1)
+            .truncationMode(.head)
+            .opacity(0.6)
+    }
+}

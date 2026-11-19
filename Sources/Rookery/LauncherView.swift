@@ -139,7 +139,8 @@ struct LauncherView: View {
                     controller.ask(request)
                 },
                 isFocused: $isFieldFocused,
-                onKey: takeConversationKey
+                onKey: takeConversationKey,
+                mentionFolder: raven.folder(of: conversationId)
             )
             .padding(12)
         }
@@ -301,6 +302,8 @@ struct LauncherView: View {
                             Text(resource.kind.capitalized)
                                 .font(.system(size: 11))
                                 .opacity(0.7)
+                        case .file(let file):
+                            MentionedFileLabel(file: file, iconSize: 20, fontSize: 13)
                         }
                     }
                     .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))

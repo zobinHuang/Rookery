@@ -323,6 +323,11 @@ struct SettingsView: View {
             SettingsRow(title: "Log Times", detail: "in Rookmaster's log") {
                 StageSegmentedControl(selection: $preferences.logClock, listOptions: LogClock.allCases, title: \.title)
             }
+            SettingsRow(title: "Raven on This Mac", detail: "run commands and write files without asking") {
+                Toggle("", isOn: $preferences.isRavenLocalUnrestricted)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
             GitCredentialsSettings(fleetModel: fleetModel, memory: memory)
         }
         .onAppear {

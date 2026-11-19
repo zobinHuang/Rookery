@@ -16,6 +16,7 @@ final class ControlServer: Sendable {
     private let mixerController: MixerController
     private let agentUsageMonitor: AgentUsageMonitor
     private let mailService: MailService
+    private let raven: RavenAgent
     private let listener: NWListener
     private let queue = DispatchQueue(label: "Rookery.control.listener")
 
@@ -28,13 +29,15 @@ final class ControlServer: Sendable {
     ///   - mixerController: the mixer to report and adjust
     ///   - agentUsageMonitor: the code agent limits to report
     ///   - mailService: the mail and calendars the tools reach
+    ///   - raven: Raven, whose actions on this Mac the user approves
     init(
         tracker: WindowTracker,
         workspaceController: WorkspaceController,
         stages: StageCoordinator,
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
-        mailService: MailService
+        mailService: MailService,
+        raven: RavenAgent
     ) throws {
         let url = ControlSocket.url
         try FileManager.default.createDirectory(
@@ -53,11 +56,12 @@ final class ControlServer: Sendable {
         self.mixerController = mixerController
         self.agentUsageMonitor = agentUsageMonitor
         self.mailService = mailService
+        self.raven = raven
     }
 
     /// Start accepting connections.
     func start() {
-        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController, agentUsageMonitor, mailService] connection in
+        listener.newConnectionHandler = { [tracker, workspaceController, stages, mixerController, agentUsageMonitor, mailService, raven] connection in
             let control = ControlConnection(accepted: connection)
             Task {
                 await Self.serve(
@@ -67,7 +71,8 @@ final class ControlServer: Sendable {
                     stages: stages,
                     mixerController: mixerController,
                     agentUsageMonitor: agentUsageMonitor,
-                    mailService: mailService
+                    mailService: mailService,
+                    raven: raven
                 )
             }
         }
@@ -92,7 +97,8 @@ final class ControlServer: Sendable {
         stages: StageCoordinator,
         mixerController: MixerController,
         agentUsageMonitor: AgentUsageMonitor,
-        mailService: MailService
+        mailService: MailService,
+        raven: RavenAgent
     ) async {
         defer { connection.cancel() }
         do {
@@ -207,6 +213,9 @@ final class ControlServer: Sendable {
                 try await connection.send(ControlMessage.mailProbe(await MailProbe.run()))
             case .mailTool(let name, let argumentsJSON):
                 try await connection.send(await mailToolResult(name: name, argumentsJSON: argumentsJSON, service: mailService))
+            case .ravenApproval(let approvalRequest):
+                let isAllowed = await raven.askApproval(approvalRequest)
+                try await connection.send(ControlMessage.ravenApprovalResult(isAllowed: isAllowed))
             case .browserSession(let browserProcessId):
                 await serveBrowser(connection, browserProcessId: browserProcessId, browserTabs: mixerController.browserTabs)
             }

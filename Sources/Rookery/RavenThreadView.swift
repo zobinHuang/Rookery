@@ -69,6 +69,7 @@ private struct RavenThreadContent: View {
                         .foregroundStyle(StageColors.tertiaryText)
                 }
                 Spacer(minLength: 8)
+                RavenFolderMenu(raven: raven, conversation: conversation, isUnrestricted: fleetModel.isRavenLocalUnrestricted)
                 if conversation.turnCount > 0 {
                     joinMenu(conversation, listJoined: listJoined)
                 }
@@ -178,6 +179,7 @@ private struct RavenThreadContent: View {
                     .transition(.opacity)
             }
             status(of: conversationId)
+            approvals(in: conversationId)
             proposals(in: conversationId)
         }
         .onGeometryChange(for: CGFloat.self) { proxy in
@@ -227,6 +229,28 @@ private struct RavenThreadContent: View {
     /// The stand-in bubbles' sizes, the user's and Raven's in turn.
     private static let listLoadingWidths: [CGFloat] = [220, 320, 160, 280]
     private static let listLoadingHeights: [CGFloat] = [34, 64, 34, 48]
+
+    // MARK: - Approvals
+
+    /// The actions on this Mac Raven waits on the user to allow, oldest first, each a card to answer.
+    @ViewBuilder
+    private func approvals(in conversationId: String) -> some View {
+        let listRequests = raven.mapApprovals[conversationId] ?? []
+        if !listRequests.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(listRequests) { request in
+                    RavenApprovalCard(request: request) { choice in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            raven.decide(request, choice)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listRequests.map(\.id))
+        }
+    }
 
     // MARK: - Proposals
 

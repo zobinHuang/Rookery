@@ -36,6 +36,9 @@ public enum ControlRequest: Codable, Sendable {
     /// Run one of Rookery's mail and calendar tools, as the `rookery-mail` MCP server asks for a code agent,
     /// with its arguments as a JSON object.
     case mailTool(name: String, argumentsJSON: String)
+    /// Ask the user whether Raven may take an action on their Mac, as Claude Code asks its permission
+    /// prompt tool; answered once the user decides, however long that takes.
+    case ravenApproval(RavenApprovalRequest)
 }
 
 /// What a mixer track carries: an application's sound, or one browser tab's.
@@ -139,6 +142,8 @@ public enum ControlMessage: Codable, Sendable {
     case mailProbe(MailProbeReport)
     /// What a mail or calendar tool gave: its text, and whether it failed.
     case mailToolResult(text: String, isError: Bool)
+    /// Whether the user allowed the action Raven asked to take.
+    case ravenApprovalResult(isAllowed: Bool)
     case done
     case failure(message: String)
 }

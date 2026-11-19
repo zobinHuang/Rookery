@@ -225,7 +225,8 @@ struct RavenPanel: View {
                     }
                 },
                 onSend: send,
-                isFocused: $isFocused
+                isFocused: $isFocused,
+                mentionFolder: raven.folder(of: openId)
             )
         }
         .padding(12)

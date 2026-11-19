@@ -105,6 +105,8 @@ struct MailPage: View {
     }
 
     private static let replyEditorId = "mail.reply"
+    /// How long a message stays open before it counts as read, so stepping past it leaves it unread.
+    private static let readDelay: Duration = .seconds(1)
 
     /// The folder shown, kept in the page's memory.
     private var place: MailPlace {
@@ -174,6 +176,7 @@ struct MailPage: View {
         }
         .task(id: selectedId) {
             await loadMessage()
+            await markShownMessageRead()
         }
         .onChange(of: fleetModel.personal.listUnread) {
             Task {
@@ -715,6 +718,29 @@ struct MailPage: View {
             problem = String(describing: error)
         }
         loadedMessageId = selectedId
+    }
+
+    /// Mark the message open read in Mail once it has stayed open a moment, as Mail does.
+    private func markShownMessageRead() async {
+        guard
+            let message = shownMessage,
+            message.summary.id == selectedId,
+            !message.summary.isRead
+        else {
+            return
+        }
+        do {
+            try await Task.sleep(for: Self.readDelay)
+        } catch {
+            return
+        }
+        do {
+            try await fleetModel.personal.markRead(message.summary)
+        } catch {
+            problem = String(describing: error)
+            return
+        }
+        await loadMessage()
     }
 
     /// Do something to the message in Mail, then read the list and the message again.

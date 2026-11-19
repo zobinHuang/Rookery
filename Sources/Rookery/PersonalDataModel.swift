@@ -119,18 +119,19 @@ final class PersonalDataModel {
         listDayEvents.filter { !$0.isAllDay && $0.endsAt > now }.min { $0.startsAt < $1.startsAt }
     }
 
-    /// Mark a message read in Mail, showing it read at once.
-    func markRead(_ message: MailMessageSummary) {
+    /// Mark a message read in Mail, showing it read at once, and read the unread mail again once Mail has.
+    ///
+    /// - Throws: whatever Mail's scripting throws; the unread mail is read again either way
+    func markRead(_ message: MailMessageSummary) async throws {
         listUnread.removeAll { $0.id == message.id }
         unreadTotal = max(0, unreadTotal - 1)
-        Task {
-            do {
-                try await service.markRead(message, isRead: true)
-            } catch {
-                mailProblem = String(describing: error)
-            }
+        do {
+            try await service.markRead(message, isRead: true)
+        } catch {
             await readMail()
+            throw error
         }
+        await readMail()
     }
 
     /// One page of an inbox's messages, newest first: unread or read, of one account or, with nil, of every

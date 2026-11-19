@@ -86,6 +86,9 @@ struct MailRavenPanel: View {
             .padding(12)
         }
         .background(StageColors.sidebar)
+        .onAppear {
+            raven.loadIfNeeded()
+        }
     }
 
     /// The thread's conversations to switch between, and a new one.

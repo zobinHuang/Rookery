@@ -179,11 +179,14 @@ public enum MailQuote {
         /^\s*Le [\s\S]{3,300}a écrit\s*:\s*$/,
         /^\s*Am [\s\S]{3,300}schrieb[\s\S]{0,120}:\s*$/,
         /^\s*-{2,}\s*(Original Message|Forwarded message|原始邮件|转发邮件)\s*-{2,}/i,
-        /^\s*(From|发件人)\s*[:：][\s\S]{0,400}(Sent|Date|发送时间|时间)\s*[:：]/
+        /^[\s>]*(From|发件人)\s*[:：][\s\S]{0,400}(Sent|Date|发送时间|时间)\s*[:：]/
     ];
     const blockTags = /^(DIV|P|BLOCKQUOTE|TABLE|TBODY|TR|TD|UL|OL|LI|HR|BR|H[1-6]|PRE|SECTION|ARTICLE|HEADER|FOOTER)$/;
     const body = document.body;
     if (!body) { return false; }
+    for (const wrapper of body.querySelectorAll(".Apple-Mail-URLShareWrapperClass > blockquote[type=cite]")) {
+        wrapper.removeAttribute("type");
+    }
     const isBreak = node => node && node.nodeType === Node.ELEMENT_NODE && blockTags.test(node.tagName);
     const candidates = [];
     for (const selector of selectors) {

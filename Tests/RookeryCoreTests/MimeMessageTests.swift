@@ -184,3 +184,33 @@ struct QuotedPrintableTests {
     }
 }
 
+struct AppleShareWrapTests {
+    @Test func aMessageMailWrappedAsSharedReadsAsItsOwnWordsItsHistoryStillQuoted() {
+        let raw = """
+            Content-Type: multipart/alternative; boundary="b"\r
+            \r
+            --b\r
+            Content-Type: text/plain; charset=us-ascii\r
+            \r
+            \r
+            > Hi Asal,\r
+            > \r
+            > Thanks.\r
+            > \r
+            >> Earlier mail\r
+            --b\r
+            Content-Type: text/html; charset=us-ascii\r
+            \r
+            <div class="Apple-Mail-URLShareWrapperClass"><blockquote type="cite">Hi Asal,</blockquote></div>\r
+            --b--\r
+            """
+        #expect(MimeMessage(data: Data(raw.utf8)).text == "Hi Asal,\n\nThanks.\n\n> Earlier mail")
+    }
+
+    @Test func aMessageNotQuotedThroughoutIsLeftAsItIs() {
+        let raw = "Content-Type: text/html; charset=us-ascii\r\n\r\n<div class=\"Apple-Mail-URLShareWrapperClass\">Mine<br>&gt; theirs</div>"
+        #expect(MimeMessage(data: Data(raw.utf8)).text.contains("Mine"))
+        #expect(MimeMessage(data: Data(raw.utf8)).text.contains("> theirs"))
+    }
+}
+

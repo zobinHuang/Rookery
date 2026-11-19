@@ -15,6 +15,28 @@ public struct MimeMessage: Equatable, Sendable {
     public let listAttachmentNames: [String]
     /// The images the HTML shows by their content id, with their bytes where the file holds them.
     public let listInlineImages: [MailInlineImage]
+    /// The class Mail gives the quote it wraps a scripted or shared message's own text in.
+    public static let appleShareWrapperClass = "Apple-Mail-URLShareWrapperClass"
+
+    /// The plain text of a message Mail wrapped as shared, every line quoted, with that one level taken off
+    /// so the sender's own words read as their own; text not quoted throughout is left as it is.
+    static func unquotedAppleShare(_ text: String) -> String {
+        let listLines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        let isQuotedThroughout = listLines.allSatisfy { line in
+            line.hasPrefix(">") || line.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        guard isQuotedThroughout, listLines.contains(where: { $0.hasPrefix(">") }) else {
+            return text
+        }
+        let listUnquoted = listLines.map { line -> String in
+            guard line.hasPrefix(">") else {
+                return line
+            }
+            let rest = line.dropFirst()
+            return String(rest.hasPrefix(" ") ? rest.dropFirst() : rest)
+        }
+        return listUnquoted.joined(separator: "\n").trimmingCharacters(in: .newlines)
+    }
 
     /// Read a message from its raw bytes.
     public init(data: Data) {
@@ -25,7 +47,10 @@ public struct MimeMessage: Equatable, Sendable {
         var listAttachments: [String] = []
         var listImages: [MailInlineImage] = []
         part.collect(plain: &plain, html: &html, attachments: &listAttachments, images: &listImages)
-        let body = plain ?? html.map(MimePart.text(ofHTML:)) ?? ""
+        var body = plain ?? html.map(MimePart.text(ofHTML:)) ?? ""
+        if let html, html.contains(Self.appleShareWrapperClass) {
+            body = Self.unquotedAppleShare(body)
+        }
         text = String(body.prefix(Self.textLimit))
         self.html = html.map { String($0.prefix(Self.htmlLimit)) }
         listAttachmentNames = listAttachments

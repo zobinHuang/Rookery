@@ -12,6 +12,8 @@ enum LauncherItem: Identifiable {
     case page(SwitcherEntry)
     case askRaven(String)
     case conversation(RavenConversation)
+    /// Raven before anything is typed, with a saying: chosen, it opens a new conversation.
+    case maxim(Maxim)
 
     var id: String {
         switch self {
@@ -19,6 +21,7 @@ enum LauncherItem: Identifiable {
         case .page(let entry): "page:\(entry.id)"
         case .askRaven: "ask"
         case .conversation(let conversation): "conversation:\(conversation.id)"
+        case .maxim: "maxim"
         }
     }
 }
@@ -46,6 +49,8 @@ final class LauncherModel {
     var listMentionRefs: [FleetRef] = []
     /// The theme the user chose for Rookery; nil to follow the system.
     var chosenTheme: Theme?
+    /// The saying shown beside Raven before anything is typed, picked each time the launcher opens.
+    var maxim = RavenMaxims.listMaxims[0]
 }
 
 /// The launcher, opened with ⌘Space: a box to find an application or one of Rookery's pages and open it,
@@ -152,6 +157,7 @@ final class LauncherController {
         model.problem = nil
         model.targetConversationId = nil
         model.shownConversationId = nil
+        model.maxim = RavenMaxims.random()
         search()
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
@@ -197,13 +203,14 @@ final class LauncherController {
 
     // MARK: - Finding
 
-    /// Find the rows for what is typed: the latest conversations when nothing is; else the applications,
-    /// the pages, asking Raven, and the conversations it matches, each kind best first.
+    /// Find the rows for what is typed: Raven with a saying and the latest conversations when nothing is;
+    /// else the applications, the pages, asking Raven, and the conversations it matches, each kind best
+    /// first.
     func search() {
         let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let listConversations = fleetModel.raven.conversations.listConversations
         guard !query.isEmpty else {
-            model.listItems = listConversations.prefix(Self.recentConversationLimit).map { .conversation($0) }
+            model.listItems = [.maxim(model.maxim)] + listConversations.prefix(Self.recentConversationLimit).map { .conversation($0) }
             model.selectedIndex = 0
             return
         }
@@ -336,6 +343,12 @@ final class LauncherController {
             hide()
         case .askRaven(let text):
             ask(text)
+        case .maxim:
+            fleetModel.raven.openConversationId = nil
+            fleetModel.pageMemory.panelTab = .raven
+            fleetModel.pageMemory.isPanelExpanded = true
+            workspaceController.onOpenPage(.rookmaster)
+            hide()
         case .conversation(let conversation):
             let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
             model.targetConversationId = conversation.id

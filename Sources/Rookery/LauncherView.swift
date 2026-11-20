@@ -387,7 +387,7 @@ struct LauncherView: View {
         switch model.listItems[index] {
         case .application: return "Applications"
         case .page: return "Rookery"
-        case .askRaven: return "Raven"
+        case .askRaven, .maxim: return "Raven"
         case .conversation: return model.query.isEmpty ? "Recent Conversations" : "Conversations"
         }
     }
@@ -396,7 +396,7 @@ struct LauncherView: View {
         switch item {
         case .application: 0
         case .page: 1
-        case .askRaven: 2
+        case .askRaven, .maxim: 2
         case .conversation: 3
         }
     }
@@ -407,8 +407,8 @@ struct LauncherView: View {
                 .frame(width: Self.iconSize, height: Self.iconSize)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title(of: item))
-                    .font(.system(size: 13.5, weight: .medium))
-                    .lineLimit(1)
+                    .font(Self.isMaxim(item) ? .system(size: 14, design: .serif).italic() : .system(size: 13.5, weight: .medium))
+                    .lineLimit(Self.isMaxim(item) ? 2 : 1)
                     .foregroundStyle(isSelected ? AnyShapeStyle(StageColors.selectedSegmentText) : AnyShapeStyle(StageColors.primaryText))
                 if let subtitle = subtitle(of: item) {
                     Text(subtitle)
@@ -442,7 +442,7 @@ struct LauncherView: View {
         case .page(let entry):
             RookeryIconView(entry.symbolName ?? .window, scale: 1.5)
                 .foregroundStyle(ink)
-        case .askRaven:
+        case .askRaven, .maxim:
             RavenView(isWorking: false)
                 .scaleEffect(Self.iconSize / CrowSize.regular.rawValue)
         case .conversation(let conversation):
@@ -457,7 +457,15 @@ struct LauncherView: View {
         case .page(let entry): entry.title
         case .askRaven: "Ask Raven"
         case .conversation(let conversation): conversation.title
+        case .maxim(let maxim): "\u{201C}\(maxim.text)\u{201D}"
         }
+    }
+
+    private static func isMaxim(_ item: LauncherItem) -> Bool {
+        if case .maxim = item {
+            return true
+        }
+        return false
     }
 
     private func subtitle(of item: LauncherItem) -> String? {
@@ -470,6 +478,8 @@ struct LauncherView: View {
             text
         case .conversation(let conversation):
             "\(conversation.lastAt.formatted(.relative(presentation: .named))), \(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests")"
+        case .maxim(let maxim):
+            "\u{2014} \(maxim.author)"
         }
     }
 
@@ -480,7 +490,7 @@ struct LauncherView: View {
             tag(groupName, isSelected: isSelected)
         case .page:
             tag("Rookery", isSelected: isSelected)
-        case .askRaven, .conversation:
+        case .askRaven, .conversation, .maxim:
             if isSelected {
                 Text(Self.keyHint(of: item, query: model.query))
                     .font(.system(size: 11, weight: .medium))
@@ -494,6 +504,9 @@ struct LauncherView: View {
     private static func keyHint(of item: LauncherItem, query: String) -> String {
         if case .conversation = item, query.trimmingCharacters(in: .whitespaces).isEmpty {
             return "↩ to ask in it"
+        }
+        if case .maxim = item {
+            return "↩ to talk to Raven"
         }
         return "↩"
     }

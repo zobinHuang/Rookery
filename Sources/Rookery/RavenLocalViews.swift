@@ -22,7 +22,7 @@ struct RavenApprovalCard: View {
         case "Bash": .terminal
         case "Write", "Edit", "MultiEdit", "NotebookEdit": .draft
         case RavenApprovalRequest.codexTurnTool: .lock
-        default: .tool
+        default: request.chromeTool == nil ? .tool : .globe
         }
     }
 
@@ -45,7 +45,7 @@ struct RavenApprovalCard: View {
             HStack(spacing: 6) {
                 RookeryIconView(icon)
                     .foregroundStyle(Color.accentColor)
-                Text(isCodexTurn ? "Raven on Codex asks to work on this Mac" : "Raven asks to \(request.verb.lowercased())")
+                Text(isCodexTurn ? "Raven on Codex asks to work on this Mac" : "Raven asks to \(request.verb.prefix(1).lowercased() + request.verb.dropFirst())")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer(minLength: 0)
             }

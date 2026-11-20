@@ -328,6 +328,11 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
             }
+            SettingsRow(title: "Raven Uses Chrome", detail: "Claude in Chrome, or Codex's Chrome plugin") {
+                Toggle("", isOn: $preferences.isRavenBrowserEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
             GitCredentialsSettings(fleetModel: fleetModel, memory: memory)
         }
         .onAppear {

@@ -113,6 +113,7 @@ final class Preferences {
     private static let logClockKey = "logClock"
     private static let ravenEngineKey = "ravenEngine"
     private static let ravenLocalUnrestrictedKey = "isRavenLocalUnrestricted"
+    private static let ravenBrowserEnabledKey = "isRavenBrowserEnabled"
     /// Where Claude Code keeps its default account, which is set up for the user when present.
     private static let defaultClaudeDirectory = "~/.claude"
 
@@ -203,6 +204,14 @@ final class Preferences {
     var isRavenLocalUnrestricted: Bool {
         didSet {
             defaults.set(isRavenLocalUnrestricted, forKey: Self.ravenLocalUnrestrictedKey)
+        }
+    }
+
+    /// Whether Raven may use the user's Chrome: Claude Code through Claude in Chrome, Codex through its
+    /// Chrome plugin.
+    var isRavenBrowserEnabled: Bool {
+        didSet {
+            defaults.set(isRavenBrowserEnabled, forKey: Self.ravenBrowserEnabledKey)
         }
     }
 
@@ -338,6 +347,7 @@ final class Preferences {
         logClock = defaults.string(forKey: Self.logClockKey).flatMap(LogClock.init(rawValue:)) ?? .thisMac
         ravenEngine = defaults.string(forKey: Self.ravenEngineKey) ?? RavenConversation.engineClaude
         isRavenLocalUnrestricted = defaults.bool(forKey: Self.ravenLocalUnrestrictedKey)
+        isRavenBrowserEnabled = defaults.object(forKey: Self.ravenBrowserEnabledKey) as? Bool ?? true
         screenSaverTextSize = (defaults.object(forKey: Self.screenSaverTextSizeKey) as? Double)
             .map { min(max($0, Self.screenSaverTextSizeRange.lowerBound), Self.screenSaverTextSizeRange.upperBound) }
             ?? Self.defaultScreenSaverTextSize

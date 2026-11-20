@@ -97,6 +97,11 @@ final class FleetModel {
         preferences.isRavenLocalUnrestricted
     }
 
+    /// Whether Raven may use the user's Chrome.
+    var isRavenBrowserEnabled: Bool {
+        preferences.isRavenBrowserEnabled
+    }
+
     var ravenEngine: String {
         get { preferences.ravenEngine }
         set { preferences.ravenEngine = newValue }

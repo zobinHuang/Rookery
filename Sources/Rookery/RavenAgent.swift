@@ -67,7 +67,21 @@ final class RavenAgent {
         "Grep",
         "TodoWrite",
         "Task",
-    ]
+    ] + RavenApprovalRequest.setReadOnlyChromeTools.sorted().map { TranscriptEntry.chromeToolPrefix + $0 }
+    /// Where Codex keeps its own files.
+    private static var codexHome: URL {
+        ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".codex")
+    }
+    /// Where Codex keeps the plugins it bundles, its Chrome plugin among them.
+    private static var codexBundledMarketplace: URL {
+        codexHome.appending(path: ".tmp/bundled-marketplaces/openai-bundled")
+    }
+    /// Where Codex keeps its Chrome plugin once the user installed it.
+    private static var codexInstalledChromePlugin: URL {
+        codexHome.appending(path: "plugins/cache/openai-bundled/chrome")
+    }
+    private static let codexChromePlugin = "chrome@openai-bundled"
     /// The `rookery-mail` tool Claude Code asks whether Raven may take an action on this Mac.
     private static let approvalToolName = "approve_local_action"
     /// How long, in milliseconds, Claude Code waits on a tool call: an approval waits on the user.
@@ -497,7 +511,7 @@ final class RavenAgent {
         guard isRunning(request.conversationId) else {
             return false
         }
-        if isLocalAllowed(in: request.conversationId) {
+        if isLocalAllowed(in: request.conversationId) || request.isReadOnly {
             return true
         }
         return await withCheckedContinuation { continuation in
@@ -814,7 +828,7 @@ final class RavenAgent {
         let agent = HeadlessAgent(launch: HeadlessAgent.Launch(
             arguments: isCodex
                 ? codexArguments(
-                    prompt: RavenLocalWork.folderPrompt(folder) + "\n\n" + prompt,
+                    prompt: localPrompt(folder) + "\n\n" + prompt,
                     threadId: isFirstTurn ? nil : conversations.conversation(sessionId)?.codexThreadId,
                     isLocal: isCodexLocal
                 )
@@ -949,9 +963,31 @@ final class RavenAgent {
             "--strict-mcp-config",
             "--permission-prompt-tool", "mcp__\(Self.mailServerName)__\(Self.approvalToolName)",
             "--add-dir", folder.path,
-            "--append-system-prompt", RavenLocalWork.folderPrompt(folder),
-            "--allowedTools",
-        ] + Self.listAllowedTools
+            "--append-system-prompt", localPrompt(folder),
+        ] + (fleetModel.isRavenBrowserEnabled ? ["--chrome"] : ["--no-chrome"]) + ["--allowedTools"] + Self.listAllowedTools
+    }
+
+    /// What Raven is told of its folder, and of Chrome when it may use it.
+    private func localPrompt(_ folder: URL) -> String {
+        RavenLocalWork.folderPrompt(folder) + (fleetModel.isRavenBrowserEnabled ? "\n\n" + RavenLocalWork.browserPrompt : "")
+    }
+
+    /// Codex's Chrome plugin, loaded from the plugins Codex bundles when the user may let Raven use Chrome
+    /// and installed the plugin: Codex reads none of the user's own configuration here.
+    private func codexBrowserOptions(isLocal: Bool) -> [String] {
+        let marketplace = Self.codexBundledMarketplace
+        guard
+            fleetModel.isRavenBrowserEnabled,
+            isLocal,
+            FileManager.default.fileExists(atPath: Self.codexInstalledChromePlugin.path)
+        else {
+            return []
+        }
+        return [
+            "-c", "marketplaces.openai-bundled.source_type=\"local\"",
+            "-c", "marketplaces.openai-bundled.source=\"\(marketplace.path)\"",
+            "-c", "plugins.\"\(Self.codexChromePlugin)\".enabled=true",
+        ]
     }
 
     /// Codex run on its own: none of the user's configuration, live web search, nothing asked of anyone,
@@ -968,7 +1004,7 @@ final class RavenAgent {
             "-c", "approval_policy=\"never\"",
             "-c", "shell_environment_policy.inherit=\"all\"",
             "-c", "web_search=\"live\"",
-        ]
+        ] + codexBrowserOptions(isLocal: isLocal)
         if let executable = Self.mailServerURL() {
             listOptions += ["-c", "mcp_servers.\(Self.mailServerName).command=\"\(executable.path)\""]
         }

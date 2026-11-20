@@ -39,4 +39,22 @@ struct RavenLocalWorkTests {
         #expect(Mentions.complete("see @Rep", with: listMatches[1]) == "see @\(folder.standardizedFileURL.path)/Reports/")
         #expect(Mentions.fileSuggestions(for: folder.path + "/.h", in: URL(fileURLWithPath: "/")).map(\.name) == [".hidden"])
     }
+
+    @Test func chromeActionsThatOnlyLookPassAndTheRestAreNamedForTheUser() {
+        let screenshot = RavenApprovalRequest(id: "a", conversationId: "c", toolName: "mcp__claude-in-chrome__computer", inputJSON: #"{"action":"screenshot","tabId":1}"#)
+        let click = RavenApprovalRequest(id: "b", conversationId: "c", toolName: "mcp__claude-in-chrome__computer", inputJSON: #"{"action":"left_click","coordinate":[412,96],"tabId":1}"#)
+        let typing = RavenApprovalRequest(id: "d", conversationId: "c", toolName: "mcp__claude-in-chrome__computer", inputJSON: #"{"action":"type","text":"FP8 attention","tabId":1}"#)
+        let open = RavenApprovalRequest(id: "e", conversationId: "c", toolName: "mcp__claude-in-chrome__navigate", inputJSON: #"{"url":"https://example.com/dash","tabId":1}"#)
+        let read = RavenApprovalRequest(id: "f", conversationId: "c", toolName: "mcp__claude-in-chrome__get_page_text", inputJSON: #"{"tabId":1}"#)
+        #expect(screenshot.isReadOnly)
+        #expect(read.isReadOnly)
+        #expect(!click.isReadOnly)
+        #expect(click.verb == "Click in Chrome")
+        #expect(click.summary == "left click at 412, 96")
+        #expect(typing.verb == "Type in Chrome")
+        #expect(typing.summary == "FP8 attention")
+        #expect(open.verb == "Open a page in Chrome")
+        #expect(open.summary == "https://example.com/dash")
+        #expect(!RavenApprovalRequest(id: "g", conversationId: "c", toolName: "Bash", inputJSON: "{}").isReadOnly)
+    }
 }

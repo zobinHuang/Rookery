@@ -97,6 +97,9 @@ final class RavenAgent {
     @ObservationIgnored private var setReopenedIds: Set<String> = []
     /// Messages from teammates read while their conversation was answering, framed, to answer next.
     @ObservationIgnored private var mapWaitingMessages: [String: [String]] = [:]
+    /// What the user sent each conversation while it was answering, oldest first, each to go once the
+    /// conversation is free.
+    private(set) var mapQueuedRequests: [String: [RavenQueuedRequest]] = [:]
     /// Why the last team change in a conversation failed, shown in its header.
     var mapTeamErrors: [String: String] = [:]
     /// What was said in each conversation opened since launch, as read from its history and as shown.
@@ -334,9 +337,33 @@ final class RavenAgent {
         origin: RavenOrigin = .board
     ) -> String? {
         loadIfNeeded()
-        guard let client = fleetModel.client(), !isRunning(conversationId) else {
+        guard let client = fleetModel.client() else {
             return nil
         }
+        if
+            let conversationId,
+            conversations.conversation(conversationId) != nil,
+            isRunning(conversationId) || mapQueuedRequests[conversationId] != nil
+        {
+            mapQueuedRequests[conversationId, default: []].append(RavenQueuedRequest(
+                id: UUID(),
+                request: RavenRequest(text: request, listMentions: listMentions, mapAddresses: mapAddresses)
+            ))
+            sendNextQueued(in: conversationId)
+            return conversationId
+        }
+        return begin(request, mentioning: listMentions, addresses: mapAddresses, in: conversationId, origin: origin, client: client)
+    }
+
+    /// Record a request in its conversation, or a new one, and run a turn on it.
+    private func begin(
+        _ request: String,
+        mentioning listMentions: [FleetRef],
+        addresses mapAddresses: [String: String],
+        in conversationId: String?,
+        origin: RavenOrigin,
+        client: RoostClient
+    ) -> String {
         let now = Date()
         let sessionId: String
         let isFirstTurn: Bool
@@ -356,6 +383,36 @@ final class RavenAgent {
         record(Self.requestLine(request, at: now), in: sessionId)
         startTurn(request, mentioning: listMentions, addresses: mapAddresses, in: sessionId, isFirstTurn: isFirstTurn, client: client)
         return sessionId
+    }
+
+    /// Send the oldest request waiting in a conversation, once it is answering nothing.
+    private func sendNextQueued(in conversationId: String) {
+        guard
+            !isRunning(conversationId),
+            var listQueued = mapQueuedRequests[conversationId],
+            !listQueued.isEmpty,
+            let client = fleetModel.client()
+        else {
+            return
+        }
+        let next = listQueued.removeFirst()
+        mapQueuedRequests[conversationId] = listQueued.isEmpty ? nil : listQueued
+        _ = begin(
+            next.request.text,
+            mentioning: next.request.listMentions,
+            addresses: next.request.mapAddresses,
+            in: conversationId,
+            origin: .board,
+            client: client
+        )
+    }
+
+    /// Take back a request waiting in a conversation before it goes.
+    func withdraw(_ queuedId: UUID, in conversationId: String) {
+        mapQueuedRequests[conversationId]?.removeAll { $0.id == queuedId }
+        if mapQueuedRequests[conversationId]?.isEmpty == true {
+            mapQueuedRequests[conversationId] = nil
+        }
     }
 
     /// Run a turn of a conversation on what was just recorded in it.
@@ -920,6 +977,7 @@ final class RavenAgent {
         if case .finished = mapStatuses[sessionId], conversations.conversation(sessionId)?.titleSource == nil {
             await writeTitle(of: sessionId, client: client)
         }
+        sendNextQueued(in: sessionId)
         answerWaitingMessages(in: sessionId, client: client)
     }
 
@@ -1318,3 +1376,9 @@ struct RavenHistory: Sendable {
     let listProposals: [RavenProposal]
 }
 
+
+/// A request the user sent a conversation while it was answering, waiting its turn.
+struct RavenQueuedRequest: Identifiable {
+    let id: UUID
+    let request: RavenRequest
+}

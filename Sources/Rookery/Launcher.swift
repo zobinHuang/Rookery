@@ -419,10 +419,6 @@ final class LauncherController {
             model.problem = "Raven needs Rookery to follow a roost; connect one in the settings."
             return
         }
-        guard !raven.isRunning(model.targetConversationId) else {
-            model.problem = "Raven is still answering in this conversation."
-            return
-        }
         guard let conversationId = raven.ask(
             text,
             mentioning: request.listMentions,

@@ -65,6 +65,8 @@ struct RavenComposer: View {
     let placeholder: String
     let isEnabled: Bool
     let isBusy: Bool
+    /// Whether a request sent while busy waits its turn rather than being refused.
+    var isQueueing = false
     var fontSize: CGFloat = 12
     /// Stops the work under way, while busy; nil where nothing can be stopped.
     var onStop: (() -> Void)?
@@ -146,6 +148,7 @@ struct RavenComposer: View {
                 placeholder: placeholder,
                 isEnabled: isEnabled,
                 isBusy: isBusy,
+                isQueueing: isQueueing,
                 fontSize: fontSize,
                 onStop: onStop,
                 onSend: send,
@@ -339,7 +342,7 @@ struct RavenComposer: View {
     /// and forget them for the next.
     private func send() {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !request.isEmpty, !isBusy else {
+        guard !request.isEmpty, !isBusy || isQueueing else {
             return
         }
         let listNamed = listMentions.filter { ref in

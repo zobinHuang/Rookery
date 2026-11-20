@@ -164,6 +164,7 @@ struct LauncherView: View {
                 placeholder: conversationId == nil ? "Ask Raven…" : "Ask a follow-up…",
                 isEnabled: controller.fleetModel.client() != nil,
                 isBusy: raven.isRunning(conversationId),
+                isQueueing: true,
                 onStop: {
                     if let conversationId {
                         raven.cancel(conversationId)

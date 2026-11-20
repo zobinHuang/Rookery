@@ -219,6 +219,7 @@ struct RavenPanel: View {
                 placeholder: isReady ? "Ask Raven" : "Connect to roost first",
                 isEnabled: isReady,
                 isBusy: raven.isRunning(openId),
+                isQueueing: true,
                 onStop: {
                     if let openId {
                         raven.cancel(openId)
@@ -257,9 +258,6 @@ struct RavenPanel: View {
     }
 
     private func send(_ request: RavenRequest) {
-        guard !raven.isRunning(openId) else {
-            return
-        }
         withAnimation(.easeOut(duration: 0.2)) {
             _ = raven.ask(request.text, mentioning: request.listMentions, addresses: request.mapAddresses, in: openId)
         }

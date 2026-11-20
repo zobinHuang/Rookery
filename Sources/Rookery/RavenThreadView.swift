@@ -199,6 +199,7 @@ private struct RavenThreadContent: View {
             status(of: conversationId)
             approvals(in: conversationId)
             proposals(in: conversationId)
+            queued(in: conversationId)
         }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
@@ -284,6 +285,34 @@ private struct RavenThreadContent: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listRequests.map(\.id))
+        }
+    }
+
+    // MARK: - Queued requests
+
+    /// What the user sent while Raven was answering, each waiting its turn in order, to take back before
+    /// it goes.
+    @ViewBuilder
+    private func queued(in conversationId: String) -> some View {
+        let listQueued = raven.mapQueuedRequests[conversationId] ?? []
+        if !listQueued.isEmpty {
+            VStack(alignment: .trailing, spacing: 6) {
+                ForEach(listQueued) { queued in
+                    RavenQueuedBubble(text: queued.request.text) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            raven.withdraw(queued.id, in: conversationId)
+                        }
+                    }
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .opacity),
+                        removal: .scale(scale: 0.9, anchor: .trailing).combined(with: .opacity)
+                    ))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: listQueued.map(\.id))
         }
     }
 
@@ -723,5 +752,74 @@ private struct RavenThreadContent: View {
         default:
             EmptyView()
         }
+    }
+}
+
+/// A request waiting for Raven to finish its answer: the user's bubble, faded and outlined, a clock
+/// before it, and a button to take it back on hover.
+struct RavenQueuedBubble: View {
+    private static let lineLimit = 3
+    private static let leadingRoom: CGFloat = 48
+    /// The widest a row grows, its bubble with the mark before it and the room left of them.
+    private static let maxRowWidth: CGFloat = 640
+    private static let markSide: CGFloat = 20
+
+    let text: String
+    let onWithdraw: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Spacer(minLength: Self.leadingRoom)
+            ZStack {
+                if isHovered {
+                    Button(action: onWithdraw) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(StageColors.secondaryText)
+                            .frame(width: Self.markSide, height: Self.markSide)
+                            .background(StageColors.segmentGroove, in: Circle())
+                            .overlay {
+                                Circle()
+                                    .strokeBorder(StageColors.segmentGrooveBorder)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help("Take back")
+                    .transition(.scale.combined(with: .opacity))
+                } else {
+                    Image(systemName: "clock")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(StageColors.tertiaryText)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: Self.markSide, height: Self.markSide)
+            Text(text)
+                .font(.system(size: 13))
+                .lineSpacing(2)
+                .lineLimit(Self.lineLimit)
+                .truncationMode(.tail)
+                .foregroundStyle(StageColors.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .background {
+                    MessageBubbleShape(isTrailing: true, hasTail: false)
+                        .fill(StageColors.segmentGroove)
+                }
+                .overlay {
+                    MessageBubbleShape(isTrailing: true, hasTail: false)
+                        .stroke(StageColors.tertiaryText.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                }
+        }
+        .frame(maxWidth: Self.maxRowWidth, alignment: .trailing)
+        .onHover { isHovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovered = isHovering
+            }
+        }
+        .help("Goes to Raven once it finishes the answer under way, in order")
     }
 }

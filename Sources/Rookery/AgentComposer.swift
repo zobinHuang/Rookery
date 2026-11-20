@@ -20,6 +20,8 @@ struct AgentComposer: View {
     var isEnabled = true
     /// Sending, or the agent working on what was sent.
     var isBusy = false
+    /// Whether what is sent while busy waits its turn rather than being refused.
+    var isQueueing = false
     var fontSize: CGFloat = 13
     /// Stops what is running; when given, the button stops while busy rather than waiting.
     var onStop: (() -> Void)?
@@ -123,7 +125,7 @@ struct AgentComposer: View {
         guard key == .send else {
             return false
         }
-        if !isEmpty, !isBusy {
+        if !isEmpty, !isBusy || isQueueing {
             onSend()
             isResting = true
         }
@@ -155,7 +157,21 @@ struct AgentComposer: View {
 
     @ViewBuilder
     private var button: some View {
-        if isBusy, let onStop {
+        if isBusy, isQueueing, !isEmpty, onStop != nil {
+            HStack(spacing: 6) {
+                stopButton
+                sendButton
+            }
+        } else if isBusy, onStop != nil {
+            stopButton
+        } else {
+            sendButton
+        }
+    }
+
+    @ViewBuilder
+    private var stopButton: some View {
+        if let onStop {
             Button(action: onStop) {
                 RookeryIconView(.stop)
                     .foregroundStyle(.white)
@@ -164,13 +180,18 @@ struct AgentComposer: View {
             }
             .buttonStyle(.plain)
             .help("Stop")
-        } else {
-            Button {
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
+
+    private var sendButton: some View {
+        let isWaiting = isBusy && !isQueueing
+        return Button {
                 onSend()
                 isResting = true
             } label: {
                 Group {
-                    if isBusy {
+                    if isWaiting {
                         ProgressView()
                             .controlSize(.small)
                     } else {
@@ -182,8 +203,8 @@ struct AgentComposer: View {
                 .background(isEmpty || !isEnabled ? Color.gray.opacity(0.5) : Color.accentColor, in: Circle())
             }
             .buttonStyle(.plain)
-            .disabled(isEmpty || !isEnabled || isBusy)
-            .help("Send (Return)")
-        }
+            .disabled(isEmpty || !isEnabled || isWaiting)
+            .help(isBusy ? "Send once the answer under way is done (Return)" : "Send (Return)")
+            .transition(.scale.combined(with: .opacity))
     }
 }

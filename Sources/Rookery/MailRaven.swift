@@ -74,6 +74,7 @@ struct MailRavenPanel: View {
                 placeholder: fleetModel.client() == nil ? "Connect to roost first" : "Ask Raven about this mail",
                 isEnabled: fleetModel.client() != nil,
                 isBusy: raven.isRunning(conversationId),
+                isQueueing: true,
                 onStop: {
                     if let conversationId {
                         raven.cancel(conversationId)

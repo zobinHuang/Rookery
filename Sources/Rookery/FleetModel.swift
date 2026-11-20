@@ -367,14 +367,28 @@ final class FleetModel {
 
     /// How many held messages went through a team: sent to it, or between two of its members.
     func heldCount(in teamId: String) -> Int {
+        heldDeliveryIds(in: teamId).count
+    }
+
+    /// The deliveries roost holds for the user in a team, sent to the whole team or between its members,
+    /// oldest first, as the recent events tell.
+    func heldDeliveryIds(in teamId: String) -> [String] {
         guard let team = graph.resource(FleetRef(kind: AgentFleet.teamKind, id: teamId)) else {
-            return 0
+            return []
         }
         let setMembers = Set(AgentTeams.memberIds(of: team))
-        return listHeldEvents.filter { event in
-            event.mapDetail["team"]?.stringValue == teamId
-                || (setMembers.contains(event.actor.id) && setMembers.contains(event.object?.id ?? ""))
-        }.count
+        var setSeen: Set<String> = []
+        return listHeldEvents.compactMap { event -> String? in
+            guard
+                event.mapDetail["team"]?.stringValue == teamId
+                    || (setMembers.contains(event.actor.id) && setMembers.contains(event.object?.id ?? "")),
+                let deliveryId = event.mapDetail["delivery"]?.stringValue,
+                setSeen.insert(deliveryId).inserted
+            else {
+                return nil
+            }
+            return deliveryId
+        }
     }
 
     /// The teams roost holds, by name.

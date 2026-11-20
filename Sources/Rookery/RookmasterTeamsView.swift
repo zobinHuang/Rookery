@@ -153,8 +153,6 @@ struct RookmasterTeamsView: View {
 
 /// One team: its name and goal, its members, its messages and its limits.
 private struct TeamDetail: View {
-    private static let refreshDelay: Duration = .milliseconds(400)
-    private static let messageLimit = 500
     private static let defaultThreadHops = 20
     private static let defaultSendsPerWindow = 30
     private static let defaultWindowMinutes = 10
@@ -210,8 +208,7 @@ private struct TeamDetail: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear(perform: load)
-        .task(id: fleetModel.graph.lastSeq) {
-            try? await Task.sleep(for: Self.refreshDelay)
+        .task(id: fleetModel.heldDeliveryIds(in: team.id)) {
             await refreshMessages()
         }
         .confirmationDialog("Remove the team \(team.displayName)?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
@@ -569,35 +566,22 @@ private struct TeamDetail: View {
         )
     }
 
+    /// Read the messages roost holds for the user in the team, one by one; none is read while none is held.
     private func refreshMessages() async {
-        guard let client = fleetModel.client() else {
+        let listHeldIds = fleetModel.heldDeliveryIds(in: team.id)
+        guard !listHeldIds.isEmpty, let client = fleetModel.client() else {
+            listMessages = []
             return
         }
         do {
-            let setMembers = Set(listMemberIds)
-            let listRecent = try await client.recentDeliveries(limit: Self.messageLimit)
-            var setBatches: Set<String> = []
-            let listOldestFirst = listRecent.sorted { first, second in
-                if first.createdAt != second.createdAt {
-                    return first.createdAt < second.createdAt
+            var listHeld: [FleetDelivery] = []
+            for deliveryId in listHeldIds {
+                let delivery = try await client.delivery(deliveryId)
+                if delivery.isHeld {
+                    listHeld.append(delivery)
                 }
-                return (first.mapOptions["hop"]?.numberValue ?? 0) < (second.mapOptions["hop"]?.numberValue ?? 0)
             }
-            listMessages = listOldestFirst.filter { delivery in
-                guard delivery.kind == "prompt", delivery.isHeld else {
-                    return false
-                }
-                if delivery.mapOptions["team"]?.stringValue == team.id {
-                    guard let batch = delivery.mapOptions["batch"]?.stringValue else {
-                        return true
-                    }
-                    return setBatches.insert(batch).inserted
-                }
-                return delivery.mapOptions["team"] == nil
-                    && delivery.sender.kind == AgentFleet.agentKind
-                    && setMembers.contains(delivery.sender.id)
-                    && setMembers.contains(delivery.agentId)
-            }
+            listMessages = listHeld
         } catch {
             self.error = FleetModel.describe(error)
         }

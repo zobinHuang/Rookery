@@ -10,9 +10,9 @@ struct LauncherView: View {
     private static let appearAnimation = Animation.spring(response: 0.26, dampingFraction: 0.86)
     private static let width: CGFloat = 640
     /// The launcher's width while it holds a conversation with Raven, as a chat window.
-    private static let conversationWidth: CGFloat = 760
+    private static let conversationWidth: CGFloat = 900
     private static let rowsMaxHeight: CGFloat = 400
-    private static let conversationHeight: CGFloat = 540
+    private static let conversationHeight: CGFloat = 680
     private static let iconSize: CGFloat = 28
     private static let cornerRadius: CGFloat = 20
     private static let fieldHeight: CGFloat = 58
@@ -36,8 +36,8 @@ struct LauncherView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let conversationId = model.shownConversationId {
-                conversation(conversationId)
+            if model.isInConversation {
+                conversation(model.shownConversationId)
             } else {
                 field
                 problemLabel
@@ -48,7 +48,7 @@ struct LauncherView: View {
                 }
             }
         }
-        .frame(width: model.shownConversationId == nil ? Self.width : Self.conversationWidth)
+        .frame(width: model.isInConversation ? Self.conversationWidth : Self.width)
         .background(StageColors.window, in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .overlay {
@@ -57,7 +57,7 @@ struct LauncherView: View {
         }
         .shadow(color: .black.opacity(0.28), radius: 28, y: 14)
         .overlay(alignment: .topLeading) {
-            if model.shownConversationId == nil, !model.listMentionTargets.isEmpty {
+            if !model.isInConversation, !model.listMentionTargets.isEmpty {
                 mentionList
                     .padding(.leading, Self.mentionInset)
                     .padding(.top, Self.fieldHeight - 4)
@@ -69,6 +69,7 @@ struct LauncherView: View {
         .opacity(model.isVisible ? 1 : 0)
         .animation(Self.appearAnimation, value: model.isVisible)
         .animation(Self.appearAnimation, value: model.shownConversationId)
+        .animation(Self.appearAnimation, value: model.isComposingNew)
         .animation(.easeOut(duration: 0.15), value: model.listItems.map(\.id))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .padding(.top, 20)
@@ -84,8 +85,11 @@ struct LauncherView: View {
         .onChange(of: model.shownConversationId) {
             isFieldFocused = true
         }
+        .onChange(of: model.isComposingNew) {
+            isFieldFocused = true
+        }
         .onChange(of: model.query) {
-            if model.shownConversationId == nil {
+            if !model.isInConversation {
                 controller.updateMentions()
                 controller.search()
             }
@@ -95,8 +99,8 @@ struct LauncherView: View {
     // MARK: - A conversation with Raven
 
     /// A conversation as a chat window: Raven and the conversation's actions on top, what was said in the
-    /// middle, and the box to write in at the bottom.
-    private func conversation(_ conversationId: String) -> some View {
+    /// middle, and the box to write in at the bottom; a new one shows Raven and the saying until asked.
+    private func conversation(_ conversationId: String?) -> some View {
         let raven = controller.fleetModel.raven
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -104,11 +108,13 @@ struct LauncherView: View {
                 Text("Raven")
                     .font(.system(size: 14, weight: .bold))
                 Spacer(minLength: 0)
-                Button("New") {
-                    controller.startNewConversation()
+                if conversationId != nil {
+                    Button("New") {
+                        controller.startNewConversation()
+                    }
+                    .controlSize(.small)
+                    .help("Begin a new conversation with Raven")
                 }
-                .controlSize(.small)
-                .help("Begin a new conversation with Raven")
                 Button {
                     controller.openInRookmaster()
                 } label: {
@@ -120,20 +126,28 @@ struct LauncherView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             separator
-            RavenThreadView(fleetModel: controller.fleetModel, conversationId: conversationId, sendToken: model.sendToken)
-                .id(conversationId)
-                .frame(height: Self.conversationHeight)
-                .transition(.opacity)
+            Group {
+                if let conversationId {
+                    RavenThreadView(fleetModel: controller.fleetModel, conversationId: conversationId, sendToken: model.sendToken)
+                        .id(conversationId)
+                } else {
+                    newConversation
+                }
+            }
+            .frame(height: Self.conversationHeight)
+            .transition(.opacity)
             problemLabel
                 .padding(.top, model.problem == nil ? 0 : 8)
             RavenComposer(
                 fleetModel: controller.fleetModel,
                 text: Bindable(model).query,
-                placeholder: "Ask a follow-up…",
+                placeholder: conversationId == nil ? "Ask Raven…" : "Ask a follow-up…",
                 isEnabled: controller.fleetModel.client() != nil,
                 isBusy: raven.isRunning(conversationId),
                 onStop: {
-                    raven.cancel(conversationId)
+                    if let conversationId {
+                        raven.cancel(conversationId)
+                    }
                 },
                 onSend: { request in
                     controller.ask(request)
@@ -145,6 +159,30 @@ struct LauncherView: View {
             .padding(12)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+    }
+
+    /// A conversation not begun: Raven, the saying, and what Raven can do.
+    private var newConversation: some View {
+        VStack(spacing: 18) {
+            Spacer(minLength: 0)
+            RavenView(isWorking: false, crowSize: .large)
+            VStack(spacing: 6) {
+                Text("\u{201C}\(model.maxim.text)\u{201D}")
+                    .font(.system(size: 19, design: .serif).italic())
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(StageColors.primaryText)
+                Text("\u{2014} \(model.maxim.author)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(StageColors.secondaryText)
+            }
+            .frame(maxWidth: 520)
+            Text("Ask about your agents, your mail and calendar, the web, or files on this Mac.")
+                .font(.system(size: 12))
+                .foregroundStyle(StageColors.tertiaryText)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
     }
 
     @ViewBuilder
@@ -216,7 +254,7 @@ struct LauncherView: View {
         case .escape:
             controller.hide()
             return true
-        case .deleteBackward where model.query.isEmpty && model.targetConversationId != nil:
+        case .deleteBackward where model.query.isEmpty && (model.targetConversationId != nil || model.isComposingNew):
             controller.dropTarget()
             return true
         default:
@@ -253,9 +291,9 @@ struct LauncherView: View {
             }
         }
         switch keyPress.key {
-        case .downArrow where model.shownConversationId == nil:
+        case .downArrow where !model.isInConversation:
             controller.moveSelection(by: 1)
-        case .upArrow where model.shownConversationId == nil:
+        case .upArrow where !model.isInConversation:
             controller.moveSelection(by: -1)
         case .return:
             controller.choose(isAskingRaven: keyPress.modifiers.contains(.command))

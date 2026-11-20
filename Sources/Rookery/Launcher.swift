@@ -51,6 +51,13 @@ final class LauncherModel {
     var chosenTheme: Theme?
     /// The saying shown beside Raven before anything is typed, picked each time the launcher opens.
     var maxim = RavenMaxims.listMaxims[0]
+    /// Whether the launcher shows a new conversation with Raven, nothing asked in it yet.
+    var isComposingNew = false
+
+    /// Whether the launcher shows a conversation with Raven, begun or about to be.
+    var isInConversation: Bool {
+        shownConversationId != nil || isComposingNew
+    }
 }
 
 /// The launcher, opened with ⌘Space: a box to find an application or one of Rookery's pages and open it,
@@ -71,7 +78,7 @@ final class LauncherController {
     private static let useBoost = 12
     private static let useBoostLimit = 120
     private static let usesKey = "launcherUses"
-    static let panelSize = CGSize(width: 820, height: 800)
+    static let panelSize = CGSize(width: 1000, height: 960)
     /// How far below the top of the screen the launcher's box sits, as a share of the screen's height.
     private static let topShare: CGFloat = 0.2
     /// How long the blur behind the launcher takes to come and go.
@@ -157,6 +164,7 @@ final class LauncherController {
         model.problem = nil
         model.targetConversationId = nil
         model.shownConversationId = nil
+        model.isComposingNew = false
         model.maxim = RavenMaxims.random()
         search()
         let mouse = NSEvent.mouseLocation
@@ -344,11 +352,9 @@ final class LauncherController {
         case .askRaven(let text):
             ask(text)
         case .maxim:
-            fleetModel.raven.openConversationId = nil
-            fleetModel.pageMemory.panelTab = .raven
-            fleetModel.pageMemory.isPanelExpanded = true
-            workspaceController.onOpenPage(.rookmaster)
-            hide()
+            model.targetConversationId = nil
+            model.isComposingNew = true
+            model.listItems = []
         case .conversation(let conversation):
             let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
             model.targetConversationId = conversation.id
@@ -365,23 +371,22 @@ final class LauncherController {
     func dropTarget() {
         model.targetConversationId = nil
         model.shownConversationId = nil
+        model.isComposingNew = false
         search()
     }
 
-    /// Begin a new conversation from the one shown.
+    /// Begin a new conversation from the one shown, in the launcher.
     func startNewConversation() {
         model.targetConversationId = nil
         model.shownConversationId = nil
         model.query = ""
-        search()
+        model.isComposingNew = true
+        model.listItems = []
     }
 
-    /// Show the conversation shown in the Rookmaster console's Raven panel.
+    /// Show the conversation shown, or a new one, in the Rookmaster console's Raven panel.
     func openInRookmaster() {
-        guard let conversationId = model.shownConversationId ?? model.targetConversationId else {
-            return
-        }
-        fleetModel.raven.openConversationId = conversationId
+        fleetModel.raven.openConversationId = model.shownConversationId ?? model.targetConversationId
         fleetModel.pageMemory.panelTab = .raven
         fleetModel.pageMemory.isPanelExpanded = true
         workspaceController.onOpenPage(.rookmaster)
@@ -423,6 +428,7 @@ final class LauncherController {
         }
         model.problem = nil
         model.targetConversationId = conversationId
+        model.isComposingNew = false
         model.shownConversationId = conversationId
         model.listItems = []
         model.query = ""

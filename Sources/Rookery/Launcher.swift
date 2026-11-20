@@ -219,8 +219,8 @@ final class LauncherController {
     // MARK: - Finding
 
     /// Find the rows for what is typed: Raven with a saying and the latest conversations when nothing is;
-    /// else the applications, the pages, asking Raven, and the conversations it matches, each kind best
-    /// first.
+    /// else Rookery's own pages, ahead of the applications they stand beside, the applications, asking
+    /// Raven, and the conversations it matches, each kind best first.
     func search() {
         let query = model.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let listConversations = fleetModel.raven.conversations.listConversations
@@ -242,14 +242,14 @@ final class LauncherController {
                 }
                 return (application, score + min((mapUses[application.id] ?? 0) * Self.useBoost, Self.useBoostLimit))
             }
-            listItems += listApplicationMatches
-                .sorted { $0.1 > $1.1 }
-                .prefix(Self.applicationLimit)
-                .map { .application($0.0, groupName: groupName(of: $0.0)) }
             let listPageMatches = workspaceController.pageEntries().compactMap { entry -> (SwitcherEntry, Int)? in
                 LauncherMatch.score(of: query, in: entry.title).map { (entry, $0) }
             }
             listItems += listPageMatches.sorted { $0.1 > $1.1 }.prefix(Self.pageLimit).map { .page($0.0) }
+            listItems += listApplicationMatches
+                .sorted { $0.1 > $1.1 }
+                .prefix(Self.applicationLimit)
+                .map { .application($0.0, groupName: groupName(of: $0.0)) }
         }
         listItems.append(.askRaven(query))
         if model.targetConversationId == nil {

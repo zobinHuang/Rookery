@@ -45,7 +45,13 @@ struct AgentDetailView: View {
     @State private var isSending = false
     @State private var sendError: String?
     @State private var roleDraft: String?
-    private static let identityLabelWidth: CGFloat = 38
+    /// The memory shown in its editor over the page, opened from its tag.
+    @State private var openMemoryRef: FleetRef?
+    private static let identityLabelWidth: CGFloat = 50
+    private static let memoryIconSide: CGFloat = 12
+    private static let memoryIconScale: CGFloat = 0.75
+    private static let memoryEditorWidth: CGFloat = 420
+    private static let memoryEditorHeight: CGFloat = 440
     @FocusState private var isComposerFocused: Bool
     @FocusState private var isRoleFocused: Bool
 
@@ -209,6 +215,78 @@ struct AgentDetailView: View {
                     }
                 }
             }
+            let listMemories = memories(of: agent)
+            if !listMemories.isEmpty {
+                identityLine(label: "Memory") {
+                    FlowRow(spacing: 5) {
+                        ForEach(listMemories, id: \.id) { resource in
+                            memoryTag(resource)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The memories the agent or one of its subagents wrote or changed, the latest first.
+    private func memories(of agent: FleetAgent) -> [FleetResource] {
+        let setAgentIds = Set([agent.id] + fleetModel.fleet.listSubagents(of: agent.id).map(\.id))
+        let graph = fleetModel.graph
+        let setMemoryRefs = Set(graph.mapRelations.values.compactMap { relation -> FleetRef? in
+            guard
+                relation.source.kind == AgentFleet.agentKind,
+                setAgentIds.contains(relation.source.id),
+                relation.target.kind == AgentFleet.memoryKind
+            else {
+                return nil
+            }
+            return relation.target
+        })
+        return setMemoryRefs.compactMap(graph.resource).sorted { $0.lastUsedAt > $1.lastUsedAt }
+    }
+
+    /// A memory as a tag that opens it in its editor, to read, change or remove.
+    private func memoryTag(_ resource: FleetResource) -> some View {
+        let ref = FleetRef(kind: resource.kind, id: resource.id)
+        return Button {
+            openMemoryRef = ref
+        } label: {
+            HStack(spacing: 4) {
+                RookeryIconView(.memory)
+                    .scaleEffect(Self.memoryIconScale)
+                    .frame(width: Self.memoryIconSide, height: Self.memoryIconSide)
+                Text(resource.displayName)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(StageColors.primaryText)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Color.pink.opacity(0.12), in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.pink.opacity(0.35))
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(resource.mapAttributes["text"]?.stringValue ?? resource.displayName)
+        .popover(
+            isPresented: Binding(
+                get: { openMemoryRef == ref },
+                set: { isPresented in
+                    if !isPresented, openMemoryRef == ref {
+                        openMemoryRef = nil
+                    }
+                }
+            ),
+            arrowEdge: .bottom
+        ) {
+            MemoryEditor(fleetModel: fleetModel, resource: resource, onOpen: { _ in }) {
+                openMemoryRef = nil
+            }
+            .frame(width: Self.memoryEditorWidth, height: Self.memoryEditorHeight)
+            .background(StageColors.window)
         }
     }
 

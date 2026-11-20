@@ -21,6 +21,9 @@ struct RookmasterView: View {
     private static let tabAnimation = Animation.spring(response: 0.3, dampingFraction: 0.88)
     /// The kinds the console leaves to the sidebar.
     static let setHiddenKinds: Set<String> = [AgentFleet.rookKind]
+    /// The kinds the console gives no tab or column of their own: memories show on the page of each agent
+    /// that wrote them.
+    static let setConsoleHiddenKinds: Set<String> = setHiddenKinds.union([AgentFleet.memoryKind])
 
     let fleetModel: FleetModel
     let logClock: LogClock
@@ -43,7 +46,7 @@ struct RookmasterView: View {
     }
 
     private var listKinds: [FleetKind] {
-        fleetModel.graph.listKinds.filter { !Self.setHiddenKinds.contains($0.name) }
+        fleetModel.graph.listKinds.filter { !Self.setConsoleHiddenKinds.contains($0.name) }
     }
 
     var body: some View {

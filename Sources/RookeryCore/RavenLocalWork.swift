@@ -127,6 +127,45 @@ public struct RavenApprovalRequest: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
+    /// The commands that reach code agents around roost: the processes, terminals and tmux they run in,
+    /// and rook's own tools that drive those.
+    public static let setAgentReachingCommands: Set<String> = [
+        "tmux", "screen", "ps", "pgrep", "pkill", "kill", "killall", "lsof",
+        "rook", "rook-agent", "rook-link", "rook-session", "rook-hooks", "rook-playbook",
+    ]
+    /// The words that run the command after them, skipped to find the command a segment runs.
+    private static let setCommandPrefixes: Set<String> = ["sudo", "env", "nohup", "exec", "time", "command", "xargs", "nice"]
+    /// What separates the commands of a shell line.
+    private static let commandSeparators = CharacterSet(charactersIn: ";|&\n()`")
+
+    /// Whether a shell command runs one of `setAgentReachingCommands` in any of its segments, by the name
+    /// each segment runs, so words in its arguments or its quotes do not count.
+    public var reachesAgentsAroundRoost: Bool {
+        guard toolName == "Bash", let command = input["command"]?.stringValue else {
+            return false
+        }
+        let listSegments = command.replacingOccurrences(of: "$(", with: "(").components(separatedBy: Self.commandSeparators)
+        return listSegments.contains { segment in
+            let listWords = segment.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard let name = listWords.first(where: { word in
+                !word.contains("=") && !word.hasPrefix("-") && !Self.setCommandPrefixes.contains(word)
+            }) else {
+                return false
+            }
+            let bareName = name.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            return Self.setAgentReachingCommands.contains(URL(fileURLWithPath: bareName).lastPathComponent)
+        }
+    }
+
+    /// The answer turning down a command that reaches agents around roost, with the way through it.
+    public var agentReachDecisionText: String {
+        let decision: JSONValue = .object([
+            "behavior": .string("deny"),
+            "message": .string("Rookery does not let Raven reach code agents through processes, terminals or tmux, on this Mac or any other. Go through roost: rook-client agent status and rook-client agent tail for how one stands, rook-client message to a teammate, and a proposal for anything else. An agent that has not shown up on roost yet has not started; say so, and do not send the user to its terminal."),
+        ])
+        return String(decoding: (try? JSONEncoder().encode(decision)) ?? Data(), as: UTF8.self)
+    }
+
     /// The answer Claude Code reads from its permission prompt tool: allowed with the input unchanged, or
     /// turned down with why.
     ///
@@ -150,7 +189,9 @@ public enum RavenLocalWork {
     /// What Raven is told of its folder at the start of every turn.
     public static func folderPrompt(_ folder: URL) -> String {
         """
-        You can work on the user's Mac. This conversation's folder is \(folder.path): create files there, \
+        You can work on the user's Mac, but not on the code agents that run on it: an agent on this Mac is \
+        reached only through roost, as one on any other rook, never through its process, terminal, tmux or \
+        folder. This conversation's folder is \(folder.path): create files there, \
         and work there, unless the user names another place. When you are done, show the user the files \
         they should look at with the present_files tool: only what you made for them, not every file you \
         touched along the way. Running a command or writing a file waits on the user's approval in Rookery unless they \

@@ -57,4 +57,33 @@ struct RavenLocalWorkTests {
         #expect(open.summary == "https://example.com/dash")
         #expect(!RavenApprovalRequest(id: "g", conversationId: "c", toolName: "Bash", inputJSON: "{}").isReadOnly)
     }
+
+    @Test func aCommandThatReachesAgentsAroundRoostIsToldApart() throws {
+        func bash(_ command: String) -> RavenApprovalRequest {
+            let inputJSON = String(decoding: try! JSONEncoder().encode(JSONValue.object(["command": .string(command)])), as: UTF8.self)
+            return RavenApprovalRequest(id: "b", conversationId: "c", toolName: "Bash", inputJSON: inputJSON)
+        }
+        for command in [
+            "ps -t s003 -o pid,command",
+            "ls /tmp && tmux send-keys -t main:2 Enter",
+            "sudo /opt/homebrew/bin/tmux capture-pane -p",
+            "PATH=/usr/bin pgrep -fl claude | head",
+            "echo $(lsof -p 42)",
+            "~/.local/bin/rook-agent set %1 idle",
+        ] {
+            #expect(bash(command).reachesAgentsAroundRoost, "\(command)")
+        }
+        for command in [
+            "git commit -m 'fix ps output in tmux docs'",
+            "npm run build",
+            "grep -rn kill src",
+            "rook-client agent status",
+        ] {
+            #expect(!bash(command).reachesAgentsAroundRoost, "\(command)")
+        }
+        let denied = try JSONDecoder().decode(JSONValue.self, from: Data(bash("ps aux").agentReachDecisionText.utf8))
+        #expect(denied["behavior"]?.stringValue == "deny")
+        #expect(denied["message"]?.stringValue?.contains("rook-client agent status") == true)
+        #expect(!RavenApprovalRequest(id: "w", conversationId: "c", toolName: "Write", inputJSON: #"{"file_path":"/tmp/ps"}"#).reachesAgentsAroundRoost)
+    }
 }

@@ -170,6 +170,11 @@ enum RookeryMail {
             toolName: arguments["tool_name"]?.stringValue ?? "",
             inputJSON: String(decoding: (try? JSONEncoder().encode(input)) ?? Data(), as: UTF8.self)
         )
+        if request.reachesAgentsAroundRoost {
+            return .object([
+                "content": .array([.object(["type": .string("text"), "text": .string(request.agentReachDecisionText)])]),
+            ])
+        }
         var isAllowed = false
         do {
             let connection = try await ControlConnection.connect(to: ControlSocket.url)

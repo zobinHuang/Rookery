@@ -99,6 +99,8 @@ struct RookmasterBoard: View {
     private static let reorderAnimation = Animation.spring(response: 0.45, dampingFraction: 0.85)
     private static let boardSpace = "board"
     private static let controlHeight: CGFloat = 26
+    private static let chipRavenSide: CGFloat = 20
+    private static let chipRavenScale: CGFloat = 0.62
     /// The key the open subagent column's cards go under among the columns.
     private static let subagentColumnKey = "rookmaster.subagents"
 
@@ -163,18 +165,21 @@ struct RookmasterBoard: View {
                         }
                     }
                     .frame(minWidth: viewport.size.width, minHeight: viewport.size.height, alignment: .topLeading)
+                    .background {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    memory.boardSelectedRef = nil
+                                }
+                            }
+                    }
                     .animation(Self.reorderAnimation, value: mapColumns.mapValues { $0.map(\.id) })
                     .animation(Self.reorderAnimation, value: memory.boardSubagentsOf)
                     .animation(Self.reorderAnimation, value: memory.setBoardFoldedTeams)
+                    .animation(Self.reorderAnimation, value: ravenScopeId)
                 }
                 .modifier(RememberedScroll(key: "rookmaster.board", memory: memory))
-                }
-                .background {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            memory.boardSelectedRef = nil
-                        }
                 }
             }
         }
@@ -186,6 +191,10 @@ struct RookmasterBoard: View {
         HStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
+                    if let scopeId = ravenScopeId {
+                        ravenScopeChip(scopeId)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    }
                     searchField
                     well {
                         ForEach(BoardWindow.allCases) { choice in
@@ -213,6 +222,75 @@ struct RookmasterBoard: View {
         .animation(Self.segmentAnimation, value: memory.isBoardLiveOnly)
         .animation(Self.segmentAnimation, value: memory.isBoardLocked)
         .animation(Self.segmentAnimation, value: memory.boardWindow)
+        .animation(Self.segmentAnimation, value: ravenScopeId)
+    }
+
+    /// The Raven conversation chosen below the board while it is in a team: the board then shows only
+    /// its teams and what their agents touch.
+    private var ravenScopeId: String? {
+        guard let conversationId = fleetModel.raven.openConversationId, !fleetModel.raven.teams(of: conversationId).isEmpty else {
+            return nil
+        }
+        return conversationId
+    }
+
+    /// What the board is narrowed to: the chosen conversation's teams, their agents, and every card
+    /// those agents, their subagents and the playbooks they follow touch; nil while no conversation in a
+    /// team is chosen.
+    private func ravenScope(of conversationId: String) -> Set<FleetRef> {
+        let listTeams = fleetModel.raven.teams(of: conversationId)
+        var setScope = Set(listTeams.map { FleetRef(kind: AgentFleet.teamKind, id: $0.id) })
+        let setAgentIds = Set(listTeams.flatMap { AgentTeams.memberIds(of: $0) })
+        setScope.formUnion(setAgentIds.map { FleetRef(kind: AgentFleet.agentKind, id: $0) })
+        let listRelations = Array(graph.mapRelations.values)
+        var setPlaybooks: Set<FleetRef> = []
+        for relation in listRelations where relation.source.kind == AgentFleet.agentKind {
+            let sessionId = fleetModel.fleet.mapAgents[relation.source.id]?.parentId ?? relation.source.id
+            guard setAgentIds.contains(sessionId) else {
+                continue
+            }
+            setScope.insert(relation.target)
+            if relation.target.kind == Self.playbookKind {
+                setPlaybooks.insert(relation.target)
+            }
+        }
+        for relation in listRelations where setPlaybooks.contains(relation.source) {
+            setScope.insert(relation.target)
+        }
+        return setScope
+    }
+
+    /// The mark of the board narrowed to a Raven conversation's teams, and the way back to all of it.
+    private func ravenScopeChip(_ conversationId: String) -> some View {
+        let title = fleetModel.raven.conversations.conversation(conversationId)?.title ?? "Raven"
+        return Button {
+            withAnimation(Self.reorderAnimation) {
+                fleetModel.raven.openConversationId = nil
+            }
+        } label: {
+            HStack(spacing: 6) {
+                RavenView(isWorking: fleetModel.raven.isRunning(conversationId))
+                    .scaleEffect(Self.chipRavenScale)
+                    .frame(width: Self.chipRavenSide, height: Self.chipRavenSide)
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: 180)
+                RookeryIconView(.close)
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+            .padding(.horizontal, 9)
+            .frame(height: Self.controlHeight)
+            .background(StageColors.selectedRow, in: Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.accentColor.opacity(0.6))
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("The board shows only the teams of the Raven conversation chosen below, and what their agents touch. Click to show everything again.")
     }
 
     private static let segmentAnimation = Animation.spring(response: 0.3, dampingFraction: 0.85)
@@ -826,10 +904,14 @@ struct RookmasterBoard: View {
     private func columns(now: Date) -> [String: [FleetResource]] {
         let trimmedQuery = memory.boardQuery.trimmingCharacters(in: .whitespaces).lowercased()
         let cutoff = memory.boardWindow.seconds.map { now.addingTimeInterval(-$0) }
+        let setScope = ravenScopeId.map(ravenScope(of:))
         var mapColumns: [String: [FleetResource]] = [:]
         for kind in listShownKinds {
             var listResources = graph.listResources(of: kind.name).filter { resource in
                 if resource.isRookeryOwn {
+                    return false
+                }
+                if let setScope, !setScope.contains(FleetRef(kind: resource.kind, id: resource.id)) {
                     return false
                 }
                 if kind.name == AgentFleet.agentKind {

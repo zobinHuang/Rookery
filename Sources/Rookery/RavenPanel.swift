@@ -131,7 +131,7 @@ struct RavenPanel: View {
         let isOpen = openId == conversation.id
         return Button {
             withAnimation(.easeOut(duration: 0.2)) {
-                raven.openConversationId = conversation.id
+                raven.openConversationId = isOpen ? nil : conversation.id
             }
         } label: {
             VStack(alignment: .leading, spacing: 2) {

@@ -40,13 +40,42 @@ struct RavenApprovalCard: View {
         return listLines.count > Self.previewLineLimit ? shown + "\n…" : shown
     }
 
+    private var denyButton: some View {
+        Button {
+            onChoose(.deny)
+        } label: {
+            Text(isCodexTurn ? "Keep Sandboxed" : "Decline")
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var conversationButton: some View {
+        Button {
+            onChoose(.conversation)
+        } label: {
+            Text("Allow in This Conversation")
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var onceButton: some View {
+        Button {
+            onChoose(.once)
+        } label: {
+            Text(isCodexTurn ? "Allow This Turn" : "Allow Once")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(StageButtonStyle(kind: .prominent))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 RookeryIconView(icon)
                     .foregroundStyle(Color.accentColor)
                 Text(isCodexTurn ? "Raven on Codex asks to work on this Mac" : "Raven asks to \(request.verb.prefix(1).lowercased() + request.verb.dropFirst())")
                     .font(.system(size: 12, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
             if isCodexTurn {
@@ -80,18 +109,21 @@ struct RavenApprovalCard: View {
                         .background(StageColors.groove.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
-            HStack(spacing: 8) {
-                Button(isCodexTurn ? "Keep Sandboxed" : "Decline") {
-                    onChoose(.deny)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    denyButton
+                        .fixedSize()
+                    Spacer(minLength: 0)
+                    conversationButton
+                        .fixedSize()
+                    onceButton
+                        .fixedSize()
                 }
-                Spacer(minLength: 0)
-                Button("Allow in This Conversation") {
-                    onChoose(.conversation)
+                VStack(spacing: 6) {
+                    onceButton
+                    conversationButton
+                    denyButton
                 }
-                Button(isCodexTurn ? "Allow This Turn" : "Allow Once") {
-                    onChoose(.once)
-                }
-                .buttonStyle(StageButtonStyle(kind: .prominent))
             }
             .controlSize(.small)
         }

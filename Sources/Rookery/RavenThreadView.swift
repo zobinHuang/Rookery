@@ -463,13 +463,31 @@ private struct RavenThreadContent: View {
     private func proposalCard(_ proposal: RavenProposal, in conversationId: String) -> some View {
         let isSending = setSendingIds.contains(proposal.id)
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                RookeryIconView(Self.icon(of: proposal))
-                    .foregroundStyle(proposal.action == .interrupt ? Color.orange : Color.accentColor)
-                Text(Self.lead(of: proposal))
-                    .foregroundStyle(StageColors.secondaryText)
-                FittingText(proposal.agentTitle, size: 12, weight: .semibold)
-                Spacer(minLength: 0)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    RookeryIconView(Self.icon(of: proposal))
+                        .foregroundStyle(proposal.action == .interrupt ? Color.orange : Color.accentColor)
+                    Text(Self.lead(of: proposal))
+                        .foregroundStyle(StageColors.secondaryText)
+                        .fixedSize()
+                    Text(proposal.agentTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    RookeryIconView(Self.icon(of: proposal))
+                        .foregroundStyle(proposal.action == .interrupt ? Color.orange : Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(Self.lead(of: proposal))
+                            .foregroundStyle(StageColors.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(proposal.agentTitle)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
             .font(.system(size: 12))
             if proposal.action == .spawn || proposal.action == .addWorkdir, let cwd = proposal.cwd {

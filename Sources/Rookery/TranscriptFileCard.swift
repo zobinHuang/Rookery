@@ -23,37 +23,32 @@ struct TranscriptFileCard: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: icon)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: Self.iconSize, height: Self.iconSize)
-                .opacity(isPresent ? 1 : 0.5)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(url.lastPathComponent)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(StageColors.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(isPresent ? Self.shownFolder(of: url) : "Not on this Mac")
-                    .font(.system(size: 11))
-                    .foregroundStyle(StageColors.secondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.head)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                fileLabel
+                    .frame(minWidth: Self.nameMinWidth, idealWidth: Self.nameMinWidth, maxWidth: .infinity, alignment: .leading)
+                if isPresent {
+                    revealButton(isTitled: true)
+                    openButton
+                }
             }
-            Spacer(minLength: 8)
-            if isPresent {
-                Button("Show in Finder") {
-                    NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+            HStack(spacing: 8) {
+                fileLabel
+                    .frame(minWidth: Self.nameMinWidth, idealWidth: Self.nameMinWidth, maxWidth: .infinity, alignment: .leading)
+                if isPresent {
+                    revealButton(isTitled: false)
+                    openButton
                 }
-                .font(.system(size: 11, weight: .medium))
-                .help("Show \(url.lastPathComponent) in the Finder")
-                Button("Open") {
-                    NSWorkspace.shared.open(url)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                fileLabel
+                if isPresent {
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        revealButton(isTitled: true)
+                        openButton
+                    }
                 }
-                .font(.system(size: 11, weight: .medium))
-                .buttonStyle(StageButtonStyle(kind: .prominent))
-                .help("Open \(url.lastPathComponent)")
             }
         }
         .controlSize(.small)
@@ -78,6 +73,56 @@ struct TranscriptFileCard: View {
             await lookForFile()
         }
         .help(url.path)
+    }
+
+    /// The narrowest a file's name and folder go before the card lays its buttons out under them.
+    private static let nameMinWidth: CGFloat = 150
+
+    private var fileLabel: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: Self.iconSize, height: Self.iconSize)
+                .opacity(isPresent ? 1 : 0.5)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(url.lastPathComponent)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StageColors.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(isPresent ? Self.shownFolder(of: url) : "Not on this Mac")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+            }
+        }
+    }
+
+    private func revealButton(isTitled: Bool) -> some View {
+        Button {
+            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+        } label: {
+            if isTitled {
+                Text("Show in Finder")
+                    .font(.system(size: 11, weight: .medium))
+            } else {
+                RookeryIconView(.folder)
+            }
+        }
+        .fixedSize()
+        .help("Show \(url.lastPathComponent) in the Finder")
+    }
+
+    private var openButton: some View {
+        Button("Open") {
+            NSWorkspace.shared.open(url)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .buttonStyle(StageButtonStyle(kind: .prominent))
+        .fixedSize()
+        .help("Open \(url.lastPathComponent)")
     }
 
     private var icon: NSImage {

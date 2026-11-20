@@ -9,6 +9,7 @@ from roost.errors import NotFoundError, ValidationError
 from roost.http import RoostServer
 from roost.messages import Delivery
 from roost.resources import ResourceRef
+from roost.teams import TeamLimits
 from roost.store import SessionStore
 
 
@@ -160,6 +161,22 @@ class TeamTest(unittest.TestCase):
     def test_an_agent_messages_no_team_it_is_not_in(self) -> None:
         with self.assertRaises(ValidationError):
             self.server.link.send_to_team(ResourceRef("agent", "c"), "api", "hi")
+
+    def test_a_team_without_limits_holds_nothing(self) -> None:
+        first = self.send("a", "b")
+        thread = first.map_options["thread"]
+        list_statuses = [
+            self.send("a" if index % 2 else "b", "b" if index % 2 else "a", thread=thread).status
+            for index in range(TeamLimits.LIMITS_SENDS_PER_WINDOW + 5)
+        ]
+        self.assertEqual(set(list_statuses), {Delivery.STATUS_PENDING})
+
+    def test_limits_cleared_from_a_team_hold_nothing_again(self) -> None:
+        self.server.catalog.update("team", "api", {"attributes": {"limits": {"sends_per_window": 1}}})
+        self.send("a", "b")
+        self.assertEqual(self.send("a", "b").status, Delivery.STATUS_HELD)
+        self.server.catalog.update("team", "api", {"attributes": {"limits": None}})
+        self.assertEqual(self.send("a", "b").status, Delivery.STATUS_PENDING)
 
     def test_a_thread_past_its_limit_is_held_until_released(self) -> None:
         self.server.catalog.update("team", "api", {"attributes": {"limits": {"thread_hops": 2}}})

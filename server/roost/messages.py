@@ -383,6 +383,8 @@ class DeliveryStore:
         if not self._is_bound_agent(sender):
             return ""
         limits = TeamLimits.loosest(list_teams)
+        if limits is None:
+            return ""
         with self._resources.database.reading() as connection:
             row = connection.execute(
                 """

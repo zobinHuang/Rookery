@@ -7,7 +7,8 @@ from roost.resources import Resource, ResourceKinds, ResourceQuery, ResourceRef,
 @dataclass(frozen=True)
 class TeamLimits:
     """How far agents of a team may go messaging one another before roost holds a message for the user: a
-    backstop against two agents answering each other without end, which the team skill should prevent."""
+    backstop against two agents answering each other without end, which the team skill should prevent. A
+    team has none unless it sets them; a limit it leaves out of those it sets takes its default."""
 
     LIMITS_THREAD_HOPS = 20
     LIMITS_SENDS_PER_WINDOW = 30
@@ -18,11 +19,18 @@ class TeamLimits:
     window_minutes: int = LIMITS_WINDOW_MINUTES
 
     @classmethod
-    def of(cls, team: Resource) -> "TeamLimits":
-        """A team's limits, its own where it sets them, the defaults otherwise."""
+    def of(cls, team: Resource) -> "TeamLimits | None":
+        """A team's limits, as it sets them, each it leaves out at its default.
+
+        Args:
+            team: the team
+
+        Returns:
+            the team's limits, or None when it sets none and its agents message one another freely
+        """
         map_limits = team.map_attributes.get("limits")
-        if not isinstance(map_limits, dict):
-            return cls()
+        if not isinstance(map_limits, dict) or not map_limits:
+            return None
         return cls(
             thread_hops=cls._positive(map_limits.get("thread_hops"), cls.LIMITS_THREAD_HOPS),
             sends_per_window=cls._positive(map_limits.get("sends_per_window"), cls.LIMITS_SENDS_PER_WINDOW),
@@ -30,13 +38,22 @@ class TeamLimits:
         )
 
     @classmethod
-    def loosest(cls, list_teams: list[Resource]) -> "TeamLimits":
-        """The most a message between agents sharing several teams may go: each limit the loosest of theirs."""
-        list_limits = [cls.of(team) for team in list_teams] or [cls()]
+    def loosest(cls, list_teams: list[Resource]) -> "TeamLimits | None":
+        """The most a message between agents sharing several teams may go: each limit the loosest of theirs.
+
+        Args:
+            list_teams: the teams the sender and the receiver share
+
+        Returns:
+            the loosest limits, or None when any of the teams sets none
+        """
+        list_limits = [cls.of(team) for team in list_teams]
+        if not list_limits or any(limits is None for limits in list_limits):
+            return None
         return cls(
-            thread_hops=max(limits.thread_hops for limits in list_limits),
-            sends_per_window=max(limits.sends_per_window for limits in list_limits),
-            window_minutes=min(limits.window_minutes for limits in list_limits),
+            thread_hops=max(limits.thread_hops for limits in list_limits if limits is not None),
+            sends_per_window=max(limits.sends_per_window for limits in list_limits if limits is not None),
+            window_minutes=min(limits.window_minutes for limits in list_limits if limits is not None),
         )
 
     @staticmethod

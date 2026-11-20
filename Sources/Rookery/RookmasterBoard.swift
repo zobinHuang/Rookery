@@ -59,9 +59,18 @@ struct BoardEdge: Identifiable, Equatable {
     var listVerbs: [String]
     var count: Int
     var lastAt: String
+    /// Whether something went the other way between the two cards too, drawn on the same line.
+    var isMutual = false
 
     var id: String {
-        "\(source.kind)/\(source.id)>\(target.kind)/\(target.id)"
+        Self.key(source, target)
+    }
+
+    /// The one key of the line between two cards, whichever way it goes.
+    static func key(_ first: FleetRef, _ second: FleetRef) -> String {
+        let firstKey = "\(first.kind)/\(first.id)"
+        let secondKey = "\(second.kind)/\(second.id)"
+        return firstKey < secondKey ? "\(firstKey)|\(secondKey)" : "\(secondKey)|\(firstKey)"
     }
 }
 
@@ -132,7 +141,11 @@ struct RookmasterBoard: View {
                     HStack(alignment: .top, spacing: Self.columnSpacing) {
                         ForEach(listShownKinds) { kind in
                             column(kind, listResources: mapColumns[kind.name] ?? [], setFocus: setFocus, now: context.date)
-                            if kind.name == AgentFleet.agentKind, let parentId = memory.boardSubagentsOf {
+                            if
+                                kind.name == AgentFleet.agentKind,
+                                let parentId = memory.boardSubagentsOf,
+                                foldingTeam(of: parentId) == nil
+                            {
                                 subagentColumn(
                                     of: parentId,
                                     listSubagents: mapColumns[Self.subagentColumnKey] ?? [],
@@ -152,6 +165,7 @@ struct RookmasterBoard: View {
                     .frame(minWidth: viewport.size.width, minHeight: viewport.size.height, alignment: .topLeading)
                     .animation(Self.reorderAnimation, value: mapColumns.mapValues { $0.map(\.id) })
                     .animation(Self.reorderAnimation, value: memory.boardSubagentsOf)
+                    .animation(Self.reorderAnimation, value: memory.setBoardFoldedTeams)
                 }
                 .modifier(RememberedScroll(key: "rookmaster.board", memory: memory))
                 }
@@ -621,10 +635,18 @@ struct RookmasterBoard: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 FittingText(cardName(of: resource, agent: agent), size: 12, weight: .semibold)
-                Text(subtitle(of: resource, agent: agent))
-                    .font(.system(size: 10))
-                    .foregroundStyle(agent?.state.needsAttention == true ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.secondaryText))
-                    .lineLimit(1)
+                if resource.kind == AgentFleet.teamKind {
+                    teamToggle(
+                        of: resource.id,
+                        count: fleetModel.teams.listTeams.first { $0.id == resource.id }?.listAgentIds.count ?? 0
+                    )
+                    .padding(.top, 1)
+                } else {
+                    Text(subtitle(of: resource, agent: agent))
+                        .font(.system(size: 10))
+                        .foregroundStyle(agent?.state.needsAttention == true ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.secondaryText))
+                        .lineLimit(1)
+                }
                 if let agent, agent.parentId == nil {
                     let subagentCount = fleetModel.fleet.listSubagents(of: agent.id).count
                     if subagentCount > 0 {
@@ -715,7 +737,13 @@ struct RookmasterBoard: View {
                 let isQuiet = setFocus == nil
                 let sourceColumn = Int(sourceFrame.minX.rounded())
                 let targetColumn = Int(targetFrame.minX.rounded())
-                let path = Self.path(from: sourceFrame, to: targetFrame, sourceColumn: sourceColumn, targetColumn: targetColumn)
+                let path = Self.path(
+                    from: sourceFrame,
+                    to: targetFrame,
+                    sourceColumn: sourceColumn,
+                    targetColumn: targetColumn,
+                    isMutual: edge.isMutual
+                )
                 let tint = RookmasterStyle.tint(ofVerb: edge.listVerbs.first ?? "")
                 let opacity = isQuiet ? 0.4 : (isFocused ? 0.95 : 0.06)
                 let width = min(1 + log2(Double(edge.count)), 3.5)
@@ -729,46 +757,67 @@ struct RookmasterBoard: View {
         .allowsHitTesting(false)
     }
 
-    /// An edge's curve, ending in an arrowhead at its target, leaving the side of each card that faces the
-    /// other.
-    private static func path(from source: CGRect, to target: CGRect, sourceColumn: Int, targetColumn: Int) -> Path {
+    /// An edge's curve, ending in an arrowhead at its target, and at its source too when things went both
+    /// ways, leaving the side of each card that faces the other.
+    private static func path(
+        from source: CGRect,
+        to target: CGRect,
+        sourceColumn: Int,
+        targetColumn: Int,
+        isMutual: Bool
+    ) -> Path {
         let arrowLength: CGFloat = 7
-        let start: CGPoint
-        let end: CGPoint
-        let control1: CGPoint
-        let control2: CGPoint
-        let direction: CGFloat
+        let startEdge: CGPoint
+        let endEdge: CGPoint
+        let leaving: CGFloat
+        let arriving: CGFloat
         if sourceColumn == targetColumn {
-            start = CGPoint(x: source.maxX, y: source.midY)
-            end = CGPoint(x: target.maxX + arrowLength, y: target.midY)
-            let bulge = 28 + min(abs(target.midY - source.midY) * 0.25, 60)
-            control1 = CGPoint(x: start.x + bulge, y: start.y)
-            control2 = CGPoint(x: end.x + bulge, y: end.y)
-            direction = -1
+            startEdge = CGPoint(x: source.maxX, y: source.midY)
+            endEdge = CGPoint(x: target.maxX, y: target.midY)
+            leaving = 1
+            arriving = -1
         } else if sourceColumn < targetColumn {
-            start = CGPoint(x: source.maxX, y: source.midY)
-            end = CGPoint(x: target.minX - arrowLength, y: target.midY)
-            let reach = max((end.x - start.x) / 2, 30)
-            control1 = CGPoint(x: start.x + reach, y: start.y)
-            control2 = CGPoint(x: end.x - reach, y: end.y)
-            direction = 1
+            startEdge = CGPoint(x: source.maxX, y: source.midY)
+            endEdge = CGPoint(x: target.minX, y: target.midY)
+            leaving = 1
+            arriving = 1
         } else {
-            start = CGPoint(x: source.minX, y: source.midY)
-            end = CGPoint(x: target.maxX + arrowLength, y: target.midY)
-            let reach = max((start.x - end.x) / 2, 30)
-            control1 = CGPoint(x: start.x - reach, y: start.y)
-            control2 = CGPoint(x: end.x + reach, y: end.y)
-            direction = -1
+            startEdge = CGPoint(x: source.minX, y: source.midY)
+            endEdge = CGPoint(x: target.maxX, y: target.midY)
+            leaving = -1
+            arriving = -1
         }
-        let tip = CGPoint(x: end.x + arrowLength * direction, y: end.y)
+        let start = isMutual ? CGPoint(x: startEdge.x + arrowLength * leaving, y: startEdge.y) : startEdge
+        let end = CGPoint(x: endEdge.x - arrowLength * arriving, y: endEdge.y)
+        let reach: CGFloat
+        if sourceColumn == targetColumn {
+            reach = 28 + min(abs(end.y - start.y) * 0.25, 60)
+        } else {
+            reach = max(abs(end.x - start.x) / 2, 30)
+        }
         var path = Path()
         path.move(to: start)
-        path.addCurve(to: end, control1: control1, control2: control2)
-        path.addLine(to: tip)
-        path.move(to: CGPoint(x: end.x, y: end.y - 4))
-        path.addLine(to: tip)
-        path.addLine(to: CGPoint(x: end.x, y: end.y + 4))
+        path.addCurve(
+            to: end,
+            control1: CGPoint(x: start.x + reach * leaving, y: start.y),
+            control2: CGPoint(x: end.x - reach * arriving, y: end.y)
+        )
+        path.addLine(to: endEdge)
+        Self.addArrowhead(to: &path, base: end, tip: endEdge)
+        if isMutual {
+            path.move(to: start)
+            path.addLine(to: startEdge)
+            Self.addArrowhead(to: &path, base: start, tip: startEdge)
+        }
         return path
+    }
+
+    /// The two strokes of an arrowhead whose point is at the tip, across its base.
+    private static func addArrowhead(to path: inout Path, base: CGPoint, tip: CGPoint) {
+        let halfWidth: CGFloat = 4
+        path.move(to: CGPoint(x: base.x, y: base.y - halfWidth))
+        path.addLine(to: tip)
+        path.addLine(to: CGPoint(x: base.x, y: base.y + halfWidth))
     }
 
     // MARK: - What the board shows
@@ -785,7 +834,7 @@ struct RookmasterBoard: View {
                 }
                 if kind.name == AgentFleet.agentKind {
                     let agent = fleetModel.fleet.mapAgents[resource.id]
-                    if agent?.parentId != nil {
+                    if agent?.parentId != nil || foldingTeam(of: resource.id) != nil {
                         return false
                     }
                     if memory.isBoardLiveOnly && agent?.state == .ended {
@@ -824,7 +873,11 @@ struct RookmasterBoard: View {
             }
             mapColumns[kind.name] = Array(listResources.prefix(Self.columnLimit))
         }
-        if listShownKinds.contains(where: { $0.name == AgentFleet.agentKind }), let parentId = memory.boardSubagentsOf {
+        if
+            listShownKinds.contains(where: { $0.name == AgentFleet.agentKind }),
+            let parentId = memory.boardSubagentsOf,
+            foldingTeam(of: parentId) == nil
+        {
             mapColumns[Self.subagentColumnKey] = graph.listResources(of: AgentFleet.agentKind).filter { resource in
                 fleetModel.fleet.mapAgents[resource.id]?.parentId == parentId
             }
@@ -896,6 +949,7 @@ struct RookmasterBoard: View {
                 }
                 known.count += relation.count
                 known.lastAt = max(known.lastAt, relation.lastAt)
+                known.isMutual = known.isMutual || known.source != source
                 mapEdges[edge.id] = known
             } else {
                 mapEdges[edge.id] = edge
@@ -912,22 +966,64 @@ struct RookmasterBoard: View {
                     continue
                 }
                 let edge = BoardEdge(source: teamRef, target: agentRef, listVerbs: [Self.memberVerb], count: 1, lastAt: "")
-                mapEdges[edge.id] = edge
+                if mapEdges[edge.id] == nil {
+                    mapEdges[edge.id] = edge
+                }
             }
         }
         return mapEdges.values.sorted { $0.lastAt < $1.lastAt }
     }
 
-    /// The card a resource shows on: its own, or its session's for a subagent whose own is not laid out.
+    /// The card a resource shows on: its own; its session's for a subagent whose own is not laid out; and
+    /// its team's for an agent, or a subagent of one, whose teams are all folded.
     private func shownRef(of ref: FleetRef, among setShown: Set<FleetRef>) -> FleetRef {
-        guard
-            ref.kind == AgentFleet.agentKind,
-            !setShown.contains(ref),
-            let parentId = fleetModel.fleet.mapAgents[ref.id]?.parentId
-        else {
+        guard ref.kind == AgentFleet.agentKind, !setShown.contains(ref) else {
             return ref
         }
-        return FleetRef(kind: ref.kind, id: parentId)
+        let sessionRef = fleetModel.fleet.mapAgents[ref.id]?.parentId.map { FleetRef(kind: ref.kind, id: $0) } ?? ref
+        if let teamId = foldingTeam(of: sessionRef.id) {
+            return FleetRef(kind: AgentFleet.teamKind, id: teamId)
+        }
+        return sessionRef
+    }
+
+    /// The folded team an agent's card folds into, when every team it is in is folded; nil while it is in
+    /// no team or in one laid out.
+    private func foldingTeam(of agentId: String) -> String? {
+        let listTeamIds = fleetModel.teams.teamIds(of: agentId)
+        guard !listTeamIds.isEmpty, listTeamIds.allSatisfy(memory.setBoardFoldedTeams.contains) else {
+            return nil
+        }
+        return listTeamIds.first
+    }
+
+    /// The fold that lays a team's agents out beside it or folds them, and the lines they draw, into its
+    /// card.
+    private func teamToggle(of teamId: String, count: Int) -> some View {
+        let isFolded = memory.setBoardFoldedTeams.contains(teamId)
+        return Button {
+            withAnimation(Self.reorderAnimation) {
+                if isFolded {
+                    memory.setBoardFoldedTeams.remove(teamId)
+                } else {
+                    memory.setBoardFoldedTeams.insert(teamId)
+                    if let parentId = memory.boardSubagentsOf, foldingTeam(of: parentId) != nil {
+                        memory.boardSubagentsOf = nil
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                RookeryIconView(.chevronRight)
+                    .rotationEffect(.degrees(isFolded ? 0 : 90))
+                Text(count == 1 ? "1 agent" : "\(count) agents")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+            }
+            .foregroundStyle(isFolded ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.secondaryText))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isFolded ? "Lay the team's agents out" : "Fold the team's agents, and their lines, into the team")
     }
 
     /// The card in focus and its neighbours, or nil when no card is hovered or selected.

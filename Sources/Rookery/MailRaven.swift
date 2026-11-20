@@ -483,7 +483,8 @@ struct MailReplyEditor: View {
 
 
 /// A file going with a mail as a tile: a preview of it, as Quick Look draws one, and its name; a click
-/// shows it whole, and a button over its corner takes it off.
+/// opens it in its app, its menu shows it in Quick Look or the Finder, and a button over its corner takes
+/// it off.
 struct MailAttachmentTile: View {
     private static let side: CGFloat = 92
     private static let cornerRadius: CGFloat = 10
@@ -505,7 +506,9 @@ struct MailAttachmentTile: View {
 
     var body: some View {
         VStack(spacing: 5) {
-            Button(action: onPreview) {
+            Button {
+                NSWorkspace.shared.open(url)
+            } label: {
                 ZStack {
                     RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                         .fill(StageColors.content)
@@ -562,7 +565,21 @@ struct MailAttachmentTile: View {
                 isHovered = isHovering
             }
         }
-        .help(isPresent ? url.path : "\(url.path) is not on this Mac")
+        .help(isPresent ? "Open \(url.lastPathComponent)" : "\(url.path) is not on this Mac")
+        .contextMenu {
+            Button("Open") {
+                NSWorkspace.shared.open(url)
+            }
+            .disabled(!isPresent)
+            Button("Quick Look", action: onPreview)
+                .disabled(!isPresent)
+            Button("Show in Finder") {
+                NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+            }
+            .disabled(!isPresent)
+            Divider()
+            Button("Remove", role: .destructive, action: onRemove)
+        }
         .task(id: path) {
             thumbnail = await Self.thumbnail(of: url, side: Self.side)
         }

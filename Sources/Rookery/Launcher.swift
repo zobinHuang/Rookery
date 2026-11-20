@@ -170,10 +170,14 @@ final class LauncherController {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         if let visible = screen?.visibleFrame {
-            panel.setFrameOrigin(CGPoint(
+            let top = visible.maxY - visible.height * Self.topShare
+            let height = min(Self.panelSize.height, top - visible.minY)
+            panel.setFrame(CGRect(
                 x: visible.midX - Self.panelSize.width / 2,
-                y: max(visible.minY, visible.maxY - visible.height * Self.topShare - Self.panelSize.height)
-            ))
+                y: top - height,
+                width: Self.panelSize.width,
+                height: height
+            ), display: false)
         }
         if let screen {
             backdrop.setFrame(screen.frame, display: false)

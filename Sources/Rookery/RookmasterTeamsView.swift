@@ -155,6 +155,9 @@ struct RookmasterTeamsView: View {
 private struct TeamDetail: View {
     private static let refreshDelay: Duration = .milliseconds(400)
     private static let messageLimit = 500
+    private static let defaultThreadHops = 20
+    private static let defaultSendsPerWindow = 30
+    private static let defaultWindowMinutes = 10
 
     let fleetModel: FleetModel
     let team: FleetResource
@@ -383,16 +386,13 @@ private struct TeamDetail: View {
 
     // MARK: - Messages
 
+    /// The messages roost holds for the user to let go or cancel, and a box to speak to the whole team.
     private var messages: some View {
-        EditorSection(title: "Messages", hint: "what its agents told one another, oldest first") {
+        EditorSection(title: listMessages.isEmpty ? "Message the Team" : "Held Messages") {
             VStack(alignment: .leading, spacing: 6) {
-                if listMessages.isEmpty {
-                    Text("No messages yet")
-                        .font(.system(size: 12))
-                        .foregroundStyle(StageColors.tertiaryText)
-                }
                 ForEach(listMessages) { delivery in
                     messageRow(delivery)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 RavenComposer(
                     fleetModel: fleetModel,
@@ -404,8 +404,9 @@ private struct TeamDetail: View {
                     onSend: send,
                     isFocused: $isComposerFocused
                 )
-                .padding(.top, 4)
+                .padding(.top, listMessages.isEmpty ? 0 : 4)
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.86), value: listMessages.map(\.id))
         }
     }
 
@@ -480,12 +481,23 @@ private struct TeamDetail: View {
     // MARK: - Limits
 
     private var limitsSection: some View {
-        EditorSection(title: "Limits", hint: "roost holds a message for you past these; the team skill keeps agents well inside them") {
+        EditorSection(title: "Limits") {
             VStack(alignment: .leading, spacing: 10) {
-                limitRow("A thread runs past", key: "thread_hops", defaultValue: 20, unit: "messages")
-                limitRow("An agent sends more than", key: "sends_per_window", defaultValue: 30, unit: "messages")
-                limitRow("Within", key: "window_minutes", defaultValue: 10, unit: "minutes")
+                Toggle(isOn: Binding(get: { !limits.isEmpty }, set: { isOn in saveLimitsOn(isOn) })) {
+                    Text("Hold runaway messages for me")
+                        .font(.system(size: 12))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Off, the team's agents message one another freely, as the team skill guides them. On, roost holds a message for you once a thread or an agent goes past these.")
+                if !limits.isEmpty {
+                    limitRow("A thread runs past", key: "thread_hops", defaultValue: Self.defaultThreadHops, unit: "messages")
+                    limitRow("An agent sends more than", key: "sends_per_window", defaultValue: Self.defaultSendsPerWindow, unit: "messages")
+                    limitRow("Within", key: "window_minutes", defaultValue: Self.defaultWindowMinutes, unit: "minutes")
+                        .transition(.opacity)
+                }
             }
+            .animation(.easeOut(duration: 0.2), value: limits.isEmpty)
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -531,6 +543,22 @@ private struct TeamDetail: View {
         )
     }
 
+    /// Have roost hold the team's runaway messages, at the default limits, or let them all go.
+    private func saveLimitsOn(_ isOn: Bool) {
+        let limitsValue: JSONValue = isOn
+            ? .object([
+                "thread_hops": .number(Double(Self.defaultThreadHops)),
+                "sends_per_window": .number(Double(Self.defaultSendsPerWindow)),
+                "window_minutes": .number(Double(Self.defaultWindowMinutes)),
+            ])
+            : .null
+        EditorWork(fleetModel: fleetModel, ref: ref).save(
+            ["attributes": .object(["limits": limitsValue])],
+            isSaving: .constant(false),
+            error: $error
+        )
+    }
+
     private func saveLimit(_ key: String, _ value: Int) {
         var mapLimits = limits
         mapLimits[key] = .number(Double(value))
@@ -556,7 +584,7 @@ private struct TeamDetail: View {
                 return (first.mapOptions["hop"]?.numberValue ?? 0) < (second.mapOptions["hop"]?.numberValue ?? 0)
             }
             listMessages = listOldestFirst.filter { delivery in
-                guard delivery.kind == "prompt" else {
+                guard delivery.kind == "prompt", delivery.isHeld else {
                     return false
                 }
                 if delivery.mapOptions["team"]?.stringValue == team.id {

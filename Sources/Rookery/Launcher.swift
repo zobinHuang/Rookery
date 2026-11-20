@@ -53,6 +53,9 @@ final class LauncherModel {
     var maxim = RavenMaxims.listMaxims[0]
     /// Whether the launcher shows a new conversation with Raven, nothing asked in it yet.
     var isComposingNew = false
+    /// The height of the screen the launcher opened on, which it lays itself out in: its rows from a
+    /// fifth of the way down, a conversation centred and no taller than the screen allows.
+    var screenHeight: CGFloat = 900
 
     /// Whether the launcher shows a conversation with Raven, begun or about to be.
     var isInConversation: Bool {
@@ -79,8 +82,9 @@ final class LauncherController {
     private static let useBoostLimit = 120
     private static let usesKey = "launcherUses"
     static let panelSize = CGSize(width: 1000, height: 960)
+    /// The share of the screen's height above the launcher's rows.
+    static let topShare: CGFloat = 0.2
     /// How far below the top of the screen the launcher's box sits, as a share of the screen's height.
-    private static let topShare: CGFloat = 0.2
     /// How long the blur behind the launcher takes to come and go.
     private static let backdropFade: TimeInterval = 0.18
 
@@ -170,13 +174,12 @@ final class LauncherController {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         if let visible = screen?.visibleFrame {
-            let top = visible.maxY - visible.height * Self.topShare
-            let height = min(Self.panelSize.height, top - visible.minY)
+            model.screenHeight = visible.height
             panel.setFrame(CGRect(
                 x: visible.midX - Self.panelSize.width / 2,
-                y: top - height,
+                y: visible.minY,
                 width: Self.panelSize.width,
-                height: height
+                height: visible.height
             ), display: false)
         }
         if let screen {

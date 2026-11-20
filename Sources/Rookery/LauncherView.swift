@@ -12,7 +12,19 @@ struct LauncherView: View {
     /// The launcher's width while it holds a conversation with Raven, as a chat window.
     private static let conversationWidth: CGFloat = 900
     private static let rowsMaxHeight: CGFloat = 400
-    private static let conversationHeight: CGFloat = 680
+    /// The tallest a conversation's messages go, and the least, however short the screen.
+    private static let conversationMaxHeight: CGFloat = 680
+    private static let conversationMinHeight: CGFloat = 300
+    /// What a conversation's window holds besides its messages: its top bar and its box.
+    private static let conversationChromeHeight: CGFloat = 150
+    /// The room kept above and below a conversation, centred on the screen.
+    private static let conversationMargin: CGFloat = 32
+
+    /// How tall a conversation's messages are on the screen the launcher opened on.
+    private var conversationHeight: CGFloat {
+        let fitting = model.screenHeight - 2 * Self.conversationMargin - Self.conversationChromeHeight
+        return min(Self.conversationMaxHeight, max(Self.conversationMinHeight, fitting))
+    }
     private static let iconSize: CGFloat = 28
     private static let cornerRadius: CGFloat = 20
     private static let fieldHeight: CGFloat = 58
@@ -71,8 +83,16 @@ struct LauncherView: View {
         .animation(Self.appearAnimation, value: model.shownConversationId)
         .animation(Self.appearAnimation, value: model.isComposingNew)
         .animation(.easeOut(duration: 0.15), value: model.listItems.map(\.id))
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 20)
+        .padding(.top, model.isInConversation ? Self.conversationMargin : model.screenHeight * LauncherController.topShare)
+        .padding(.bottom, model.isInConversation ? Self.conversationMargin : 0)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: model.isInConversation ? .center : .top)
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    controller.hide()
+                }
+        }
         .foregroundStyle(StageColors.primaryText, StageColors.secondaryText, StageColors.tertiaryText)
         .buttonStyle(StageButtonStyle())
         .environment(\.chosenTheme, model.chosenTheme)
@@ -134,7 +154,7 @@ struct LauncherView: View {
                     newConversation
                 }
             }
-            .frame(height: Self.conversationHeight)
+            .frame(height: conversationHeight)
             .transition(.opacity)
             problemLabel
                 .padding(.top, model.problem == nil ? 0 : 8)

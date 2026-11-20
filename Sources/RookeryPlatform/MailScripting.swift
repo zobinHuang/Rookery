@@ -168,6 +168,7 @@ public enum MailDrafts {
     ///   - listCc: the copied recipients
     ///   - subject: the subject
     ///   - body: the text
+    ///   - listAttachments: the files sent with it, by their absolute paths; Mail places them above the text
     /// - Throws: `MailScriptingError`
     public static func send(
         sender: String,
@@ -175,7 +176,8 @@ public enum MailDrafts {
         listTo: [String],
         listCc: [String],
         subject: String,
-        body: String
+        body: String,
+        listAttachments: [String] = []
     ) async throws {
         let quoted = MailScripting.quoted
         let recipients = listTo.map { "make new to recipient at end of to recipients with properties {address:\(quoted($0))}" }
@@ -206,6 +208,8 @@ public enum MailDrafts {
                     end tell
                     set message signature of theMessage to theBody
                     delay 2
+                    \(listAttachments.map { "tell content of theMessage to make new attachment with properties {file name:POSIX file \(quoted($0))} at after the last paragraph" }.joined(separator: "\n                    "))
+                    delay \(listAttachments.isEmpty ? 0 : 2)
                     send theMessage
                 on error theError number theNumber
                     delete theBody

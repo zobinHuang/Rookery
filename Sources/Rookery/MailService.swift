@@ -221,6 +221,17 @@ actor MailService: MailSource {
         if mapPayload["reply_to"] == nil && Self.strings(mapPayload, "to").isEmpty {
             throw MailToolError.badArgument("a new message needs a recipient")
         }
+        let listAttachments = Self.strings(mapPayload, "attachments")
+        var totalBytes = 0
+        for path in listAttachments {
+            guard path.hasPrefix("/"), let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int else {
+                throw MailToolError.badArgument("no file at \(path) to attach; give an absolute path")
+            }
+            totalBytes += size
+        }
+        guard totalBytes <= MailReplyDraft.attachmentLimitBytes else {
+            throw MailToolError.badArgument("the attachments come to more than 20 MB")
+        }
         return mapPayload["subject"]?.stringValue ?? "a message from \(account)"
     }
 
@@ -441,7 +452,8 @@ actor MailService: MailSource {
             listTo: draft.listTo,
             listCc: draft.listCc,
             subject: draft.subject,
-            body: draft.body
+            body: draft.body,
+            listAttachments: draft.listAttachments
         )
     }
 

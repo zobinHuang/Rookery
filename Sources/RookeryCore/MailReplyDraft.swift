@@ -16,6 +16,38 @@ public struct MailReplyDraft: Codable, Equatable, Identifiable, Sendable {
     public var listCc: [String]
     public var subject: String
     public var body: String
+    /// The files sent with it, by their absolute paths.
+    public var listAttachments: [String]
+
+    /// The most bytes of attachments a mail carries, as mail servers commonly take.
+    public static let attachmentLimitBytes = 20 * 1024 * 1024
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt
+        case proposalId
+        case account
+        case replyToMessageId
+        case listTo
+        case listCc
+        case subject
+        case body
+        case listAttachments
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        proposalId = try container.decodeIfPresent(String.self, forKey: .proposalId)
+        account = try container.decode(String.self, forKey: .account)
+        replyToMessageId = try container.decodeIfPresent(Int.self, forKey: .replyToMessageId)
+        listTo = try container.decode([String].self, forKey: .listTo)
+        listCc = try container.decode([String].self, forKey: .listCc)
+        subject = try container.decode(String.self, forKey: .subject)
+        body = try container.decode(String.self, forKey: .body)
+        listAttachments = try container.decodeIfPresent([String].self, forKey: .listAttachments) ?? []
+    }
 
     public init(
         id: String = UUID().uuidString.lowercased(),
@@ -26,7 +58,8 @@ public struct MailReplyDraft: Codable, Equatable, Identifiable, Sendable {
         listTo: [String],
         listCc: [String],
         subject: String,
-        body: String
+        body: String,
+        listAttachments: [String] = []
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -37,6 +70,7 @@ public struct MailReplyDraft: Codable, Equatable, Identifiable, Sendable {
         self.listCc = listCc
         self.subject = subject
         self.body = body
+        self.listAttachments = listAttachments
     }
 
     /// The draft Raven proposed, as its mail tool checked it; nil for a proposal of anything else.
@@ -55,7 +89,8 @@ public struct MailReplyDraft: Codable, Equatable, Identifiable, Sendable {
             listTo: strings("to"),
             listCc: strings("cc"),
             subject: mapPayload["subject"]?.stringValue ?? "",
-            body: mapPayload["body"]?.stringValue ?? proposal.text
+            body: mapPayload["body"]?.stringValue ?? proposal.text,
+            listAttachments: strings("attachments")
         )
     }
 

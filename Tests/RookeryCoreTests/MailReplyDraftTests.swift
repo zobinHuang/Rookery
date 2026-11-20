@@ -71,3 +71,16 @@ struct MailMessagePlaceTests {
         #expect(MailMessagePlace(messageId: 1, mailboxURL: "") == nil)
     }
 }
+
+struct MailDraftAttachmentTests {
+    @Test func aDraftKeptBeforeAttachmentsReadsWithNoneAndRavensDraftCarriesItsFiles() throws {
+        let json = #"{"id":"d1","createdAt":0,"account":"me@work.example","listTo":["a@x.com"],"listCc":[],"subject":"Hi","body":"Hello"}"#
+        let draft = try JSONDecoder().decode(MailReplyDraft.self, from: Data(json.utf8))
+        #expect(draft.listAttachments.isEmpty)
+        let proposal = try JSONDecoder().decode(RavenProposal.self, from: Data(#"{"id":"p1","action":"draft_mail","text":"","payload":{"account":"me@work.example","to":["a@x.com"],"subject":"Chart","body":"See attached","attachments":["/tmp/chart.png"]}}"#.utf8))
+        let proposed = try #require(MailReplyDraft(proposal: proposal))
+        #expect(proposed.listAttachments == ["/tmp/chart.png"])
+        let saved = try JSONDecoder().decode(MailReplyDraft.self, from: JSONEncoder().encode(proposed))
+        #expect(saved.listAttachments == ["/tmp/chart.png"])
+    }
+}

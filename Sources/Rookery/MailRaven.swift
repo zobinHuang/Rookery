@@ -199,6 +199,11 @@ struct MailReplyEditor: View {
     @State private var ccLine = ""
     @State private var isSending = false
     @State private var problem: String?
+    @State private var isDropTargeted = false
+    /// Where images pasted or dropped as data are kept to be attached.
+    private static var pastedImageDirectory: URL {
+        DataDirectory.url.appending(path: "mail-attachments", directoryHint: .isDirectory)
+    }
 
     private var memory: PageMemory {
         fleetModel.pageMemory
@@ -249,7 +254,12 @@ struct MailReplyEditor: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(StageColors.separator)
                     }
-                if let quotedSender {
+                attachments(of: draft)
+                if let quotedSender, !draft.listAttachments.isEmpty {
+                    RookeryLabel("Mail puts the attachments above your text and sends the reply without quoting \(quotedSender)'s message; it stays in the thread", icon: .bubble, spacing: 5)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(StageColors.tertiaryText)
+                } else if let quotedSender {
                     RookeryLabel("\(quotedSender)'s message is quoted under your text when it goes", icon: .bubble, spacing: 5)
                         .font(.system(size: 11.5))
                         .foregroundStyle(StageColors.tertiaryText)
@@ -290,7 +300,15 @@ struct MailReplyEditor: View {
             .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(StageColors.separator)
+                    .strokeBorder(isDropTargeted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.separator), lineWidth: isDropTargeted ? 2 : 1)
+            }
+            .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { listProviders in
+                takeDropped(listProviders)
+                return true
+            }
+            .onPasteCommand(of: [.fileURL, .image]) { listProviders in
+                takeDropped(listProviders)
             }
             .onAppear {
                 toLine = draft.listTo.joined(separator: ", ")
@@ -302,6 +320,160 @@ struct MailReplyEditor: View {
                 problem = nil
             }
         }
+    }
+
+    /// The files going with the mail, each with its size and a way to take it off, and the ways to add one.
+    private func attachments(of draft: MailReplyDraft) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !draft.listAttachments.isEmpty {
+                FlowRow(spacing: 6) {
+                    ForEach(draft.listAttachments, id: \.self) { path in
+                        attachmentChip(path)
+                            .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                Button {
+                    chooseFiles()
+                } label: {
+                    Label("Attach…", systemImage: "paperclip")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .help("Choose files to send with the mail")
+                Button {
+                    pasteFromClipboard()
+                } label: {
+                    Label("Paste", systemImage: "doc.on.clipboard")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .help("Attach the image or files on the clipboard")
+                Text("or drop files and images here")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
+                Spacer(minLength: 0)
+            }
+            .controlSize(.small)
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: draft.listAttachments)
+    }
+
+    private func attachmentChip(_ path: String) -> some View {
+        let url = URL(fileURLWithPath: path)
+        let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int
+        return HStack(spacing: 6) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                .resizable()
+                .frame(width: 18, height: 18)
+            Text(url.lastPathComponent)
+                .font(.system(size: 11.5, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 200, alignment: .leading)
+            Text(size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "missing")
+                .font(.system(size: 10.5))
+                .foregroundStyle(size == nil ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.tertiaryText))
+            Button {
+                change { $0.listAttachments.removeAll { $0 == path } }
+            } label: {
+                RookeryIconView(.close)
+                    .foregroundStyle(StageColors.tertiaryText)
+            }
+            .buttonStyle(.plain)
+            .help("Take \(url.lastPathComponent) off")
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 8)
+        .padding(.vertical, 4)
+        .background(StageColors.content, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(StageColors.separator)
+        }
+        .help(path)
+    }
+
+    /// Add files to the open draft, as long as they come to no more than a mail carries.
+    private func attach(_ listPaths: [String]) {
+        guard let current = draft else {
+            return
+        }
+        let listNew = listPaths.filter { !current.listAttachments.contains($0) }
+        let total = (current.listAttachments + listNew).reduce(0) { sum, path in
+            sum + (((try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int) ?? 0)
+        }
+        guard total <= MailReplyDraft.attachmentLimitBytes else {
+            problem = "The attachments would come to more than 20 MB, more than mail servers take."
+            return
+        }
+        problem = nil
+        change { $0.listAttachments += listNew }
+    }
+
+    private func chooseFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.prompt = "Attach"
+        guard panel.runModal() == .OK else {
+            return
+        }
+        attach(panel.urls.map(\.path))
+    }
+
+    /// Attach what the clipboard holds: files copied in the Finder, or an image, kept as a PNG.
+    private func pasteFromClipboard() {
+        let pasteboard = NSPasteboard.general
+        if let listURLs = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !listURLs.isEmpty {
+            attach(listURLs.map(\.path))
+            return
+        }
+        guard let image = NSImage(pasteboard: pasteboard), let path = Self.keep(image) else {
+            problem = "The clipboard holds no image or file to attach."
+            return
+        }
+        attach([path])
+    }
+
+    private func takeDropped(_ listProviders: [NSItemProvider]) {
+        for provider in listProviders {
+            if provider.canLoadObject(ofClass: URL.self) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let path = url?.path else { return }
+                    Task { @MainActor in attach([path]) }
+                }
+            } else if provider.canLoadObject(ofClass: NSImage.self) {
+                _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
+                    guard let image = object as? NSImage else { return }
+                    Task { @MainActor in
+                        if let path = Self.keep(image) {
+                            attach([path])
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Keep an image as a PNG file to attach, named for when it was pasted.
+    private static func keep(_ image: NSImage) -> String? {
+        guard
+            let tiff = image.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiff),
+            let png = bitmap.representation(using: .png, properties: [:])
+        else {
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let url = pastedImageDirectory.appending(path: "Image \(formatter.string(from: .now)).png")
+        do {
+            try FileManager.default.createDirectory(at: pastedImageDirectory, withIntermediateDirectories: true)
+            try png.write(to: url)
+        } catch {
+            return nil
+        }
+        return url.path
     }
 
     private func field<Control: View>(_ label: String, @ViewBuilder control: () -> Control) -> some View {

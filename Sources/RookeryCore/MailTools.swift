@@ -35,7 +35,7 @@ public enum MailTool: String, CaseIterable, Sendable {
         case .listEvents:
             "List the events between two moments on every calendar, or those of the accounts named; copies of one meeting on several calendars are merged, with the others noted. Times are ISO 8601."
         case .proposeDraft:
-            "Propose a draft; it goes into Rookery's drafts at once, in the account named, for the user to change and send from Rookery's Mail page. Never sends. To reply, give the id of the message replied to, and the reply goes from its account."
+            "Propose a draft; it goes into Rookery's drafts at once, in the account named, for the user to change and send from Rookery's Mail page. Never sends. To reply, give the id of the message replied to, and the reply goes from its account. Attach files, images among them, by their absolute paths on this Mac; Mail sends them with the mail."
         case .proposeEvent:
             "Propose a new event on a calendar, for the user to approve. Attendees cannot be invited this way; draft an invitation instead."
         case .proposeEventChange:
@@ -91,6 +91,7 @@ public enum MailTool: String, CaseIterable, Sendable {
                 "cc": Self.list("Copied recipients' addresses"),
                 "subject": Self.text("The subject"),
                 "body": Self.text("The text, plain"),
+                "attachments": Self.list("Absolute paths of files on this Mac to attach, 20 MB at most together"),
             ], required: ["body"])
         case .proposeEvent:
             Self.schema([

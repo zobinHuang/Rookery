@@ -151,9 +151,9 @@ public enum RavenLocalWork {
     public static func folderPrompt(_ folder: URL) -> String {
         """
         You can work on the user's Mac. This conversation's folder is \(folder.path): create files there, \
-        and work there, unless the user names another place. Write and change files with the Write and \
-        Edit tools rather than through the shell, so the user sees each one in the conversation and can \
-        open it. Running a command or writing a file waits on the user's approval in Rookery unless they \
+        and work there, unless the user names another place. When you are done, show the user the files \
+        they should look at with the present_files tool: only what you made for them, not every file you \
+        touched along the way. Running a command or writing a file waits on the user's approval in Rookery unless they \
         allowed it; when they decline, say what you would have done instead of trying another way. A \
         mention of `@` followed by a path names a file or folder on this Mac.
         """

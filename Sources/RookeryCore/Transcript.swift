@@ -22,15 +22,14 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
     public let role: Role
     public let text: String
     public let timestamp: Date?
-    /// The file a tool call wrote or changed, by its absolute path; nil for any other step.
+    /// The file an agent presented to the user, by its absolute path; nil for any other step.
     public let filePath: String?
     /// The web page a tool call opened in the browser, by its address; nil for any other step.
     public let pageURL: String?
 
-    /// The tools that write or change a file named by their input, which a conversation shows as the file.
-    public static let setFileTools: Set<String> = ["Write", "Edit", "MultiEdit", "NotebookEdit"]
-    /// The tools that create a file, as against change one already there.
-    public static let setCreatingTools: Set<String> = ["Write"]
+    /// The tool an agent presents the files it made for the user with, shown as those files: its name
+    /// after the MCP server's prefix.
+    public static let presentFilesTool = "present_files"
     /// The prefix of the tools Claude in Chrome gives a session.
     public static let chromeToolPrefix = "mcp__claude-in-chrome__"
     /// The Chrome tools that open a page, shown as the page.
@@ -53,7 +52,7 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
         return false
     }
 
-    /// Whether the step wrote or changed a file, which shows on its own rather than among the tool calls.
+    /// Whether the step presents a file to the user, which shows on its own rather than among the tool calls.
     public var isFile: Bool {
         filePath != nil
     }
@@ -68,7 +67,7 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
 public enum TranscriptBlock: Equatable, Identifiable, Sendable {
     case entry(TranscriptEntry)
     case tools([TranscriptEntry])
-    /// A file a tool call wrote or changed.
+    /// A file an agent presented to the user.
     case file(TranscriptEntry)
     /// A web page a tool call opened in the browser.
     case page(TranscriptEntry)
@@ -82,8 +81,8 @@ public enum TranscriptBlock: Equatable, Identifiable, Sendable {
         }
     }
 
-    /// Steps as blocks: each run of consecutive tool calls becomes one block, a file written or changed one
-    /// of its own.
+    /// Steps as blocks: each run of consecutive tool calls becomes one block, a file presented or a page
+    /// opened one of its own.
     public static func blocks(of listEntries: some Collection<TranscriptEntry>) -> [TranscriptBlock] {
         var listBlocks: [TranscriptBlock] = []
         var listRun: [TranscriptEntry] = []
@@ -231,13 +230,13 @@ public struct TranscriptReader: Sendable {
                 add(role, block["text"]?.stringValue ?? "", timestamp: timestamp)
             case "tool_use":
                 let name = block["name"]?.stringValue ?? "Tool"
-                add(
-                    .tool(name),
-                    Self.summary(of: block["input"]),
-                    timestamp: timestamp,
-                    filePath: Self.filePath(ofTool: name, input: block["input"]),
-                    pageURL: Self.pageURL(ofTool: name, input: block["input"])
-                )
+                let listPresented = Self.presentedPaths(ofTool: name, input: block["input"])
+                if listPresented.isEmpty {
+                    add(.tool(name), Self.summary(of: block["input"]), timestamp: timestamp, pageURL: Self.pageURL(ofTool: name, input: block["input"]))
+                }
+                for path in listPresented {
+                    add(.tool(name), path, timestamp: timestamp, filePath: path)
+                }
             default:
                 break
             }
@@ -303,13 +302,15 @@ public struct TranscriptReader: Sendable {
         return url
     }
 
-    /// The absolute path of the file a tool call writes or changes, or nil when it is no such call.
-    static func filePath(ofTool name: String, input: JSONValue?) -> String? {
-        guard TranscriptEntry.setFileTools.contains(name) else {
-            return nil
+    /// The absolute paths of the files a call presents to the user; none when it is no such call.
+    static func presentedPaths(ofTool name: String, input: JSONValue?) -> [String] {
+        guard name == TranscriptEntry.presentFilesTool || name.hasSuffix("__" + TranscriptEntry.presentFilesTool) else {
+            return []
         }
-        let path = input?["file_path"]?.stringValue ?? input?["notebook_path"]?.stringValue ?? ""
-        return path.hasPrefix("/") ? path : nil
+        guard case .array(let listPaths) = input?["paths"] else {
+            return []
+        }
+        return listPaths.compactMap(\.stringValue).filter { $0.hasPrefix("/") }
     }
 
     /// The slash command a user line ran, as `/compact args`, or nil when it is not one.

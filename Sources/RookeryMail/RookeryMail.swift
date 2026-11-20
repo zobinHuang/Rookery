@@ -17,6 +17,9 @@ enum RookeryMail {
     /// permission prompt tool.
     static let approvalToolName = "approve_local_action"
     private static let approvalToolDescription = "Rookery asks the user whether Raven may take this action on their Mac. Claude Code calls it itself; never call it."
+    /// The tool an agent shows the user the files it made with, each as a card they can open.
+    static let presentToolName = "present_files"
+    private static let presentToolDescription = "Show the user the files you made or changed for them, once they are done: each shows in the conversation as a card they can open or show in the Finder. Pass only what the user should look at, not every file you touched along the way, by absolute path."
 
     static func main() async {
         setvbuf(stdout, nil, _IOLBF, 0)
@@ -65,13 +68,20 @@ enum RookeryMail {
                         "openWorldHint": .bool(false),
                     ]),
                 ])
-            } + [approvalTool])])
+            } + [approvalTool, presentTool])])
         case "tools/call":
             guard let name = request["params"]?["name"]?.stringValue else {
                 return .object(["jsonrpc": .string("2.0"), "id": requestId, "error": error(invalidParams, "a tool call needs a name")])
             }
             let arguments = request["params"]?["arguments"] ?? .object([:])
-            result = name == approvalToolName ? await approve(arguments) : await call(name, arguments: arguments)
+            switch name {
+            case approvalToolName:
+                result = await approve(arguments)
+            case presentToolName:
+                result = present(arguments)
+            default:
+                result = await call(name, arguments: arguments)
+            }
         default:
             return .object(["jsonrpc": .string("2.0"), "id": requestId, "error": error(methodNotFound, "no method \(method)")])
         }
@@ -122,6 +132,32 @@ enum RookeryMail {
                 "required": .array([.string("tool_name"), .string("input")]),
             ]),
         ])
+    }
+
+    private static var presentTool: JSONValue {
+        .object([
+            "name": .string(presentToolName),
+            "description": .string(presentToolDescription),
+            "inputSchema": .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "paths": .object(["type": .string("array"), "items": .object(["type": .string("string")]), "description": .string("absolute paths of the files to show")]),
+                ]),
+                "required": .array([.string("paths")]),
+            ]),
+            "annotations": .object(["readOnlyHint": .bool(true)]),
+        ])
+    }
+
+    /// Show files to the user: Rookery reads the call from the conversation and draws each as a card, so
+    /// the tool only checks what it is given.
+    static func present(_ arguments: JSONValue) -> JSONValue {
+        guard case .array(let listPaths) = arguments["paths"] else {
+            return .object(["content": .array([.object(["type": .string("text"), "text": .string("name the files in paths")])]), "isError": .bool(true)])
+        }
+        let listMissing = listPaths.compactMap(\.stringValue).filter { !FileManager.default.fileExists(atPath: $0) }
+        let text = listMissing.isEmpty ? "Shown to the user." : "Shown; these are not on this Mac: \(listMissing.joined(separator: ", "))"
+        return .object(["content": .array([.object(["type": .string("text"), "text": .string(text)])])])
     }
 
     /// Ask the user, through Rookery, whether Raven may take an action, and answer as Claude Code reads a

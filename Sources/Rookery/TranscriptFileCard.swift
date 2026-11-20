@@ -3,14 +3,13 @@ import RookeryCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A file an agent wrote or changed, as a conversation shows it in place of the tool call: its icon, its
-/// name, what was done and where it is, and, while it is on this Mac, buttons to open it and to show it in
-/// the Finder.
+/// A file an agent presented to the user, as a conversation shows it: its icon, its name and where it is,
+/// and, while it is on this Mac, buttons to open it and to show it in the Finder.
 struct TranscriptFileCard: View {
     private static let iconSize: CGFloat = 30
     private static let cornerRadius: CGFloat = 10
-    /// How often, and how many times, a file not there yet is looked for: the card shows as the tool
-    /// call starts, before the file is written.
+    /// How often, and how many times, a file not there yet is looked for: the card can show before the
+    /// file is written.
     private static let lookInterval: Duration = .milliseconds(500)
     private static let lookLimit = 20
 
@@ -21,13 +20,6 @@ struct TranscriptFileCard: View {
 
     private var url: URL {
         URL(fileURLWithPath: entry.filePath ?? "")
-    }
-
-    private var verb: String {
-        guard case .tool(let name) = entry.role else {
-            return "Changed"
-        }
-        return TranscriptEntry.setCreatingTools.contains(name) ? "Wrote" : "Edited"
     }
 
     var body: some View {
@@ -43,39 +35,28 @@ struct TranscriptFileCard: View {
                     .foregroundStyle(StageColors.primaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 4) {
-                    Text("\(verb) ·")
-                        .fixedSize()
-                    Text(isPresent ? Self.shownFolder(of: url) : "not on this Mac")
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                .font(.system(size: 11))
-                .foregroundStyle(StageColors.secondaryText)
+                Text(isPresent ? Self.shownFolder(of: url) : "Not on this Mac")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
             Spacer(minLength: 8)
             if isPresent {
-                Button {
-                    NSWorkspace.shared.open(url)
-                } label: {
-                    Text("Open")
-                        .font(.system(size: 11, weight: .medium))
+                Button("Show in Finder") {
+                    NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
                 }
+                .font(.system(size: 11, weight: .medium))
+                .help("Show \(url.lastPathComponent) in the Finder")
+                Button("Open") {
+                    NSWorkspace.shared.open(url)
+                }
+                .font(.system(size: 11, weight: .medium))
                 .buttonStyle(StageButtonStyle(kind: .prominent))
                 .help("Open \(url.lastPathComponent)")
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                } label: {
-                    RookeryIconView(.folder)
-                        .foregroundStyle(StageColors.secondaryText)
-                        .frame(width: 26, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Show in Finder")
-                .transition(.opacity)
             }
         }
+        .controlSize(.small)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .background(
@@ -86,15 +67,10 @@ struct TranscriptFileCard: View {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(StageColors.separator, lineWidth: 1)
         )
-        .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .textSelection(.disabled)
         .onHover { isHovering in
             withAnimation(.easeOut(duration: 0.15)) {
                 isHovered = isHovering
-            }
-        }
-        .onTapGesture(count: 2) {
-            if isPresent {
-                NSWorkspace.shared.open(url)
             }
         }
         .animation(.easeOut(duration: 0.2), value: isPresent)
@@ -214,6 +190,7 @@ struct TranscriptPageCard: View {
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
                 .strokeBorder(StageColors.separator, lineWidth: 1)
         )
+        .textSelection(.disabled)
         .onHover { isHovering in
             withAnimation(.easeOut(duration: 0.15)) {
                 isHovered = isHovering

@@ -5,20 +5,20 @@ import Testing
 /// The files an agent writes or changes, shown as files rather than among its tool calls, from Claude
 /// Code's transcripts and Codex's events alike.
 struct TranscriptFileTests {
-    @Test func aFileWrittenOrChangedShowsOnItsOwnBetweenTheToolCalls() {
+    @Test func onlyTheFilesPresentedShowOnTheirOwnBetweenTheToolCalls() {
         var reader = TranscriptReader()
         let lines = #"""
-            {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}},{"type":"tool_use","name":"Write","input":{"file_path":"/tmp/r/report.md","content":"hi"}},{"type":"tool_use","name":"Edit","input":{"file_path":"relative.txt"}},{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/r/a.txt"}}]}}
+            {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/tmp/r/draft.md","content":"hi"}},{"type":"tool_use","name":"Bash","input":{"command":"ls"}},{"type":"tool_use","name":"mcp__mail__present_files","input":{"paths":["/tmp/r/report.md","/tmp/r/chart.png","relative.txt"]}},{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/r/a.txt"}}]}}
 
             """#
         reader.append(Data(lines.utf8))
-        #expect(reader.listEntries.map(\.filePath) == [nil, "/tmp/r/report.md", nil, nil])
+        #expect(reader.listEntries.map(\.filePath) == [nil, nil, "/tmp/r/report.md", "/tmp/r/chart.png", nil])
         let listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
-        #expect(listBlocks.count == 3)
+        #expect(listBlocks.count == 4)
         if case .file(let entry) = listBlocks[1] {
             #expect(entry.filePath == "/tmp/r/report.md")
         } else {
-            Issue.record("the written file is not a block of its own")
+            Issue.record("the presented file is not a block of its own")
         }
     }
 
@@ -29,7 +29,7 @@ struct TranscriptFileTests {
             reader.append(line + Data("\n".utf8))
         }
         #expect(reader.listEntries.map(\.role) == [.tool("Write"), .tool("Edit")])
-        #expect(reader.listEntries.map(\.filePath) == ["/tmp/r/new.md", "/tmp/r/old.md"])
+        #expect(reader.listEntries.map(\.text) == ["/tmp/r/new.md", "/tmp/r/old.md"])
         let searched = CodexTranslation.of(Data(#"{"type":"item.completed","item":{"id":"w1","type":"web_search","query":"","action":{"type":"search","query":"swift release"}}}"#.utf8))
         var searchReader = TranscriptReader()
         searchReader.append(searched.listLines[0] + Data("\n".utf8))

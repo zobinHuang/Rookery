@@ -288,6 +288,28 @@ class DeliveryDeskTest(AgentInPaneTest):
         self.assertTrue(os.path.isdir(fresh))
         self.assertIn("created for it", self.outcome("d-333")["reason"])
 
+    def test_a_new_session_starts_in_a_directory_its_agent_already_trusts(self) -> None:
+        directory = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, directory, True)
+        claude_state = self.home / "claude" / ".claude.json"
+        claude_state.parent.mkdir(parents=True)
+        claude_state.write_text(json.dumps({"numStartups": 7, "projects": {"/other": {"allowedTools": []}}}))
+        codex_config = self.home / "codex" / "config.toml"
+        codex_config.parent.mkdir(parents=True)
+        codex_config.write_text('model = "gpt-5"\n')
+        self.desk.accept(self.delivery("d-1", "", kind="spawn", options={"cwd": directory, "harness": "claude"}))
+        self.desk.accept(self.delivery("d-22", "", kind="spawn", options={"cwd": directory, "harness": "codex"}))
+        self.desk.accept(self.delivery("d-333", "", kind="spawn", options={"cwd": directory, "harness": "codex"}))
+        self.desk.process(accepts_prompts=True)
+        map_state = json.loads(claude_state.read_text())
+        self.assertEqual(map_state["numStartups"], 7)
+        self.assertEqual(map_state["projects"]["/other"], {"allowedTools": []})
+        self.assertIs(map_state["projects"][directory]["hasTrustDialogAccepted"], True)
+        self.assertEqual(
+            codex_config.read_text(),
+            f'model = "gpt-5"\n\n[projects."{directory}"]\ntrust_level = "trusted"\n',
+        )
+
     def test_a_launch_names_itself_and_installs_its_playbook_first(self) -> None:
         directory = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, directory, True)

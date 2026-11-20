@@ -140,6 +140,78 @@ class PaneTyper:
         return completed.stdout
 
 
+class FolderTrust:
+    """The answer to the question a code agent asks the first time it starts in a directory, whether the
+    user trusts the files there, given ahead for a session Rookery or Raven starts, which no one is at the
+    keyboard to answer. Written where the agent keeps it, as the agent writes it when the user says yes."""
+
+    TRUST_CLAUDE_FILE = ".claude.json"
+    TRUST_CLAUDE_KEY = "hasTrustDialogAccepted"
+    TRUST_CODEX_FILE = "config.toml"
+    TRUST_CODEX_LEVEL = "trusted"
+
+    @classmethod
+    def grant(cls, harness: str, directory: str) -> None:
+        """Mark a directory trusted by the code agent about to start in it.
+
+        Args:
+            harness: the code agent, as `claude` or `codex`
+            directory: the absolute directory it starts in
+        """
+        if harness == "claude":
+            cls._grant_claude(directory)
+        elif harness == "codex":
+            cls._grant_codex(directory)
+
+    @classmethod
+    def _grant_claude(cls, directory: str) -> None:
+        """Set the directory's project in Claude Code's state file as trusted, leaving the rest as it is."""
+        config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+        path = Path(config_dir) / cls.TRUST_CLAUDE_FILE if config_dir else Path.home() / cls.TRUST_CLAUDE_FILE
+        try:
+            map_state = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        except (OSError, ValueError):
+            return
+        if not isinstance(map_state, dict):
+            return
+        map_projects = map_state.setdefault("projects", {})
+        if not isinstance(map_projects, dict):
+            return
+        map_project = map_projects.setdefault(directory, {})
+        if not isinstance(map_project, dict) or map_project.get(cls.TRUST_CLAUDE_KEY) is True:
+            return
+        map_project[cls.TRUST_CLAUDE_KEY] = True
+        cls._replace(path, json.dumps(map_state, indent=2, ensure_ascii=False))
+
+    @classmethod
+    def _grant_codex(cls, directory: str) -> None:
+        """Add the directory to Codex's configuration as a trusted project, unless it names it already."""
+        path = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / cls.TRUST_CODEX_FILE
+        quoted = directory.replace("\\", "\\\\").replace('"', '\\"')
+        header = f'[projects."{quoted}"]'
+        try:
+            text = path.read_text(encoding="utf-8") if path.exists() else ""
+        except OSError:
+            return
+        if header in text:
+            return
+        separator = "" if not text or text.endswith("\n\n") else ("\n" if text.endswith("\n") else "\n\n")
+        cls._replace(path, f'{text}{separator}{header}\ntrust_level = "{cls.TRUST_CODEX_LEVEL}"\n')
+
+    @staticmethod
+    def _replace(path: Path, text: str) -> None:
+        """Write a file whole in one step, keeping its permissions."""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+            staging = path.with_name(f".{path.name}.rook-{os.getpid()}")
+            staging.write_text(text, encoding="utf-8")
+            os.chmod(staging, mode)
+            os.replace(staging, path)
+        except OSError:
+            return
+
+
 class DeliveryDesk:
     """The deliveries this rook holds, one JSON file each, until each reaches its agent or cannot.
 
@@ -430,6 +502,7 @@ class DeliveryDesk:
             command = f"{self.DESK_LAUNCH_ENV}={shlex.quote(launch_id)} {command}"
             if map_options.get("playbook") or map_options.get("skills"):
                 command = f"{self._install_command(launch_id, harness, map_options)}; {command}"
+        FolderTrust.grant(harness, cwd)
         try:
             pane = self._typer.open_window(rook_client.AgentPane.latest_tmux_socket(), cwd, command)
         except RookLinkError as err:

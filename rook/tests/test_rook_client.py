@@ -37,6 +37,8 @@ class RookHomeTest(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {
             "XDG_CONFIG_HOME": str(self.home / "config"),
             "XDG_STATE_HOME": str(self.home / "state"),
+            "CLAUDE_CONFIG_DIR": str(self.home / "claude"),
+            "CODEX_HOME": str(self.home / "codex"),
             "ROOK_SESSION": "1",
         })
         patcher.start()

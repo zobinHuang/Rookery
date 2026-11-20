@@ -1,3 +1,5 @@
+import QuickLook
+import QuickLookThumbnailing
 import RookeryCore
 import SwiftUI
 
@@ -200,6 +202,8 @@ struct MailReplyEditor: View {
     @State private var isSending = false
     @State private var problem: String?
     @State private var isDropTargeted = false
+    /// The attachment shown in Quick Look.
+    @State private var previewURL: URL?
     /// Where images pasted or dropped as data are kept to be attached.
     private static var pastedImageDirectory: URL {
         DataDirectory.url.appending(path: "mail-attachments", directoryHint: .isDirectory)
@@ -254,47 +258,13 @@ struct MailReplyEditor: View {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .strokeBorder(StageColors.separator)
                     }
-                attachments(of: draft)
-                if let quotedSender, !draft.listAttachments.isEmpty {
-                    RookeryLabel("Mail puts the attachments above your text and sends the reply without quoting \(quotedSender)'s message; it stays in the thread", icon: .bubble, spacing: 5)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(StageColors.tertiaryText)
-                } else if let quotedSender {
-                    RookeryLabel("\(quotedSender)'s message is quoted under your text when it goes", icon: .bubble, spacing: 5)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(StageColors.tertiaryText)
-                }
+                attachmentTiles(of: draft)
                 if let problem {
                     RookeryLabel(problem, icon: .warning)
                         .font(.system(size: 11.5))
                         .foregroundStyle(.orange)
                 }
-                HStack(spacing: 8) {
-                    Button("Discard") {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            memory.openDraftId = nil
-                            fleetModel.mailDrafts.remove(draft.id)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    Text("Kept in Drafts as you write")
-                        .font(.system(size: 11))
-                        .foregroundStyle(StageColors.tertiaryText)
-                    Button {
-                        send(draft)
-                    } label: {
-                        if isSending {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Text("Send")
-                        }
-                    }
-                    .buttonStyle(StageButtonStyle(kind: .prominent))
-                    .disabled(isSending || draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (draft.listTo.isEmpty && draft.replyToMessageId == nil))
-                    .keyboardShortcut(.return, modifiers: .command)
-                }
-                .controlSize(.small)
+                actionBar(for: draft)
             }
             .padding(14)
             .background(StageColors.tile, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -303,6 +273,7 @@ struct MailReplyEditor: View {
                     .strokeBorder(isDropTargeted ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(StageColors.separator), lineWidth: isDropTargeted ? 2 : 1)
             }
             .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+            .quickLookPreview($previewURL)
             .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { listProviders in
                 takeDropped(listProviders)
                 return true
@@ -322,75 +293,61 @@ struct MailReplyEditor: View {
         }
     }
 
-    /// The files going with the mail, each with its size and a way to take it off, and the ways to add one.
-    private func attachments(of draft: MailReplyDraft) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if !draft.listAttachments.isEmpty {
-                FlowRow(spacing: 6) {
-                    ForEach(draft.listAttachments, id: \.self) { path in
-                        attachmentChip(path)
-                            .transition(.scale(scale: 0.85).combined(with: .opacity))
+    /// The files going with the mail, each as a tile with its preview.
+    @ViewBuilder
+    private func attachmentTiles(of draft: MailReplyDraft) -> some View {
+        if !draft.listAttachments.isEmpty {
+            FlowRow(spacing: 10) {
+                ForEach(draft.listAttachments, id: \.self) { path in
+                    MailAttachmentTile(path: path) {
+                        previewURL = URL(fileURLWithPath: path)
+                    } onRemove: {
+                        change { $0.listAttachments.removeAll { $0 == path } }
                     }
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
             }
-            HStack(spacing: 8) {
-                Button {
-                    chooseFiles()
-                } label: {
-                    Label("Attach…", systemImage: "paperclip")
-                        .font(.system(size: 11.5, weight: .medium))
-                }
-                .help("Choose files to send with the mail")
-                Button {
-                    pasteFromClipboard()
-                } label: {
-                    Label("Paste", systemImage: "doc.on.clipboard")
-                        .font(.system(size: 11.5, weight: .medium))
-                }
-                .help("Attach the image or files on the clipboard")
-                Text("or drop files and images here")
-                    .font(.system(size: 11))
-                    .foregroundStyle(StageColors.tertiaryText)
-                Spacer(minLength: 0)
-            }
-            .controlSize(.small)
+            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: draft.listAttachments)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: draft.listAttachments)
     }
 
-    private func attachmentChip(_ path: String) -> some View {
-        let url = URL(fileURLWithPath: path)
-        let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int
-        return HStack(spacing: 6) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: path))
-                .resizable()
-                .frame(width: 18, height: 18)
-            Text(url.lastPathComponent)
-                .font(.system(size: 11.5, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: 200, alignment: .leading)
-            Text(size.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "missing")
-                .font(.system(size: 10.5))
-                .foregroundStyle(size == nil ? AnyShapeStyle(Color.orange) : AnyShapeStyle(StageColors.tertiaryText))
-            Button {
-                change { $0.listAttachments.removeAll { $0 == path } }
-            } label: {
-                RookeryIconView(.close)
-                    .foregroundStyle(StageColors.tertiaryText)
+    /// Throwing the draft away, attaching to it, and sending it.
+    private func actionBar(for draft: MailReplyDraft) -> some View {
+        HStack(spacing: 8) {
+            Button("Discard") {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    memory.openDraftId = nil
+                    fleetModel.mailDrafts.remove(draft.id)
+                }
             }
-            .buttonStyle(.plain)
-            .help("Take \(url.lastPathComponent) off")
+            Button {
+                chooseFiles()
+            } label: {
+                Image(systemName: "paperclip")
+            }
+            .help(draft.replyToMessageId == nil || quotedSender == nil ? "Attach files" : "Attach files; Mail puts them above your text and sends the reply without quoting the message it answers")
+            Button {
+                pasteFromClipboard()
+            } label: {
+                Image(systemName: "doc.on.clipboard")
+            }
+            .help("Attach the image or files on the clipboard")
+            Spacer(minLength: 0)
+            Button {
+                send(draft)
+            } label: {
+                if isSending {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Text("Send")
+                }
+            }
+            .buttonStyle(StageButtonStyle(kind: .prominent))
+            .disabled(isSending || draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (draft.listTo.isEmpty && draft.replyToMessageId == nil))
+            .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding(.leading, 6)
-        .padding(.trailing, 8)
-        .padding(.vertical, 4)
-        .background(StageColors.content, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(StageColors.separator)
-        }
-        .help(path)
+        .controlSize(.small)
     }
 
     /// Add files to the open draft, as long as they come to no more than a mail carries.
@@ -521,5 +478,107 @@ struct MailReplyEditor: View {
             }
             isSending = false
         }
+    }
+}
+
+
+/// A file going with a mail as a tile: a preview of it, as Quick Look draws one, and its name; a click
+/// shows it whole, and a button over its corner takes it off.
+struct MailAttachmentTile: View {
+    private static let side: CGFloat = 92
+    private static let cornerRadius: CGFloat = 10
+
+    let path: String
+    let onPreview: () -> Void
+    let onRemove: () -> Void
+
+    @State private var thumbnail: NSImage?
+    @State private var isHovered = false
+
+    private var url: URL {
+        URL(fileURLWithPath: path)
+    }
+
+    private var isPresent: Bool {
+        FileManager.default.fileExists(atPath: path)
+    }
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Button(action: onPreview) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                        .fill(StageColors.content)
+                    if let thumbnail {
+                        Image(nsImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: Self.side, height: Self.side)
+                            .clipped()
+                    } else if isPresent {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                            .resizable()
+                            .frame(width: 44, height: 44)
+                    } else {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .frame(width: Self.side, height: Self.side)
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                        .strokeBorder(isPresent ? AnyShapeStyle(StageColors.separator) : AnyShapeStyle(Color.orange), lineWidth: 1)
+                }
+                .scaleEffect(isHovered ? 1.03 : 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isPresent)
+            .overlay(alignment: .topTrailing) {
+                if isHovered {
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 20, height: 20)
+                            .background(Color.black.opacity(0.65), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 6, y: -6)
+                    .transition(.scale.combined(with: .opacity))
+                    .help("Take \(url.lastPathComponent) off")
+                }
+            }
+            Text(url.lastPathComponent)
+                .font(.system(size: 11))
+                .foregroundStyle(StageColors.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: Self.side)
+        }
+        .onHover { isHovering in
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                isHovered = isHovering
+            }
+        }
+        .help(isPresent ? url.path : "\(url.path) is not on this Mac")
+        .task(id: path) {
+            thumbnail = await Self.thumbnail(of: url, side: Self.side)
+        }
+    }
+
+    /// A preview of a file as Quick Look draws it, at the tile's size, or nil when it draws none.
+    private static func thumbnail(of url: URL, side: CGFloat) async -> NSImage? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: CGSize(width: side, height: side),
+            scale: NSScreen.main?.backingScaleFactor ?? 2,
+            representationTypes: .thumbnail
+        )
+        return try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
     }
 }

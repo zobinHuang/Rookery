@@ -35,6 +35,9 @@ final class RavenAgent {
     private static let inboxInterval: Duration = .seconds(4)
     /// How often what streams into a conversation is shown.
     private static let publishInterval: Duration = .milliseconds(200)
+    /// How much of a conversation's history is read when it opens, from its end: the latest messages
+    /// show at once, the earlier ones on asking.
+    nonisolated private static let historyTailBytes = 256 * 1024
     /// What a conversation does in a team the user put it in.
     static let teamDuty = "Directs the team for the user, as Raven in Rookery: asks how things stand and passes on the user's decisions"
     private static let resourceFolder = "Raven"
@@ -192,7 +195,7 @@ final class RavenAgent {
             return reader
         }
         let data = try? Data(contentsOf: historyFile(of: conversationId))
-        let reader = Self.reader(from: data)
+        let reader = Self.reader(from: data, startOffset: 0)
         take(reader, proposals: Self.proposals(in: data), for: conversationId)
         return reader
     }
@@ -207,13 +210,53 @@ final class RavenAgent {
         defer { setLoadingHistories.remove(conversationId) }
         let url = historyFile(of: conversationId)
         let history = await Task.detached(priority: .userInitiated) {
-            let data = try? Data(contentsOf: url)
-            return RavenHistory(reader: Self.reader(from: data), listProposals: Self.proposals(in: data))
+            let (data, startOffset) = Self.tail(of: url, limit: Self.historyTailBytes)
+            return RavenHistory(reader: Self.reader(from: data, startOffset: startOffset), listProposals: Self.proposals(in: data))
         }.value
         guard mapLiveReaders[conversationId] == nil else {
             return
         }
         take(history.reader, proposals: history.listProposals, for: conversationId)
+        guard history.reader.startOffset > 0 else {
+            return
+        }
+        let listProposals = await Task.detached(priority: .utility) {
+            Self.proposals(in: try? Data(contentsOf: url))
+        }.value
+        let setShown = Set((mapProposals[conversationId] ?? []).map(\.id))
+        let listEarlier = listProposals.filter { !setShown.contains($0.id) }
+        if !listEarlier.isEmpty {
+            mapProposals[conversationId] = listEarlier + (mapProposals[conversationId] ?? [])
+        }
+    }
+
+    /// Read a conversation from its start, when only its last stretch shows.
+    func loadEarlier(of conversationId: String) async {
+        guard let live = mapLiveReaders[conversationId], live.startOffset > 0 else {
+            return
+        }
+        let url = historyFile(of: conversationId)
+        let reader = await Task.detached(priority: .userInitiated) {
+            Self.reader(from: try? Data(contentsOf: url), startOffset: 0)
+        }.value
+        guard mapLiveReaders[conversationId]?.startOffset == live.startOffset else {
+            return
+        }
+        mapLiveReaders[conversationId] = reader
+        mapReaders[conversationId] = reader
+    }
+
+    /// The last stretch of a file, at most a limit of bytes, and where it starts; the whole file when it
+    /// is shorter.
+    nonisolated private static func tail(of url: URL, limit: Int) -> (Data?, Int) {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return (nil, 0)
+        }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()).map(Int.init) ?? 0
+        let start = max(0, size - limit)
+        try? handle.seek(toOffset: UInt64(start))
+        return (try? handle.readToEnd(), start)
     }
 
     /// Whether a conversation's history is read and shows.
@@ -238,8 +281,8 @@ final class RavenAgent {
         }
     }
 
-    nonisolated private static func reader(from data: Data?) -> TranscriptReader {
-        var reader = TranscriptReader()
+    nonisolated private static func reader(from data: Data?, startOffset: Int) -> TranscriptReader {
+        var reader = TranscriptReader(startOffset: startOffset)
         if let data {
             reader.append(data)
         }

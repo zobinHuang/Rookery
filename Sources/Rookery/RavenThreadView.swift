@@ -48,6 +48,11 @@ private struct RavenThreadContent: View {
     @State private var proposalsHeight: CGFloat = 0
     /// The proposal shown whole among several waiting, the rest in a line each.
     @State private var expandedProposalId: String?
+    /// Whether the conversation, read, has had a moment to lay out under its stand-in, which it then
+    /// replaces.
+    @State private var isSettled = false
+    /// How long the stand-in stays over the conversation once it is read.
+    private static let settleDelay: Duration = .milliseconds(350)
 
     private var raven: RavenAgent {
         fleetModel.raven
@@ -170,8 +175,18 @@ private struct RavenThreadContent: View {
                     sendToken: sendToken,
                     isWorking: raven.isRunning(conversationId),
                     replierName: "Raven"
-                ) {}
-                .transition(.opacity)
+                ) {
+                    Task {
+                        await raven.loadEarlier(of: conversationId)
+                    }
+                }
+                .opacity(isSettled ? 1 : 0)
+                .overlay {
+                    if !isSettled {
+                        loadingTranscript
+                            .transition(.opacity)
+                    }
+                }
             } else {
                 loadingTranscript
                     .transition(.opacity)
@@ -188,6 +203,23 @@ private struct RavenThreadContent: View {
         .animation(.easeOut(duration: 0.2), value: raven.isHistoryLoaded(conversationId))
         .task(id: conversationId) {
             await raven.loadHistory(of: conversationId)
+        }
+        .task(id: "\(conversationId) \(raven.isHistoryLoaded(conversationId))") {
+            guard raven.isHistoryLoaded(conversationId) else {
+                isSettled = false
+                return
+            }
+            guard !isSettled else {
+                return
+            }
+            do {
+                try await Task.sleep(for: Self.settleDelay)
+            } catch {
+                return
+            }
+            withAnimation(.easeOut(duration: 0.25)) {
+                isSettled = true
+            }
         }
         .task(id: conversationId) {
             while !Task.isCancelled {

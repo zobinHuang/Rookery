@@ -349,14 +349,26 @@ struct TranscriptView: View {
                     if listEntries.count == 1 {
                         Text(listNames.first ?? "Tool")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .layoutPriority(1)
                     } else {
                         Text("\(listEntries.count) steps")
                             .font(.system(size: 11, weight: .semibold))
-                        ForEach(listOrdered.prefix(Self.namedToolLimit), id: \.key) { name, count in
-                            InfoTag("\(name) \(count)")
-                        }
-                        if listOrdered.count > Self.namedToolLimit {
-                            InfoTag("+\(listOrdered.count - Self.namedToolLimit)")
+                            .fixedSize()
+                        ViewThatFits(in: .horizontal) {
+                            ForEach(Array(stride(from: min(Self.namedToolLimit, listOrdered.count), through: 0, by: -1)), id: \.self) { shown in
+                                HStack(spacing: 4) {
+                                    ForEach(listOrdered.prefix(shown), id: \.key) { name, count in
+                                        InfoTag("\(name) \(count)")
+                                            .fixedSize()
+                                    }
+                                    if listOrdered.count > shown {
+                                        InfoTag("+\(listOrdered.count - shown)")
+                                            .fixedSize()
+                                    }
+                                }
+                            }
                         }
                     }
                     if !isOpen, let last = listEntries.last, !last.text.isEmpty {
@@ -365,6 +377,8 @@ struct TranscriptView: View {
                             .foregroundStyle(StageColors.tertiaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
+                            .frame(minWidth: 0)
+                            .layoutPriority(-1)
                     }
                     Spacer(minLength: 0)
                 }
@@ -395,7 +409,8 @@ struct TranscriptView: View {
             Text(name)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(StageColors.secondaryText)
-                .fixedSize()
+                .lineLimit(1)
+                .layoutPriority(1)
             Text(entry.text)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(StageColors.secondaryText)

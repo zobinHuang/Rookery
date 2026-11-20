@@ -153,6 +153,8 @@ struct RookmasterTeamsView: View {
 
 /// One team: its name and goal, its members, its messages and its limits.
 private struct TeamDetail: View {
+    private static let memberNameLines = 2
+    private static let memberNameMinimumScale: CGFloat = 0.8
     private static let defaultThreadHops = 20
     private static let defaultSendsPerWindow = 30
     private static let defaultWindowMinutes = 10
@@ -190,7 +192,7 @@ private struct TeamDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                EditorSection(title: "Goal", hint: "what the team works toward; its agents are told") {
+                EditorSection(title: "Goal") {
                     EditorField(text: $goalDraft, placeholder: "What the team works toward; press return to save")
                         .onSubmit(saveGoal)
                 }
@@ -247,7 +249,7 @@ private struct TeamDetail: View {
     // MARK: - Members
 
     private var members: some View {
-        EditorSection(title: "Members", hint: "each with its duty here; press return to save a duty") {
+        EditorSection(title: "Members") {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(listMemberIds, id: \.self) { agentId in
                     if let agent = fleetModel.fleet.mapAgents[agentId] {
@@ -285,7 +287,7 @@ private struct TeamDetail: View {
             RavenView(isWorking: fleetModel.raven.isRunning(agent.id))
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    FittingText("Raven [\(title)]", size: 13, weight: .semibold)
+                    memberName("Raven [\(title)]")
                     InfoTag("Raven")
                 }
                 fact("Duty", "Directs the team for you; its agents' answers go to this conversation")
@@ -318,7 +320,7 @@ private struct TeamDetail: View {
             CrowView(state: agent.state)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    FittingText(agent.displayName, size: 13, weight: .semibold)
+                    memberName(agent.displayName)
                     InfoTag(agent.state.title, tint: agent.state.needsAttention ? .orange : nil)
                     if !agent.hostname.isEmpty || !agent.rookName.isEmpty {
                         InfoTag(agent.hostname.isEmpty ? agent.rookName : agent.hostname)
@@ -366,6 +368,17 @@ private struct TeamDetail: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(StageColors.separator)
         }
+    }
+
+    /// A member's name on a card: on a line or two, a little smaller before it is cut short. Measured once,
+    /// as a card in a scrolling column of cards is laid out at several widths.
+    private func memberName(_ name: String) -> some View {
+        Text(name)
+            .font(.system(size: 13, weight: .semibold))
+            .lineLimit(Self.memberNameLines)
+            .minimumScaleFactor(Self.memberNameMinimumScale)
+            .layoutPriority(1)
+            .help(name)
     }
 
     private func fact(_ title: String, _ value: String) -> some View {

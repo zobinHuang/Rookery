@@ -114,7 +114,7 @@ struct AgentsSidebarView: View {
     private var rookmasterButton: some View {
         Button(action: onOpenRookmaster) {
             HStack(spacing: 8) {
-                RookeryIconView(.crown)
+                RookeryIconView(.rookmaster)
                     .frame(width: 22, height: 22)
                 if !isCollapsed {
                     Text("Rookmaster")

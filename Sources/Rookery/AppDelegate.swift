@@ -167,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             title: "Rookmaster",
             subtitle: "every agent, skill, playbook and memory",
             listBundleIds: [],
-            symbolName: .crown,
+            symbolName: .rookmaster,
             isActive: false,
             tag: "Rookery"
         )

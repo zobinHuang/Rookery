@@ -99,7 +99,7 @@ struct RookmasterView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            RookeryIconView(.crown, scale: 2)
+            RookeryIconView(.rookmaster, scale: 2)
             Text("Rookmaster")
                 .font(.system(size: 18, weight: .bold))
             tabs

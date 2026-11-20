@@ -3,7 +3,8 @@ import os
 import SwiftUI
 
 /// Rookery's interface icons. A badge keeps the logo's colors, a dark body in a white outline; a glyph is
-/// one color, tinted like text. The crow's head and the crow are the crow's pixel art; the rest are drawn.
+/// one color, tinted like text. The crow's head, the crow and Rookmaster's crowned crow are the crow's
+/// pixel art; the rest are drawn.
 enum RookeryIcon: String, CaseIterable {
     // Badges, 16 pixels square.
     case agent
@@ -90,10 +91,12 @@ enum RookeryIcon: String, CaseIterable {
     case flag
     case sliders
     case draft
+    /// Rookmaster's mark: the crow's head under a crown.
+    case rookmaster
 
     private static let setBadges: Set<RookeryIcon> = [
         .agent, .board, .command, .crown, .gauge, .gear, .globe, .hand, .machine, .memory, .mixer, .moon,
-        .newStage, .person, .playbook, .roost, .screenSaver, .sidebar, .skill, .sparkles, .sun, .windows,
+        .newStage, .person, .playbook, .roost, .rookmaster, .screenSaver, .sidebar, .skill, .sparkles, .sun, .windows,
     ]
     private static let badgeSize: CGFloat = 16
     private static let glyphSize: CGFloat = 12
@@ -105,7 +108,7 @@ enum RookeryIcon: String, CaseIterable {
 
     /// Whether the icon is the crow's own pixel art, as the logo is, rather than a drawn shape.
     var isPixelArt: Bool {
-        self == .agent || self == .crow
+        self == .agent || self == .crow || self == .rookmaster
     }
 
     /// The icon's side in points at scale 1.
@@ -116,7 +119,7 @@ enum RookeryIcon: String, CaseIterable {
     /// The shape an icon that is not pixel art is drawn from.
     var symbolName: String {
         switch self {
-        case .agent, .crow: "bird.fill"
+        case .agent, .crow, .rookmaster: "bird.fill"
         case .board: "point.3.connected.trianglepath.dotted"
         case .command: "command"
         case .crown: "crown.fill"

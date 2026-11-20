@@ -61,28 +61,33 @@ private struct RavenThreadContent: View {
     /// The conversation's title, written from it once Raven first answers, and how much was asked and when.
     private func header(_ conversation: RavenConversation) -> some View {
         let listJoined = raven.teams(of: conversation.id)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(conversation.title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .contentTransition(.opacity)
-                    Text("\(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests"), last \(conversation.lastAt.formatted(.relative(presentation: .named)))")
-                        .font(.system(size: 11))
-                        .foregroundStyle(StageColors.tertiaryText)
-                }
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(conversation.title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentTransition(.opacity)
                 Spacer(minLength: 8)
                 if conversation.turnCount > 0 {
                     joinMenu(conversation, listJoined: listJoined)
                 }
             }
-            FlowRow(spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Text("\(conversation.turnCount == 1 ? "1 request" : "\(conversation.turnCount) requests"), last \(conversation.lastAt.formatted(.relative(presentation: .named)))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(StageColors.tertiaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 6)
                 RavenFolderMenu(raven: raven, conversation: conversation, isUnrestricted: fleetModel.isRavenLocalUnrestricted)
-                ForEach(listJoined, id: \.id) { team in
-                    teamChip(team, in: conversation)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            if !listJoined.isEmpty {
+                FlowRow(spacing: 6) {
+                    ForEach(listJoined, id: \.id) { team in
+                        teamChip(team, in: conversation)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
             }
             if let problem = raven.mapTeamErrors[conversation.id] {
@@ -93,7 +98,7 @@ private struct RavenThreadContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
-        .padding(.top, 12)
+        .padding(.top, 10)
         .padding(.bottom, 8)
         .overlay(alignment: .bottom) {
             Rectangle()

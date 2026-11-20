@@ -35,4 +35,21 @@ struct TranscriptFileTests {
         searchReader.append(searched.listLines[0] + Data("\n".utf8))
         #expect(searchReader.listEntries.map(\.text) == ["swift release"])
     }
+
+    @Test func aPageOpenedInChromeShowsOnItsOwn() {
+        var reader = TranscriptReader()
+        let lines = #"""
+            {"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__claude-in-chrome__tabs_context_mcp","input":{}},{"type":"tool_use","name":"mcp__claude-in-chrome__navigate","input":{"url":"https://metrics.example.com/d/70b","tabId":3}},{"type":"tool_use","name":"mcp__claude-in-chrome__navigate","input":{"url":"back","tabId":3}}]}}
+
+            """#
+        reader.append(Data(lines.utf8))
+        #expect(reader.listEntries.map(\.pageURL) == [nil, "https://metrics.example.com/d/70b", nil])
+        let listBlocks = TranscriptBlock.blocks(of: reader.listEntries)
+        #expect(listBlocks.count == 3)
+        if case .page(let entry) = listBlocks[1] {
+            #expect(entry.pageURL == "https://metrics.example.com/d/70b")
+        } else {
+            Issue.record("the page is not a block of its own")
+        }
+    }
 }

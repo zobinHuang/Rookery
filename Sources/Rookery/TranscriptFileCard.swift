@@ -156,3 +156,69 @@ struct MentionedFileLabel: View {
             .opacity(0.6)
     }
 }
+
+
+/// A web page an agent opened in Chrome, as a conversation shows it in place of the tool call: its site,
+/// its address, and a button to open it.
+struct TranscriptPageCard: View {
+    private static let cornerRadius: CGFloat = 10
+
+    let entry: TranscriptEntry
+
+    @State private var isHovered = false
+
+    private var url: URL? {
+        entry.pageURL.flatMap(URL.init(string:))
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RookeryIconView(.globe, scale: 1.4)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30, height: 30)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(url?.host() ?? entry.pageURL ?? "")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(StageColors.primaryText)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text("Opened in Chrome ·")
+                        .fixedSize()
+                    Text(url.map { $0.path().isEmpty ? "/" : $0.path() } ?? "")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(StageColors.secondaryText)
+            }
+            Spacer(minLength: 8)
+            if let url {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Text("Open")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .buttonStyle(StageButtonStyle(kind: .prominent))
+                .help("Open \(url.absoluteString)")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            StageColors.tile.opacity(isHovered ? 1 : 0.75),
+            in: RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(StageColors.separator, lineWidth: 1)
+        )
+        .onHover { isHovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovered = isHovering
+            }
+        }
+        .help(entry.pageURL ?? "")
+    }
+}

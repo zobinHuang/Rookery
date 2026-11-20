@@ -165,6 +165,8 @@ struct TranscriptView: View {
             toolRun(listEntries, blockId: block.id)
         case .file(let entry):
             TranscriptFileCard(entry: entry)
+        case .page(let entry):
+            TranscriptPageCard(entry: entry)
         }
     }
 
@@ -465,9 +467,18 @@ struct TranscriptView: View {
 
     private static func toolName(of entry: TranscriptEntry) -> String? {
         if case .tool(let name) = entry.role {
-            return name
+            return shownName(ofTool: name)
         }
         return nil
+    }
+
+    /// A tool's name as a person reads it: a Chrome or mail tool by the app and what it does.
+    static func shownName(ofTool name: String) -> String {
+        for (prefix, app) in [(TranscriptEntry.chromeToolPrefix, "Chrome"), ("mcp__mail__", "Mail")] where name.hasPrefix(prefix) {
+            let action = name.dropFirst(prefix.count).replacingOccurrences(of: "_mcp", with: "").replacingOccurrences(of: "_", with: " ")
+            return "\(app) \(action)"
+        }
+        return name
     }
 
     /// The glyph for a tool, by what it does.
@@ -481,7 +492,7 @@ struct TranscriptView: View {
         case "Task", "Agent": .crow
         case "TodoWrite", "update_plan": .check
         case "Skill": .book
-        default: .tool
+        default: name.hasPrefix("Chrome") ? .globe : name.hasPrefix("Mail") ? .mail : .tool
         }
     }
 
@@ -599,7 +610,7 @@ struct TranscriptView: View {
             entry.timestamp
         case .tools(let listEntries):
             listEntries.last?.timestamp
-        case .file(let entry):
+        case .file(let entry), .page(let entry):
             entry.timestamp
         }
     }

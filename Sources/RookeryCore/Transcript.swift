@@ -24,18 +24,25 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
     public let timestamp: Date?
     /// The file a tool call wrote or changed, by its absolute path; nil for any other step.
     public let filePath: String?
+    /// The web page a tool call opened in the browser, by its address; nil for any other step.
+    public let pageURL: String?
 
     /// The tools that write or change a file named by their input, which a conversation shows as the file.
     public static let setFileTools: Set<String> = ["Write", "Edit", "MultiEdit", "NotebookEdit"]
     /// The tools that create a file, as against change one already there.
     public static let setCreatingTools: Set<String> = ["Write"]
+    /// The prefix of the tools Claude in Chrome gives a session.
+    public static let chromeToolPrefix = "mcp__claude-in-chrome__"
+    /// The Chrome tools that open a page, shown as the page.
+    public static let setPageTools: Set<String> = ["navigate", "tabs_create_mcp"]
 
-    public init(id: Int, role: Role, text: String, timestamp: Date? = nil, filePath: String? = nil) {
+    public init(id: Int, role: Role, text: String, timestamp: Date? = nil, filePath: String? = nil, pageURL: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
         self.timestamp = timestamp
         self.filePath = filePath
+        self.pageURL = pageURL
     }
 
     /// Whether the step is a tool call.
@@ -50,6 +57,11 @@ public struct TranscriptEntry: Equatable, Identifiable, Sendable {
     public var isFile: Bool {
         filePath != nil
     }
+
+    /// Whether the step opened a web page, which shows on its own rather than among the tool calls.
+    public var isPage: Bool {
+        pageURL != nil
+    }
 }
 
 /// What the detail page lays out: a step on its own, or a run of tool calls folded into one.
@@ -58,12 +70,15 @@ public enum TranscriptBlock: Equatable, Identifiable, Sendable {
     case tools([TranscriptEntry])
     /// A file a tool call wrote or changed.
     case file(TranscriptEntry)
+    /// A web page a tool call opened in the browser.
+    case page(TranscriptEntry)
 
     public var id: Int {
         switch self {
         case .entry(let entry): entry.id
         case .tools(let listEntries): listEntries.first?.id ?? 0
         case .file(let entry): entry.id
+        case .page(let entry): entry.id
         }
     }
 
@@ -73,7 +88,7 @@ public enum TranscriptBlock: Equatable, Identifiable, Sendable {
         var listBlocks: [TranscriptBlock] = []
         var listRun: [TranscriptEntry] = []
         for entry in listEntries {
-            if entry.isTool, !entry.isFile {
+            if entry.isTool, !entry.isFile, !entry.isPage {
                 listRun.append(entry)
                 continue
             }
@@ -81,7 +96,7 @@ public enum TranscriptBlock: Equatable, Identifiable, Sendable {
                 listBlocks.append(.tools(listRun))
                 listRun = []
             }
-            listBlocks.append(entry.isFile ? .file(entry) : .entry(entry))
+            listBlocks.append(entry.isFile ? .file(entry) : entry.isPage ? .page(entry) : .entry(entry))
         }
         if !listRun.isEmpty {
             listBlocks.append(.tools(listRun))
@@ -99,7 +114,7 @@ public struct TranscriptReader: Sendable {
     /// The longest a tool call's summary runs.
     private static let toolSummaryMaxLength = 160
     /// The arguments that best say what a tool call does, in the order they are looked for.
-    private static let listSummaryKeys = ["command", "file_path", "path", "pattern", "url", "description", "prompt", "skill", "query"]
+    private static let listSummaryKeys = ["command", "file_path", "path", "pattern", "url", "description", "prompt", "skill", "query", "text", "value", "action"]
     private static var commandNamePattern: Regex<(Substring, Substring)> {
         /<command-name>([^<]*)<\/command-name>/
     }
@@ -216,7 +231,13 @@ public struct TranscriptReader: Sendable {
                 add(role, block["text"]?.stringValue ?? "", timestamp: timestamp)
             case "tool_use":
                 let name = block["name"]?.stringValue ?? "Tool"
-                add(.tool(name), Self.summary(of: block["input"]), timestamp: timestamp, filePath: Self.filePath(ofTool: name, input: block["input"]))
+                add(
+                    .tool(name),
+                    Self.summary(of: block["input"]),
+                    timestamp: timestamp,
+                    filePath: Self.filePath(ofTool: name, input: block["input"]),
+                    pageURL: Self.pageURL(ofTool: name, input: block["input"])
+                )
             default:
                 break
             }
@@ -243,7 +264,7 @@ public struct TranscriptReader: Sendable {
     }
 
     /// Keep a step, unless it is empty or context the harness injected rather than words of the user's.
-    private mutating func add(_ role: TranscriptEntry.Role, _ text: String, timestamp: Date?, filePath: String? = nil) {
+    private mutating func add(_ role: TranscriptEntry.Role, _ text: String, timestamp: Date?, filePath: String? = nil, pageURL: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         switch role {
         case .tool, .command, .compaction, .message:
@@ -266,7 +287,20 @@ public struct TranscriptReader: Sendable {
                 return
             }
         }
-        listEntries.append(TranscriptEntry(id: startOffset + listEntries.count, role: role, text: trimmed, timestamp: timestamp, filePath: filePath))
+        listEntries.append(TranscriptEntry(id: startOffset + listEntries.count, role: role, text: trimmed, timestamp: timestamp, filePath: filePath, pageURL: pageURL))
+    }
+
+    /// The address of the web page a Chrome tool call opens, or nil when it is no such call.
+    static func pageURL(ofTool name: String, input: JSONValue?) -> String? {
+        guard
+            name.hasPrefix(TranscriptEntry.chromeToolPrefix),
+            TranscriptEntry.setPageTools.contains(String(name.dropFirst(TranscriptEntry.chromeToolPrefix.count))),
+            let url = input?["url"]?.stringValue,
+            url.hasPrefix("http://") || url.hasPrefix("https://")
+        else {
+            return nil
+        }
+        return url
     }
 
     /// The absolute path of the file a tool call writes or changes, or nil when it is no such call.

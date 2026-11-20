@@ -762,8 +762,20 @@ final class RavenAgent {
                 setAsideTwins(of: proposal, in: conversationId)
             }
             saveIndex()
+            if proposal.action == .spawn {
+                await joinTeams(of: proposal, in: conversationId)
+            }
         } catch {
             mapProposalErrors[proposal.id] = FleetModel.describe(error)
+        }
+    }
+
+    /// Put the conversation that proposed a new session in the teams the session joins, so the two can
+    /// message each other through roost.
+    private func joinTeams(of proposal: RavenProposal, in conversationId: String) async {
+        let setJoined = Set(teams(of: conversationId).map(\.id))
+        for launchTeam in proposal.listTeams where !setJoined.contains(launchTeam.teamId) {
+            await join(conversationId, team: launchTeam.teamId)
         }
     }
 

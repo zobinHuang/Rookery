@@ -23,32 +23,12 @@ struct TranscriptFileCard: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                fileLabel
-                    .frame(minWidth: Self.nameMinWidth, idealWidth: Self.nameMinWidth, maxWidth: .infinity, alignment: .leading)
-                if isPresent {
-                    revealButton(isTitled: true)
-                    openButton
-                }
-            }
-            HStack(spacing: 8) {
-                fileLabel
-                    .frame(minWidth: Self.nameMinWidth, idealWidth: Self.nameMinWidth, maxWidth: .infinity, alignment: .leading)
-                if isPresent {
-                    revealButton(isTitled: false)
-                    openButton
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                fileLabel
-                if isPresent {
-                    HStack(spacing: 8) {
-                        Spacer(minLength: 0)
-                        revealButton(isTitled: true)
-                        openButton
-                    }
-                }
+        HStack(spacing: 8) {
+            fileLabel
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if isPresent {
+                revealButton
+                openButton
             }
         }
         .controlSize(.small)
@@ -75,9 +55,6 @@ struct TranscriptFileCard: View {
         .help(url.path)
     }
 
-    /// The narrowest a file's name and folder go before the card lays its buttons out under them.
-    private static let nameMinWidth: CGFloat = 150
-
     private var fileLabel: some View {
         HStack(spacing: 10) {
             Image(nsImage: icon)
@@ -100,16 +77,11 @@ struct TranscriptFileCard: View {
         }
     }
 
-    private func revealButton(isTitled: Bool) -> some View {
+    private var revealButton: some View {
         Button {
             NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
         } label: {
-            if isTitled {
-                Text("Show in Finder")
-                    .font(.system(size: 11, weight: .medium))
-            } else {
-                RookeryIconView(.folder)
-            }
+            RookeryIconView(.folder)
         }
         .fixedSize()
         .help("Show \(url.lastPathComponent) in the Finder")
